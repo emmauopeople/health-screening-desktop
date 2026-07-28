@@ -1,0 +1,157 @@
+:root {
+  --color-page: #eef3f7;
+  --color-panel: #ffffff;
+  --color-border: #cfd8e3;
+  --color-ink: #172033;
+  --color-muted: #5c667a;
+  --color-accent: #0f6b7a;
+  --color-accent-soft: #dceff2;
+  --shadow-panel: 0 18px 45px rgba(25, 38, 64, 0.14);
+
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Oxygen,
+    Ubuntu,
+    Cantarell,
+    'Helvetica Neue',
+    sans-serif;
+  color: var(--color-ink);
+  background: var(--color-page);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(238, 243, 247, 0.96)),
+    var(--color-page);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.foundation-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 48px 24px;
+}
+
+.foundation-panel {
+  width: min(720px, 100%);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-panel);
+  box-shadow: var(--shadow-panel);
+  padding: 44px;
+}
+
+.foundation-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  border: 1px solid #9fc8cf;
+  border-radius: 999px;
+  padding: 5px 12px;
+  color: #084b56;
+  background: var(--color-accent-soft);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1 {
+  max-width: 16ch;
+  margin: 18px 0 14px;
+  color: var(--color-ink);
+  font-size: 2.6rem;
+  font-weight: 760;
+  letter-spacing: 0;
+  line-height: 1.05;
+}
+
+.foundation-statement {
+  max-width: 58ch;
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 1.05rem;
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+.foundation-status {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 34px 0 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-border);
+}
+
+.foundation-status div {
+  min-width: 0;
+  padding: 18px;
+  background: #f9fbfd;
+}
+
+.foundation-status dt {
+  margin: 0 0 7px;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.foundation-status dd {
+  margin: 0;
+  color: var(--color-accent);
+  font-size: 1rem;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+@media (max-width: 680px) {
+  .foundation-shell {
+    align-items: start;
+    padding: 24px 16px;
+  }
+
+  .foundation-panel {
+    padding: 28px 22px;
+  }
+
+  h1 {
+    font-size: 2rem;
+  }
+
+  .foundation-status {
+    grid-template-columns: 1fr;
+  }
+}
