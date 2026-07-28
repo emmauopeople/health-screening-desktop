@@ -1,4 +1,5 @@
 # Health Screening Offline Desktop Application
+
 ## UX Design Specification
 
 **Status:** Planned / In Progress  
@@ -37,12 +38,12 @@ The visual language uses a calm enterprise clinical layout:
 
 ### 3.1 Status colors
 
-| Status | Color role | Required wording |
-|---|---|---|
-| Routine / completed | Green | Routine screening or Completed |
-| Repeat measurement | Amber | Repeat required |
-| Referral | Orange | Referral required |
-| Urgent referral | Red | Urgent referral |
+| Status                 | Color role     | Required wording                     |
+| ---------------------- | -------------- | ------------------------------------ |
+| Routine / completed    | Green          | Routine screening or Completed       |
+| Repeat measurement     | Amber          | Repeat required                      |
+| Referral               | Orange         | Referral required                    |
+| Urgent referral        | Red            | Urgent referral                      |
 | Sync / technical state | Purple or blue | Pending, Failed, Sent, Offline ready |
 
 No color may be used alone to communicate a clinical or technical state.
@@ -500,30 +501,39 @@ Clinical data remains authoritative in the main process and SQLite. Switching pa
 ## 24. UX Delivery Work Packages
 
 ### UX0 - Design Tokens and Information Architecture
+
 Approve colors, typography, spacing, menu hierarchy, statuses, labels, and keyboard rules.
 
 ### UX1 - Application Shell
+
 Build top menu, contextual command panel, connectivity/user area, and protected workspace shell.
 
 ### UX2 - Patient Search and Tabs
+
 Build search, duplicate-review panel, four-tab behavior, tab manager, and unsaved-change guard.
 
 ### UX3 - Screening Split Workspace
+
 Build patient context pane, current encounter pane, stepper, measurement grid, charts, and protocol panel.
 
 ### UX4 - Context Collection
+
 Build lifestyle, food, and OTC workflows with previous-value confirmation and provenance labels.
 
 ### UX5 - Referrals and Follow-Up
+
 Build paginated referral master-detail screen and follow-up split form.
 
 ### UX6 - Timeline and Reports
+
 Build patient timeline, report filter rail, charts, pagination, print preview, and PDF actions.
 
 ### UX7 - Administration and Sync
+
 Build user/location/protocol/audit worklists, sync center, errors, backup/restore, and settings patterns.
 
 ### UX8 - Accessibility and Field Validation
+
 Complete keyboard navigation, focus order, resolution testing, contrast review, usability testing, and Playwright evidence.
 
 ## 25. Mockup Index

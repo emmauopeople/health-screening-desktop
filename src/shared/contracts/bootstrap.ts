@@ -17,3 +17,7 @@ export const applicationStatus: ApplicationStatus = {
   databaseConfigured: false,
   businessIpcImplemented: false
 }
+
+export function getApplicationStatus(): ApplicationStatus {
+  return { ...applicationStatus }
+}

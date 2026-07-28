@@ -7,10 +7,15 @@
   "packageManager": "pnpm@11.17.0",
   "scripts": {
     "format": "prettier --write .",
-    "lint": "eslint --cache .",
+    "format:check": "prettier --check .",
+    "lint": "eslint --cache --max-warnings=0 .",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:watch": "vitest",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
     "start": "electron-vite preview",
     "preview": "electron-vite preview",
     "dev": "electron-vite dev",
@@ -43,6 +48,7 @@
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "typescript": "^5.9.3",
-    "vite": "^7.2.6"
+    "vite": "^7.2.6",
+    "vitest": "^4.1.10"
   }
 }
