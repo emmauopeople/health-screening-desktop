@@ -1,5 +1,8 @@
 import { pathToFileURL } from 'node:url'
 
+const allowedDevelopmentProtocols = new Set(['http:', 'https:'])
+const allowedDevelopmentHosts = new Set(['localhost', '127.0.0.1', '[::1]'])
+
 export type NavigationPolicy =
   | {
       mode: 'development'
@@ -14,8 +17,8 @@ export type NavigationPolicy =
 export function createDevelopmentNavigationPolicy(rendererUrl: string): NavigationPolicy {
   const applicationUrl = parseUrl(rendererUrl)
 
-  if (!applicationUrl) {
-    throw new Error('Development renderer URL is invalid.')
+  if (!applicationUrl || !isLoopbackHttpUrl(applicationUrl)) {
+    throw new Error('Development renderer URL must use an HTTP(S) loopback origin.')
   }
 
   return {
@@ -48,6 +51,10 @@ export function isNavigationAllowed(navigationUrl: string, policy: NavigationPol
   }
 
   return sameDocumentUrl(targetUrl.href) === sameDocumentUrl(policy.applicationUrl)
+}
+
+function isLoopbackHttpUrl(url: URL): boolean {
+  return allowedDevelopmentProtocols.has(url.protocol) && allowedDevelopmentHosts.has(url.hostname)
 }
 
 function parseUrl(value: string): URL | null {

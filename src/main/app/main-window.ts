@@ -84,6 +84,12 @@ function attachNavigationGuards(window: BrowserWindow, navigationPolicy: Navigat
     }
   })
 
+  webContents.on('will-redirect', (event) => {
+    if (!isNavigationAllowed(event.url, navigationPolicy)) {
+      event.preventDefault()
+    }
+  })
+
   webContents.on('will-attach-webview', (event) => {
     event.preventDefault()
   })

@@ -9,6 +9,39 @@ import {
 } from '@main/app/navigation-policy'
 
 describe('navigation policy', () => {
+  it.each([
+    'http://localhost:5173/',
+    'https://localhost:5173/',
+    'http://127.0.0.1:5173/',
+    'https://127.0.0.1:5173/',
+    'http://[::1]:5173/',
+    'https://[::1]:5173/'
+  ])('accepts loopback HTTP(S) development renderer URL %s', (rendererUrl) => {
+    const policy = createDevelopmentNavigationPolicy(rendererUrl)
+
+    if (policy.mode !== 'development') {
+      throw new Error('Expected a development navigation policy.')
+    }
+
+    expect(policy.applicationUrl).toBe(new URL(rendererUrl).href)
+    expect(policy.allowedOrigin).toBe(new URL(rendererUrl).origin)
+  })
+
+  it.each([
+    'file:///C:/app/out/renderer/index.html',
+    'data:text/html,blocked',
+    'javascript:alert("blocked")',
+    'custom-scheme://localhost:5173/',
+    'http://example.com:5173/',
+    'https://192.168.1.20:5173/',
+    'http://%',
+    'not a url'
+  ])('rejects unsafe development renderer URL %s', (rendererUrl) => {
+    expect(() => createDevelopmentNavigationPolicy(rendererUrl)).toThrow(
+      'Development renderer URL must use an HTTP(S) loopback origin.'
+    )
+  })
+
   it('allows the exact development renderer URL and another path on the same origin', () => {
     const policy = createDevelopmentNavigationPolicy('http://localhost:5173/')
 
