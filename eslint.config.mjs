@@ -67,24 +67,12 @@ export default defineConfig(
                 'src/main',
                 'src/main/*',
                 'src/preload',
-                'src/preload/*',
-                '../main',
-                '../main/*',
-                '../preload',
-                '../preload/*',
-                '../../main',
-                '../../main/*',
-                '../../preload',
-                '../../preload/*',
-                '../../../main',
-                '../../../main/*',
-                '../../../preload',
-                '../../../preload/*',
-                '../../../../main',
-                '../../../../main/*',
-                '../../../../preload',
-                '../../../../preload/*'
+                'src/preload/*'
               ],
+              message: 'Renderer code must not import main or preload implementation modules.'
+            },
+            {
+              regex: String.raw`^(?:\.\./)+(?:src/)?(?:main|preload)(?:/|$)`,
               message: 'Renderer code must not import main or preload implementation modules.'
             }
           ]
