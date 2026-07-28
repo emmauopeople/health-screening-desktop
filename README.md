@@ -29,15 +29,29 @@ pnpm dev
 
 This launches the Electron development application with the React renderer.
 
-## Verification
+## Quality Commands
 
 ```powershell
+pnpm format
+pnpm format:check
+pnpm lint
 pnpm typecheck
+pnpm test
+pnpm verify
 pnpm build
 ```
 
-`pnpm typecheck` runs both the Node-side and web-side TypeScript checks. `pnpm build` runs typechecking and then builds the Electron main, preload, and renderer bundles.
+- `pnpm format` writes Prettier formatting changes.
+- `pnpm format:check` verifies formatting without changing files.
+- `pnpm lint` runs ESLint with warnings treated as failures.
+- `pnpm typecheck` runs both the Node-side and web-side TypeScript checks.
+- `pnpm test` runs the Vitest unit test suite once and exits.
+- `pnpm verify` runs format check, lint, typecheck, and tests.
+- `pnpm build` runs typechecking and then builds the Electron main, preload, and renderer bundles.
+
+Use `pnpm test:watch` for interactive Vitest watch mode during development.
 
 ## Architecture
 
 See `docs/repository-structure.md` for the process boundaries and directory responsibilities.
+See `docs/engineering-standards.md` for strict TypeScript settings, aliases, renderer import boundaries, formatting, linting, and test standards.
