@@ -308,6 +308,9 @@ describe('local user repository', () => {
     await withMigratedDatabase(({ connection, repository }) => {
       const corruptOrdinaryRows = [
         { id: 'not-a-uuid' },
+        { username: ' Admin.User', username_normalized: 'admin.user' },
+        { username: 'Admin.User ', username_normalized: 'admin.user' },
+        { username: '\uFF21dmin.User', username_normalized: 'admin.user' },
         { username_normalized: 'wrong' },
         { display_name: '  Admin User  ' },
         { role: 'CLINICIAN' },
@@ -328,9 +331,18 @@ describe('local user repository', () => {
             ? repository.getByUsername(parseUsernameIdentity('Admin.User').username)
             : repository.getById(parseEntityId(userId))
         )
+        const authenticationLookupUsername =
+          (override as { readonly username_normalized?: unknown }).username_normalized === 'wrong'
+            ? parseUsernameIdentity('wrong').username
+            : parseUsernameIdentity('Admin.User').username
+        const authenticationError = captureError(() =>
+          repository.getAuthenticationByUsername(authenticationLookupUsername)
+        )
 
         expect(readError).toBeInstanceOf(RepositoryDataIntegrityError)
+        expect(authenticationError).toBeInstanceOf(RepositoryDataIntegrityError)
         expectSafeControlledError(readError)
+        expectSafeControlledError(authenticationError)
       }
 
       deleteUsers(connection)
@@ -357,6 +369,124 @@ describe('local user repository', () => {
       expect(authenticationError).toBeInstanceOf(RepositoryDataIntegrityError)
       expectSafeControlledError(authenticationError)
     })
+  })
+
+  it('strictly decodes duplicate precheck rows before inserting', () => {
+    let acceptedMissingInsertCount = 0
+    const acceptedMissingConnection = createFakeExecutorConnection({
+      precheckResult: undefined,
+      runInsert: () => {
+        acceptedMissingInsertCount += 1
+      }
+    })
+    const acceptedMissingRecord = createExecutorForConnection(acceptedMissingConnection).run(
+      (context) =>
+        createLocalUserRepository({} as Database.Database).insert(
+          context.connection,
+          createValidInput()
+        )
+    )
+
+    expect(acceptedMissingRecord.id).toBe(userId)
+    expect(acceptedMissingInsertCount).toBe(1)
+    expect(acceptedMissingConnection.inTransaction).toBe(false)
+
+    let blockedInsertCount = 0
+    const acceptedExistingConnection = createFakeExecutorConnection({
+      precheckResult: { has_existing: 1 },
+      runInsert: () => {
+        blockedInsertCount += 1
+      }
+    })
+    const duplicateError = captureError(() =>
+      createExecutorForConnection(acceptedExistingConnection).run((context) =>
+        createLocalUserRepository({} as Database.Database).insert(
+          context.connection,
+          createValidInput()
+        )
+      )
+    )
+
+    expect(duplicateError).toBeInstanceOf(LocalUserAlreadyExistsError)
+    expect(blockedInsertCount).toBe(0)
+    expectSafeControlledError(duplicateError)
+
+    for (const precheckResult of createMalformedPrecheckResults()) {
+      let insertCount = 0
+      const connection = createFakeExecutorConnection({
+        precheckResult,
+        runInsert: () => {
+          insertCount += 1
+        }
+      })
+
+      const error = captureError(() =>
+        createExecutorForConnection(connection).run((context) =>
+          createLocalUserRepository({} as Database.Database).insert(
+            context.connection,
+            createValidInput()
+          )
+        )
+      )
+
+      expect(error).toBeInstanceOf(RepositoryDataIntegrityError)
+      expect(insertCount).toBe(0)
+      expect(connection.inTransaction).toBe(false)
+      expectSafeControlledError(error)
+    }
+  })
+
+  it('maps only primary-key and unique constraint insert failures to duplicate-user errors', () => {
+    for (const code of ['SQLITE_CONSTRAINT_PRIMARYKEY', 'SQLITE_CONSTRAINT_UNIQUE']) {
+      const connection = createFakeExecutorConnection({
+        runInsert: () => {
+          throw createSqliteError(code)
+        }
+      })
+
+      const error = captureError(() =>
+        createExecutorForConnection(connection).run((context) =>
+          createLocalUserRepository({} as Database.Database).insert(
+            context.connection,
+            createValidInput()
+          )
+        )
+      )
+
+      expect(error).toBeInstanceOf(LocalUserAlreadyExistsError)
+      expect(connection.inTransaction).toBe(false)
+      expectSafeControlledError(error)
+    }
+
+    for (const failure of [
+      createSqliteError('SQLITE_CONSTRAINT_CHECK'),
+      createSqliteError('SQLITE_CONSTRAINT_NOTNULL'),
+      createSqliteError('SQLITE_CONSTRAINT_FOREIGNKEY'),
+      createSqliteError('SQLITE_CONSTRAINT_TRIGGER'),
+      createSqliteError('SQLITE_CONSTRAINT'),
+      createSqliteError('SQLITE_CONSTRAINT_UNKNOWN'),
+      createSqliteErrorWithCodeAccessor(),
+      createSqliteErrorProxy()
+    ]) {
+      const connection = createFakeExecutorConnection({
+        runInsert: () => {
+          throw failure
+        }
+      })
+
+      const error = captureError(() =>
+        createExecutorForConnection(connection).run((context) =>
+          createLocalUserRepository({} as Database.Database).insert(
+            context.connection,
+            createValidInput()
+          )
+        )
+      )
+
+      expect(error).toBeInstanceOf(RepositoryWriteError)
+      expect(connection.inTransaction).toBe(false)
+      expectSafeControlledError(error)
+    }
   })
 
   it('maps closed connections and injected read failures to safe read errors', async () => {
@@ -491,6 +621,7 @@ interface RawUserRow {
 
 interface FakeExecutorConnectionOptions {
   recordSql?: (sql: string) => void
+  precheckResult?: unknown
   runInsert?: () => void
   getAfterInsert?: () => unknown
 }
@@ -685,8 +816,12 @@ function createFakeStatement(
       }
 
       if (/WHERE id = \? OR username_normalized = \?/i.test(source)) {
+        if (Object.prototype.hasOwnProperty.call(options, 'precheckResult')) {
+          return options.precheckResult
+        }
+
         return row !== null && (row.id === params[0] || row.username_normalized === params[1])
-          ? { id: row.id, username_normalized: row.username_normalized }
+          ? { has_existing: 1 }
           : undefined
       }
 
@@ -912,6 +1047,84 @@ function fixedBytes(length: number, offset: number): Buffer {
   return Buffer.from(Array.from({ length }, (_, index) => (index + offset) % 256))
 }
 
+function createMalformedPrecheckResults(): readonly unknown[] {
+  const accessorRow = Object.create(null) as { has_existing: unknown }
+  Object.defineProperty(accessorRow, 'has_existing', {
+    enumerable: true,
+    get() {
+      throw new Error('C:\\secret\\precheck-getter.txt')
+    }
+  })
+
+  const symbolRow = {
+    has_existing: 1,
+    [Symbol('row_metadata')]: true
+  }
+
+  return Object.freeze([
+    null,
+    [],
+    1,
+    'has_existing',
+    false,
+    {},
+    { has_existing: 0 },
+    { has_existing: 2 },
+    { has_existing: true },
+    { has_existing: 1, row_metadata: 'secret' },
+    symbolRow,
+    accessorRow,
+    new Proxy(
+      { has_existing: 1 },
+      {
+        ownKeys() {
+          throw new Error('C:\\secret\\ownKeys.txt')
+        }
+      }
+    ),
+    new Proxy(
+      { has_existing: 1 },
+      {
+        getOwnPropertyDescriptor() {
+          throw new Error('C:\\secret\\descriptor.txt')
+        }
+      }
+    )
+  ])
+}
+
+function createSqliteError(code: string): Error {
+  const error = new Error(`raw driver refused ${code} C:\\secret\\users.sqlite3`)
+  error.name = 'SqliteError'
+  Object.defineProperty(error, 'code', {
+    enumerable: true,
+    value: code
+  })
+
+  return error
+}
+
+function createSqliteErrorWithCodeAccessor(): Error {
+  const error = new Error('raw driver refused C:\\secret\\constraint.sqlite3')
+  error.name = 'SqliteError'
+  Object.defineProperty(error, 'code', {
+    enumerable: true,
+    get() {
+      throw new Error('C:\\secret\\code-getter.txt')
+    }
+  })
+
+  return error
+}
+
+function createSqliteErrorProxy(): Error {
+  return new Proxy(createSqliteError('SQLITE_CONSTRAINT_UNIQUE'), {
+    getOwnPropertyDescriptor() {
+      throw new Error('C:\\secret\\code-descriptor.txt')
+    }
+  })
+}
+
 function expectSafeControlledError(error: unknown): void {
   const serialized = JSON.stringify(error)
 
@@ -928,6 +1141,15 @@ function expectSafeControlledError(error: unknown): void {
     'INSERT',
     'users',
     'username_normalized',
+    'has_existing',
+    'row_metadata',
+    'SQLITE_CONSTRAINT',
+    'PRIMARYKEY',
+    'UNIQUE',
+    'CHECK',
+    'NOTNULL',
+    'FOREIGNKEY',
+    'TRIGGER',
     userId,
     secondUserId,
     now,
@@ -935,6 +1157,7 @@ function expectSafeControlledError(error: unknown): void {
     earlier,
     'Admin.User',
     'ADMIN.USER',
+    '\uFF21dmin.User',
     'Admin User',
     canonicalCredential.passwordHash,
     canonicalCredential.passwordSalt

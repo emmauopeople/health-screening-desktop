@@ -130,8 +130,7 @@ WHERE username_normalized = ?;
 
 const selectExistingLocalUserSql = `
 SELECT
-  id,
-  username_normalized
+  1 AS has_existing
 FROM users
 WHERE id = ? OR username_normalized = ?
 LIMIT 1;
@@ -276,7 +275,7 @@ export function createLocalUserRepository(connection: Database.Database): LocalU
         throw new DatabaseTransactionStateError(error.errorType)
       }
 
-      if (isSqliteConstraintError(error)) {
+      if (isDuplicateSqliteConstraintError(error)) {
         throw new LocalUserAlreadyExistsError(getRepositoryErrorType(error))
       }
 
@@ -399,14 +398,18 @@ function hasExistingLocalUser(
   usernameNormalized: string
 ): boolean {
   try {
-    return (
-      connection
-        .prepare<[string, string], unknown>(selectExistingLocalUserSql)
-        .get(id, usernameNormalized) !== undefined
-    )
+    const row = connection
+      .prepare<[string, string], unknown>(selectExistingLocalUserSql)
+      .get(id, usernameNormalized)
+
+    return decodeExistingLocalUserRow(row)
   } catch (error) {
     if (error instanceof DatabaseTransactionStateError) {
       throw new DatabaseTransactionStateError(error.errorType)
+    }
+
+    if (error instanceof RepositoryDataIntegrityError) {
+      throw new RepositoryDataIntegrityError(error.errorType)
     }
 
     throw new RepositoryWriteError(getRepositoryErrorType(error))
@@ -521,7 +524,10 @@ function decodeLocalUserRecordData(data: Record<string, unknown>): LocalUserReco
   const id = parseEntityId(data.id)
   const identity = parseUsernameIdentity(data.username)
 
-  if (data.username_normalized !== identity.usernameNormalized) {
+  if (
+    data.username !== identity.username ||
+    data.username_normalized !== identity.usernameNormalized
+  ) {
     throw new RepositoryDataIntegrityError()
   }
 
@@ -557,6 +563,28 @@ function decodeLocalUserRecordData(data: Record<string, unknown>): LocalUserReco
     createdAt,
     updatedAt
   })
+}
+
+function decodeExistingLocalUserRow(row: unknown): boolean {
+  if (row === undefined) {
+    return false
+  }
+
+  try {
+    const data = readDataProperties(row, ['has_existing'])
+
+    if (data.has_existing !== 1) {
+      throw new RepositoryDataIntegrityError()
+    }
+
+    return true
+  } catch (error) {
+    if (error instanceof RepositoryDataIntegrityError) {
+      throw new RepositoryDataIntegrityError(error.errorType)
+    }
+
+    throw new RepositoryDataIntegrityError(getRepositoryErrorType(error))
+  }
 }
 
 function parseNullableUtcTimestamp(value: unknown): ReturnType<typeof parseUtcTimestamp> | null {
@@ -607,14 +635,27 @@ function readDataProperties(
   return data
 }
 
-function isSqliteConstraintError(error: unknown): boolean {
-  let code: unknown
+function isDuplicateSqliteConstraintError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false
+  }
+
+  let codeDescriptor: PropertyDescriptor | undefined
 
   try {
-    code = typeof error === 'object' && error !== null ? Reflect.get(error, 'code') : undefined
+    codeDescriptor = Object.getOwnPropertyDescriptor(error, 'code')
   } catch {
     return false
   }
 
-  return typeof code === 'string' && code.startsWith('SQLITE_CONSTRAINT')
+  if (
+    codeDescriptor === undefined ||
+    !Object.prototype.hasOwnProperty.call(codeDescriptor, 'value')
+  ) {
+    return false
+  }
+
+  const code = codeDescriptor.value
+
+  return code === 'SQLITE_CONSTRAINT_PRIMARYKEY' || code === 'SQLITE_CONSTRAINT_UNIQUE'
 }
