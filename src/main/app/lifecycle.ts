@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { app, session } from 'electron'
 import { join } from 'node:path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 
@@ -7,6 +7,7 @@ import {
   hasMainWindow,
   type MainWindowConfiguration
 } from '@main/app/main-window'
+import { configureSessionSecurity } from '@main/security/session-security'
 import icon from '../../../resources/icon.png?asset'
 
 export function startApplicationLifecycle(): void {
@@ -34,6 +35,11 @@ export function startApplicationLifecycle(): void {
         })
       })
 
+      configureSessionSecurity(session.defaultSession, {
+        isDevelopment: configuration.isDevelopment,
+        rendererUrl: configuration.rendererUrl
+      })
+
       await createOrFocusMainWindow(configuration)
 
       app.on('activate', () => {
@@ -57,9 +63,11 @@ export function startApplicationLifecycle(): void {
 }
 
 function createMainWindowConfiguration(): MainWindowConfiguration {
+  const rendererUrl = process.env['ELECTRON_RENDERER_URL']
+
   return {
-    isDevelopment: is.dev,
-    rendererUrl: process.env['ELECTRON_RENDERER_URL'],
+    isDevelopment: is.dev && Boolean(rendererUrl),
+    rendererUrl,
     preloadPath: join(__dirname, '../preload/index.js'),
     rendererIndexPath: join(__dirname, '../renderer/index.html'),
     platform: process.platform,
@@ -69,6 +77,7 @@ function createMainWindowConfiguration(): MainWindowConfiguration {
 
 function logLifecycleError(message: string, error: unknown): void {
   const errorName = error instanceof Error ? error.name : typeof error
+  const errorMessage = error instanceof Error && error.message ? `: ${error.message}` : ''
 
-  console.error(`${message} (${errorName})`)
+  console.error(`${message} (${errorName}${errorMessage})`)
 }
