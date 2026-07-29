@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3'
 
+import { assertActiveDatabaseTransactionConnection } from '@main/database/transaction/transaction-capability'
 import { DatabaseTransactionStateError } from '@main/database/transaction'
 import type { DatabaseTransactionConnection } from '@main/database/transaction'
 import { parseEntityId } from '@main/foundation/entity-id'
@@ -64,62 +65,68 @@ INSERT INTO installation (
 export function createInstallationRepository(
   connection: Database.Database
 ): InstallationRepository {
-  return Object.freeze({
-    get(): InstallationRecord | null {
-      const row = readInstallationRow(connection, (error) => new RepositoryReadError(error))
+  const get = (): InstallationRecord | null => {
+    const row = readInstallationRow(connection, (error) => new RepositoryReadError(error))
 
-      return row === null ? null : decodeInstallationRow(row)
-    },
+    return row === null ? null : decodeInstallationRow(row)
+  }
 
-    getState(): InstallationState {
-      const installation = this.get()
+  const getState = (): InstallationState => {
+    const installation = get()
 
-      return installation === null
-        ? Object.freeze({ status: 'UNINITIALIZED' as const })
-        : Object.freeze({ status: 'INITIALIZED' as const, installation })
-    },
+    return installation === null
+      ? Object.freeze({ status: 'UNINITIALIZED' as const })
+      : Object.freeze({ status: 'INITIALIZED' as const, installation })
+  }
 
-    insert(
-      scopedConnection: DatabaseTransactionConnection,
-      input: CreateInstallationInput
-    ): InstallationRecord {
-      const validatedInput = parseCreateInstallationInput(input)
-      const existing = readInstallationForWrite(scopedConnection)
+  const insert = (
+    scopedConnection: DatabaseTransactionConnection,
+    input: CreateInstallationInput
+  ): InstallationRecord => {
+    assertActiveDatabaseTransactionConnection(scopedConnection)
 
-      if (existing !== null) {
-        throw new InstallationAlreadyExistsError()
-      }
+    const validatedInput = parseCreateInstallationInput(input)
+    const existing = readInstallationForWrite(scopedConnection)
 
-      try {
-        scopedConnection
-          .prepare<[string, string, string, string, string]>(insertInstallationSql)
-          .run(
-            validatedInput.id,
-            validatedInput.deploymentName,
-            validatedInput.timeZone,
-            validatedInput.createdAt,
-            validatedInput.updatedAt
-          )
-      } catch (error) {
-        if (error instanceof DatabaseTransactionStateError) {
-          throw new DatabaseTransactionStateError(error.errorType)
-        }
-
-        if (isSqliteConstraintError(error)) {
-          throw new InstallationAlreadyExistsError(getRepositoryErrorType(error))
-        }
-
-        throw new RepositoryWriteError(getRepositoryErrorType(error))
-      }
-
-      const created = readInstallationAfterWrite(scopedConnection)
-
-      if (created === null) {
-        throw new RepositoryWriteError()
-      }
-
-      return created
+    if (existing !== null) {
+      throw new InstallationAlreadyExistsError()
     }
+
+    try {
+      scopedConnection
+        .prepare<[string, string, string, string, string]>(insertInstallationSql)
+        .run(
+          validatedInput.id,
+          validatedInput.deploymentName,
+          validatedInput.timeZone,
+          validatedInput.createdAt,
+          validatedInput.updatedAt
+        )
+    } catch (error) {
+      if (error instanceof DatabaseTransactionStateError) {
+        throw new DatabaseTransactionStateError(error.errorType)
+      }
+
+      if (isSqliteConstraintError(error)) {
+        throw new InstallationAlreadyExistsError(getRepositoryErrorType(error))
+      }
+
+      throw new RepositoryWriteError(getRepositoryErrorType(error))
+    }
+
+    const created = readInstallationAfterWrite(scopedConnection)
+
+    if (created === null) {
+      throw new RepositoryWriteError()
+    }
+
+    return created
+  }
+
+  return Object.freeze({
+    get,
+    getState,
+    insert
   })
 }
 

@@ -8,6 +8,7 @@ import type { EntityIdGenerator } from '@main/foundation/entity-id'
 import type { UtcClock } from '@main/foundation/utc-clock'
 
 import { isRepositoryError, rebuildRepositoryError } from '../repositories/repository-errors'
+import { registerDatabaseTransactionConnection } from './transaction-capability'
 import {
   DatabaseTransactionAsyncWorkError,
   type DatabaseTransactionConnection,
@@ -20,6 +21,7 @@ import {
   type DatabaseTransactionPhase,
   type DatabaseTransactionStatement,
   type DatabaseTransactionWork,
+  databaseTransactionConnectionBrand,
   type SynchronousTransactionResult
 } from './transaction-types'
 
@@ -170,6 +172,7 @@ function createGuardedTransactionConnection(
   guard: TransactionScopeGuard
 ): DatabaseTransactionConnection {
   const guardedConnection: DatabaseTransactionConnection = Object.freeze({
+    [databaseTransactionConnectionBrand]: true as const,
     get open(): boolean {
       guard.assertActive()
       return connection.open
@@ -199,6 +202,8 @@ function createGuardedTransactionConnection(
       return guardedConnection
     }
   })
+
+  registerDatabaseTransactionConnection(guardedConnection)
 
   return guardedConnection
 }

@@ -35,20 +35,46 @@ describe('installation repository', () => {
   it('reports fresh first-run state without writing installation data', async () => {
     await withMigratedDatabase(({ connection }) => {
       const repository = createInstallationRepository(connection)
+      const { getState } = repository
       const state = repository.getState()
 
       expect(repository.get()).toBeNull()
       expect(state).toEqual({ status: 'UNINITIALIZED' })
+      expect(getState()).toEqual({ status: 'UNINITIALIZED' })
       expect(Object.isFrozen(state)).toBe(true)
       expect(readTableCount(connection, 'installation')).toBe(0)
       expect(readUserVersion(connection)).toBe(1)
       expect(readLedgerCount(connection)).toBe(1)
 
       insertRawInstallation(connection)
-      expect(repository.getState()).toEqual({
+      expect(getState()).toEqual({
         status: 'INITIALIZED',
         installation: createValidInput()
       })
+    })
+  })
+
+  it('keeps getState bound to SQLite state and trusted row decoding when rebound', async () => {
+    await withMigratedDatabase(({ connection, repository }) => {
+      const fakeThis = {
+        get: () => ({
+          status: 'INITIALIZED',
+          installation: createValidInput({
+            id: secondInstallationId,
+            deploymentName: 'Redirected Deployment',
+            timeZone: 'UTC'
+          })
+        })
+      }
+
+      expect(repository.getState.call(fakeThis)).toEqual({ status: 'UNINITIALIZED' })
+
+      insertRawInstallation(connection, { timezone: '+05:30' })
+
+      const error = captureError(() => repository.getState.apply(fakeThis))
+
+      expect(error).toBeInstanceOf(RepositoryDataIntegrityError)
+      expectSafeRepositoryError(error)
     })
   })
 
@@ -93,6 +119,45 @@ describe('installation repository', () => {
       } finally {
         reopened.close()
       }
+    })
+  })
+
+  it('refuses raw SQLite connections for installation writes without inserting a row', async () => {
+    await withMigratedDatabase(({ connection, repository }) => {
+      connection.exec('BEGIN IMMEDIATE')
+      try {
+        const error = captureError(() =>
+          repository.insert(
+            connection as unknown as DatabaseTransactionConnection,
+            createValidInput()
+          )
+        )
+
+        expect(error).toBeInstanceOf(DatabaseTransactionStateError)
+        expectSafeRepositoryError(error)
+        expect(readTableCount(connection, 'installation')).toBe(0)
+        expect(connection.inTransaction).toBe(true)
+      } finally {
+        if (connection.inTransaction) {
+          connection.exec('ROLLBACK')
+        }
+      }
+
+      expect(connection.inTransaction).toBe(false)
+      expect(readTableCount(connection, 'installation')).toBe(0)
+    })
+  })
+
+  it('refuses fabricated structural transaction connections before SQL execution', async () => {
+    await withMigratedDatabase(({ connection, repository }) => {
+      const fabricatedConnection = createFabricatedScopedConnection(connection)
+
+      const error = captureError(() => repository.insert(fabricatedConnection, createValidInput()))
+
+      expect(error).toBeInstanceOf(DatabaseTransactionStateError)
+      expectSafeRepositoryError(error)
+      expect(readTableCount(connection, 'installation')).toBe(0)
+      expect(connection.inTransaction).toBe(false)
     })
   })
 
@@ -174,6 +239,7 @@ describe('installation repository', () => {
         { id: 'not-a-uuid' },
         { created_at: 'not-a-timestamp' },
         { timezone: 'Invalid/Zone' },
+        { timezone: '+05:30' },
         { created_at: later, updated_at: earlier }
       ] as const
 
@@ -218,45 +284,52 @@ describe('installation repository', () => {
     expectSafeRepositoryError(error)
   })
 
-  it('maps write and verification failures to safe write errors', () => {
+  it('maps authentic scoped write and verification failures to safe write errors', () => {
     const input = createValidInput()
-    const insertFailure = new Error('C:\\secret\\health-screening.sqlite3 INSERT installation')
+    const insertFailure = new Error(
+      'raw driver refused C:\\secret\\health-screening.sqlite3 INSERT installation'
+    )
     insertFailure.name = 'C:\\secret\\SqliteError'
-    const writeFailureConnection = createFakeScopedConnection({
+    const writeFailureConnection = createFakeExecutorConnection({
       runInsert: () => {
         throw insertFailure
       }
     })
 
     const writeError = captureError(() =>
-      createInstallationRepository({} as Database.Database).insert(writeFailureConnection, input)
+      createExecutorForConnection(writeFailureConnection).run((context) =>
+        createInstallationRepository({} as Database.Database).insert(context.connection, input)
+      )
     )
 
     expect(writeError).toBeInstanceOf(RepositoryWriteError)
     expect((writeError as RepositoryWriteError).errorType).toBe('UnknownError')
     expectSafeRepositoryError(writeError)
+    expect(writeFailureConnection.inTransaction).toBe(false)
 
-    const verificationFailure = new Error('C:\\secret\\verify.sqlite3 SELECT installation')
+    const verificationFailure = new Error(
+      'raw driver refused C:\\secret\\verify.sqlite3 SELECT installation'
+    )
     verificationFailure.name = 'C:\\secret\\VerifyError'
-    const verificationFailureConnection = createFakeScopedConnection({
+    const verificationFailureConnection = createFakeExecutorConnection({
       getAfterInsert: () => {
         throw verificationFailure
       }
     })
 
     const verificationError = captureError(() =>
-      createInstallationRepository({} as Database.Database).insert(
-        verificationFailureConnection,
-        input
+      createExecutorForConnection(verificationFailureConnection).run((context) =>
+        createInstallationRepository({} as Database.Database).insert(context.connection, input)
       )
     )
 
     expect(verificationError).toBeInstanceOf(RepositoryWriteError)
     expect((verificationError as RepositoryWriteError).errorType).toBe('UnknownError')
     expectSafeRepositoryError(verificationError)
+    expect(verificationFailureConnection.inTransaction).toBe(false)
   })
 
-  it('lets expired HSD-008 scoped connection protection block late writes', async () => {
+  it('lets expired HSD-008 scoped connection protection block invalid late writes first', async () => {
     await withMigratedDatabase(({ connection, repository, executor }) => {
       let capturedConnection: DatabaseTransactionConnection | undefined
 
@@ -266,10 +339,23 @@ describe('installation repository', () => {
       })
 
       const error = captureError(() =>
-        repository.insert(capturedConnection!, createValidInput({ id: secondInstallationId }))
+        repository.insert(
+          capturedConnection!,
+          createUncheckedInput({
+            ...createValidRawInput({
+              id: 'not-a-uuid',
+              deploymentName: 'Secret Deployment',
+              timeZone: '+05:30',
+              createdAt: '2026-07-29T12:34:56.789Z'
+            }),
+            updatedAt: later
+          })
+        )
       )
 
       expect(error).toBeInstanceOf(DatabaseTransactionStateError)
+      expect(error).not.toBeInstanceOf(RepositoryValidationError)
+      expectSafeRepositoryError(error)
       expect(readTableCount(connection, 'installation')).toBe(0)
       expect(connection.inTransaction).toBe(false)
     })
@@ -277,16 +363,19 @@ describe('installation repository', () => {
 
   it('uses explicit SQL without transaction control statements', () => {
     const preparedSql: string[] = []
-    const scopedConnection = createFakeScopedConnection({
+    const connection = createFakeExecutorConnection({
       recordSql: (sql) => preparedSql.push(sql)
     })
 
-    const record = createInstallationRepository({} as Database.Database).insert(
-      scopedConnection,
-      createValidInput()
+    const record = createExecutorForConnection(connection).run((context) =>
+      createInstallationRepository({} as Database.Database).insert(
+        context.connection,
+        createValidInput()
+      )
     )
 
     expect(record.id).toBe(installationId)
+    expect(connection.inTransaction).toBe(false)
     expect(preparedSql.length).toBeGreaterThanOrEqual(3)
     expect(preparedSql.join('\n')).toContain('singleton_id')
     expect(preparedSql.join('\n')).toContain('WHERE singleton_id = 1')
@@ -317,7 +406,7 @@ interface RawInstallationRow {
   updated_at: string
 }
 
-interface FakeScopedConnectionOptions {
+interface FakeExecutorConnectionOptions {
   recordSql?: (sql: string) => void
   runInsert?: () => void
   getAfterInsert?: () => unknown
@@ -392,15 +481,59 @@ function createUncheckedInput(
   return input as CreateInstallationInput
 }
 
-function createFakeScopedConnection(
-  options: FakeScopedConnectionOptions = {}
-): DatabaseTransactionConnection {
-  let row: RawInstallationRow | null = null
-  let selectCount = 0
+function createExecutorForConnection(connection: Database.Database): DatabaseTransactionExecutor {
+  return createDatabaseTransactionExecutor({
+    connection,
+    idGenerator: createFixedIdGenerator(),
+    clock: createFixedClock(),
+    logger: { error: vi.fn<(message: string) => void>() }
+  })
+}
 
+function createFabricatedScopedConnection(
+  connection: Database.Database
+): DatabaseTransactionConnection {
   return {
     open: true,
     inTransaction: true,
+    prepare(source: string) {
+      return connection.prepare(source) as unknown as ReturnType<
+        DatabaseTransactionConnection['prepare']
+      >
+    },
+    exec(): DatabaseTransactionConnection {
+      throw new Error(
+        'raw driver refused C:\\secret\\health-screening.sqlite3 ROLLBACK installation'
+      )
+    }
+  } as unknown as DatabaseTransactionConnection
+}
+
+function createFakeExecutorConnection(
+  options: FakeExecutorConnectionOptions = {}
+): Database.Database {
+  let row: RawInstallationRow | null = null
+  let selectCount = 0
+  let inTransaction = false
+
+  return {
+    open: true,
+    get inTransaction(): boolean {
+      return inTransaction
+    },
+    exec(source: string): void {
+      if (source === 'BEGIN IMMEDIATE') {
+        inTransaction = true
+        return
+      }
+
+      if (source === 'COMMIT' || source === 'ROLLBACK') {
+        inTransaction = false
+        return
+      }
+
+      throw new Error('raw driver refused C:\\secret\\health-screening.sqlite3 transaction control')
+    },
     prepare(source: string) {
       options.recordSql?.(source)
 
@@ -452,11 +585,8 @@ function createFakeScopedConnection(
           return this
         }
       }
-    },
-    exec() {
-      throw new Error('Repository must not execute transaction control SQL.')
     }
-  } as DatabaseTransactionConnection
+  } as unknown as Database.Database
 }
 
 function createFixedIdGenerator(): EntityIdGenerator {
@@ -571,16 +701,35 @@ function quoteIdentifier(identifier: string): string {
 }
 
 function expectSafeRepositoryError(error: unknown): void {
+  const serialized = JSON.stringify(error)
+
   expect(error).not.toHaveProperty('cause')
   expect((error as Error).stack).toBeUndefined()
-  expect(JSON.stringify(error)).not.toContain('stack')
-  expect(JSON.stringify(error)).not.toContain('secret')
-  expect(JSON.stringify(error)).not.toContain('SELECT')
-  expect(JSON.stringify(error)).not.toContain('installation')
-  expect(JSON.stringify(error)).not.toContain(installationId)
-  expect(JSON.stringify(error)).not.toContain(now)
-  expect(JSON.stringify(error)).not.toContain('Cameroon Pilot')
-  expect(JSON.stringify(error)).not.toContain('Africa/Douala')
+  expect(serialized).not.toContain('stack')
+
+  for (const unsafeFragment of [
+    'secret',
+    'C:\\',
+    'health-screening.sqlite3',
+    'raw driver refused',
+    'SELECT',
+    'INSERT',
+    'installation',
+    installationId,
+    secondInstallationId,
+    now,
+    later,
+    earlier,
+    'Cameroon Pilot',
+    'Secret Deployment',
+    'Redirected Deployment',
+    'Africa/Douala',
+    '+01:00',
+    '-05:00',
+    '+05:30'
+  ]) {
+    expect(serialized).not.toContain(unsafeFragment)
+  }
 }
 
 function captureError(action: () => void): unknown {

@@ -48,6 +48,9 @@ describe('installation validation', () => {
       'Africa/Douala ',
       'Africa/ Douala',
       'Invalid/Zone',
+      '+01:00',
+      '-05:00',
+      '+05:30',
       'A'.repeat(65),
       'Africa/\u0000Douala',
       null
@@ -60,6 +63,9 @@ describe('installation validation', () => {
       expect(JSON.stringify(error)).not.toContain('Africa')
       expect(JSON.stringify(error)).not.toContain('Invalid')
       expect(JSON.stringify(error)).not.toContain('Douala')
+      expect(JSON.stringify(error)).not.toContain('+01:00')
+      expect(JSON.stringify(error)).not.toContain('-05:00')
+      expect(JSON.stringify(error)).not.toContain('+05:30')
     }
   })
 })

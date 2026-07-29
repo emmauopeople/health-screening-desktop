@@ -30,7 +30,12 @@ type PreparedDatabaseTransactionStatement<
   Result
 > = DatabaseTransactionStatement<DatabaseTransactionBindParameters<BindParameters>, Result>
 
+export const databaseTransactionConnectionBrand: unique symbol = Symbol(
+  'DatabaseTransactionConnection'
+)
+
 export interface DatabaseTransactionConnection {
+  readonly [databaseTransactionConnectionBrand]: true
   readonly open: boolean
   readonly inTransaction: boolean
   prepare<BindParameters extends unknown[] | object = unknown[], Result = unknown>(

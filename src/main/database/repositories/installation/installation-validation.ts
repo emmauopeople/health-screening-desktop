@@ -6,6 +6,7 @@ import type { DeploymentName, IanaTimeZone } from './installation-types'
 const deploymentNameMaximumCodePoints = 120
 const timezoneMaximumLength = 64
 const asciiVisiblePattern = /^[\x21-\x7e]+$/u
+const fixedOffsetTimeZonePattern = /^[+-]\d{2}:\d{2}$/u
 
 export function parseDeploymentName(value: unknown): DeploymentName {
   if (typeof value !== 'string') {
@@ -50,9 +51,20 @@ export function parseIanaTimeZone(value: unknown): IanaTimeZone {
   }
 
   try {
-    return new Intl.DateTimeFormat('en-US', { timeZone: candidate }).resolvedOptions()
-      .timeZone as IanaTimeZone
+    const resolvedTimeZone = new Intl.DateTimeFormat('en-US', {
+      timeZone: candidate
+    }).resolvedOptions().timeZone
+
+    if (fixedOffsetTimeZonePattern.test(resolvedTimeZone)) {
+      throw new RepositoryValidationError()
+    }
+
+    return resolvedTimeZone as IanaTimeZone
   } catch (error) {
+    if (error instanceof RepositoryValidationError) {
+      throw new RepositoryValidationError(error.errorType)
+    }
+
     throw new RepositoryValidationError(getErrorType(error))
   }
 }
