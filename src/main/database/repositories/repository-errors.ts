@@ -8,6 +8,7 @@ export type RepositoryErrorCode =
   | 'INSTALLATION_ALREADY_EXISTS'
   | 'LOCAL_USER_ALREADY_EXISTS'
   | 'LOCATION_ALREADY_EXISTS'
+  | 'AUDIT_EVENT_ALREADY_EXISTS'
 
 type RepositoryErrorName =
   | 'RepositoryValidationError'
@@ -17,6 +18,7 @@ type RepositoryErrorName =
   | 'InstallationAlreadyExistsError'
   | 'LocalUserAlreadyExistsError'
   | 'LocationAlreadyExistsError'
+  | 'AuditEventAlreadyExistsError'
 
 class ControlledRepositoryError extends Error {
   readonly code: RepositoryErrorCode
@@ -113,6 +115,17 @@ export class LocationAlreadyExistsError extends ControlledRepositoryError {
   }
 }
 
+export class AuditEventAlreadyExistsError extends ControlledRepositoryError {
+  constructor(errorType?: string) {
+    super(
+      'AuditEventAlreadyExistsError',
+      'AUDIT_EVENT_ALREADY_EXISTS',
+      'Audit event already exists.',
+      errorType
+    )
+  }
+}
+
 export type RepositoryError =
   | RepositoryValidationError
   | RepositoryReadError
@@ -121,6 +134,7 @@ export type RepositoryError =
   | InstallationAlreadyExistsError
   | LocalUserAlreadyExistsError
   | LocationAlreadyExistsError
+  | AuditEventAlreadyExistsError
 
 export function isRepositoryError(error: unknown): error is RepositoryError {
   return (
@@ -130,7 +144,8 @@ export function isRepositoryError(error: unknown): error is RepositoryError {
     error instanceof RepositoryDataIntegrityError ||
     error instanceof InstallationAlreadyExistsError ||
     error instanceof LocalUserAlreadyExistsError ||
-    error instanceof LocationAlreadyExistsError
+    error instanceof LocationAlreadyExistsError ||
+    error instanceof AuditEventAlreadyExistsError
   )
 }
 
@@ -159,7 +174,11 @@ export function rebuildRepositoryError(error: RepositoryError): RepositoryError 
     return new LocalUserAlreadyExistsError(error.errorType)
   }
 
-  return new LocationAlreadyExistsError(error.errorType)
+  if (error instanceof LocationAlreadyExistsError) {
+    return new LocationAlreadyExistsError(error.errorType)
+  }
+
+  return new AuditEventAlreadyExistsError(error.errorType)
 }
 
 export function getRepositoryErrorType(error: unknown): string {

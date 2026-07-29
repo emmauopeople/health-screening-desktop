@@ -1,6 +1,6 @@
 # Engineering Standards
 
-HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure. HSD-008 adds main-process entity ID, UTC clock, and transaction boundaries. HSD-009 adds the first main-process typed installation repository and read-only first-run state query. HSD-010 adds a main-process-only asynchronous password credential primitive. HSD-011 adds a typed local-user repository and username identity boundary over the existing users table. HSD-012 adds a typed location repository and location identity boundary over the existing locations table, but still does not add first-run setup, seed data, login, sessions, clinical workflows, IPC, renderer changes, or synchronization.
+HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure. HSD-008 adds main-process entity ID, UTC clock, and transaction boundaries. HSD-009 adds the first main-process typed installation repository and read-only first-run state query. HSD-010 adds a main-process-only asynchronous password credential primitive. HSD-011 adds a typed local-user repository and username identity boundary over the existing users table. HSD-012 adds a typed location repository and location identity boundary over the existing locations table. HSD-013 adds a typed append-only audit-event repository and canonical metadata boundary over the existing audit log table, but still does not add first-run setup, seed data, login, sessions, clinical workflows, IPC, renderer changes, or synchronization.
 
 ## TypeScript
 
@@ -118,6 +118,19 @@ keys, and use deterministic `name_normalized, id` ordering for list reads. They
 must require authentic HSD-008 transaction capabilities for writes, set active
 and update provenance defaults internally, and fail closed on noncanonical
 persisted location names or optional geography text.
+
+Audit event repositories must be append-only and must never update, delete,
+redact, repair, emit, or recursively audit events. They must require authentic
+HSD-008 transaction capabilities before validating or writing, keep installation
+and optional user references SQLite-enforced, and decode rows and lists from
+unknown values with strict descriptor checks.
+
+Audit metadata must be copied into a new bounded graph, sorted
+lexicographically by object key, serialized deterministically, checked against
+the 4,096 byte canonical JSON limit, and deep-frozen before returning records.
+Metadata validation is a shape, size, and inert-text boundary; it is not a PHI
+or sensitive-content detector, and audit metadata must never be logged or
+included in controlled errors.
 
 ## Password Credentials
 

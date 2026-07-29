@@ -1,4 +1,5 @@
 export {
+  AuditEventAlreadyExistsError,
   InstallationAlreadyExistsError,
   LocationAlreadyExistsError,
   RepositoryDataIntegrityError,
@@ -9,6 +10,24 @@ export {
   RepositoryValidationError,
   RepositoryWriteError
 } from './repository-errors'
+export {
+  createAuditEventRepository,
+  parseAuditActionCode,
+  parseAuditEntityType,
+  parseAuditMetadata,
+  parseAuditQueryLimit,
+  parseStoredAuditMetadataJson,
+  type AuditActionCode,
+  type AuditEntityType,
+  type AuditEventRecord,
+  type AuditEventRepository,
+  type AuditMetadata,
+  type AuditMetadataScalar,
+  type AuditMetadataValue,
+  type AuditQueryLimit,
+  type CreateAuditEventInput,
+  type ParsedAuditMetadata
+} from './audit-event'
 export {
   createInstallationRepository,
   parseDeploymentName,
