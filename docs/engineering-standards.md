@@ -1,6 +1,6 @@
 # Engineering Standards
 
-HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure. HSD-008 adds main-process entity ID, UTC clock, and transaction boundaries. HSD-009 adds the first main-process typed installation repository and read-only first-run state query. HSD-010 adds a main-process-only asynchronous password credential primitive, but still does not add first-run setup, seed data, user creation, login, sessions, clinical workflows, IPC, renderer changes, or synchronization.
+HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure. HSD-008 adds main-process entity ID, UTC clock, and transaction boundaries. HSD-009 adds the first main-process typed installation repository and read-only first-run state query, but still does not add first-run setup, seed data, authentication, clinical workflows, IPC, renderer changes, or synchronization.
 
 ## TypeScript
 
@@ -39,11 +39,6 @@ native handle, SQL, migration checksums, schema details, and raw errors must
 never cross into shared, preload, or renderer code or operational logs. The
 exact `better-sqlite3@13.0.2` dependency requires Electron-compatible native
 rebuild and ASAR-unpack review before upgrades.
-
-Password credential code is owned only by `src/main/security/password`. It may
-use built-in Node `crypto` APIs but must not be imported by preload, renderer,
-or shared IPC code, and must not import SQLite, repositories, or transaction
-modules.
 
 ## Database Migrations
 
@@ -104,31 +99,6 @@ Repository errors must use fixed codes and messages. They may include only
 reviewed technical `errorType` values and must not retain raw causes, stacks,
 SQL, paths, row values, UUIDs, timestamps, deployment names, timezone values, or
 SQLite messages. Repository code must not log.
-
-## Password Credentials
-
-Password derivation and verification must use the HSD-010 password credential
-service under `src/main/security/password`. Production code must use
-asynchronous Node `crypto.scrypt` with the reviewed frozen `scrypt-v1`
-parameters and a fresh 32-byte salt from `randomBytes`; do not use
-`scryptSync`, lower parameters, dependency-based KDFs, environment overrides, or
-renderer-supplied crypto settings.
-
-Password parsing preserves exact input. Do not trim, lowercase, case-fold,
-Unicode-normalize, collapse whitespace, or add composition rules inside the
-credential primitive. Leading/trailing spaces and composed/decomposed Unicode
-sequences remain distinct credentials.
-
-Hashing and verification return promises and must not run inside
-`DatabaseTransactionExecutor.run()`. Later services must derive or verify
-credentials before opening synchronous SQLite transactions, then re-check
-workflow invariants inside the transaction.
-
-Password modules must not log. Controlled password errors use fixed codes and
-messages and must not retain plaintext, salts, password hashes, derived keys,
-raw crypto messages, causes, stacks, paths, SQL, or input metadata. Mutable
-password, salt, and key buffers should be zero-filled on a best-effort basis
-after use.
 
 ## Formatting And Linting
 
