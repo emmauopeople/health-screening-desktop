@@ -12,6 +12,10 @@ This repository separates Electron process responsibilities so trusted applicati
 
 `src/main` owns trusted desktop application behavior. Future work will place application lifecycle code, local configuration, database access, protocol logic, printing, logging, security, and sync/backup orchestration here.
 
+`src/main/foundation` owns main-process-only primitives for local data writes,
+including validated UUID v4 entity IDs and UTC timestamps. These providers are
+injectable for tests but are not shared with preload or renderer code.
+
 `src/main/database` owns the single main-process SQLite runtime. It resolves the
 userData-based database path, applies startup pragmas, runs numbered migrations,
 reports live health, and closes the connection during application shutdown. It
@@ -22,6 +26,10 @@ paths to shared, preload, or renderer code.
 contracts, checksum canonicalization, manifest validation, production migration
 runner, and `sql/` directory. SQL files are imported as raw bundled assets; the
 application must not discover migrations by scanning runtime directories.
+
+`src/main/database/transaction` contains the synchronous write transaction
+executor. Future repositories must use this boundary for `BEGIN IMMEDIATE`,
+commit, rollback, entity ID, and UTC timestamp coordination.
 
 The renderer must not import from `src/main`.
 
@@ -55,4 +63,7 @@ Shared files must not depend on Electron, Node-only APIs, browser globals, or pr
 
 ## Tests
 
-`tests` is reserved for future automated coverage. Unit, integration, e2e, fixtures, and helper directories are separated so later test tooling can be added without changing repository layout.
+`tests` contains automated coverage. Unit tests cover deterministic contracts
+and process-boundary helpers. Integration tests use temporary file-backed SQLite
+databases for runtime, migration, schema, and transaction behavior. Test helpers
+must not write SQLite, WAL, or SHM artifacts into the repository.

@@ -12,8 +12,10 @@ controlled migration compatibility or execution failure.
 ## Conventions
 
 - Every application table and `schema_migrations` is `STRICT`.
-- Entity IDs are future service-supplied UUID text values.
-- Timestamps are UTC RFC 3339 text values supplied by future services.
+- Entity IDs are canonical lowercase UUID v4 text values generated and
+  validated in the main process.
+- Timestamps are UTC RFC 3339 text values generated and validated in the main
+  process.
 - Date-only values use `YYYY-MM-DD` text.
 - Booleans are `INTEGER` with `0` or `1`; nullable booleans use `NULL` for
   unknown.

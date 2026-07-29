@@ -1,6 +1,6 @@
 # Engineering Standards
 
-HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure, but still does not add repositories, seed data, authentication, clinical workflows, or synchronization.
+HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure. HSD-008 adds main-process entity ID, UTC clock, and transaction boundaries, but still does not add repositories, seed data, authentication, clinical workflows, or synchronization.
 
 ## TypeScript
 
@@ -60,6 +60,22 @@ Every application table introduced by a migration must be `STRICT`. Booleans use
 integer 0/1 checks, JSON text uses `json_valid` checks, and clinical or audit
 relationships use restrict foreign keys rather than cascade deletes unless a
 later approved task explicitly changes that rule.
+
+## Database Transactions
+
+Future write paths must use the main-process transaction executor from
+`src/main/database/transaction`. Repository code must not open ad hoc
+transactions, create savepoints, run async work inside a transaction callback, or
+nest executor calls. Each accepted write boundary runs synchronously under
+`BEGIN IMMEDIATE` and returns only after commit.
+
+Entity IDs and UTC timestamps for local writes come from
+`src/main/foundation`. Do not accept renderer-generated IDs or timestamps as
+trusted values without main-process validation.
+
+Transaction and foundation errors must remain controlled. Do not attach raw
+native errors as causes, expose stacks, or log SQL text, bind values, row data,
+checksums, database paths, or raw driver messages.
 
 ## Formatting And Linting
 
