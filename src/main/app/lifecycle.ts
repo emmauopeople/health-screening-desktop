@@ -1,12 +1,15 @@
-import { app, session } from 'electron'
+import { app, ipcMain, session } from 'electron'
 import { join } from 'node:path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 
+import { createElectronApplicationInfoProvider } from '@main/app/application-info'
 import {
   createOrFocusMainWindow,
   hasMainWindow,
   type MainWindowConfiguration
 } from '@main/app/main-window'
+import { createRendererNavigationPolicy } from '@main/app/navigation-policy'
+import { registerApplicationIpcHandlers } from '@main/ipc/register-handlers'
 import { configureSessionSecurity } from '@main/security/session-security'
 import icon from '../../../resources/icon.png?asset'
 
@@ -18,7 +21,12 @@ export function startApplicationLifecycle(): void {
     return
   }
 
-  const configuration = createMainWindowConfiguration()
+  const baseConfiguration = createMainWindowConfiguration()
+  const navigationPolicy = createRendererNavigationPolicy(baseConfiguration)
+  const configuration: MainWindowConfiguration = {
+    ...baseConfiguration,
+    navigationPolicy
+  }
 
   app
     .whenReady()
@@ -39,6 +47,14 @@ export function startApplicationLifecycle(): void {
         isDevelopment: configuration.isDevelopment,
         rendererUrl: configuration.rendererUrl
       })
+      const applicationInfoProvider = createElectronApplicationInfoProvider(app)
+      const disposeIpcHandlers = registerApplicationIpcHandlers(ipcMain, {
+        navigationPolicy,
+        applicationInfoProvider,
+        logger: console
+      })
+
+      app.once('will-quit', disposeIpcHandlers)
 
       await createOrFocusMainWindow(configuration)
 
@@ -62,7 +78,7 @@ export function startApplicationLifecycle(): void {
   })
 }
 
-function createMainWindowConfiguration(): MainWindowConfiguration {
+function createMainWindowConfiguration(): Omit<MainWindowConfiguration, 'navigationPolicy'> {
   const rendererUrl = process.env['ELECTRON_RENDERER_URL']
 
   return {

@@ -46,7 +46,7 @@ ESLint enforces TypeScript, React hook, React refresh, and renderer-boundary rul
 
 Unit tests live under `tests/unit` and use Vitest in a deterministic Node environment. Test files use the `*.test.ts` naming pattern.
 
-Current unit tests cover shared bootstrap contracts and copy-return behavior without importing Electron or touching the filesystem.
+Current unit tests cover shared IPC contracts, main-process sender policy, application IPC handlers, preload wrappers, and security regressions without launching Electron.
 
 ## Verification
 
@@ -91,3 +91,41 @@ After building, verify the packaged CSP output:
 Select-String -Path out/renderer/index.html -Pattern 'Content-Security-Policy' -AllMatches
 Select-String -Path out/renderer/index.html -Pattern "unsafe-eval|unsafe-inline|connect-src[^;]*" -AllMatches
 ```
+
+## Typed IPC And Preload Bridge
+
+HSD-005 permits exactly two renderer-to-main operations:
+
+- `app.getInfo()` on `health-screening:app:get-info` with request `{}` and safe
+  metadata response `{ applicationName, applicationVersion, platform, architecture, packaged }`.
+- `app.getHealth()` on `health-screening:app:get-health` with request `{}` and
+  shell-health response `{ status: 'ready', ipc: 'available', database: 'not-configured', clinicalFeatures: 'not-implemented' }`.
+
+All IPC request, response, and result schemas live under `src/shared/ipc`.
+Schemas are authoritative and TypeScript types are inferred from them. Runtime
+validation is required in main before trusted execution, in main before success
+return, and in preload before renderer delivery.
+
+Every main handler validates `event.senderFrame`, requires the sender to be the
+WebContents main frame, and authorizes the frame URL through the same HSD-003
+`NavigationPolicy` used by the main window. Do not authorize by channel name,
+process ID, a development boolean, or the existence of a BrowserWindow.
+
+The renderer receives only `window.healthScreening.app.getInfo` and
+`window.healthScreening.app.getHealth`. Do not expose raw `ipcRenderer`, generic
+`invoke` or `send` wrappers, synchronous IPC, event objects, arbitrary channels,
+Node globals, filesystem APIs, `process`, `Buffer`, or `require`.
+
+IPC handlers are registered after session security configuration and before
+renderer loading. Registration must dispose and replace only the application
+owned HSD-005 handlers so tests, reloads, or lifecycle recovery cannot
+accumulate duplicates.
+
+Future IPC operations require a threat review, one namespaced channel, strict
+schemas, sender authorization, a main handler, one explicit preload method,
+documentation, and tests. When authentication exists, role authorization must be
+reviewed before exposing the operation.
+
+Do not log IPC payloads or expose technical failures to the renderer. Logs may
+include channel name, safe error code, and exception type only. Renderer-visible
+errors must use the `IpcResult` envelope and stable safe messages.

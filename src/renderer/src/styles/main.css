@@ -102,6 +102,20 @@ h1 {
   line-height: 1.6;
 }
 
+.foundation-metadata,
+.foundation-error {
+  max-width: 58ch;
+  margin: 10px 0 0;
+  color: var(--color-muted);
+  font-size: 0.94rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.foundation-error {
+  color: #8a3a2f;
+}
+
 .foundation-status {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
