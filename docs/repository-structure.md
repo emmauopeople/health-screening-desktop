@@ -12,6 +12,11 @@ This repository separates Electron process responsibilities so trusted applicati
 
 `src/main` owns trusted desktop application behavior. Future work will place application lifecycle code, local configuration, database access, protocol logic, printing, logging, security, and sync/backup orchestration here.
 
+`src/main/database` owns the single main-process SQLite runtime. It resolves the
+userData-based database path, applies startup pragmas, reports live health, and
+closes the connection during application shutdown. It does not expose SQL,
+database handles, or paths to shared, preload, or renderer code.
+
 The renderer must not import from `src/main`.
 
 ## Preload Process

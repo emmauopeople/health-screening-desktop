@@ -7,6 +7,7 @@ import {
   type ApplicationInfoProvider
 } from '@main/app/application-info'
 import { isIpcSenderAllowed, type IpcSenderValidationEvent } from '@main/ipc/sender-policy'
+import type { DatabaseHealthProvider } from '@main/database/database-health'
 import {
   appGetHealthRequestSchema,
   appGetInfoRequestSchema,
@@ -31,6 +32,7 @@ export interface IpcOperationalLogger {
 export interface AppIpcHandlerDependencies {
   navigationPolicy: NavigationPolicy
   applicationInfoProvider: ApplicationInfoProvider
+  databaseHealthProvider: DatabaseHealthProvider
   getInfo?: () => unknown | Promise<unknown>
   getHealth?: () => unknown | Promise<unknown>
   logger?: IpcOperationalLogger
@@ -44,8 +46,9 @@ export interface AppIpcHandlers {
 export function createAppIpcHandlers({
   navigationPolicy,
   applicationInfoProvider,
+  databaseHealthProvider,
   getInfo = () => getApplicationInfo(applicationInfoProvider),
-  getHealth = () => getApplicationHealth(),
+  getHealth = () => getApplicationHealth(databaseHealthProvider),
   logger = console
 }: AppIpcHandlerDependencies): AppIpcHandlers {
   return {

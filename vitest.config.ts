@@ -5,13 +5,14 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
-    include: ['tests/unit/**/*.test.ts']
+    include: ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts']
   },
   resolve: {
     alias: {
       '@main': resolve(__dirname, 'src/main'),
       '@preload': resolve(__dirname, 'src/preload'),
-      '@shared': resolve(__dirname, 'src/shared')
+      '@shared': resolve(__dirname, 'src/shared'),
+      '@renderer': resolve(__dirname, 'src/renderer/src')
     }
   }
 })

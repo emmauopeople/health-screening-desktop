@@ -14,7 +14,7 @@ const validInfo: AppInfo = {
 const validHealth: AppHealth = {
   status: 'ready',
   ipc: 'available',
-  database: 'not-configured',
+  database: 'ready',
   clinicalFeatures: 'not-implemented'
 }
 

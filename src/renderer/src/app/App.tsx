@@ -1,32 +1,27 @@
 import { useEffect, useState } from 'react'
-import type { AppGetHealthResult, AppGetInfoResult, AppHealth, AppInfo } from '@shared/ipc'
-
-type AppLoadState =
-  | {
-      status: 'loading'
-    }
-  | {
-      status: 'ready'
-      info: AppInfo
-      health: AppHealth
-    }
-  | {
-      status: 'error'
-      message: string
-    }
+import type { AppGetHealthResult, AppGetInfoResult, HealthScreeningApi } from '@shared/ipc'
+import type { AppInfo } from '@shared/ipc'
+import {
+  getClinicalFeatureText,
+  getDatabaseText,
+  getIpcText,
+  type AppLoadState
+} from './status-mapping'
 
 const fallbackApplicationName: AppInfo['applicationName'] = 'Health Screening Offline Desktop'
 
 function App(): React.JSX.Element {
   const [loadState, setLoadState] = useState<AppLoadState>({ status: 'loading' })
-
   useEffect(() => {
     let isMounted = true
 
     async function loadFoundationState(): Promise<void> {
+      const healthScreening = (
+        window as unknown as Window & { healthScreening: HealthScreeningApi }
+      ).healthScreening
       const [infoResult, healthResult] = await Promise.all([
-        window.healthScreening.app.getInfo(),
-        window.healthScreening.app.getHealth()
+        healthScreening.app.getInfo(),
+        healthScreening.app.getHealth()
       ])
 
       if (!isMounted) {
@@ -125,42 +120,6 @@ function getMetadataText(loadState: AppLoadState): string {
   const runtime = loadState.info.packaged ? 'packaged preview' : 'development runtime'
 
   return `Version ${loadState.info.applicationVersion} | ${loadState.info.platform}/${loadState.info.architecture} | ${runtime}`
-}
-
-function getClinicalFeatureText(loadState: AppLoadState): string {
-  if (loadState.status === 'loading') {
-    return 'Loading'
-  }
-
-  if (loadState.status === 'error') {
-    return 'Unavailable'
-  }
-
-  return loadState.health.clinicalFeatures === 'not-implemented' ? 'Not implemented' : 'Unavailable'
-}
-
-function getDatabaseText(loadState: AppLoadState): string {
-  if (loadState.status === 'loading') {
-    return 'Loading'
-  }
-
-  if (loadState.status === 'error') {
-    return 'Unavailable'
-  }
-
-  return loadState.health.database === 'not-configured' ? 'Not configured' : 'Unavailable'
-}
-
-function getIpcText(loadState: AppLoadState): string {
-  if (loadState.status === 'loading') {
-    return 'Loading'
-  }
-
-  if (loadState.status === 'error') {
-    return 'Unavailable'
-  }
-
-  return loadState.health.ipc === 'available' ? 'Available' : 'Unavailable'
 }
 
 export default App
