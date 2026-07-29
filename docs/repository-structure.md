@@ -16,7 +16,7 @@ The renderer must not import from `src/main`.
 
 ## Preload Process
 
-`src/preload` exposes a narrow typed bridge through `contextBridge`. HSD-001 exposes only bootstrap status metadata. It does not expose raw `ipcRenderer`, generic send/execute APIs, filesystem access, shell access, or business operations.
+`src/preload` exposes a narrow typed bridge through `contextBridge`. HSD-005 exposes only fixed asynchronous application metadata and shell-health methods. It does not expose raw `ipcRenderer`, generic send/execute APIs, filesystem access, shell access, or business operations.
 
 ## Renderer
 

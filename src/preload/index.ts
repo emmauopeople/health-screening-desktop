@@ -1,9 +1,10 @@
-import { contextBridge } from 'electron'
-import { getApplicationStatus, type HealthScreeningApi } from '@shared/contracts/bootstrap'
+import { contextBridge, ipcRenderer } from 'electron'
 
-const healthScreeningApi: HealthScreeningApi = {
-  getApplicationStatus
-}
+import { createHealthScreeningApi } from '@preload/api'
+
+const healthScreeningApi = createHealthScreeningApi((channel, request) =>
+  ipcRenderer.invoke(channel, request)
+)
 
 try {
   contextBridge.exposeInMainWorld('healthScreening', healthScreeningApi)

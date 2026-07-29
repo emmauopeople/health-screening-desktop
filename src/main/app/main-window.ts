@@ -1,17 +1,13 @@
 import { BrowserWindow } from 'electron'
 
-import {
-  createDevelopmentNavigationPolicy,
-  createProductionNavigationPolicy,
-  isNavigationAllowed,
-  type NavigationPolicy
-} from '@main/app/navigation-policy'
+import { isNavigationAllowed, type NavigationPolicy } from '@main/app/navigation-policy'
 import { createMainWindowOptions } from '@main/app/window-options'
 
 export interface MainWindowConfiguration {
   isDevelopment: boolean
   preloadPath: string
   rendererIndexPath: string
+  navigationPolicy: NavigationPolicy
   rendererUrl?: string
   platform?: NodeJS.Platform
   iconPath?: string
@@ -31,7 +27,6 @@ export async function createOrFocusMainWindow(
     return mainWindow
   }
 
-  const navigationPolicy = createNavigationPolicy(configuration)
   const window = new BrowserWindow(
     createMainWindowOptions({
       preloadPath: configuration.preloadPath,
@@ -54,23 +49,11 @@ export async function createOrFocusMainWindow(
   })
 
   attachWindowFailureVisibility(window)
-  attachNavigationGuards(window, navigationPolicy)
+  attachNavigationGuards(window, configuration.navigationPolicy)
 
-  await loadApplication(window, configuration, navigationPolicy)
+  await loadApplication(window, configuration)
 
   return window
-}
-
-function createNavigationPolicy(configuration: MainWindowConfiguration): NavigationPolicy {
-  if (configuration.isDevelopment) {
-    if (!configuration.rendererUrl) {
-      throw new Error('Development renderer URL is not configured.')
-    }
-
-    return createDevelopmentNavigationPolicy(configuration.rendererUrl)
-  }
-
-  return createProductionNavigationPolicy(configuration.rendererIndexPath)
 }
 
 function attachNavigationGuards(window: BrowserWindow, navigationPolicy: NavigationPolicy): void {
@@ -109,11 +92,10 @@ function attachWindowFailureVisibility(window: BrowserWindow): void {
 
 async function loadApplication(
   window: BrowserWindow,
-  configuration: MainWindowConfiguration,
-  navigationPolicy: NavigationPolicy
+  configuration: MainWindowConfiguration
 ): Promise<void> {
   if (configuration.isDevelopment) {
-    await window.loadURL(navigationPolicy.applicationUrl)
+    await window.loadURL(configuration.navigationPolicy.applicationUrl)
     return
   }
 

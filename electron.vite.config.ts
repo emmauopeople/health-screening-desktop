@@ -77,6 +77,9 @@ export default defineConfig({
     }
   },
   preload: {
+    build: {
+      externalizeDeps: false
+    },
     resolve: {
       alias: preloadAlias
     }

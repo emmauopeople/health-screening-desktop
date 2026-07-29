@@ -1,4 +1,4 @@
-import type { HealthScreeningApi } from '@shared/contracts/bootstrap'
+import type { HealthScreeningApi } from '@shared/ipc'
 
 declare global {
   interface Window {

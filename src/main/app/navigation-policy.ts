@@ -14,6 +14,28 @@ export type NavigationPolicy =
       applicationUrl: string
     }
 
+export interface RendererNavigationPolicyInput {
+  isDevelopment: boolean
+  rendererIndexPath: string
+  rendererUrl?: string
+}
+
+export function createRendererNavigationPolicy({
+  isDevelopment,
+  rendererIndexPath,
+  rendererUrl
+}: RendererNavigationPolicyInput): NavigationPolicy {
+  if (isDevelopment) {
+    if (!rendererUrl) {
+      throw new Error('Development renderer URL is not configured.')
+    }
+
+    return createDevelopmentNavigationPolicy(rendererUrl)
+  }
+
+  return createProductionNavigationPolicy(rendererIndexPath)
+}
+
 export function createDevelopmentNavigationPolicy(rendererUrl: string): NavigationPolicy {
   const applicationUrl = parseUrl(rendererUrl)
 
