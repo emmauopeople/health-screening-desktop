@@ -1,7 +1,6 @@
 export type CspDirectives = ReadonlyArray<readonly [directive: string, sources: readonly string[]]>
 
 export const contentSecurityPolicyHeaderName = 'Content-Security-Policy'
-export const viteDevelopmentCspNonce = 'health-screening-vite-dev'
 
 const baseDirectives = [
   ['default-src', ["'none'"]],
@@ -30,7 +29,7 @@ export function createProductionContentSecurityPolicy(): string {
 export function createDevelopmentContentSecurityPolicy(rendererUrl: string): string {
   return serializeContentSecurityPolicy([
     ...baseDirectives.slice(0, 5),
-    ['script-src', ["'self'", `'nonce-${viteDevelopmentCspNonce}'`]],
+    ['script-src', ["'self'"]],
     ['style-src', ["'self'", "'unsafe-inline'"]],
     ...baseDirectives.slice(6, 8),
     ['connect-src', ["'self'", createViteWebSocketOrigin(rendererUrl)]],
@@ -94,11 +93,27 @@ export function withContentSecurityPolicyHeader(
 
 export function injectContentSecurityPolicyMeta(html: string, policy: string): string {
   const cspMetaPattern =
-    /<meta\b(?=[^>]*\bhttp-equiv\s*=\s*["']Content-Security-Policy["'])[^>]*>\s*/gi
+    /<meta\b(?=[^>]*\bhttp-equiv\s*=\s*(?:"Content-Security-Policy"|'Content-Security-Policy'|Content-Security-Policy\b))[^>]*>\s*/gi
   const htmlWithoutExistingCsp = html.replace(cspMetaPattern, '')
   const meta = `    <meta http-equiv="Content-Security-Policy" content="${escapeHtmlAttribute(policy)}" />`
+  const headMatch = /<head\b[^>]*>/i.exec(htmlWithoutExistingCsp)
 
-  return htmlWithoutExistingCsp.replace(/<head>/i, `<head>\n${meta}`)
+  if (!headMatch) {
+    throw new ContentSecurityPolicyInjectionError(
+      'Renderer HTML must include a head element for CSP injection.'
+    )
+  }
+
+  const insertionIndex = headMatch.index + headMatch[0].length
+
+  return `${htmlWithoutExistingCsp.slice(0, insertionIndex)}\n${meta}${htmlWithoutExistingCsp.slice(insertionIndex)}`
+}
+
+export class ContentSecurityPolicyInjectionError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ContentSecurityPolicyInjectionError'
+  }
 }
 
 function escapeHtmlAttribute(value: string): string {

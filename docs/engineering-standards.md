@@ -69,11 +69,12 @@ Development and production use different CSP delivery mechanisms. Development us
 Vite HMR can use its exact same-port WebSocket connection. Production uses a Vite build-time HTML
 transform that injects one CSP meta tag into the packaged renderer HTML.
 
-The only development CSP exceptions are `style-src 'unsafe-inline'` for Vite style injection,
-`script-src 'nonce-health-screening-vite-dev'` for Vite React's development preamble, and
-`connect-src 'self' <exact-websocket-origin>` for the configured loopback renderer port. Development
-must not add script `unsafe-inline`, `unsafe-eval`, broad `ws:` or `wss:` sources, wildcard hosts,
-or all-localhost-port access.
+The only development CSP exceptions are `style-src 'unsafe-inline'` for Vite style injection and
+`connect-src 'self' <exact-websocket-origin>` for the configured loopback renderer port. Vite
+React's development refresh preamble must be loaded as a same-origin external module, so
+development script policy remains `script-src 'self'`. Development must not add script
+`unsafe-inline`, `unsafe-eval`, broad `ws:` or `wss:` sources, wildcard hosts, or
+all-localhost-port access.
 
 Production currently has a no-network renderer policy: `connect-src 'none'`. Later backend or sync
 connectivity must be added through a narrowly reviewed `connect-src` change for the exact required

@@ -1,14 +1,19 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  ContentSecurityPolicyInjectionError,
   contentSecurityPolicyHeaderName,
   createDevelopmentContentSecurityPolicy,
   createProductionContentSecurityPolicy,
   createViteWebSocketOrigin,
   injectContentSecurityPolicyMeta,
-  viteDevelopmentCspNonce,
   withContentSecurityPolicyHeader
 } from '@main/security/content-security-policy'
+import {
+  createDevelopmentReactRefreshPreambleModule,
+  developmentReactRefreshPreamblePath,
+  externalizeInlineReactRefreshPreamble
+} from '@main/security/development-react-refresh-preamble'
 
 describe('content security policy', () => {
   it('creates the strict production policy', () => {
@@ -30,13 +35,36 @@ describe('content security policy', () => {
     const policy = createDevelopmentContentSecurityPolicy('http://localhost:5173/')
 
     expect(policy).toBe(
-      `default-src 'none';base-uri 'none';form-action 'none';object-src 'none';frame-src 'none';script-src 'self' 'nonce-${viteDevelopmentCspNonce}';style-src 'self' 'unsafe-inline';img-src 'self' data:;font-src 'self';connect-src 'self' ws://localhost:5173;worker-src 'none';media-src 'none';manifest-src 'none'`
+      "default-src 'none';base-uri 'none';form-action 'none';object-src 'none';frame-src 'none';script-src 'self';style-src 'self' 'unsafe-inline';img-src 'self' data:;font-src 'self';connect-src 'self' ws://localhost:5173;worker-src 'none';media-src 'none';manifest-src 'none'"
     )
+    expect(policy).not.toContain('nonce-')
     expect(policy).not.toContain("script-src 'self' 'unsafe-inline'")
     expect(policy).not.toContain("'unsafe-eval'")
     expect(policy).not.toContain('connect-src ws:')
     expect(policy).not.toContain('connect-src wss:')
     expect(policy).not.toContain('http://')
+  })
+
+  it('externalizes the React refresh preamble so development scripts remain self-only', () => {
+    const html = `<html><head><script type="module">import { injectIntoGlobalHook } from "/@react-refresh";
+injectIntoGlobalHook(window);
+window.$RefreshReg$ = () => {};
+window.$RefreshSig$ = () => (type) => type;</script><title>App</title></head></html>`
+    const transformed = externalizeInlineReactRefreshPreamble(html)
+
+    expect(transformed).toContain(
+      `<script type="module" src="${developmentReactRefreshPreamblePath}"></script>`
+    )
+    expect(transformed).not.toContain('injectIntoGlobalHook(window)')
+    expect(createDevelopmentReactRefreshPreambleModule()).toBe(
+      [
+        'import { injectIntoGlobalHook } from "/@react-refresh";',
+        'injectIntoGlobalHook(window);',
+        'window.$RefreshReg$ = () => {};',
+        'window.$RefreshSig$ = () => (type) => type;',
+        ''
+      ].join('\n')
+    )
   })
 
   it('converts the renderer origin to the exact Vite WebSocket origin', () => {
@@ -68,8 +96,33 @@ describe('content security policy', () => {
     ])
   })
 
-  it('injects exactly one production CSP meta element into renderer HTML', () => {
-    const html = `<html><head><meta http-equiv="Content-Security-Policy" content="old" /><title>App</title></head><body></body></html>`
+  it('injects exactly one production CSP meta element into a valid head', () => {
+    const html = `<html><head><title>App</title></head><body></body></html>`
+    const transformed = injectContentSecurityPolicyMeta(
+      html,
+      createProductionContentSecurityPolicy()
+    )
+
+    expect(transformed.match(/Content-Security-Policy/g)).toHaveLength(1)
+    expect(transformed).toContain(
+      `<meta http-equiv="Content-Security-Policy" content="${createProductionContentSecurityPolicy()}" />`
+    )
+  })
+
+  it('injects production CSP after a head tag with attributes', () => {
+    const transformed = injectContentSecurityPolicyMeta(
+      `<html><head data-app="renderer"><title>App</title></head></html>`,
+      createProductionContentSecurityPolicy()
+    )
+
+    expect(transformed).toContain(
+      `<head data-app="renderer">\n    <meta http-equiv="Content-Security-Policy"`
+    )
+    expect(transformed.match(/Content-Security-Policy/g)).toHaveLength(1)
+  })
+
+  it('replaces an existing CSP meta element with the application CSP', () => {
+    const html = `<html><head><meta data-old="true" http-equiv="Content-Security-Policy" content="old" /><title>App</title></head><body></body></html>`
     const transformed = injectContentSecurityPolicyMeta(
       html,
       createProductionContentSecurityPolicy()
@@ -80,5 +133,21 @@ describe('content security policy', () => {
       `<meta http-equiv="Content-Security-Policy" content="${createProductionContentSecurityPolicy()}" />`
     )
     expect(transformed).not.toContain('content="old"')
+    expect(transformed).not.toContain('data-old="true"')
+  })
+
+  it('rejects HTML without a head element', () => {
+    expect(() =>
+      injectContentSecurityPolicyMeta(
+        `<html><body><div id="root"></div></body></html>`,
+        createProductionContentSecurityPolicy()
+      )
+    ).toThrow(ContentSecurityPolicyInjectionError)
+    expect(() =>
+      injectContentSecurityPolicyMeta(
+        `<html><body><div id="root"></div></body></html>`,
+        createProductionContentSecurityPolicy()
+      )
+    ).toThrow('Renderer HTML must include a head element for CSP injection.')
   })
 })
