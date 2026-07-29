@@ -6,7 +6,7 @@ function App(): React.JSX.Element {
       <section className="foundation-panel">
         <div className="foundation-eyebrow">{status.status}</div>
         <h1 id="application-title">{status.applicationName}</h1>
-        <p className="foundation-statement">No clinical features are implemented yet.</p>
+        <p className="foundation-statement">No clinical features are implemented yet. HMR test.</p>
         <dl className="foundation-status" aria-label="Bootstrap scope status">
           <div>
             <dt>Clinical workflows</dt>
