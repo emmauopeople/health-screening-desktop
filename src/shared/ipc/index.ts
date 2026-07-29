@@ -9,7 +9,6 @@ export {
   ipcFailureResultSchema,
   safeIpcErrorMessages,
   type IpcErrorCode,
-  type IpcResult,
   type IpcSafeError
 } from './result'
 export {
@@ -20,7 +19,9 @@ export {
   appHealthSchema,
   appInfoSchema,
   type AppGetHealthRequest,
+  type AppGetHealthResult,
   type AppGetInfoRequest,
+  type AppGetInfoResult,
   type AppHealth,
   type AppInfo,
   type HealthScreeningApi

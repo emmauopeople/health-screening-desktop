@@ -11,6 +11,8 @@ import {
   createIpcSuccess,
   ipcChannels,
   ipcFailureResultSchema,
+  type AppGetHealthResult,
+  type AppGetInfoResult,
   type AppHealth,
   type AppInfo
 } from '@shared/ipc'
@@ -89,6 +91,45 @@ describe('shared IPC contracts', () => {
         }
       }).success
     ).toBe(false)
+    expect(
+      ipcFailureResultSchema.safeParse({
+        ok: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'arbitrary renderer-visible message'
+        }
+      }).success
+    ).toBe(false)
+    expect(
+      ipcFailureResultSchema.safeParse({
+        ok: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'This operation is unavailable from the current window.'
+        }
+      }).success
+    ).toBe(false)
+    expect(
+      ipcFailureResultSchema.safeParse({
+        ok: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'The application could not complete the request. C:\\secret\\app'
+        }
+      }).success
+    ).toBe(false)
+  })
+
+  it('keeps operation result types inferred from their schemas', () => {
+    const infoResult: AppGetInfoResult = appGetInfoResultSchema.parse(
+      createIpcSuccess(validAppInfo)
+    )
+    const healthResult: AppGetHealthResult = appGetHealthResultSchema.parse(
+      createIpcSuccess(validAppHealth)
+    )
+
+    expect(infoResult).toEqual(createIpcSuccess(validAppInfo))
+    expect(healthResult).toEqual(createIpcSuccess(validAppHealth))
   })
 
   it('keeps approved response data structured-clone safe', () => {

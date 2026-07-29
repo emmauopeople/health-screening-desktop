@@ -15,11 +15,12 @@ import {
   createIpcFailure,
   createIpcSuccess,
   ipcChannels,
+  type AppGetHealthResult,
+  type AppGetInfoResult,
   type AppHealth,
   type AppInfo,
   type AppIpcChannel,
-  type IpcErrorCode,
-  type IpcResult
+  type IpcErrorCode
 } from '@shared/ipc'
 
 export interface IpcOperationalLogger {
@@ -36,8 +37,8 @@ export interface AppIpcHandlerDependencies {
 }
 
 export interface AppIpcHandlers {
-  getInfo(event: IpcSenderValidationEvent, request: unknown): Promise<IpcResult<AppInfo>>
-  getHealth(event: IpcSenderValidationEvent, request: unknown): Promise<IpcResult<AppHealth>>
+  getInfo(event: IpcSenderValidationEvent, request: unknown): Promise<AppGetInfoResult>
+  getHealth(event: IpcSenderValidationEvent, request: unknown): Promise<AppGetHealthResult>
 }
 
 export function createAppIpcHandlers({
@@ -76,6 +77,12 @@ interface ValidatedAppHandlerInput<TResponse> {
   logger: IpcOperationalLogger
 }
 
+type AppResultFor<TResponse> = TResponse extends AppInfo
+  ? AppGetInfoResult
+  : TResponse extends AppHealth
+    ? AppGetHealthResult
+    : never
+
 function createValidatedAppHandler<TResponse>({
   channel,
   navigationPolicy,
@@ -87,17 +94,17 @@ function createValidatedAppHandler<TResponse>({
   return async (
     event: IpcSenderValidationEvent,
     request: unknown
-  ): Promise<IpcResult<TResponse>> => {
+  ): Promise<AppResultFor<TResponse>> => {
     if (!isIpcSenderAllowed(event, navigationPolicy)) {
       logIpcFailure(logger, channel, 'IPC_FORBIDDEN')
-      return createIpcFailure('IPC_FORBIDDEN')
+      return createIpcFailure('IPC_FORBIDDEN') as AppResultFor<TResponse>
     }
 
     const requestResult = requestSchema.safeParse(request)
 
     if (!requestResult.success) {
       logIpcFailure(logger, channel, 'VALIDATION_FAILED')
-      return createIpcFailure('VALIDATION_FAILED')
+      return createIpcFailure('VALIDATION_FAILED') as AppResultFor<TResponse>
     }
 
     try {
@@ -106,13 +113,13 @@ function createValidatedAppHandler<TResponse>({
 
       if (!responseResult.success) {
         logIpcFailure(logger, channel, 'INTERNAL_ERROR', responseResult.error)
-        return createIpcFailure('INTERNAL_ERROR')
+        return createIpcFailure('INTERNAL_ERROR') as AppResultFor<TResponse>
       }
 
-      return createIpcSuccess(responseResult.data)
+      return createIpcSuccess(responseResult.data) as unknown as AppResultFor<TResponse>
     } catch (error) {
       logIpcFailure(logger, channel, 'INTERNAL_ERROR', error)
-      return createIpcFailure('INTERNAL_ERROR')
+      return createIpcFailure('INTERNAL_ERROR') as AppResultFor<TResponse>
     }
   }
 }

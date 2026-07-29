@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { createIpcResultSchema, type IpcResult } from './result'
+import { createIpcResultSchema } from './result'
 
 export const appGetInfoRequestSchema = z.object({}).strict()
 export const appGetHealthRequestSchema = z.object({}).strict()
@@ -34,9 +34,12 @@ export type AppHealth = z.infer<typeof appHealthSchema>
 export const appGetInfoResultSchema = createIpcResultSchema(appInfoSchema)
 export const appGetHealthResultSchema = createIpcResultSchema(appHealthSchema)
 
+export type AppGetInfoResult = z.infer<typeof appGetInfoResultSchema>
+export type AppGetHealthResult = z.infer<typeof appGetHealthResultSchema>
+
 export interface HealthScreeningApi {
   app: {
-    getInfo(): Promise<IpcResult<AppInfo>>
-    getHealth(): Promise<IpcResult<AppHealth>>
+    getInfo(): Promise<AppGetInfoResult>
+    getHealth(): Promise<AppGetHealthResult>
   }
 }

@@ -16,12 +16,32 @@ export const safeIpcErrorMessages = {
   INTERNAL_ERROR: 'The application could not complete the request.'
 } as const satisfies Record<IpcErrorCode, string>
 
-export const ipcErrorSchema = z
-  .object({
-    code: ipcErrorCodeSchema,
-    message: z.string().min(1)
-  })
-  .strict()
+export const ipcErrorSchema = z.discriminatedUnion('code', [
+  z
+    .object({
+      code: z.literal('VALIDATION_FAILED'),
+      message: z.literal(safeIpcErrorMessages.VALIDATION_FAILED)
+    })
+    .strict(),
+  z
+    .object({
+      code: z.literal('IPC_FORBIDDEN'),
+      message: z.literal(safeIpcErrorMessages.IPC_FORBIDDEN)
+    })
+    .strict(),
+  z
+    .object({
+      code: z.literal('IPC_UNAVAILABLE'),
+      message: z.literal(safeIpcErrorMessages.IPC_UNAVAILABLE)
+    })
+    .strict(),
+  z
+    .object({
+      code: z.literal('INTERNAL_ERROR'),
+      message: z.literal(safeIpcErrorMessages.INTERNAL_ERROR)
+    })
+    .strict()
+])
 
 export type IpcSafeError = z.infer<typeof ipcErrorSchema>
 
@@ -32,31 +52,25 @@ export const ipcFailureResultSchema = z
   })
   .strict()
 
-export type IpcResult<T> =
-  | {
-      ok: true
-      data: T
-    }
-  | {
-      ok: false
-      error: IpcSafeError
-    }
-
-export function createIpcSuccess<T>(data: T): IpcResult<T> {
+export function createIpcSuccess<T>(data: T): { ok: true; data: T } {
   return {
     ok: true,
     data
   }
 }
 
-export function createIpcFailure(code: IpcErrorCode): IpcResult<never> {
+export function createIpcFailure<TCode extends IpcErrorCode>(
+  code: TCode
+): { ok: false; error: Extract<IpcSafeError, { code: TCode }> } {
+  const message = safeIpcErrorMessages[code]
+
   return {
     ok: false,
     error: {
       code,
-      message: safeIpcErrorMessages[code]
+      message
     }
-  }
+  } as { ok: false; error: Extract<IpcSafeError, { code: TCode }> }
 }
 
 export function createIpcSuccessResultSchema<TSchema extends z.ZodType>(

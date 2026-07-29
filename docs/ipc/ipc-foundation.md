@@ -21,18 +21,17 @@ string argument, a generic invoke method, or any dynamic dispatch surface.
 Every IPC operation resolves to a discriminated result:
 
 ```ts
-type IpcResult<T> =
-  { ok: true; data: T } | { ok: false; error: { code: IpcErrorCode; message: string } }
+type AppGetInfoResult = z.infer<typeof appGetInfoResultSchema>
 ```
 
 Safe error codes:
 
 | Code                | Meaning                                                          |
 | ------------------- | ---------------------------------------------------------------- |
-| `VALIDATION_FAILED` | A request or trusted response did not match the schema.          |
+| `VALIDATION_FAILED` | The renderer supplied an invalid request.                        |
 | `IPC_FORBIDDEN`     | The sender frame or origin is not trusted.                       |
 | `IPC_UNAVAILABLE`   | The preload transport failed or returned an unreadable envelope. |
-| `INTERNAL_ERROR`    | The trusted process could not complete the request.              |
+| `INTERNAL_ERROR`    | Execution failed or trusted output did not match its schema.     |
 
 Renderer-visible messages are stable and safe. They must not contain stack
 traces, filesystem paths, hostnames, usernames, payloads, command-line values,

@@ -74,6 +74,25 @@ describe('preload API factory', () => {
     })
   })
 
+  it('maps malformed failure envelopes to IPC_UNAVAILABLE', async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      ok: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'C:\\secret\\raw error'
+      }
+    })
+    const api = createHealthScreeningApi(invoke)
+
+    await expect(api.app.getInfo()).resolves.toEqual({
+      ok: false,
+      error: {
+        code: 'IPC_UNAVAILABLE',
+        message: 'The desktop service is unavailable.'
+      }
+    })
+  })
+
   it('maps invoke rejection to IPC_UNAVAILABLE', async () => {
     const invoke = vi.fn().mockRejectedValue(new Error('raw electron error'))
     const api = createHealthScreeningApi(invoke)

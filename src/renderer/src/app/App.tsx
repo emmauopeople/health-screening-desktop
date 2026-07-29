@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { AppHealth, AppInfo, IpcResult } from '@shared/ipc'
+import type { AppGetHealthResult, AppGetInfoResult, AppHealth, AppInfo } from '@shared/ipc'
 
 type AppLoadState =
   | {
@@ -70,7 +70,7 @@ function App(): React.JSX.Element {
       <section className="foundation-panel">
         <div className="foundation-eyebrow">Engineering foundation</div>
         <h1 id="application-title">{applicationName}</h1>
-        <p className="foundation-statement">No clinical features are implemented yet. HMR test.</p>
+        <p className="foundation-statement">No clinical features are implemented yet.</p>
         <p className="foundation-metadata" aria-live="polite">
           {getMetadataText(loadState)}
         </p>
@@ -99,8 +99,8 @@ function App(): React.JSX.Element {
 }
 
 function getSafeFailureMessage(
-  infoResult: IpcResult<AppInfo>,
-  healthResult: IpcResult<AppHealth>
+  infoResult: AppGetInfoResult,
+  healthResult: AppGetHealthResult
 ): string {
   if (!infoResult.ok) {
     return infoResult.error.message
@@ -128,24 +128,36 @@ function getMetadataText(loadState: AppLoadState): string {
 }
 
 function getClinicalFeatureText(loadState: AppLoadState): string {
-  if (loadState.status !== 'ready') {
+  if (loadState.status === 'loading') {
     return 'Loading'
+  }
+
+  if (loadState.status === 'error') {
+    return 'Unavailable'
   }
 
   return loadState.health.clinicalFeatures === 'not-implemented' ? 'Not implemented' : 'Unavailable'
 }
 
 function getDatabaseText(loadState: AppLoadState): string {
-  if (loadState.status !== 'ready') {
+  if (loadState.status === 'loading') {
     return 'Loading'
+  }
+
+  if (loadState.status === 'error') {
+    return 'Unavailable'
   }
 
   return loadState.health.database === 'not-configured' ? 'Not configured' : 'Unavailable'
 }
 
 function getIpcText(loadState: AppLoadState): string {
-  if (loadState.status !== 'ready') {
+  if (loadState.status === 'loading') {
     return 'Loading'
+  }
+
+  if (loadState.status === 'error') {
+    return 'Unavailable'
   }
 
   return loadState.health.ipc === 'available' ? 'Available' : 'Unavailable'
