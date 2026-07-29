@@ -30,6 +30,34 @@ describe('password credential format', () => {
     expect(Object.isFrozen(credential)).toBe(true)
   })
 
+  it('zeros temporary base64url encoding copies after successful format operations', () => {
+    const hashSource = bytes(64)
+    const saltSource = bytes(32)
+
+    const serializedHash = captureBase64UrlEncodingCopies(() => serializePasswordHash(hashSource))
+    const serializedSalt = captureBase64UrlEncodingCopies(() => serializePasswordSalt(saltSource))
+    const parsedHash = captureBase64UrlEncodingCopies(() => parsePasswordHash(canonicalHash))
+    const parsedSalt = captureBase64UrlEncodingCopies(() => parsePasswordSalt(canonicalSalt))
+    const parsedCredential = captureBase64UrlEncodingCopies(() =>
+      parseStoredPasswordCredential({
+        passwordHash: canonicalHash,
+        passwordSalt: canonicalSalt
+      })
+    )
+
+    expect(serializedHash.result).toBe(canonicalHash)
+    expectZeroedEncodingCopies(serializedHash.encodingCopies, 1)
+    expect(serializedSalt.result).toBe(canonicalSalt)
+    expectZeroedEncodingCopies(serializedSalt.encodingCopies, 1)
+    expect(parsedHash.result.derivedKeyBytes).toEqual(bytes(64))
+    expectZeroedEncodingCopies(parsedHash.encodingCopies, 1)
+    expect(parsedSalt.result.saltBytes).toEqual(bytes(32))
+    expectZeroedEncodingCopies(parsedSalt.encodingCopies, 1)
+    expect(parsedCredential.result.derivedKeyBytes).toEqual(bytes(64))
+    expect(parsedCredential.result.saltBytes).toEqual(bytes(32))
+    expectZeroedEncodingCopies(parsedCredential.encodingCopies, 2)
+  })
+
   it('strictly parses canonical credentials and decodes exact byte lengths', () => {
     const parsedHash = parsePasswordHash(canonicalHash)
     const parsedSalt = parsePasswordSalt(canonicalSalt)
@@ -115,7 +143,7 @@ describe('password credential format', () => {
   })
 
   it('rejects a valid hash with malformed salt and cleans partial decoded buffers', () => {
-    const { error, decodedBuffers } = captureBase64UrlDecodedBuffers(() =>
+    const { error, decodedBuffers, encodingCopies } = captureBase64UrlBuffersForError(() =>
       parseStoredPasswordCredential({
         passwordHash: canonicalHash,
         passwordSalt: `${canonicalSalt}=`
@@ -125,6 +153,28 @@ describe('password credential format', () => {
     expectSafeFormatError(error)
     expect(decodedBuffers.length).toBeGreaterThanOrEqual(1)
     expect(decodedBuffers[0]!.every((byte) => byte === 0)).toBe(true)
+    expectZeroedEncodingCopies(encodingCopies, 1)
+  })
+
+  it('does not let cleanup failures replace serialized output or format errors', () => {
+    const fillSpy = vi.spyOn(Uint8Array.prototype, 'fill').mockImplementation(() => {
+      throw new Error('C:\\secret\\cleanup.log password_hash')
+    })
+
+    try {
+      expect(serializePasswordHash(bytes(64))).toBe(canonicalHash)
+      expect(serializePasswordSalt(bytes(32))).toBe(canonicalSalt)
+      expectSafeFormatError(
+        captureError(() =>
+          parseStoredPasswordCredential({
+            passwordHash: canonicalHash,
+            passwordSalt: `${canonicalSalt}=`
+          })
+        )
+      )
+    } finally {
+      fillSpy.mockRestore()
+    }
   })
 
   it('rejects accessor-backed credential properties without invoking getters', () => {
@@ -227,17 +277,49 @@ function expectSafeFormatError(error: unknown): void {
   }
 }
 
-function captureBase64UrlDecodedBuffers(action: () => void): {
+function captureBase64UrlEncodingCopies<T>(action: () => T): {
+  readonly result: T
+  readonly encodingCopies: readonly Buffer[]
+} {
+  const originalFrom = Buffer.from.bind(Buffer)
+  const encodingCopies: Buffer[] = []
+  const fromSpy = vi.spyOn(Buffer, 'from').mockImplementation(((...args: unknown[]): Buffer => {
+    const result = Reflect.apply(originalFrom, Buffer, args) as Buffer
+
+    if (args.length === 1 && ArrayBuffer.isView(args[0])) {
+      encodingCopies.push(result)
+    }
+
+    return result
+  }) as typeof Buffer.from)
+
+  try {
+    return {
+      result: action(),
+      encodingCopies
+    }
+  } finally {
+    fromSpy.mockRestore()
+  }
+}
+
+function captureBase64UrlBuffersForError(action: () => void): {
   readonly error: unknown
   readonly decodedBuffers: readonly Buffer[]
+  readonly encodingCopies: readonly Buffer[]
 } {
   const originalFrom = Buffer.from.bind(Buffer)
   const decodedBuffers: Buffer[] = []
+  const encodingCopies: Buffer[] = []
   const fromSpy = vi.spyOn(Buffer, 'from').mockImplementation(((...args: unknown[]): Buffer => {
     const result = Reflect.apply(originalFrom, Buffer, args) as Buffer
 
     if (args[1] === 'base64url') {
       decodedBuffers.push(result)
+    }
+
+    if (args.length === 1 && ArrayBuffer.isView(args[0])) {
+      encodingCopies.push(result)
     }
 
     return result
@@ -246,10 +328,22 @@ function captureBase64UrlDecodedBuffers(action: () => void): {
   try {
     return {
       error: captureError(action),
-      decodedBuffers
+      decodedBuffers,
+      encodingCopies
     }
   } finally {
     fromSpy.mockRestore()
+  }
+}
+
+function expectZeroedEncodingCopies(
+  encodingCopies: readonly Buffer[],
+  expectedMinimumCount: number
+): void {
+  expect(encodingCopies.length).toBeGreaterThanOrEqual(expectedMinimumCount)
+
+  for (const encodingCopy of encodingCopies) {
+    expect(Array.from(encodingCopy)).toEqual(new Array(encodingCopy.byteLength).fill(0))
   }
 }
 

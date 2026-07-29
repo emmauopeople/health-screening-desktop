@@ -227,7 +227,13 @@ function isDataPropertyDescriptor(
 }
 
 function encodeCanonicalBase64Url(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString('base64url')
+  const temporaryBytes = Buffer.from(bytes)
+
+  try {
+    return temporaryBytes.toString('base64url')
+  } finally {
+    zeroBytesBestEffort(temporaryBytes)
+  }
 }
 
 function decodeCanonicalBase64Url(
