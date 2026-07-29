@@ -1,0 +1,81 @@
+# Schema Version 1
+
+Schema version 1 is an empty local operational schema. It creates structure only:
+no installation, setting, user, location, protocol, patient, encounter, referral,
+outbox, audit, or other operational row is inserted by HSD-007.
+
+The production runner validates this contract before committing migration 1,
+after migration completion, and on current-version startup. A missing, extra, or
+renamed required table, index, column, or non-strict table is treated as a
+controlled migration compatibility or execution failure.
+
+## Conventions
+
+- Every application table and `schema_migrations` is `STRICT`.
+- Entity IDs are future service-supplied UUID text values.
+- Timestamps are UTC RFC 3339 text values supplied by future services.
+- Date-only values use `YYYY-MM-DD` text.
+- Booleans are `INTEGER` with `0` or `1`; nullable booleans use `NULL` for
+  unknown.
+- JSON is stored as `TEXT` with `json_valid` checks.
+- Foreign keys use `ON UPDATE RESTRICT ON DELETE RESTRICT`; clinical and audit
+  history does not cascade-delete.
+- HSD-007 adds no triggers, views, FTS tables, generated search documents, seed
+  data, repositories, authentication, clinical thresholds, sync transport,
+  backup, or restore workflow.
+
+## Tables
+
+| Table                     | Columns                                                                                                                                                                                                                                                                                                                                                                 | Key constraints and relationships                                                                                                                                                                                         |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema_migrations`       | `version`, `name`, `checksum`, `applied_at`, `application_version`                                                                                                                                                                                                                                                                                                      | Runner-owned strict ledger. `version > 0`; checksum length is 64.                                                                                                                                                         |
+| `installation`            | `singleton_id`, `id`, `deployment_name`, `timezone`, `created_at`, `updated_at`                                                                                                                                                                                                                                                                                         | `singleton_id = 1`; `id` unique. No row is seeded.                                                                                                                                                                        |
+| `app_settings`            | `key`, `value_json`, `updated_at`, `sensitivity_classification`                                                                                                                                                                                                                                                                                                         | `value_json` must be valid JSON.                                                                                                                                                                                          |
+| `users`                   | `id`, `username`, `username_normalized`, `display_name`, `password_hash`, `password_salt`, `role`, `is_active`, `must_change_password`, `failed_login_count`, `locked_until`, `last_login_at`, `created_at`, `updated_at`                                                                                                                                               | `role` is `LOCAL_ADMIN`, `NURSE`, or `TRAINED_SCREENER`; booleans are 0/1; failed login count is non-negative.                                                                                                            |
+| `locations`               | `id`, `name`, `name_normalized`, `location_type`, `village`, `subdivision`, `region`, `directions`, `is_active`, `created_by`, `created_at`, `updated_by`, `updated_at`                                                                                                                                                                                                 | `created_by` and `updated_by` reference `users(id)`; `is_active` is 0/1.                                                                                                                                                  |
+| `protocol_versions`       | `id`, `protocol_key`, `version_label`, `status`, `effective_at`, `configuration_json`, `checksum`, `imported_by`, `imported_at`, `activated_by`, `activated_at`, `created_at`                                                                                                                                                                                           | `status` is `DRAFT`, `ACTIVE`, or `INACTIVE`; configuration JSON is valid; optional importer and activator reference users.                                                                                               |
+| `patients`                | `id`, `patient_code`, `display_name`, `given_name`, `family_name`, `other_names`, `name_normalized`, `sex`, `date_of_birth`, `approximate_age_years`, `age_as_of_date`, `phone`, `phone_normalized`, `alternate_contact_name`, `alternate_contact_phone`, `village`, `quarter`, `residence_notes`, `status`, `created_by`, `created_at`, `updated_by`, `updated_at`     | `status` is `ACTIVE` or `INACTIVE`; age is null or non-negative; creator and updater reference users.                                                                                                                     |
+| `patient_identifiers`     | `id`, `patient_id`, `identifier_type`, `issuer`, `identifier_value`, `is_primary`, `valid_from`, `valid_to`, `created_by`, `created_at`                                                                                                                                                                                                                                 | Patient references `patients(id)`; creator references `users(id)`; `is_primary` is 0/1.                                                                                                                                   |
+| `consent_records`         | `id`, `patient_id`, `consent_type`, `status`, `source_type`, `effective_at`, `withdrawn_at`, `notes`, `recorded_by`, `recorded_at`                                                                                                                                                                                                                                      | Patient references `patients(id)`; recorder references `users(id)`.                                                                                                                                                       |
+| `screening_sessions`      | `id`, `location_id`, `protocol_version_id`, `session_date`, `status`, `created_by`, `created_at`, `opened_at`, `closed_by`, `closed_at`, `updated_at`                                                                                                                                                                                                                   | `status` is `OPEN` or `CLOSED`; location, protocol, creator, and optional closer use restrict foreign keys.                                                                                                               |
+| `screening_encounters`    | `id`, `patient_id`, `screening_session_id`, `location_id`, `protocol_version_id`, `status`, `started_at`, `completed_at`, `source_type`, `recorded_by`, `summary_systolic`, `summary_diastolic`, `summary_pulse`, `next_action_category`, `decision_json`, `amendment_of_encounter_id`, `amendment_reason`, `void_reason`, `record_version`, `created_at`, `updated_at` | `status` is `DRAFT`, `COMPLETED`, `AMENDED`, or `VOID`; `record_version >= 1`; optional decision JSON is valid; patient, session, location, protocol, recorder, and optional amended encounter use restrict foreign keys. |
+| `blood_pressure_readings` | `id`, `encounter_id`, `sequence_number`, `systolic`, `diastolic`, `pulse`, `arm`, `body_position`, `cuff_size`, `device_identifier`, `measured_at`, `status`, `discard_reason`, `source_type`, `recorded_by`, `recorded_at`                                                                                                                                             | `status` is `ACTIVE` or `DISCARDED`; sequence, systolic, and diastolic are positive; pulse is null or positive; encounter and recorder use restrict foreign keys.                                                         |
+| `lifestyle_logs`          | `id`, `encounter_id`, `question_code`, `response_code`, `response_text`, `source_type`, `recorded_by`, `recorded_at`                                                                                                                                                                                                                                                    | Encounter plus question code is unique; encounter and recorder use restrict foreign keys.                                                                                                                                 |
+| `food_logs`               | `id`, `encounter_id`, `food_code`, `food_name`, `food_name_normalized`, `frequency_code`, `notes`, `source_type`, `recorded_by`, `recorded_at`                                                                                                                                                                                                                          | Encounter and recorder use restrict foreign keys.                                                                                                                                                                         |
+| `otc_medication_logs`     | `id`, `encounter_id`, `product_name`, `product_name_normalized`, `reason_for_use`, `dose_text`, `frequency_text`, `duration_text`, `source_of_medication`, `currently_taking`, `source_type`, `recorded_by`, `recorded_at`                                                                                                                                              | `currently_taking` is null or 0/1; encounter and recorder use restrict foreign keys.                                                                                                                                      |
+| `referrals`               | `id`, `patient_id`, `encounter_id`, `protocol_version_id`, `reason_codes_json`, `reason_text`, `urgency`, `destination_name`, `due_date`, `status`, `created_by`, `created_at`, `printed_at`, `closed_by`, `closed_at`, `closure_reason`, `record_version`, `updated_at`                                                                                                | `status` is `OPEN`, `CONTACTED`, `SEEN`, `UNABLE_TO_CONFIRM`, or `CLOSED`; reason JSON is valid; `record_version >= 1`; patient, encounter, protocol, creator, and optional closer use restrict foreign keys.             |
+| `referral_status_history` | `id`, `referral_id`, `from_status`, `to_status`, `change_reason`, `changed_by`, `changed_at`                                                                                                                                                                                                                                                                            | Referral and changer use restrict foreign keys; referral statuses use the referral status set.                                                                                                                            |
+| `followups`               | `id`, `referral_id`, `contact_date`, `contact_method`, `information_source`, `provider_seen`, `facility_name`, `date_seen`, `reported_outcome`, `reported_medications_or_advice`, `next_action`, `next_followup_date`, `source_type`, `recorded_by`, `recorded_at`                                                                                                      | `provider_seen` is null or 0/1; referral and recorder use restrict foreign keys.                                                                                                                                          |
+| `sync_outbox`             | `id`, `aggregate_type`, `aggregate_id`, `operation`, `payload_json`, `payload_schema_version`, `created_at`, `status`, `attempt_count`, `next_attempt_at`, `last_error_code`, `last_error_message`, `sent_at`                                                                                                                                                           | `status` is `PENDING`, `IN_FLIGHT`, `SENT`, or `FAILED`; payload JSON is valid; attempt count is non-negative.                                                                                                            |
+| `sync_attempts`           | `id`, `batch_id`, `started_at`, `ended_at`, `status`, `item_counts_json`, `error_summary`                                                                                                                                                                                                                                                                               | Item counts JSON is valid. No transport or batch execution exists yet.                                                                                                                                                    |
+| `audit_log`               | `id`, `installation_id`, `user_id`, `action`, `entity_type`, `entity_id`, `occurred_at`, `metadata_json`                                                                                                                                                                                                                                                                | Installation references `installation(id)`; optional user references `users(id)`; metadata JSON is valid.                                                                                                                 |
+
+## Required Named Indexes
+
+HSD-007 creates 25 explicit named indexes:
+
+- `ux_users_username_normalized`
+- `ix_locations_name_normalized`
+- `ux_protocol_versions_key_version`
+- `ux_protocol_versions_one_active`
+- `ux_screening_sessions_location_date`
+- `ux_patients_patient_code`
+- `ix_patients_name_normalized`
+- `ix_patients_phone_normalized`
+- `ux_patient_identifiers_identity`
+- `ix_patient_identifiers_patient`
+- `ix_consent_records_patient_time`
+- `ix_screening_encounters_patient_time`
+- `ix_screening_encounters_session`
+- `ux_bp_readings_encounter_sequence`
+- `ix_lifestyle_logs_encounter`
+- `ix_food_logs_encounter`
+- `ix_otc_medication_logs_encounter`
+- `ix_referrals_patient_time`
+- `ix_referrals_status_due_date`
+- `ix_referral_status_history_time`
+- `ix_followups_referral_contact_date`
+- `ix_sync_outbox_status_next_attempt`
+- `ix_sync_attempts_started_at`
+- `ix_audit_log_occurred_at`
+- `ix_audit_log_entity`

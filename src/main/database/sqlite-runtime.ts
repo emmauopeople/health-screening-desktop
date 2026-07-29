@@ -3,6 +3,7 @@ import { dirname } from 'node:path'
 import Database from 'better-sqlite3'
 
 import type { DatabaseStatus } from './database-health'
+import type { DatabaseMigrationRunner } from './migrations'
 
 type SqliteConnection = Database.Database
 type SqliteConnectionFactory = (databasePath: string) => SqliteConnection
@@ -21,6 +22,7 @@ export interface DatabaseRuntime {
 
 export interface SqliteRuntimeOptions {
   databasePath: string
+  migrationRunner: DatabaseMigrationRunner
   openConnection?: SqliteConnectionFactory
   logger?: DatabaseRuntimeLogger
 }
@@ -29,6 +31,7 @@ const defaultLogger: DatabaseRuntimeLogger = console
 
 export function createDatabaseRuntime({
   databasePath,
+  migrationRunner,
   openConnection = (path) => new Database(path),
   logger = defaultLogger
 }: SqliteRuntimeOptions): DatabaseRuntime {
@@ -45,7 +48,9 @@ export function createDatabaseRuntime({
       try {
         mkdirSync(dirname(databasePath), { recursive: true })
         openedConnection = openConnection(databasePath)
-        configureAndVerifyConnection(openedConnection)
+        configureConnection(openedConnection)
+        migrationRunner(openedConnection)
+        verifyConnectionHealth(openedConnection)
         connection = openedConnection
         logger.info('Database runtime initialized.')
       } catch (error) {
@@ -112,7 +117,7 @@ export function createDatabaseRuntime({
   }
 }
 
-function configureAndVerifyConnection(connection: SqliteConnection): void {
+function configureConnection(connection: SqliteConnection): void {
   connection.pragma('foreign_keys = ON')
   assertPragma(connection, 'foreign_keys', 1)
 
@@ -127,8 +132,9 @@ function configureAndVerifyConnection(connection: SqliteConnection): void {
 
   connection.pragma('trusted_schema = OFF')
   assertPragma(connection, 'trusted_schema', 0)
-  assertPragma(connection, 'user_version', 0)
+}
 
+function verifyConnectionHealth(connection: SqliteConnection): void {
   const health = connection.prepare('SELECT 1 AS health').get() as { health?: unknown }
   if (health.health !== 1) {
     throw new Error('SQLite health query failed')

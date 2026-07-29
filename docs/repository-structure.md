@@ -13,9 +13,15 @@ This repository separates Electron process responsibilities so trusted applicati
 `src/main` owns trusted desktop application behavior. Future work will place application lifecycle code, local configuration, database access, protocol logic, printing, logging, security, and sync/backup orchestration here.
 
 `src/main/database` owns the single main-process SQLite runtime. It resolves the
-userData-based database path, applies startup pragmas, reports live health, and
-closes the connection during application shutdown. It does not expose SQL,
-database handles, or paths to shared, preload, or renderer code.
+userData-based database path, applies startup pragmas, runs numbered migrations,
+reports live health, and closes the connection during application shutdown. It
+does not expose SQL, migration checksums, schema details, database handles, or
+paths to shared, preload, or renderer code.
+
+`src/main/database/migrations` contains the main-process-only migration
+contracts, checksum canonicalization, manifest validation, production migration
+runner, and `sql/` directory. SQL files are imported as raw bundled assets; the
+application must not discover migrations by scanning runtime directories.
 
 The renderer must not import from `src/main`.
 
@@ -45,7 +51,7 @@ Shared files must not depend on Electron, Node-only APIs, browser globals, or pr
 
 ## Documentation
 
-`docs` stores architecture notes and implementation documentation. Architecture decision records belong in `docs/adr`.
+`docs` stores architecture notes and implementation documentation. Architecture decision records belong in `docs/adr`. Database runtime, migration, and schema documentation belongs under `docs/database`.
 
 ## Tests
 

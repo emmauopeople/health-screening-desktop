@@ -13,6 +13,7 @@ import { registerApplicationShutdown } from '@main/app/shutdown'
 import {
   createDatabaseHealthProvider,
   createDatabaseRuntime,
+  createProductionDatabaseMigrationRunner,
   getDatabasePath,
   type DatabaseRuntime
 } from '@main/database'
@@ -52,6 +53,10 @@ export function startApplicationLifecycle(): void {
 
       databaseRuntime = createDatabaseRuntime({
         databasePath: getDatabasePath(app.getPath('userData')),
+        migrationRunner: createProductionDatabaseMigrationRunner({
+          applicationVersion: app.getVersion(),
+          logger: console
+        }),
         logger: console
       })
       databaseRuntime.initialize()
