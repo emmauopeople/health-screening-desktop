@@ -13,6 +13,10 @@ const reviewedErrorTypes = new Set<string>([
   'RepositoryWriteError',
   'RepositoryDataIntegrityError',
   'InstallationAlreadyExistsError',
+  'PasswordValidationError',
+  'PasswordCredentialFormatError',
+  'PasswordHashingError',
+  'PasswordVerificationError',
   'UnknownError'
 ])
 
