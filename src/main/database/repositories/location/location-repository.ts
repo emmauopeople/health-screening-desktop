@@ -32,22 +32,6 @@ interface LocationReadConnection {
   }
 }
 
-interface LocationSqlRow {
-  readonly id: unknown
-  readonly name: unknown
-  readonly name_normalized: unknown
-  readonly location_type: unknown
-  readonly village: unknown
-  readonly subdivision: unknown
-  readonly region: unknown
-  readonly directions: unknown
-  readonly is_active: unknown
-  readonly created_by: unknown
-  readonly created_at: unknown
-  readonly updated_by: unknown
-  readonly updated_at: unknown
-}
-
 interface ParsedCreateLocationInput {
   readonly id: string
   readonly name: string
@@ -171,7 +155,7 @@ export function createLocationRepository(connection: Database.Database): Locatio
       (error) => new RepositoryReadError(error)
     )
 
-    return row === null ? null : decodeLocationRow(row)
+    return row === undefined ? null : decodeLocationRow(row)
   }
 
   const listAll = (): readonly LocationRecord[] => {
@@ -305,7 +289,7 @@ function readLocationAfterWrite(
     (error) => new RepositoryWriteError(error)
   )
 
-  if (row === null) {
+  if (row === undefined) {
     return null
   }
 
@@ -325,9 +309,9 @@ function readLocationRow(
   sql: string,
   params: readonly unknown[],
   createFailure: (errorType?: string) => RepositoryReadError | RepositoryWriteError
-): LocationSqlRow | null {
+): unknown {
   try {
-    return (connection.prepare(sql).get(...params) as LocationSqlRow | undefined) ?? null
+    return connection.prepare(sql).get(...params)
   } catch (error) {
     if (error instanceof DatabaseTransactionStateError) {
       throw new DatabaseTransactionStateError(error.errorType)
@@ -419,14 +403,39 @@ function decodeLocationRows(rows: unknown): readonly LocationRecord[] {
       throw new RepositoryDataIntegrityError()
     }
 
+    const descriptors = readArrayPropertyDescriptors(rows)
+    const lengthDescriptor = descriptors.length
+
+    if (
+      lengthDescriptor === undefined ||
+      !Object.prototype.hasOwnProperty.call(lengthDescriptor, 'value') ||
+      !Number.isSafeInteger(lengthDescriptor.value) ||
+      lengthDescriptor.value < 0
+    ) {
+      throw new RepositoryDataIntegrityError()
+    }
+
+    const length = lengthDescriptor.value as number
+    const expectedKeys = new Set<PropertyKey>(['length'])
+
     const records: LocationRecord[] = []
 
-    for (let index = 0; index < rows.length; index += 1) {
-      if (!Object.prototype.hasOwnProperty.call(rows, index)) {
+    for (let index = 0; index < length; index += 1) {
+      const propertyName = String(index)
+      const descriptor = descriptors[propertyName]
+      expectedKeys.add(propertyName)
+
+      if (descriptor === undefined || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
         throw new RepositoryDataIntegrityError()
       }
 
-      records.push(decodeLocationRow(rows[index]))
+      records.push(decodeLocationRow(descriptor.value))
+    }
+
+    const keys = Reflect.ownKeys(descriptors)
+
+    if (keys.length !== expectedKeys.size || !keys.every((key) => expectedKeys.has(key))) {
+      throw new RepositoryDataIntegrityError()
     }
 
     return Object.freeze(records)
@@ -435,6 +444,19 @@ function decodeLocationRows(rows: unknown): readonly LocationRecord[] {
       throw new RepositoryDataIntegrityError(error.errorType)
     }
 
+    throw new RepositoryDataIntegrityError(getRepositoryErrorType(error))
+  }
+}
+
+function readArrayPropertyDescriptors(
+  rows: readonly unknown[]
+): Record<PropertyKey, PropertyDescriptor | undefined> {
+  try {
+    return Object.getOwnPropertyDescriptors(rows) as unknown as Record<
+      PropertyKey,
+      PropertyDescriptor | undefined
+    >
+  } catch (error) {
     throw new RepositoryDataIntegrityError(getRepositoryErrorType(error))
   }
 }

@@ -530,6 +530,163 @@ describe('location repository', () => {
     }
   })
 
+  it('returns null from getById only when the driver returns undefined', () => {
+    const repository = createLocationRepository(
+      createFakeReadConnection({ getByIdResult: undefined }) as Database.Database
+    )
+
+    expect(repository.getById(parseEntityId(locationId))).toBeNull()
+  })
+
+  it('rejects malformed getById row results without exposing row metadata', () => {
+    let accessorInvoked = false
+    const accessorRow = createRawLocationRow()
+    Object.defineProperty(accessorRow, 'name', {
+      enumerable: true,
+      get() {
+        accessorInvoked = true
+        throw new Error('C:\\secret\\single-row-getter.txt')
+      }
+    })
+
+    const symbolRow = {
+      ...createRawLocationRow(),
+      [Symbol('row_metadata')]: true
+    }
+
+    for (const getByIdResult of [
+      null,
+      1,
+      'row',
+      true,
+      [],
+      {},
+      { ...createRawLocationRow(), row_metadata: 'secret' },
+      symbolRow,
+      accessorRow,
+      new Proxy(createRawLocationRow(), {
+        ownKeys() {
+          throw new Error('C:\\secret\\single-row-ownKeys.txt')
+        }
+      }),
+      new Proxy(createRawLocationRow(), {
+        getOwnPropertyDescriptor() {
+          throw new Error('C:\\secret\\single-row-descriptor.txt')
+        }
+      })
+    ]) {
+      const error = captureError(() =>
+        createLocationRepository(
+          createFakeReadConnection({ getByIdResult }) as Database.Database
+        ).getById(parseEntityId(locationId))
+      )
+
+      expect(error).toBeInstanceOf(RepositoryDataIntegrityError)
+      expectSafeControlledError(error)
+    }
+
+    expect(accessorInvoked).toBe(false)
+  })
+
+  it('maps undefined and malformed post-insert verification rows to write errors', () => {
+    for (const getAfterInsert of [
+      () => undefined,
+      () => null,
+      () => 1,
+      () => [],
+      () => ({}),
+      () => ({ ...createRawLocationRow(), row_metadata: 'secret' }),
+      () =>
+        new Proxy(createRawLocationRow(), {
+          ownKeys() {
+            throw new Error('C:\\secret\\verify-ownKeys.txt')
+          }
+        })
+    ]) {
+      const connection = createFakeExecutorConnection({ getAfterInsert })
+      const error = captureError(() =>
+        createExecutorForConnection(connection).run((context) =>
+          createLocationRepository({} as Database.Database).insert(
+            context.connection,
+            createValidLocationInput()
+          )
+        )
+      )
+
+      expect(error).toBeInstanceOf(RepositoryWriteError)
+      expect(connection.inTransaction).toBe(false)
+      expectSafeControlledError(error)
+    }
+  })
+
+  it('accepts only exact dense list result arrays and rejects array metadata safely', () => {
+    const emptyList = createLocationRepository(
+      createFakeReadConnection({ allRows: [] }) as Database.Database
+    ).listAll()
+    const denseList = createLocationRepository(
+      createFakeReadConnection({ allRows: [createRawLocationRow()] }) as Database.Database
+    ).listActive()
+
+    expect(emptyList).toEqual([])
+    expect(Object.isFrozen(emptyList)).toBe(true)
+    expect(denseList).toEqual([createExpectedLocation()])
+    expect(Object.isFrozen(denseList)).toBe(true)
+    expect(Object.isFrozen(denseList[0])).toBe(true)
+
+    let getterInvoked = false
+    const accessorRows: unknown[] = []
+    Object.defineProperty(accessorRows, '0', {
+      enumerable: true,
+      configurable: true,
+      get() {
+        getterInvoked = true
+        throw new Error('C:\\secret\\array-index-getter.txt')
+      }
+    })
+
+    let setterInvoked = false
+    const setterRows: unknown[] = []
+    Object.defineProperty(setterRows, '0', {
+      enumerable: true,
+      configurable: true,
+      set() {
+        setterInvoked = true
+        throw new Error('C:\\secret\\array-index-setter.txt')
+      }
+    })
+
+    for (const allRows of [
+      createSparseRows(),
+      accessorRows,
+      setterRows,
+      createRowsWithExtraStringProperty(),
+      createRowsWithSymbolProperty(),
+      new Proxy([createRawLocationRow()], {
+        ownKeys() {
+          throw new Error('C:\\secret\\array-ownKeys.txt')
+        }
+      }),
+      new Proxy([createRawLocationRow()], {
+        getOwnPropertyDescriptor() {
+          throw new Error('C:\\secret\\array-descriptor.txt')
+        }
+      }),
+      [createMalformedLocationRow()]
+    ]) {
+      const error = captureError(() =>
+        createLocationRepository(
+          createFakeReadConnection({ allRows }) as Database.Database
+        ).listAll()
+      )
+
+      expect(error).toBeInstanceOf(RepositoryDataIntegrityError)
+      expectSafeControlledError(error)
+    }
+
+    expect(getterInvoked).toBe(false)
+    expect(setterInvoked).toBe(false)
+  })
+
   it('maps closed connections and injected read failures to safe read errors', async () => {
     await withMigratedDatabase(({ connection }) => {
       const repository = createLocationRepository(connection)
@@ -678,6 +835,7 @@ interface RawUserRow {
 
 interface FakeExecutorConnectionOptions {
   recordSql?: (sql: string) => void
+  getByIdResult?: unknown
   precheckResult?: unknown
   runInsert?: () => void
   getAfterInsert?: () => unknown
@@ -685,6 +843,7 @@ interface FakeExecutorConnectionOptions {
 }
 
 interface FakeReadConnectionOptions {
+  getByIdResult?: unknown
   hasAnyResult?: unknown
   allRows?: unknown
 }
@@ -868,9 +1027,13 @@ function createFakeReadConnection(options: FakeReadConnectionOptions): Database.
         () => null,
         () => undefined,
         {
+          ...(Object.prototype.hasOwnProperty.call(options, 'getByIdResult')
+            ? { getByIdResult: options.getByIdResult }
+            : {}),
           precheckResult: undefined,
-          allRows: options.allRows,
-          getAfterInsert: () => undefined
+          ...(Object.prototype.hasOwnProperty.call(options, 'allRows')
+            ? { allRows: options.allRows }
+            : {})
         },
         options.hasAnyResult,
         Object.prototype.hasOwnProperty.call(options, 'hasAnyResult')
@@ -930,12 +1093,18 @@ function createFakeStatement(
       }
 
       if (/WHERE id = \?/i.test(source)) {
+        if (Object.prototype.hasOwnProperty.call(options, 'getByIdResult')) {
+          return options.getByIdResult
+        }
+
         if (row === null || row.id !== params[0]) {
           return undefined
         }
 
-        if (options.getAfterInsert !== undefined) {
-          return options.getAfterInsert()
+        if (Object.prototype.hasOwnProperty.call(options, 'getAfterInsert')) {
+          const getAfterInsert = options.getAfterInsert
+
+          return getAfterInsert === undefined ? undefined : getAfterInsert()
         }
 
         return row
@@ -944,7 +1113,7 @@ function createFakeStatement(
       return undefined
     },
     all(): unknown[] {
-      if (options.allRows !== undefined) {
+      if (Object.prototype.hasOwnProperty.call(options, 'allRows')) {
         return options.allRows as unknown[]
       }
 
@@ -1347,9 +1516,6 @@ function createMalformedHasAnyResults(): readonly unknown[] {
 }
 
 function createMalformedListResults(): readonly unknown[] {
-  const sparseRows = [createRawLocationRow()]
-  delete sparseRows[0]
-
   const accessorRow = Object.create(null) as RawLocationRow
   Object.defineProperty(accessorRow, 'id', {
     enumerable: true,
@@ -1363,7 +1529,7 @@ function createMalformedListResults(): readonly unknown[] {
     1,
     'rows',
     {},
-    sparseRows,
+    createSparseRows(),
     [accessorRow],
     [
       new Proxy(createRawLocationRow(), {
@@ -1380,6 +1546,40 @@ function createMalformedListResults(): readonly unknown[] {
       })
     ]
   ])
+}
+
+function createSparseRows(): unknown[] {
+  const rows = [createRawLocationRow()]
+  delete rows[0]
+
+  return rows
+}
+
+function createRowsWithExtraStringProperty(): unknown[] {
+  const rows = [createRawLocationRow()] as unknown[] & { row_metadata?: string }
+  Object.defineProperty(rows, 'row_metadata', {
+    enumerable: true,
+    value: 'secret'
+  })
+
+  return rows
+}
+
+function createRowsWithSymbolProperty(): unknown[] {
+  const rows = [createRawLocationRow()]
+  Object.defineProperty(rows, Symbol('row_metadata'), {
+    enumerable: true,
+    value: true
+  })
+
+  return rows
+}
+
+function createMalformedLocationRow(): RawLocationRow {
+  return {
+    ...createRawLocationRow(),
+    name: ' Central Church'
+  }
 }
 
 function createSqliteError(code: string): Error {
