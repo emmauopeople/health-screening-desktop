@@ -1,3 +1,4 @@
+import { types as nodeTypes } from 'node:util'
 import type Database from 'better-sqlite3'
 
 import { EntityIdGenerationError, parseEntityId } from '@main/foundation/entity-id'
@@ -67,6 +68,12 @@ export function createDatabaseTransactionExecutor({
           createTransactionContext(connection, guard, idGenerator, clock),
           guard
         )
+
+        if (isNativePromise(result)) {
+          observeNativePromiseRejection(result)
+          guard.deactivate()
+          throw new DatabaseTransactionAsyncWorkError()
+        }
 
         if (isThenable(result)) {
           guard.deactivate()
@@ -375,6 +382,14 @@ function isThenable(value: unknown): boolean {
     'then' in value &&
     typeof (value as { then?: unknown }).then === 'function'
   )
+}
+
+function isNativePromise(value: unknown): value is Promise<unknown> {
+  return nodeTypes.isPromise(value)
+}
+
+function observeNativePromiseRejection(value: Promise<unknown>): void {
+  void value.catch(() => undefined)
 }
 
 function toControlledTransactionError(error: unknown): Error {

@@ -36,6 +36,11 @@ interface InsertSettingConnection {
   }
 }
 
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve(value: T): void
+}
+
 const now = '2026-07-29T12:34:56.789Z'
 const generatedIds = [
   '11111111-1111-4111-8111-111111111111',
@@ -522,6 +527,74 @@ describe('database transaction executor', () => {
     })
   })
 
+  it('observes async continuation database write rejections without exposing the Promise', async () => {
+    await withMigratedDatabase(async (connection) => {
+      const logger = createLogger()
+      const executor = createExecutor(connection, { logger })
+      const writeAttempted = createDeferred<void>()
+      let runReturned = false
+
+      const unhandledRejections = await collectUnhandledRejectionsDuring(async () => {
+        const error = captureError(() => {
+          runUnchecked(executor, (context) =>
+            (async () => {
+              await Promise.resolve()
+              writeAttempted.resolve()
+              insertSetting(context.connection, 'async-unhandled-write', '{"enabled":true}')
+            })()
+          )
+          runReturned = true
+        })
+
+        expect(runReturned).toBe(false)
+        expect(error).toBeInstanceOf(DatabaseTransactionAsyncWorkError)
+        expectSafeControlledError(error)
+        await writeAttempted.promise
+      })
+
+      expect(unhandledRejections).toEqual([])
+      expect(readTableCount(connection, 'app_settings')).toBe(0)
+      expect(connection.inTransaction).toBe(false)
+      expectLogsAreSafe(logger)
+    })
+  })
+
+  it('observes secret-bearing async continuation rejections without unhandledRejection', async () => {
+    await withMigratedDatabase(async (connection) => {
+      const logger = createLogger()
+      const executor = createExecutor(connection, { logger })
+      const throwAttempted = createDeferred<void>()
+      const secretError = new Error('C:\\secret\\patient.sqlite3 SELECT * FROM patients')
+      secretError.name = 'C:\\secret\\AsyncDriverError'
+      let runReturned = false
+
+      const unhandledRejections = await collectUnhandledRejectionsDuring(async () => {
+        const error = captureError(() => {
+          runUnchecked(executor, (context) => {
+            insertSetting(context.connection, 'async-secret-before-rollback', '{"enabled":true}')
+
+            return (async () => {
+              await Promise.resolve()
+              throwAttempted.resolve()
+              throw secretError
+            })()
+          })
+          runReturned = true
+        })
+
+        expect(runReturned).toBe(false)
+        expect(error).toBeInstanceOf(DatabaseTransactionAsyncWorkError)
+        expectSafeControlledError(error)
+        await throwAttempted.promise
+      })
+
+      expect(unhandledRejections).toEqual([])
+      expect(readTableCount(connection, 'app_settings')).toBe(0)
+      expect(connection.inTransaction).toBe(false)
+      expectLogsAreSafe(logger)
+    })
+  })
+
   it('rolls back when injected foundation providers return invalid values', async () => {
     await withMigratedDatabase((connection) => {
       const logger = createLogger()
@@ -783,6 +856,42 @@ function runUnchecked<T>(
   work: (context: DatabaseTransactionContext) => T
 ): T {
   return executor.run(work as (context: DatabaseTransactionContext) => never) as T
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolveDeferred: (value: T) => void = () => undefined
+  const promise = new Promise<T>((resolve) => {
+    resolveDeferred = resolve
+  })
+
+  return {
+    promise,
+    resolve: resolveDeferred
+  }
+}
+
+async function collectUnhandledRejectionsDuring(action: () => Promise<void>): Promise<unknown[]> {
+  const unhandledRejections: unknown[] = []
+  const handler = (reason: unknown): void => {
+    unhandledRejections.push(reason)
+  }
+
+  process.on('unhandledRejection', handler)
+  try {
+    await action()
+    await waitForUnhandledRejectionEvents()
+
+    return unhandledRejections
+  } finally {
+    process.off('unhandledRejection', handler)
+  }
+}
+
+async function waitForUnhandledRejectionEvents(): Promise<void> {
+  await Promise.resolve()
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  await Promise.resolve()
+  await new Promise<void>((resolve) => setImmediate(resolve))
 }
 
 function readUserVersion(connection: Database.Database): number {
