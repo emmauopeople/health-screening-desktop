@@ -6,6 +6,7 @@ export type RepositoryErrorCode =
   | 'REPOSITORY_WRITE_ERROR'
   | 'REPOSITORY_DATA_INTEGRITY_ERROR'
   | 'INSTALLATION_ALREADY_EXISTS'
+  | 'LOCAL_USER_ALREADY_EXISTS'
 
 type RepositoryErrorName =
   | 'RepositoryValidationError'
@@ -13,6 +14,7 @@ type RepositoryErrorName =
   | 'RepositoryWriteError'
   | 'RepositoryDataIntegrityError'
   | 'InstallationAlreadyExistsError'
+  | 'LocalUserAlreadyExistsError'
 
 class ControlledRepositoryError extends Error {
   readonly code: RepositoryErrorCode
@@ -87,12 +89,24 @@ export class InstallationAlreadyExistsError extends ControlledRepositoryError {
   }
 }
 
+export class LocalUserAlreadyExistsError extends ControlledRepositoryError {
+  constructor(errorType?: string) {
+    super(
+      'LocalUserAlreadyExistsError',
+      'LOCAL_USER_ALREADY_EXISTS',
+      'Local user already exists.',
+      errorType
+    )
+  }
+}
+
 export type RepositoryError =
   | RepositoryValidationError
   | RepositoryReadError
   | RepositoryWriteError
   | RepositoryDataIntegrityError
   | InstallationAlreadyExistsError
+  | LocalUserAlreadyExistsError
 
 export function isRepositoryError(error: unknown): error is RepositoryError {
   return (
@@ -100,7 +114,8 @@ export function isRepositoryError(error: unknown): error is RepositoryError {
     error instanceof RepositoryReadError ||
     error instanceof RepositoryWriteError ||
     error instanceof RepositoryDataIntegrityError ||
-    error instanceof InstallationAlreadyExistsError
+    error instanceof InstallationAlreadyExistsError ||
+    error instanceof LocalUserAlreadyExistsError
   )
 }
 
@@ -121,7 +136,11 @@ export function rebuildRepositoryError(error: RepositoryError): RepositoryError 
     return new RepositoryDataIntegrityError(error.errorType)
   }
 
-  return new InstallationAlreadyExistsError(error.errorType)
+  if (error instanceof InstallationAlreadyExistsError) {
+    return new InstallationAlreadyExistsError(error.errorType)
+  }
+
+  return new LocalUserAlreadyExistsError(error.errorType)
 }
 
 export function getRepositoryErrorType(error: unknown): string {

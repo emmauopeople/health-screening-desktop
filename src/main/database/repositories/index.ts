@@ -1,6 +1,7 @@
 export {
   InstallationAlreadyExistsError,
   RepositoryDataIntegrityError,
+  LocalUserAlreadyExistsError,
   RepositoryReadError,
   type RepositoryError,
   type RepositoryErrorCode,
@@ -18,3 +19,23 @@ export {
   type InstallationRepository,
   type InstallationState
 } from './installation'
+export {
+  createLocalUserRepository,
+  decodeFailedLoginCount,
+  decodeSqliteBoolean,
+  encodeSqliteBoolean,
+  parseCreateMustChangePassword,
+  parseLocalUserRole,
+  parseUserDisplayName,
+  parseUsername,
+  parseUsernameIdentity,
+  type CreateLocalUserInput,
+  type LocalUserAuthenticationRecord,
+  type LocalUserRecord,
+  type LocalUserRepository,
+  type LocalUserRole,
+  type NormalizedUsername,
+  type UserDisplayName,
+  type Username,
+  type UsernameIdentity
+} from './local-user'

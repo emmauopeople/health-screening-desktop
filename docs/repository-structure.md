@@ -33,13 +33,18 @@ commit, rollback, entity ID, and UTC timestamp coordination.
 
 `src/main/database/repositories` contains main-process-only repository
 boundaries. HSD-009 adds the typed installation repository and read-only
-first-run state query over schema version 1. Repositories own exact SQL and row
-decoding, while writes use caller-owned transaction-scoped capabilities.
+first-run state query over schema version 1. HSD-011 adds the typed local-user
+repository over the existing schema-v1 `users` table. Repositories own exact
+SQL and row decoding, while writes use caller-owned transaction-scoped
+capabilities.
 
 `src/main/security/password` owns the HSD-010 local password credential
 primitive. It validates exact plaintext password input, serializes strict
 `scrypt-v1` credentials, wraps Node `crypto` password operations, and exposes no
-database, IPC, preload, renderer, login, session, or user-repository behavior.
+IPC, preload, renderer, login, session, or user-repository behavior. HSD-011
+adds a narrow internal persistence-validation bridge in this folder so
+repositories can validate canonical credential text without exposing low-level
+credential constructors or decoders through application-facing barrels.
 
 The renderer must not import from `src/main`.
 

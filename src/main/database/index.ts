@@ -38,9 +38,19 @@ export {
 } from './transaction'
 export {
   createInstallationRepository,
+  createLocalUserRepository,
+  decodeFailedLoginCount,
+  decodeSqliteBoolean,
+  encodeSqliteBoolean,
   InstallationAlreadyExistsError,
+  LocalUserAlreadyExistsError,
+  parseCreateMustChangePassword,
   parseDeploymentName,
   parseIanaTimeZone,
+  parseLocalUserRole,
+  parseUserDisplayName,
+  parseUsername,
+  parseUsernameIdentity,
   RepositoryDataIntegrityError,
   RepositoryReadError,
   type RepositoryError,
@@ -52,5 +62,14 @@ export {
   type IanaTimeZone,
   type InstallationRecord,
   type InstallationRepository,
-  type InstallationState
+  type InstallationState,
+  type CreateLocalUserInput,
+  type LocalUserAuthenticationRecord,
+  type LocalUserRecord,
+  type LocalUserRepository,
+  type LocalUserRole,
+  type NormalizedUsername,
+  type UserDisplayName,
+  type Username,
+  type UsernameIdentity
 } from './repositories'
