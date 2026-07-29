@@ -1,7 +1,8 @@
 # SQLite Runtime
 
-HSD-006 provides the local SQLite runtime foundation only. It creates one empty
-file-backed database at:
+HSD-006 provides the local SQLite runtime foundation. HSD-007 adds the numbered
+migration boundary that upgrades the local database to schema version 1 before
+the runtime is marked ready. The file-backed database is stored at:
 
 `<app.getPath('userData')>/data/health-screening.sqlite3`
 
@@ -14,10 +15,15 @@ real AppData directory.
 
 The primary instance initializes one connection before IPC handlers or the main
 window are started. It verifies `foreign_keys=ON`, `journal_mode=WAL`,
-`synchronous=NORMAL`, `busy_timeout=5000`, `trusted_schema=OFF`, and
-`user_version=0`, followed by `SELECT 1`. Initialization failure closes any
-partial handle, logs only a fixed phase and exception type, and exits before
-renderer load. There is no in-memory or alternate fallback.
+`synchronous=NORMAL`, `busy_timeout=5000`, and `trusted_schema=OFF`. The
+HSD-007 production migration runner then verifies or applies bundled numbered
+SQL migrations. Only after migration success does the runtime run `SELECT 1`,
+store the live connection, report database `ready`, register application IPC, or
+create the renderer window.
+
+Initialization failure closes any partial handle, logs only fixed phases and
+exception types, and exits before renderer load. There is no in-memory or
+alternate fallback.
 
 The runtime reports `ready` only while a live health query succeeds. `close()`
 is idempotent and transitions the runtime to `unavailable`. The renderer sees
@@ -25,12 +31,12 @@ only the typed `app.getHealth()` database state: `ready` or `unavailable`.
 
 ## Boundary And Scope
 
-Only `src/main/database` imports `better-sqlite3`. No SQL, query, execute,
-prepare, pragma, path, handle, or native object is exposed through preload,
-shared contracts, or the renderer. HSD-006 intentionally creates no migrations,
-application tables, repositories, patient data, authentication, audit records,
-outbox records, backup/restore, or synchronization. Those concerns begin in
-later reviewed tasks.
+Only `src/main/database` imports `better-sqlite3`. No SQL, migration checksum,
+schema detail, query, execute, prepare, pragma, path, handle, or native object is
+exposed through preload, shared contracts, or the renderer. HSD-007 creates the
+empty schema only. It does not add repositories, patient workflows,
+authentication, audit writing, outbox processing, backup/restore, or
+synchronization. Those concerns remain later reviewed tasks.
 
 The main build externalizes the native dependency. electron-builder unpacks
 the `.node` binary while keeping ASAR enabled. `electron-builder install-app-deps`
@@ -39,7 +45,8 @@ Windows smoke tests.
 
 ## Testing
 
-The integration suite opens a real temporary file-backed database and verifies
-file creation, all startup pragmas, health transitions, idempotent ownership,
-partial-failure cleanup, and safe logging. The repository must remain free of
-SQLite, WAL, and SHM artifacts.
+The integration suite opens real temporary file-backed databases and verifies
+file creation, startup pragmas, schema version 1 migration, idempotent restarts,
+history mismatch refusal, rollback behavior, schema constraints, health
+transitions, partial-failure cleanup, and safe logging. The repository must
+remain free of SQLite, WAL, and SHM artifacts.

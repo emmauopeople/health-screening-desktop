@@ -5,6 +5,15 @@ export {
   type DatabaseStatus
 } from './database-health'
 export {
+  createProductionDatabaseMigrationRunner,
+  targetSchemaVersion,
+  type DatabaseMigrationRunner,
+  type DatabaseMigrationSummary,
+  MigrationCompatibilityError,
+  MigrationExecutionError,
+  MigrationManifestError
+} from './migrations'
+export {
   createDatabaseRuntime,
   DatabaseRuntimeInitializationError,
   DatabaseRuntimeUnavailableError,

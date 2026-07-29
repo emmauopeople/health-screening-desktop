@@ -1,6 +1,6 @@
 # Engineering Standards
 
-HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds only the trusted local SQLite runtime foundation; it does not add application persistence, tables, migrations, or repositories.
+HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure, but still does not add repositories, seed data, authentication, clinical workflows, or synchronization.
 
 ## TypeScript
 
@@ -35,10 +35,31 @@ Renderer code cannot import Electron, Node built-ins, `src/main`, `src/preload`,
 
 SQLite is owned only by `src/main/database`. The production database is a
 file-backed `userData/data/health-screening.sqlite3` runtime and its path,
-native handle, SQL, and raw errors must never cross into shared, preload, or
-renderer code or operational logs. The exact `better-sqlite3@13.0.2` dependency
-requires Electron-compatible native rebuild and ASAR-unpack review before
-upgrades.
+native handle, SQL, migration checksums, schema details, and raw errors must
+never cross into shared, preload, or renderer code or operational logs. The
+exact `better-sqlite3@13.0.2` dependency requires Electron-compatible native
+rebuild and ASAR-unpack review before upgrades.
+
+## Database Migrations
+
+Released migration files are immutable. Do not edit, rename, reorder, squash, or
+reuse a migration after review. Every later schema change must add a new
+numbered SQL file and append one explicit manifest entry.
+
+Migration versions must be positive, unique, ordered, and contiguous. SQL is
+imported as `?raw` from the trusted main-process migration manifest; startup must
+not scan directories or read repository-relative migration files.
+
+Each migration runs in one SQLite transaction with its SQL body, ledger insert,
+and `PRAGMA user_version` update committed together. Startup must refuse unsafe
+history, checksum mismatches, inconsistent metadata, and newer databases. It
+must never silently reset, downgrade, delete, replace, or auto-repair a
+production database.
+
+Every application table introduced by a migration must be `STRICT`. Booleans use
+integer 0/1 checks, JSON text uses `json_valid` checks, and clinical or audit
+relationships use restrict foreign keys rather than cascade deletes unless a
+later approved task explicitly changes that rule.
 
 ## Formatting And Linting
 

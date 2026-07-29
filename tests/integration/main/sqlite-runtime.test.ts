@@ -5,9 +5,11 @@ import Database from 'better-sqlite3'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  createProductionDatabaseMigrationRunner,
   createDatabaseRuntime,
   DatabaseRuntimeInitializationError,
-  getDatabasePath
+  getDatabasePath,
+  type DatabaseMigrationRunner
 } from '@main/database'
 
 type MockLogMethod = ReturnType<typeof vi.fn<(message: string) => void>>
@@ -22,10 +24,16 @@ describe('SQLite runtime integration', () => {
     const userDataDirectory = await mkdtemp(join(tmpdir(), 'hsd006-userdata-'))
     const logger = createLogger()
     const openConnection = vi.fn((path: string) => new Database(path))
+    const migrationRunner = createProductionDatabaseMigrationRunner({
+      applicationVersion: '1.0.0',
+      logger,
+      clock: { now: () => '2026-07-29T00:00:00.000Z' }
+    })
 
     try {
       const runtime = createDatabaseRuntime({
         databasePath: getDatabasePath(userDataDirectory),
+        migrationRunner,
         openConnection,
         logger
       })
@@ -44,18 +52,21 @@ describe('SQLite runtime integration', () => {
       expect(connection.pragma('synchronous', { simple: true })).toBe(1)
       expect(connection.pragma('busy_timeout', { simple: true })).toBe(5000)
       expect(connection.pragma('trusted_schema', { simple: true })).toBe(0)
-      expect(connection.pragma('user_version', { simple: true })).toBe(0)
+      expect(connection.pragma('user_version', { simple: true })).toBe(1)
       expect(
         connection.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all()
-      ).toEqual([])
+      ).toContainEqual({ name: 'schema_migrations' })
 
       runtime.close()
       runtime.close()
 
       expect(runtime.getStatus()).toBe('unavailable')
-      expect(logger.info.mock.calls).toEqual([
-        ['Database runtime initialized.'],
-        ['Database runtime closed.']
+      expect(logger.info.mock.calls.flat()).toEqual([
+        'Database migration started; version=1; name=initial-schema',
+        'Database migration applied; version=1; name=initial-schema',
+        'Database migrations current; schemaVersion=1',
+        'Database runtime initialized.',
+        'Database runtime closed.'
       ])
     } finally {
       await rm(userDataDirectory, { recursive: true, force: true })
@@ -78,6 +89,7 @@ describe('SQLite runtime integration', () => {
     try {
       const runtime = createDatabaseRuntime({
         databasePath: getDatabasePath(userDataDirectory),
+        migrationRunner: createNoopMigrationRunner(),
         openConnection: () => connection as never,
         logger
       })
@@ -106,6 +118,7 @@ describe('SQLite runtime integration', () => {
     try {
       const runtime = createDatabaseRuntime({
         databasePath: getDatabasePath(userDataDirectory),
+        migrationRunner: createNoopMigrationRunner(),
         openConnection: () => connection as never,
         logger
       })
@@ -137,6 +150,7 @@ describe('SQLite runtime integration', () => {
     try {
       const runtime = createDatabaseRuntime({
         databasePath: getDatabasePath(userDataDirectory),
+        migrationRunner: createNoopMigrationRunner(),
         openConnection: () => connection as never,
         logger
       })
@@ -164,6 +178,7 @@ describe('SQLite runtime integration', () => {
     try {
       const runtime = createDatabaseRuntime({
         databasePath: getDatabasePath(userDataDirectory),
+        migrationRunner: createNoopMigrationRunner(),
         openConnection: () => connection as never,
         logger
       })
@@ -182,6 +197,37 @@ describe('SQLite runtime integration', () => {
       await rm(userDataDirectory, { recursive: true, force: true })
     }
   })
+
+  it('keeps the database unavailable and closes the handle when migration fails', async () => {
+    const userDataDirectory = await mkdtemp(join(tmpdir(), 'hsd007-migration-failure-'))
+    const logger = createLogger()
+    const close = vi.fn()
+    const connection = createFakeConnection(() => ({ health: 1 }), close)
+    const migrationRunner = vi.fn(() => {
+      throw new Error('C:\\secret\\migration.sqlite3 SELECT * FROM patient')
+    })
+
+    try {
+      const runtime = createDatabaseRuntime({
+        databasePath: getDatabasePath(userDataDirectory),
+        migrationRunner,
+        openConnection: () => connection as never,
+        logger
+      })
+
+      expect(() => runtime.initialize()).toThrow(DatabaseRuntimeInitializationError)
+      expect(migrationRunner).toHaveBeenCalledOnce()
+      expect(close).toHaveBeenCalledOnce()
+      expect(runtime.getStatus()).toBe('unavailable')
+      expect(logger.error.mock.calls.join('\n')).toContain(
+        'Database runtime initialization failed; phase=open; errorType=Error'
+      )
+      expect(logger.error.mock.calls.join('\n')).not.toContain('secret')
+      expect(logger.error.mock.calls.join('\n')).not.toContain('patient')
+    } finally {
+      await rm(userDataDirectory, { recursive: true, force: true })
+    }
+  })
 })
 
 function createLogger(): TestLogger {
@@ -189,6 +235,14 @@ function createLogger(): TestLogger {
     info: vi.fn<(message: string) => void>(),
     error: vi.fn<(message: string) => void>()
   }
+}
+
+function createNoopMigrationRunner(): DatabaseMigrationRunner {
+  return vi.fn(() => ({
+    previousVersion: 0,
+    currentVersion: 0,
+    appliedVersions: []
+  }))
 }
 
 function createFakeConnection(
