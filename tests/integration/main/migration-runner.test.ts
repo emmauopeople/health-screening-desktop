@@ -13,6 +13,7 @@ import { computeMigrationChecksum } from '@main/database/migrations/migration-ch
 import { databaseMigrations } from '@main/database/migrations/migration-manifest'
 import { runDatabaseMigrations } from '@main/database/migrations/migration-runner'
 import type { DatabaseMigration } from '@main/database/migrations/migration-types'
+import { validateSchemaVersion1 } from '@main/database/migrations/schema-v1-contract'
 
 type MockLogMethod = ReturnType<typeof vi.fn<(message: string) => void>>
 
@@ -70,6 +71,36 @@ describe('migration runner integration', () => {
     })
   })
 
+  it('allows application version changes without rewriting historical ledger rows', async () => {
+    await withDatabase((connection) => {
+      const logger = createLogger()
+      const firstRunner = createProductionDatabaseMigrationRunner({
+        applicationVersion: '1.0.0',
+        logger,
+        clock: fixedClock
+      })
+      const secondRunner = createProductionDatabaseMigrationRunner({
+        applicationVersion: '1.0.1',
+        logger,
+        clock: { now: () => '2026-07-30T00:00:00.000Z' }
+      })
+
+      firstRunner(connection)
+      const originalLedger = readLedgerRows(connection)
+      const appliedLogCount = countAppliedMigrationLogs(logger)
+      const secondSummary = secondRunner(connection)
+
+      expect(secondSummary).toEqual({
+        previousVersion: 1,
+        currentVersion: 1,
+        appliedVersions: []
+      })
+      expect(readLedgerRows(connection)).toEqual(originalLedger)
+      expect(readLedgerRows(connection)[0]?.application_version).toBe('1.0.0')
+      expect(countAppliedMigrationLogs(logger)).toBe(appliedLogCount)
+    })
+  })
+
   it('runs multiple injected migrations in order without adding a second production migration', async () => {
     await withDatabase((connection) => {
       const logger = createLogger()
@@ -106,6 +137,27 @@ describe('migration runner integration', () => {
     })
   })
 
+  it('refuses to run when a transaction is already open', async () => {
+    await withDatabase((connection) => {
+      const migrate = createProductionDatabaseMigrationRunner({
+        applicationVersion: '1.0.0',
+        logger: createLogger(),
+        clock: fixedClock
+      })
+
+      connection.exec('BEGIN')
+
+      try {
+        expect(() => migrate(connection)).toThrow(MigrationExecutionError)
+        expect(readUserVersion(connection)).toBe(0)
+        expect(hasTable(connection, 'schema_migrations')).toBe(false)
+        expect(hasTable(connection, 'app_settings')).toBe(false)
+      } finally {
+        connection.exec('ROLLBACK')
+      }
+    })
+  })
+
   it('rolls back a failed migration without leaving schema or ledger artifacts', async () => {
     await withDatabase((connection) => {
       const logger = createLogger()
@@ -131,6 +183,41 @@ describe('migration runner integration', () => {
       expect(hasTable(connection, 'transient_table')).toBe(false)
       expect(logger.error.mock.calls.join('\n')).toContain(
         'Database migration failed; version=1; name=broken; phase=execute; errorType=SqliteError'
+      )
+    })
+  })
+
+  it('validates schema version 1 before commit and rolls back invalid completed SQL', async () => {
+    await withDatabase((connection) => {
+      const logger = createLogger()
+
+      expect(() =>
+        runDatabaseMigrations({
+          connection,
+          migrations: [
+            {
+              version: 1,
+              name: 'partial-schema',
+              sql: `CREATE TABLE app_settings (
+                key TEXT PRIMARY KEY,
+                value_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                sensitivity_classification TEXT NOT NULL
+              ) STRICT;`
+            }
+          ],
+          applicationVersion: '1.0.0',
+          logger,
+          clock: fixedClock,
+          schemaValidators: new Map([[1, validateSchemaVersion1]])
+        })
+      ).toThrow(MigrationExecutionError)
+
+      expect(readUserVersion(connection)).toBe(0)
+      expect(hasTable(connection, 'schema_migrations')).toBe(false)
+      expect(hasTable(connection, 'app_settings')).toBe(false)
+      expect(logger.error.mock.calls.join('\n')).toContain(
+        'Database migration failed; version=1; name=partial-schema; phase=schema; errorType=MigrationExecutionError'
       )
     })
   })
@@ -197,38 +284,131 @@ describe('migration runner integration', () => {
     expect(errorLog).not.toContain('C:\\secret')
   })
 
-  it('refuses checksum and name mismatches before applying pending migrations', async () => {
+  it('throws controlled migration errors without raw causes or serializable stack details', async () => {
     await withDatabase((connection) => {
-      const productionMigration = databaseMigrations[0]!
+      const error = captureError(() =>
+        runDatabaseMigrations({
+          connection,
+          migrations: [
+            {
+              version: 1,
+              name: 'broken',
+              sql: 'SELECT * FROM patient_secret_value_at_C:\\secret\\database.sqlite3;'
+            }
+          ],
+          applicationVersion: '1.0.0',
+          logger: createLogger(),
+          clock: fixedClock
+        })
+      )
+
+      expect(error).toBeInstanceOf(MigrationExecutionError)
+      expect(error).not.toHaveProperty('cause')
+      expect((error as Error).stack).toBeUndefined()
+      expect(JSON.stringify(error)).not.toContain('patient_secret_value')
+      expect(JSON.stringify(error)).not.toContain('C:\\secret')
+      expect(JSON.stringify(error)).not.toContain('stack')
+    })
+  })
+
+  it('refuses historical checksum and name mismatches before executing pending migrations', async () => {
+    await withDatabase((connection) => {
+      const version1: DatabaseMigration = {
+        version: 1,
+        name: 'first',
+        sql: 'CREATE TABLE first_test_table (id TEXT PRIMARY KEY) STRICT;'
+      }
+      const version2: DatabaseMigration = {
+        version: 2,
+        name: 'second',
+        sql: 'CREATE TABLE second_test_table (id TEXT PRIMARY KEY) STRICT;'
+      }
+
+      runDatabaseMigrations({
+        connection,
+        migrations: [version1],
+        applicationVersion: '1.0.0',
+        logger: createLogger(),
+        clock: fixedClock
+      })
+
+      const originalLedger = readLedgerRows(connection)
+      const originalChecksum = originalLedger[0]?.checksum ?? ''
+      const alteredSqlLogger = createLogger()
+      const renamedLogger = createLogger()
+
+      const alteredSqlError = captureError(() =>
+        runDatabaseMigrations({
+          connection,
+          migrations: [{ ...version1, sql: `${version1.sql}\n-- changed` }, version2],
+          applicationVersion: '1.0.1',
+          logger: alteredSqlLogger,
+          clock: fixedClock
+        })
+      )
+      expect(alteredSqlError).toBeInstanceOf(MigrationCompatibilityError)
+      expect(alteredSqlError).not.toHaveProperty('cause')
+      expect((alteredSqlError as Error).stack).toBeUndefined()
+      expect(JSON.stringify(alteredSqlError)).not.toContain(originalChecksum)
+      expect(readUserVersion(connection)).toBe(1)
+      expect(hasTable(connection, 'second_test_table')).toBe(false)
+      expect(readLedgerRows(connection)).toEqual(originalLedger)
+      expectLogsAreHistoryMismatchSafe(alteredSqlLogger, originalChecksum)
+
+      const renamedError = captureError(() =>
+        runDatabaseMigrations({
+          connection,
+          migrations: [{ ...version1, name: 'renamed-first' }, version2],
+          applicationVersion: '1.0.1',
+          logger: renamedLogger,
+          clock: fixedClock
+        })
+      )
+      expect(renamedError).toBeInstanceOf(MigrationCompatibilityError)
+      expect(renamedError).not.toHaveProperty('cause')
+      expect((renamedError as Error).stack).toBeUndefined()
+      expect(JSON.stringify(renamedError)).not.toContain(originalChecksum)
+
+      expect(readUserVersion(connection)).toBe(1)
+      expect(hasTable(connection, 'second_test_table')).toBe(false)
+      expect(readLedgerRows(connection)).toEqual(originalLedger)
+      expectLogsAreHistoryMismatchSafe(renamedLogger, originalChecksum)
+    })
+  })
+
+  it('refuses current schema with a missing required table without changing history', async () => {
+    await withDatabase((connection) => {
       const migrate = createProductionDatabaseMigrationRunner({
         applicationVersion: '1.0.0',
         logger: createLogger(),
         clock: fixedClock
       })
       migrate(connection)
+      const originalLedger = readLedgerRows(connection)
 
-      expect(() =>
-        runDatabaseMigrations({
-          connection,
-          migrations: [{ ...productionMigration, sql: `${productionMigration.sql}\n` }],
-          applicationVersion: '1.0.1',
-          logger: createLogger(),
-          clock: fixedClock
-        })
-      ).toThrow(MigrationCompatibilityError)
+      connection.exec('DROP TABLE app_settings')
 
-      expect(() =>
-        runDatabaseMigrations({
-          connection,
-          migrations: [{ ...productionMigration, name: 'renamed-initial-schema' }],
-          applicationVersion: '1.0.1',
-          logger: createLogger(),
-          clock: fixedClock
-        })
-      ).toThrow(MigrationCompatibilityError)
-
+      expect(() => migrate(connection)).toThrow(MigrationCompatibilityError)
       expect(readUserVersion(connection)).toBe(1)
-      expect(readLedgerRows(connection)).toHaveLength(1)
+      expect(readLedgerRows(connection)).toEqual(originalLedger)
+    })
+  })
+
+  it('refuses current schema with a missing required named index without changing history', async () => {
+    await withDatabase((connection) => {
+      const migrate = createProductionDatabaseMigrationRunner({
+        applicationVersion: '1.0.0',
+        logger: createLogger(),
+        clock: fixedClock
+      })
+      migrate(connection)
+      const originalLedger = readLedgerRows(connection)
+
+      connection.exec('DROP INDEX ix_locations_name_normalized')
+
+      expect(() => migrate(connection)).toThrow(MigrationCompatibilityError)
+      expect(readUserVersion(connection)).toBe(1)
+      expect(readLedgerRows(connection)).toEqual(originalLedger)
     })
   })
 
@@ -381,6 +561,31 @@ function createLogger(): TestLogger {
     info: vi.fn<(message: string) => void>(),
     error: vi.fn<(message: string) => void>()
   }
+}
+
+function countAppliedMigrationLogs(logger: TestLogger): number {
+  return logger.info.mock.calls
+    .flat()
+    .filter((message) => message === 'Database migration applied; version=1; name=initial-schema')
+    .length
+}
+
+function expectLogsAreHistoryMismatchSafe(logger: TestLogger, checksum: string): void {
+  const logs = [...logger.info.mock.calls.flat(), ...logger.error.mock.calls.flat()].join('\n')
+
+  expect(logs).not.toContain('CREATE TABLE')
+  expect(logs).not.toContain('second_test_table')
+  expect(logs).not.toContain(checksum)
+}
+
+function captureError(action: () => void): unknown {
+  try {
+    action()
+  } catch (error) {
+    return error
+  }
+
+  throw new Error('Expected action to throw')
 }
 
 function createRollbackFailureConnection(): Database.Database {

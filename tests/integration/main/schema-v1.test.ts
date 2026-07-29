@@ -5,58 +5,13 @@ import Database from 'better-sqlite3'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createProductionDatabaseMigrationRunner } from '@main/database'
-
-const requiredTables = [
-  'app_settings',
-  'audit_log',
-  'blood_pressure_readings',
-  'consent_records',
-  'followups',
-  'food_logs',
-  'installation',
-  'lifestyle_logs',
-  'locations',
-  'otc_medication_logs',
-  'patient_identifiers',
-  'patients',
-  'protocol_versions',
-  'referral_status_history',
-  'referrals',
-  'schema_migrations',
-  'screening_encounters',
-  'screening_sessions',
-  'sync_attempts',
-  'sync_outbox',
-  'users'
-] as const
-
-const requiredNamedIndexes = [
-  'ix_audit_log_entity',
-  'ix_audit_log_occurred_at',
-  'ix_consent_records_patient_time',
-  'ix_followups_referral_contact_date',
-  'ix_food_logs_encounter',
-  'ix_lifestyle_logs_encounter',
-  'ix_locations_name_normalized',
-  'ix_otc_medication_logs_encounter',
-  'ix_patient_identifiers_patient',
-  'ix_patients_name_normalized',
-  'ix_patients_phone_normalized',
-  'ix_referral_status_history_time',
-  'ix_referrals_patient_time',
-  'ix_referrals_status_due_date',
-  'ix_screening_encounters_patient_time',
-  'ix_screening_encounters_session',
-  'ix_sync_attempts_started_at',
-  'ix_sync_outbox_status_next_attempt',
-  'ux_bp_readings_encounter_sequence',
-  'ux_patient_identifiers_identity',
-  'ux_patients_patient_code',
-  'ux_protocol_versions_key_version',
-  'ux_protocol_versions_one_active',
-  'ux_screening_sessions_location_date',
-  'ux_users_username_normalized'
-] as const
+import {
+  createSchemaMigrationsTableSql,
+  schemaVersion1NamedIndexes,
+  schemaVersion1TableContracts,
+  schemaVersion1TableNames,
+  type SchemaVersion1ColumnContract
+} from '@main/database/migrations/schema-v1-contract'
 
 const now = '2026-07-29T00:00:00Z'
 
@@ -64,20 +19,76 @@ describe('schema version 1', () => {
   it('creates exactly the required empty strict tables and named indexes', async () => {
     await withMigratedDatabase((connection) => {
       expect(readUserVersion(connection)).toBe(1)
-      expect(readTableNames(connection)).toEqual([...requiredTables].sort())
-      expect(readNamedIndexNames(connection)).toEqual([...requiredNamedIndexes].sort())
+      expect(readTableNames(connection)).toEqual([...schemaVersion1TableNames])
+      expect(readNamedIndexNames(connection)).toEqual([...schemaVersion1NamedIndexes])
 
       const strictByTable = readStrictByTable(connection)
 
-      for (const tableName of requiredTables) {
+      for (const tableName of schemaVersion1TableNames) {
         expect(strictByTable.get(tableName)).toBe(1)
       }
 
-      for (const tableName of requiredTables) {
+      for (const tableName of schemaVersion1TableNames) {
         const rowCount = readTableCount(connection, tableName)
 
         expect(rowCount).toBe(tableName === 'schema_migrations' ? 1 : 0)
       }
+    })
+  })
+
+  it('matches exact ordered table_xinfo metadata for every required table', async () => {
+    await withMigratedDatabase((connection) => {
+      for (const tableContract of schemaVersion1TableContracts) {
+        expect(readTableXInfo(connection, tableContract.name)).toEqual(tableContract.columns)
+      }
+    })
+  })
+
+  it('keeps the exact schema_migrations structure and constraints', async () => {
+    await withMigratedDatabase((connection) => {
+      expect(normalizeSchemaSql(readCreateTableSql(connection, 'schema_migrations'))).toBe(
+        normalizeSchemaSql(createSchemaMigrationsTableSql)
+      )
+
+      expect(() =>
+        connection
+          .prepare(
+            `INSERT INTO schema_migrations (
+              version,
+              name,
+              checksum,
+              applied_at,
+              application_version
+            ) VALUES (?, ?, ?, ?, ?)`
+          )
+          .run(0, 'zero', 'a'.repeat(64), now, '1.0.0')
+      ).toThrow()
+      expect(() =>
+        connection
+          .prepare(
+            `INSERT INTO schema_migrations (
+              version,
+              name,
+              checksum,
+              applied_at,
+              application_version
+            ) VALUES (?, ?, ?, ?, ?)`
+          )
+          .run(2, 'bad-checksum', 'short', now, '1.0.0')
+      ).toThrow()
+      expect(() =>
+        connection
+          .prepare(
+            `INSERT INTO schema_migrations (
+              version,
+              name,
+              checksum,
+              applied_at,
+              application_version
+            ) VALUES (?, ?, ?, ?, ?)`
+          )
+          .run(2, 'initial-schema', 'b'.repeat(64), now, '1.0.0')
+      ).toThrow()
     })
   })
 
@@ -343,6 +354,45 @@ function readTableCount(connection: Database.Database, tableName: string): numbe
   }
 
   return row.count
+}
+
+function readTableXInfo(
+  connection: Database.Database,
+  tableName: string
+): readonly SchemaVersion1ColumnContract[] {
+  return (
+    connection.prepare(`PRAGMA table_xinfo(${quoteIdentifier(tableName)})`).all() as Array<{
+      name: string
+      type: string
+      notnull: number
+      dflt_value: unknown
+      pk: number
+      hidden: number
+    }>
+  ).map((row) => ({
+    name: row.name,
+    type: row.type as SchemaVersion1ColumnContract['type'],
+    notNull: row.notnull as SchemaVersion1ColumnContract['notNull'],
+    primaryKey: row.pk,
+    defaultValue: row.dflt_value === null ? null : String(row.dflt_value),
+    hidden: row.hidden
+  }))
+}
+
+function readCreateTableSql(connection: Database.Database, tableName: string): string {
+  const row = connection
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(tableName) as { sql: string }
+
+  return row.sql
+}
+
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replaceAll('"', '""')}"`
+}
+
+function normalizeSchemaSql(sql: string): string {
+  return sql.replace(/\s+/g, ' ').replace(/;\s*$/, '').trim()
 }
 
 function insertValidGraph(connection: Database.Database): void {

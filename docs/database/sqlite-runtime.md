@@ -21,6 +21,11 @@ SQL migrations. Only after migration success does the runtime run `SELECT 1`,
 store the live connection, report database `ready`, register application IPC, or
 create the renderer window.
 
+Schema version 1 readiness requires more than matching `PRAGMA user_version` and
+`schema_migrations`. The production runner also validates the trusted schema-v1
+contract, including exact tables, strict mode, exact named indexes, exact column
+metadata, the ledger table structure, and `foreign_keys=ON`.
+
 Initialization failure closes any partial handle, logs only fixed phases and
 exception types, and exits before renderer load. There is no in-memory or
 alternate fallback.

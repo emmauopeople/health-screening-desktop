@@ -36,23 +36,38 @@ export interface DatabaseMigrationSummary {
 
 export type DatabaseMigrationRunner = (connection: MigrationConnection) => DatabaseMigrationSummary
 
-export class MigrationManifestError extends Error {
-  constructor(message = 'Invalid database migration manifest.') {
+export type DatabaseSchemaValidationMode = 'execution' | 'compatibility'
+
+export type DatabaseSchemaValidator = (
+  connection: MigrationConnection,
+  mode: DatabaseSchemaValidationMode
+) => void
+
+class ControlledMigrationError extends Error {
+  readonly errorType?: string
+
+  constructor(name: string, message: string, errorType?: string) {
     super(message)
-    this.name = 'MigrationManifestError'
+    this.name = name
+    this.errorType = errorType
+    this.stack = undefined
   }
 }
 
-export class MigrationCompatibilityError extends Error {
-  constructor(message = 'Database migration history is incompatible.', options?: ErrorOptions) {
-    super(message, options)
-    this.name = 'MigrationCompatibilityError'
+export class MigrationManifestError extends ControlledMigrationError {
+  constructor(errorType?: string) {
+    super('MigrationManifestError', 'Invalid database migration manifest.', errorType)
   }
 }
 
-export class MigrationExecutionError extends Error {
-  constructor(message = 'Database migration execution failed.', options?: ErrorOptions) {
-    super(message, options)
-    this.name = 'MigrationExecutionError'
+export class MigrationCompatibilityError extends ControlledMigrationError {
+  constructor(errorType?: string) {
+    super('MigrationCompatibilityError', 'Database migration history is incompatible.', errorType)
+  }
+}
+
+export class MigrationExecutionError extends ControlledMigrationError {
+  constructor(errorType?: string) {
+    super('MigrationExecutionError', 'Database migration execution failed.', errorType)
   }
 }

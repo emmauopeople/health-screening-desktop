@@ -4,6 +4,11 @@ Schema version 1 is an empty local operational schema. It creates structure only
 no installation, setting, user, location, protocol, patient, encounter, referral,
 outbox, audit, or other operational row is inserted by HSD-007.
 
+The production runner validates this contract before committing migration 1,
+after migration completion, and on current-version startup. A missing, extra, or
+renamed required table, index, column, or non-strict table is treated as a
+controlled migration compatibility or execution failure.
+
 ## Conventions
 
 - Every application table and `schema_migrations` is `STRICT`.

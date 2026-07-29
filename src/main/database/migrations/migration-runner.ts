@@ -12,9 +12,11 @@ import {
   type DatabaseMigrationContext,
   type DatabaseMigrationLogger,
   type DatabaseMigrationSummary,
+  type DatabaseSchemaValidator,
   type MigrationConnection,
   type ResolvedDatabaseMigration
 } from './migration-types'
+import { createSchemaMigrationsTableSql } from './schema-v1-contract'
 
 const migrationNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -27,6 +29,7 @@ const defaultClock: DatabaseMigrationClock = {
 interface RunDatabaseMigrationsOptions extends DatabaseMigrationContext {
   migrations: readonly DatabaseMigration[]
   expectedHighestVersion?: number
+  schemaValidators?: ReadonlyMap<number, DatabaseSchemaValidator>
 }
 
 interface LedgerRow {
@@ -109,7 +112,8 @@ export function runDatabaseMigrations({
   applicationVersion,
   logger = defaultLogger,
   clock = defaultClock,
-  expectedHighestVersion
+  expectedHighestVersion,
+  schemaValidators = new Map()
 }: RunDatabaseMigrationsOptions): DatabaseMigrationSummary {
   const resolvedMigrations = validateMigrationManifest(migrations, { expectedHighestVersion })
   const highestVersion = resolvedMigrations[resolvedMigrations.length - 1]?.version
@@ -125,7 +129,7 @@ export function runDatabaseMigrations({
   const startingState = readAndValidateDatabaseState(connection, resolvedMigrations)
 
   if (startingState.userVersion > highestVersion) {
-    throw new MigrationCompatibilityError('Database schema is newer than this application.')
+    throw new MigrationCompatibilityError()
   }
 
   const appliedVersions: number[] = []
@@ -139,7 +143,8 @@ export function runDatabaseMigrations({
       applicationVersion,
       logger,
       clock,
-      createLedger: migration.version === 1 && startingState.userVersion === 0
+      createLedger: migration.version === 1 && startingState.userVersion === 0,
+      schemaValidator: schemaValidators.get(migration.version)
     })
     appliedVersions.push(migration.version)
   }
@@ -149,6 +154,8 @@ export function runDatabaseMigrations({
   if (finalState.userVersion !== highestVersion) {
     throw new MigrationCompatibilityError()
   }
+
+  schemaValidators.get(finalState.userVersion)?.(connection, 'compatibility')
 
   logger.info(`Database migrations current; schemaVersion=${highestVersion}`)
 
@@ -168,7 +175,7 @@ function readAndValidateDatabaseState(
   const highestVersion = migrations[migrations.length - 1]?.version ?? 0
 
   if (userVersion > highestVersion) {
-    throw new MigrationCompatibilityError('Database schema is newer than this application.')
+    throw new MigrationCompatibilityError()
   }
 
   if (userVersion === 0) {
@@ -268,6 +275,7 @@ function applyMigration(
     logger: DatabaseMigrationLogger
     clock: DatabaseMigrationClock
     createLedger: boolean
+    schemaValidator?: DatabaseSchemaValidator
   }
 ): void {
   let transactionStarted = false
@@ -288,11 +296,14 @@ function applyMigration(
 
     phase = 'ledger'
     if (options.createLedger) {
-      connection.exec(createLedgerTableSql)
+      connection.exec(createSchemaMigrationsTableSql)
     }
 
     phase = 'execute'
     connection.exec(migration.sql)
+
+    phase = 'schema'
+    options.schemaValidator?.(connection, 'execution')
 
     phase = 'record'
     insertLedgerRow(connection, migration, options.clock.now(), options.applicationVersion)
@@ -325,19 +336,9 @@ function applyMigration(
     }
 
     logMigrationFailure(options.logger, failureContext, error)
-    throw new MigrationExecutionError('Database migration execution failed.', { cause: error })
+    throw new MigrationExecutionError(getErrorType(error))
   }
 }
-
-const createLedgerTableSql = `
-CREATE TABLE schema_migrations (
-  version INTEGER PRIMARY KEY CHECK (version > 0),
-  name TEXT NOT NULL UNIQUE,
-  checksum TEXT NOT NULL CHECK (length(checksum) = 64),
-  applied_at TEXT NOT NULL,
-  application_version TEXT NOT NULL
-) STRICT;
-`
 
 function readUserVersion(connection: MigrationConnection): number {
   const userVersion = connection.pragma('user_version', { simple: true })
@@ -399,9 +400,7 @@ function readLedgerRows(connection: MigrationConnection): LedgerRow[] {
 
     return rows.map(parseLedgerRow)
   } catch (error) {
-    throw new MigrationCompatibilityError('Database migration ledger could not be read.', {
-      cause: error
-    })
+    throw new MigrationCompatibilityError(getErrorType(error))
   }
 }
 

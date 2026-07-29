@@ -47,19 +47,26 @@ For each pending migration, the runner:
 1. Opens `BEGIN IMMEDIATE`.
 2. Creates `schema_migrations` when applying version 1 to a version-0 database.
 3. Executes the SQL body.
-4. Inserts the ledger row with injected UTC time and app version.
-5. Sets `PRAGMA user_version` to the migration version.
-6. Verifies the marker and ledger row.
-7. Commits.
+4. Validates the trusted schema contract for that version when one is defined.
+5. Inserts the ledger row with injected UTC time and app version.
+6. Sets `PRAGMA user_version` to the migration version.
+7. Verifies the marker and ledger row.
+8. Commits.
 
 If any step fails, the runner attempts one rollback and throws a controlled
 migration error. A rollback failure is logged safely and does not replace the
 original migration error.
 
+For HSD-007, schema version 1 is validated before migration 1 commits, after
+all migrations finish, and on every idempotent current-version startup. The
+validator checks the exact non-internal table set, strict mode, exact named
+index set, exact table column metadata, `schema_migrations` structure, and
+`foreign_keys=ON`.
+
 ## Compatibility Rules
 
 - `user_version=0` with no ledger upgrades to the bundled version.
-- Current databases verify the ledger and perform no writes.
+- Current databases verify the ledger and schema contract and perform no writes.
 - Older databases verify existing history before applying pending migrations.
 - Databases newer than the bundled manifest are refused.
 - `user_version>0` without a ledger is refused.

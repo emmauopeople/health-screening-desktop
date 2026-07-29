@@ -1,6 +1,9 @@
 import { databaseMigrations, targetSchemaVersion } from './migration-manifest'
 import { runDatabaseMigrations } from './migration-runner'
+import { validateSchemaVersion1 } from './schema-v1-contract'
 import type { DatabaseMigrationContext, DatabaseMigrationRunner } from './migration-types'
+
+const productionSchemaValidators = new Map([[targetSchemaVersion, validateSchemaVersion1]])
 
 export {
   MigrationCompatibilityError,
@@ -24,6 +27,7 @@ export function createProductionDatabaseMigrationRunner({
       applicationVersion,
       logger,
       clock,
-      expectedHighestVersion: targetSchemaVersion
+      expectedHighestVersion: targetSchemaVersion,
+      schemaValidators: productionSchemaValidators
     })
 }
