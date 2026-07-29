@@ -28,7 +28,7 @@ const validAppInfo: AppInfo = {
 const validAppHealth: AppHealth = {
   status: 'ready',
   ipc: 'available',
-  database: 'not-configured',
+  database: 'ready',
   clinicalFeatures: 'not-implemented'
 }
 
@@ -57,6 +57,22 @@ describe('shared IPC contracts', () => {
       false
     )
     expect(appHealthSchema.safeParse({ ...validAppHealth, checkedAt: 'now' }).success).toBe(false)
+    expect(appHealthSchema.parse({ ...validAppHealth, database: 'unavailable' }).database).toBe(
+      'unavailable'
+    )
+    expect(
+      appHealthSchema.safeParse({ ...validAppHealth, database: 'not-configured' }).success
+    ).toBe(false)
+    expect(appHealthSchema.safeParse({ ...validAppHealth, database: 'connected' }).success).toBe(
+      false
+    )
+    expect(
+      appHealthSchema.safeParse({ ...validAppHealth, database: { status: 'ready' } }).success
+    ).toBe(false)
+    expect(
+      appHealthSchema.safeParse({ ...validAppHealth, databasePath: 'C:\\secret\\db.sqlite3' })
+        .success
+    ).toBe(false)
     expect(appInfoSchema.safeParse({ ...validAppInfo, applicationVersion: '' }).success).toBe(false)
   })
 

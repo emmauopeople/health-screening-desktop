@@ -9,6 +9,13 @@ import {
   type MainWindowConfiguration
 } from '@main/app/main-window'
 import { createRendererNavigationPolicy } from '@main/app/navigation-policy'
+import { registerApplicationShutdown } from '@main/app/shutdown'
+import {
+  createDatabaseHealthProvider,
+  createDatabaseRuntime,
+  getDatabasePath,
+  type DatabaseRuntime
+} from '@main/database'
 import { registerApplicationIpcHandlers } from '@main/ipc/register-handlers'
 import { configureSessionSecurity } from '@main/security/session-security'
 import icon from '../../../resources/icon.png?asset'
@@ -28,33 +35,43 @@ export function startApplicationLifecycle(): void {
     navigationPolicy
   }
 
-  app
-    .whenReady()
-    .then(async () => {
+  app.whenReady().then(async () => {
+    let databaseRuntime: DatabaseRuntime | undefined
+
+    try {
       electronApp.setAppUserModelId('org.healthscreening.desktop')
 
       app.on('browser-window-created', (_, window) => {
         optimizer.watchWindowShortcuts(window)
       })
 
+      configureSessionSecurity(session.defaultSession, {
+        isDevelopment: configuration.isDevelopment,
+        rendererUrl: configuration.rendererUrl
+      })
+
+      databaseRuntime = createDatabaseRuntime({
+        databasePath: getDatabasePath(app.getPath('userData')),
+        logger: console
+      })
+      databaseRuntime.initialize()
+
+      const applicationInfoProvider = createElectronApplicationInfoProvider(app)
+      const databaseHealthProvider = createDatabaseHealthProvider(databaseRuntime)
+      const disposeIpcHandlers = registerApplicationIpcHandlers(ipcMain, {
+        navigationPolicy,
+        applicationInfoProvider,
+        databaseHealthProvider,
+        logger: console
+      })
+
+      registerApplicationShutdown(app, disposeIpcHandlers, () => databaseRuntime?.close())
+
       app.on('second-instance', () => {
         void createOrFocusMainWindow(configuration).catch((error: unknown) => {
           logLifecycleError('Unable to restore or focus the primary window.', error)
         })
       })
-
-      configureSessionSecurity(session.defaultSession, {
-        isDevelopment: configuration.isDevelopment,
-        rendererUrl: configuration.rendererUrl
-      })
-      const applicationInfoProvider = createElectronApplicationInfoProvider(app)
-      const disposeIpcHandlers = registerApplicationIpcHandlers(ipcMain, {
-        navigationPolicy,
-        applicationInfoProvider,
-        logger: console
-      })
-
-      app.once('will-quit', disposeIpcHandlers)
 
       await createOrFocusMainWindow(configuration)
 
@@ -65,11 +82,12 @@ export function startApplicationLifecycle(): void {
           })
         }
       })
-    })
-    .catch((error: unknown) => {
-      logLifecycleError('Unable to start the application lifecycle.', error)
+    } catch (error) {
+      databaseRuntime?.close()
+      logDatabaseStartupFailure(error)
       app.quit()
-    })
+    }
+  })
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
@@ -96,4 +114,10 @@ function logLifecycleError(message: string, error: unknown): void {
   const errorMessage = error instanceof Error && error.message ? `: ${error.message}` : ''
 
   console.error(`${message} (${errorName}${errorMessage})`)
+}
+
+function logDatabaseStartupFailure(error: unknown): void {
+  const errorType = error instanceof Error ? error.name : typeof error
+
+  console.error(`Database runtime initialization failed; phase=startup; errorType=${errorType}`)
 }

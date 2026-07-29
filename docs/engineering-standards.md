@@ -1,6 +1,6 @@
 # Engineering Standards
 
-HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, persistence, authentication, routing, business IPC, or synchronization.
+HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds only the trusted local SQLite runtime foundation; it does not add application persistence, tables, migrations, or repositories.
 
 ## TypeScript
 
@@ -32,6 +32,13 @@ Aliases are scoped by project:
 - Vitest unit tests resolve `@shared/*`.
 
 Renderer code cannot import Electron, Node built-ins, `src/main`, `src/preload`, `@main/*`, or `@preload/*`. ESLint enforces this boundary; renderer code must use the typed preload API exposed on `window.healthScreening`.
+
+SQLite is owned only by `src/main/database`. The production database is a
+file-backed `userData/data/health-screening.sqlite3` runtime and its path,
+native handle, SQL, and raw errors must never cross into shared, preload, or
+renderer code or operational logs. The exact `better-sqlite3@13.0.2` dependency
+requires Electron-compatible native rebuild and ASAR-unpack review before
+upgrades.
 
 ## Formatting And Linting
 
@@ -99,7 +106,7 @@ HSD-005 permits exactly two renderer-to-main operations:
 - `app.getInfo()` on `health-screening:app:get-info` with request `{}` and safe
   metadata response `{ applicationName, applicationVersion, platform, architecture, packaged }`.
 - `app.getHealth()` on `health-screening:app:get-health` with request `{}` and
-  shell-health response `{ status: 'ready', ipc: 'available', database: 'not-configured', clinicalFeatures: 'not-implemented' }`.
+  shell-health response `{ status: 'ready', ipc: 'available', database: 'ready' | 'unavailable', clinicalFeatures: 'not-implemented' }`.
 
 All IPC request, response, and result schemas live under `src/shared/ipc`.
 Schemas are authoritative and TypeScript types are inferred from them. Runtime
@@ -128,4 +135,4 @@ reviewed before exposing the operation.
 
 Do not log IPC payloads or expose technical failures to the renderer. Logs may
 include channel name, safe error code, and exception type only. Renderer-visible
-errors must use the `IpcResult` envelope and stable safe messages.
+errors must use the typed result envelope and stable safe messages.

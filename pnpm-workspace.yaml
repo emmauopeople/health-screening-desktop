@@ -2,6 +2,10 @@ packages:
   - .
 
 allowBuilds:
+  better-sqlite3: true
   electron: true
   electron-winstaller: true
   esbuild: true
+
+minimumReleaseAgeExclude:
+  - better-sqlite3@13.0.2

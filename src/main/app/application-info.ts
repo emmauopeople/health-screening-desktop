@@ -2,6 +2,8 @@ import type { App } from 'electron'
 
 import type { AppHealth, AppInfo } from '@shared/ipc'
 
+import type { DatabaseHealthProvider } from '@main/database/database-health'
+
 export interface ApplicationInfoProvider {
   getVersion(): string
   getPlatform(): string
@@ -31,11 +33,11 @@ export function getApplicationInfo(provider: ApplicationInfoProvider): AppInfo {
   }
 }
 
-export function getApplicationHealth(): AppHealth {
+export function getApplicationHealth(databaseHealthProvider: DatabaseHealthProvider): AppHealth {
   return {
     status: 'ready',
     ipc: 'available',
-    database: 'not-configured',
+    database: databaseHealthProvider.getStatus(),
     clinicalFeatures: 'not-implemented'
   }
 }

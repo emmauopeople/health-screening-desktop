@@ -27,7 +27,7 @@ const validInfo: AppInfo = {
 const validHealth: AppHealth = {
   status: 'ready',
   ipc: 'available',
-  database: 'not-configured',
+  database: 'ready',
   clinicalFeatures: 'not-implemented'
 }
 
@@ -215,6 +215,7 @@ function createDependencies(): AppIpcHandlerDependencies {
   return {
     navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
     applicationInfoProvider: createApplicationInfoProvider(),
+    databaseHealthProvider: { getStatus: () => 'ready' },
     logger: createLogger()
   }
 }

@@ -8,10 +8,10 @@ settings, files, shell integration, or clinical operations are exposed.
 
 The shared channel catalog is defined in `src/shared/ipc/channels.ts`.
 
-| Operation         | Channel                           | Request                  | Success data                                                                                             |
-| ----------------- | --------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `app.getInfo()`   | `health-screening:app:get-info`   | `{}` strict empty object | `{ applicationName, applicationVersion, platform, architecture, packaged }`                              |
-| `app.getHealth()` | `health-screening:app:get-health` | `{}` strict empty object | `{ status: 'ready', ipc: 'available', database: 'not-configured', clinicalFeatures: 'not-implemented' }` |
+| Operation         | Channel                           | Request                  | Success data                                                                                                     |
+| ----------------- | --------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `app.getInfo()`   | `health-screening:app:get-info`   | `{}` strict empty object | `{ applicationName, applicationVersion, platform, architecture, packaged }`                                      |
+| `app.getHealth()` | `health-screening:app:get-health` | `{}` strict empty object | `{ status: 'ready', ipc: 'available', database: 'ready' or 'unavailable', clinicalFeatures: 'not-implemented' }` |
 
 Only these two channels exist for HSD-005. The renderer never receives a channel
 string argument, a generic invoke method, or any dynamic dispatch surface.

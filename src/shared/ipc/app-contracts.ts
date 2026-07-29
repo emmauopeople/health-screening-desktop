@@ -24,7 +24,7 @@ export const appHealthSchema = z
   .object({
     status: z.literal('ready'),
     ipc: z.literal('available'),
-    database: z.literal('not-configured'),
+    database: z.union([z.literal('ready'), z.literal('unavailable')]),
     clinicalFeatures: z.literal('not-implemented')
   })
   .strict()
