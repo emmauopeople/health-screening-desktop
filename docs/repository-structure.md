@@ -34,9 +34,10 @@ commit, rollback, entity ID, and UTC timestamp coordination.
 `src/main/database/repositories` contains main-process-only repository
 boundaries. HSD-009 adds the typed installation repository and read-only
 first-run state query over schema version 1. HSD-011 adds the typed local-user
-repository over the existing schema-v1 `users` table. Repositories own exact
-SQL and row decoding, while writes use caller-owned transaction-scoped
-capabilities.
+repository over the existing schema-v1 `users` table. HSD-012 adds the typed
+location repository over the existing schema-v1 `locations` table. Repositories
+own exact SQL and row decoding, while writes use caller-owned
+transaction-scoped capabilities.
 
 `src/main/security/password` owns the HSD-010 local password credential
 primitive. It validates exact plaintext password input, serializes strict
