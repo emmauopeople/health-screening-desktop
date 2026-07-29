@@ -63,6 +63,48 @@ describe('entity ID foundation', () => {
     expect(JSON.stringify(error)).not.toContain('secret')
     expect(JSON.stringify(error)).not.toContain('patients')
   })
+
+  it('maps safe-looking provider names to UnknownError', () => {
+    const safeLookingNames = ['users', 'PatientName', 'Emmanuel', 'passwordHash'] as const
+
+    for (const name of safeLookingNames) {
+      const rawError = new Error('C:\\secret\\patient.sqlite3 SELECT passwordHash')
+      rawError.name = name
+
+      const error = captureError(() =>
+        createEntityIdGenerator(() => {
+          throw rawError
+        }).generate()
+      )
+
+      expectSafeEntityIdError(error)
+      expect((error as EntityIdGenerationError).errorType).toBe('UnknownError')
+      expect(JSON.stringify(error)).not.toContain(name)
+    }
+  })
+
+  it('rebuilds mutated controlled provider errors without enumerable secrets', () => {
+    const incoming = new EntityIdGenerationError('TypeError') as EntityIdGenerationError & {
+      cause: Error
+      passwordHash: string
+      stack: string
+    }
+    incoming.cause = new Error('C:\\secret\\cause.sqlite3')
+    incoming.passwordHash = 'patient-secret'
+    incoming.stack = 'C:\\secret\\stack.sqlite3'
+
+    const error = captureError(() =>
+      createEntityIdGenerator(() => {
+        throw incoming
+      }).generate()
+    )
+
+    expectSafeEntityIdError(error)
+    expect(error).not.toBe(incoming)
+    expect((error as EntityIdGenerationError).errorType).toBe('TypeError')
+    expect(JSON.stringify(error)).not.toContain('passwordHash')
+    expect(JSON.stringify(error)).not.toContain('patient-secret')
+  })
 })
 
 function expectSafeEntityIdError(error: unknown): void {

@@ -1,3 +1,5 @@
+import { getErrorType, sanitizeErrorType } from './error-type'
+
 export type UtcTimestamp = string & { readonly __brand: 'UtcTimestamp' }
 
 export interface UtcClock {
@@ -30,7 +32,7 @@ export function createUtcClock(provider: UtcTimestampProvider): UtcClock {
         return parseUtcTimestamp(provider())
       } catch (error) {
         if (error instanceof UtcClockError) {
-          throw error
+          throw new UtcClockError(error.errorType)
         }
 
         throw new UtcClockError(getErrorType(error))
@@ -56,18 +58,6 @@ export class UtcClockError extends Error {
     super('UTC timestamp could not be produced.')
     this.name = 'UtcClockError'
     this.errorType = sanitizeErrorType(errorType)
-    this.stack = undefined
+    delete this.stack
   }
-}
-
-function getErrorType(error: unknown): string {
-  return sanitizeErrorType(error instanceof Error ? error.name : typeof error) ?? 'UnknownError'
-}
-
-function sanitizeErrorType(errorType: string | undefined): string | undefined {
-  if (errorType === undefined) {
-    return undefined
-  }
-
-  return /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(errorType) ? errorType : 'UnknownError'
 }

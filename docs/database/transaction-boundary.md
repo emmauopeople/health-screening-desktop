@@ -12,7 +12,8 @@ migrations have completed, plus injected main-process `EntityIdGenerator` and
 
 Each callback receives a frozen context:
 
-- `connection`: the trusted `better-sqlite3` connection for synchronous SQL.
+- `connection`: a transaction-scoped guarded SQLite capability for synchronous
+  SQL.
 - `newEntityId()`: returns a validated canonical lowercase UUID v4 `EntityId`.
 - `nowUtc()`: returns a validated `YYYY-MM-DDTHH:mm:ss.sssZ` timestamp.
 
@@ -21,6 +22,12 @@ Each callback receives a frozen context:
 - Every write transaction uses one `BEGIN IMMEDIATE` and one `COMMIT`.
 - Work must be synchronous. Returning a `Promise` or thenable is refused and
   rolled back.
+- The scoped connection, prepared statements, `newEntityId()`, and `nowUtc()`
+  become inactive when callback execution returns. Captured capabilities cannot
+  continue database work from an asynchronous continuation after rollback.
+- Callback code cannot issue transaction-control SQL through the scoped
+  capability. `BEGIN IMMEDIATE`, `COMMIT`, and any `ROLLBACK` remain owned by
+  the executor.
 - Nested or re-entrant transaction attempts are refused before callback work
   starts.
 - Pre-existing open transactions are refused before callback work starts.
@@ -60,5 +67,5 @@ workflow, sync worker, backup feature, IPC channel, preload method, renderer
 surface, FHIR integration, portal integration, or AI feature.
 
 Future repositories must use this executor as their write boundary instead of
-opening ad hoc transactions or exposing the SQLite connection outside the main
-process.
+opening ad hoc transactions or exposing an unguarded SQLite connection outside
+the main process.

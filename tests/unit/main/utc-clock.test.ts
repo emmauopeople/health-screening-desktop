@@ -64,6 +64,48 @@ describe('UTC clock foundation', () => {
     expect(JSON.stringify(error)).not.toContain('secret')
     expect(JSON.stringify(error)).not.toContain('audit_log')
   })
+
+  it('maps safe-looking provider names to UnknownError', () => {
+    const safeLookingNames = ['users', 'PatientName', 'Emmanuel', 'passwordHash'] as const
+
+    for (const name of safeLookingNames) {
+      const rawError = new Error('C:\\secret\\clock.sqlite3 SELECT passwordHash')
+      rawError.name = name
+
+      const error = captureError(() =>
+        createUtcClock(() => {
+          throw rawError
+        }).now()
+      )
+
+      expectSafeUtcClockError(error)
+      expect((error as UtcClockError).errorType).toBe('UnknownError')
+      expect(JSON.stringify(error)).not.toContain(name)
+    }
+  })
+
+  it('rebuilds mutated controlled provider errors without enumerable secrets', () => {
+    const incoming = new UtcClockError('RangeError') as UtcClockError & {
+      cause: Error
+      passwordHash: string
+      stack: string
+    }
+    incoming.cause = new Error('C:\\secret\\cause.sqlite3')
+    incoming.passwordHash = 'patient-secret'
+    incoming.stack = 'C:\\secret\\stack.sqlite3'
+
+    const error = captureError(() =>
+      createUtcClock(() => {
+        throw incoming
+      }).now()
+    )
+
+    expectSafeUtcClockError(error)
+    expect(error).not.toBe(incoming)
+    expect((error as UtcClockError).errorType).toBe('RangeError')
+    expect(JSON.stringify(error)).not.toContain('passwordHash')
+    expect(JSON.stringify(error)).not.toContain('patient-secret')
+  })
 })
 
 function expectSafeUtcClockError(error: unknown): void {

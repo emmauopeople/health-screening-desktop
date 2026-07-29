@@ -10,6 +10,7 @@ import {
   DatabaseTransactionAsyncWorkError,
   DatabaseTransactionExecutionError,
   DatabaseTransactionStateError,
+  type DatabaseTransactionContext,
   type DatabaseTransactionExecutor
 } from '@main/database'
 import {
@@ -29,12 +30,34 @@ interface TestLogger {
   error: MockLogMethod
 }
 
+interface InsertSettingConnection {
+  prepare(source: string): {
+    run(key: string, valueJson: string, updatedAt: string, sensitivity: string): Database.RunResult
+  }
+}
+
 const now = '2026-07-29T12:34:56.789Z'
 const generatedIds = [
   '11111111-1111-4111-8111-111111111111',
   '22222222-2222-4222-8222-222222222222',
   '33333333-3333-4333-8333-333333333333'
 ]
+const allowedLogErrorTypes = [
+  'Error',
+  'TypeError',
+  'RangeError',
+  'SqliteError',
+  'EntityIdGenerationError',
+  'UtcClockError',
+  'DatabaseTransactionStateError',
+  'DatabaseTransactionAsyncWorkError',
+  'DatabaseTransactionExecutionError',
+  'UnknownError'
+] as const
+const allowedLogErrorTypePattern = allowedLogErrorTypes.join('|')
+const transactionLogPattern = new RegExp(
+  `^(?:Database transaction failed; phase=(?:begin|work|commit|state); errorType=(?:${allowedLogErrorTypePattern})|Database transaction rollback failed; phase=rollback; errorType=(?:${allowedLogErrorTypePattern}))$`
+)
 
 describe('database transaction executor', () => {
   it('commits synchronous work durably after HSD-007 migrations', async () => {
@@ -46,15 +69,17 @@ describe('database transaction executor', () => {
       expect(readLedgerCount(connection)).toBe(1)
 
       const result = executor.run((context) => {
-        expect(context.connection).toBe(connection)
+        expect(context.connection).not.toBe(connection)
         expect(Object.isFrozen(context)).toBe(true)
+        expect(Object.isFrozen(context.connection)).toBe(true)
+        expect(context.connection.inTransaction).toBe(true)
 
         const entityId = context.newEntityId()
         const timestamp = context.nowUtc()
 
-        insertSetting(connection, 'transaction.feature', '{"enabled":true}', timestamp)
-        connection
-          .prepare(
+        insertSetting(context.connection, 'transaction.feature', '{"enabled":true}', timestamp)
+        context.connection
+          .prepare<[string, string, string, string, string]>(
             `INSERT INTO sync_attempts (
               id,
               batch_id,
@@ -109,6 +134,117 @@ describe('database transaction executor', () => {
       expectSafeControlledError(error)
       expect(readTableCount(connection, 'app_settings')).toBe(0)
       expect(connection.inTransaction).toBe(false)
+      expect(readLogs(logger)).toContain(
+        'Database transaction failed; phase=work; errorType=UnknownError'
+      )
+      expectLogsAreSafe(logger)
+    })
+  })
+
+  it('converts raw errors renamed as foundation errors to transaction execution errors', async () => {
+    await withMigratedDatabase((connection) => {
+      const logger = createLogger()
+      const executor = createExecutor(connection, { logger })
+      const renamedFoundationErrorTypes = ['EntityIdGenerationError', 'UtcClockError'] as const
+
+      for (const errorType of renamedFoundationErrorTypes) {
+        const unsafeError = new Error('C:\\secret\\foundation.sqlite3 SELECT * FROM patients')
+        unsafeError.name = errorType
+
+        const error = captureError(() =>
+          executor.run((context) => {
+            insertSetting(context.connection, `renamed-${errorType}`, '{"enabled":true}')
+            throw unsafeError
+          })
+        )
+
+        expect(error).toBeInstanceOf(DatabaseTransactionExecutionError)
+        expect(error).not.toBeInstanceOf(EntityIdGenerationError)
+        expect(error).not.toBeInstanceOf(UtcClockError)
+        expect((error as DatabaseTransactionExecutionError).errorType).toBe(errorType)
+        expectSafeControlledError(error)
+      }
+
+      expect(readTableCount(connection, 'app_settings')).toBe(0)
+      expectLogsAreSafe(logger)
+    })
+  })
+
+  it('rebuilds mutated controlled errors without enumerable secrets', async () => {
+    await withMigratedDatabase((connection) => {
+      const logger = createLogger()
+      const executor = createExecutor(connection, { logger })
+      const controlledErrors = [
+        {
+          incoming: new DatabaseTransactionExecutionError('TypeError'),
+          expectedType: DatabaseTransactionExecutionError,
+          errorType: 'TypeError'
+        },
+        {
+          incoming: new EntityIdGenerationError('RangeError'),
+          expectedType: EntityIdGenerationError,
+          errorType: 'RangeError'
+        },
+        {
+          incoming: new UtcClockError('SqliteError'),
+          expectedType: UtcClockError,
+          errorType: 'SqliteError'
+        }
+      ] as const
+
+      for (const { incoming, expectedType, errorType } of controlledErrors) {
+        const mutatedError = incoming as Error & {
+          cause: Error
+          passwordHash: string
+          stack: string
+        }
+        mutatedError.cause = new Error('C:\\secret\\cause.sqlite3')
+        mutatedError.passwordHash = 'patient-secret'
+        mutatedError.stack = 'C:\\secret\\stack.sqlite3'
+
+        const error = captureError(() =>
+          executor.run((context) => {
+            insertSetting(context.connection, `mutated-${errorType}`, '{"enabled":true}')
+            throw incoming
+          })
+        )
+
+        expect(error).toBeInstanceOf(expectedType)
+        expect(error).not.toBe(incoming)
+        expect((error as { readonly errorType?: string }).errorType).toBe(errorType)
+        expectSafeControlledError(error)
+        expect(JSON.stringify(error)).not.toContain('passwordHash')
+        expect(JSON.stringify(error)).not.toContain('patient-secret')
+      }
+
+      expect(readTableCount(connection, 'app_settings')).toBe(0)
+      expectLogsAreSafe(logger)
+    })
+  })
+
+  it('maps safe-looking provider-controlled names to UnknownError', async () => {
+    await withMigratedDatabase((connection) => {
+      const logger = createLogger()
+      const executor = createExecutor(connection, { logger })
+      const safeLookingNames = ['users', 'PatientName', 'Emmanuel', 'passwordHash'] as const
+
+      for (const name of safeLookingNames) {
+        const unsafeError = new Error('C:\\secret\\provider.sqlite3 SELECT passwordHash')
+        unsafeError.name = name
+
+        const error = captureError(() =>
+          executor.run((context) => {
+            insertSetting(context.connection, `safe-looking-${name}`, '{"enabled":true}')
+            throw unsafeError
+          })
+        )
+
+        expect(error).toBeInstanceOf(DatabaseTransactionExecutionError)
+        expect((error as DatabaseTransactionExecutionError).errorType).toBe('UnknownError')
+        expectSafeControlledError(error)
+      }
+
+      expect(readTableCount(connection, 'app_settings')).toBe(0)
       expect(readLogs(logger)).toContain(
         'Database transaction failed; phase=work; errorType=UnknownError'
       )
@@ -189,6 +325,110 @@ describe('database transaction executor', () => {
     })
   })
 
+  it('rolls back outer work when a nested executor failure is uncaught', async () => {
+    await withMigratedDatabase((connection) => {
+      const logger = createLogger()
+      const executor = createExecutor(connection, { logger })
+      const nestedWork = vi.fn()
+
+      const error = captureError(() =>
+        executor.run((context) => {
+          insertSetting(context.connection, 'outer-before-uncaught-nested', '{"enabled":true}')
+          executor.run(nestedWork)
+        })
+      )
+
+      expect(error).toBeInstanceOf(DatabaseTransactionStateError)
+      expectSafeControlledError(error)
+      expect(nestedWork).not.toHaveBeenCalled()
+      expect(readTableCount(connection, 'app_settings')).toBe(0)
+      expect(connection.inTransaction).toBe(false)
+      expect(readLogs(logger)).toContain(
+        'Database transaction failed; phase=state; errorType=DatabaseTransactionStateError'
+      )
+      expect(readLogs(logger)).toContain(
+        'Database transaction failed; phase=work; errorType=DatabaseTransactionStateError'
+      )
+      expectLogsAreSafe(logger)
+    })
+  })
+
+  it('prevents transaction context capabilities from being replaced', async () => {
+    await withMigratedDatabase((connection) => {
+      const executor = createExecutor(connection)
+
+      const result = executor.run((context) => {
+        const originalConnection = context.connection
+        const originalNewEntityId = context.newEntityId
+        const originalNowUtc = context.nowUtc
+
+        expect(() => {
+          Object.defineProperty(context, 'connection', { value: connection })
+        }).toThrow(TypeError)
+        expect(() => {
+          Object.defineProperty(context, 'newEntityId', { value: () => generatedIds[1] })
+        }).toThrow(TypeError)
+        expect(() => {
+          Object.defineProperty(context, 'nowUtc', { value: () => '2026-07-30T00:00:00.000Z' })
+        }).toThrow(TypeError)
+
+        expect(context.connection).toBe(originalConnection)
+        expect(context.newEntityId).toBe(originalNewEntityId)
+        expect(context.nowUtc).toBe(originalNowUtc)
+
+        return {
+          entityId: context.newEntityId(),
+          timestamp: context.nowUtc()
+        }
+      })
+
+      expect(result).toEqual({
+        entityId: generatedIds[0],
+        timestamp: now
+      })
+      expect(connection.inTransaction).toBe(false)
+    })
+  })
+
+  it('rejects transaction control SQL through the scoped connection', async () => {
+    await withMigratedDatabase((connection) => {
+      const logger = createLogger()
+      const executor = createExecutor(connection, { logger })
+      const forbiddenStatements = [
+        'BEGIN',
+        'COMMIT',
+        'ROLLBACK',
+        'SAVEPOINT nested',
+        'RELEASE nested',
+        'ROLLBACK TO nested'
+      ] as const
+
+      for (const sql of forbiddenStatements) {
+        const error = captureError(() =>
+          executor.run((context) => {
+            insertSetting(context.connection, `forbidden-${sql}`, '{"enabled":true}')
+            context.connection.exec(sql)
+          })
+        )
+
+        expect(error).toBeInstanceOf(DatabaseTransactionStateError)
+        expectSafeControlledError(error)
+      }
+
+      const preparedError = captureError(() =>
+        executor.run((context) => {
+          context.connection.prepare('SAVEPOINT prepared_nested')
+        })
+      )
+
+      expect(preparedError).toBeInstanceOf(DatabaseTransactionStateError)
+      expectSafeControlledError(preparedError)
+      expect(readTableCount(connection, 'app_settings')).toBe(0)
+      expect(connection.inTransaction).toBe(false)
+      expectLogsAreSafe(logger)
+    })
+  })
+
   it('rejects Promise and thenable work and rolls back', async () => {
     await withMigratedDatabase((connection) => {
       const logger = createLogger()
@@ -196,14 +436,14 @@ describe('database transaction executor', () => {
       const thenable = { then: vi.fn() }
 
       const promiseError = captureError(() =>
-        executor.run((context) => {
+        runUnchecked(executor, (context) => {
           insertSetting(context.connection, 'promise-work', '{"enabled":true}')
           return Promise.resolve('async-result')
         })
       )
 
       const thenableError = captureError(() =>
-        executor.run((context) => {
+        runUnchecked(executor, (context) => {
           insertSetting(context.connection, 'thenable-work', '{"enabled":true}')
           return thenable
         })
@@ -216,6 +456,69 @@ describe('database transaction executor', () => {
       expect(thenable.then).not.toHaveBeenCalled()
       expect(readTableCount(connection, 'app_settings')).toBe(0)
       expect(connection.inTransaction).toBe(false)
+    })
+  })
+
+  it('prevents async callback continuations from writing after rollback', async () => {
+    await withMigratedDatabase(async (connection) => {
+      const logger = createLogger()
+      const executor = createExecutor(connection, { logger })
+      let continuation: Promise<void> | undefined
+
+      const error = captureError(() =>
+        runUnchecked(executor, (context) => {
+          continuation = (async () => {
+            await Promise.resolve()
+            insertSetting(context.connection, 'async-after-await', '{"enabled":true}')
+          })()
+
+          return continuation
+        })
+      )
+
+      expect(error).toBeInstanceOf(DatabaseTransactionAsyncWorkError)
+      expectSafeControlledError(error)
+      expect(continuation).toBeDefined()
+      await expect(continuation).rejects.toBeInstanceOf(DatabaseTransactionStateError)
+      expect(readTableCount(connection, 'app_settings')).toBe(0)
+      expect(connection.inTransaction).toBe(false)
+      expectLogsAreSafe(logger)
+    })
+  })
+
+  it('prevents captured prepared statements from running after rollback', async () => {
+    await withMigratedDatabase(async (connection) => {
+      const logger = createLogger()
+      const executor = createExecutor(connection, { logger })
+      let continuation: Promise<Database.RunResult> | undefined
+
+      const error = captureError(() =>
+        runUnchecked(executor, (context) => {
+          const statement = context.connection.prepare<[string, string, string, string]>(
+            `INSERT INTO app_settings (
+              key,
+              value_json,
+              updated_at,
+              sensitivity_classification
+            ) VALUES (?, ?, ?, ?)`
+          )
+
+          continuation = (async () => {
+            await Promise.resolve()
+            return statement.run('captured-statement', '{"enabled":true}', now, 'STANDARD')
+          })()
+
+          return continuation
+        })
+      )
+
+      expect(error).toBeInstanceOf(DatabaseTransactionAsyncWorkError)
+      expectSafeControlledError(error)
+      expect(continuation).toBeDefined()
+      await expect(continuation).rejects.toBeInstanceOf(DatabaseTransactionStateError)
+      expect(readTableCount(connection, 'app_settings')).toBe(0)
+      expect(connection.inTransaction).toBe(false)
+      expectLogsAreSafe(logger)
     })
   })
 
@@ -371,10 +674,25 @@ describe('database transaction executor', () => {
     )
     expectLogsAreSafe(logger)
   })
+
+  it('constructs controlled errors without causes or stacks', () => {
+    const controlledErrors = [
+      new EntityIdGenerationError('Error'),
+      new UtcClockError('TypeError'),
+      new DatabaseTransactionStateError('RangeError'),
+      new DatabaseTransactionAsyncWorkError('SqliteError'),
+      new DatabaseTransactionExecutionError('UnknownError')
+    ]
+
+    for (const error of controlledErrors) {
+      expectSafeControlledError(error)
+      expect(Object.prototype.hasOwnProperty.call(error, 'stack')).toBe(false)
+    }
+  })
 })
 
 async function withMigratedDatabase(
-  test: (connection: Database.Database, databasePath: string) => void
+  test: (connection: Database.Database, databasePath: string) => void | Promise<void>
 ): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), 'hsd008-transaction-executor-'))
   const databasePath = join(directory, 'health-screening.sqlite3')
@@ -390,7 +708,7 @@ async function withMigratedDatabase(
       },
       clock: { now: () => '2026-07-29T00:00:00.000Z' }
     })(connection)
-    test(connection, databasePath)
+    await test(connection, databasePath)
   } finally {
     if (connection.open) {
       connection.close()
@@ -443,7 +761,7 @@ function configureHsd006Pragmas(connection: Database.Database): void {
 }
 
 function insertSetting(
-  connection: Database.Database,
+  connection: InsertSettingConnection,
   key: string,
   valueJson: string,
   updatedAt = now
@@ -458,6 +776,13 @@ function insertSetting(
       ) VALUES (?, ?, ?, ?)`
     )
     .run(key, valueJson, updatedAt, 'STANDARD')
+}
+
+function runUnchecked<T>(
+  executor: DatabaseTransactionExecutor,
+  work: (context: DatabaseTransactionContext) => T
+): T {
+  return executor.run(work as (context: DatabaseTransactionContext) => never) as T
 }
 
 function readUserVersion(connection: Database.Database): number {
@@ -508,6 +833,10 @@ function expectLogsAreSafe(logger: TestLogger): void {
   expect(logs).not.toContain('patients')
   expect(logs).not.toContain('audit_log')
   expect(logs).not.toContain('sqlite3')
+
+  for (const [message] of logger.error.mock.calls) {
+    expect(message).toMatch(transactionLogPattern)
+  }
 }
 
 function captureError(action: () => void): unknown {
@@ -519,3 +848,16 @@ function captureError(action: () => void): unknown {
 
   throw new Error('Expected action to throw')
 }
+
+function expectTransactionWorkTypeRejections(
+  executor: DatabaseTransactionExecutor,
+  promiseLike: PromiseLike<string>
+): void {
+  // @ts-expect-error async transaction callbacks must be rejected by type checking.
+  executor.run(async () => 'async-result')
+
+  // @ts-expect-error PromiseLike transaction results must be rejected by type checking.
+  executor.run(() => promiseLike)
+}
+
+void expectTransactionWorkTypeRejections

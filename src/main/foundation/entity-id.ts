@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
+import { getErrorType, sanitizeErrorType } from './error-type'
+
 export type EntityId = string & { readonly __brand: 'EntityId' }
 
 export interface EntityIdGenerator {
@@ -26,7 +28,7 @@ export function createEntityIdGenerator(provider: EntityIdProvider): EntityIdGen
         return parseEntityId(provider())
       } catch (error) {
         if (error instanceof EntityIdGenerationError) {
-          throw error
+          throw new EntityIdGenerationError(error.errorType)
         }
 
         throw new EntityIdGenerationError(getErrorType(error))
@@ -48,18 +50,6 @@ export class EntityIdGenerationError extends Error {
     super('Entity identifier could not be generated.')
     this.name = 'EntityIdGenerationError'
     this.errorType = sanitizeErrorType(errorType)
-    this.stack = undefined
+    delete this.stack
   }
-}
-
-function getErrorType(error: unknown): string {
-  return sanitizeErrorType(error instanceof Error ? error.name : typeof error) ?? 'UnknownError'
-}
-
-function sanitizeErrorType(errorType: string | undefined): string | undefined {
-  if (errorType === undefined) {
-    return undefined
-  }
-
-  return /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(errorType) ? errorType : 'UnknownError'
 }
