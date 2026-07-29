@@ -7,6 +7,8 @@ import { parseUtcTimestamp, UtcClockError } from '@main/foundation/utc-clock'
 import type { EntityIdGenerator } from '@main/foundation/entity-id'
 import type { UtcClock } from '@main/foundation/utc-clock'
 
+import { isRepositoryError, rebuildRepositoryError } from '../repositories/repository-errors'
+import { registerDatabaseTransactionConnection } from './transaction-capability'
 import {
   DatabaseTransactionAsyncWorkError,
   type DatabaseTransactionConnection,
@@ -19,6 +21,7 @@ import {
   type DatabaseTransactionPhase,
   type DatabaseTransactionStatement,
   type DatabaseTransactionWork,
+  databaseTransactionConnectionBrand,
   type SynchronousTransactionResult
 } from './transaction-types'
 
@@ -169,6 +172,7 @@ function createGuardedTransactionConnection(
   guard: TransactionScopeGuard
 ): DatabaseTransactionConnection {
   const guardedConnection: DatabaseTransactionConnection = Object.freeze({
+    [databaseTransactionConnectionBrand]: true as const,
     get open(): boolean {
       guard.assertActive()
       return connection.open
@@ -198,6 +202,8 @@ function createGuardedTransactionConnection(
       return guardedConnection
     }
   })
+
+  registerDatabaseTransactionConnection(guardedConnection)
 
   return guardedConnection
 }
@@ -413,6 +419,10 @@ function toControlledTransactionError(error: unknown): Error {
     return new UtcClockError(error.errorType)
   }
 
+  if (isRepositoryError(error)) {
+    return rebuildRepositoryError(error)
+  }
+
   return new DatabaseTransactionExecutionError(getErrorType(error))
 }
 
@@ -442,6 +452,7 @@ function isControlledErrorWithType(
     error instanceof DatabaseTransactionAsyncWorkError ||
     error instanceof DatabaseTransactionExecutionError ||
     error instanceof EntityIdGenerationError ||
-    error instanceof UtcClockError
+    error instanceof UtcClockError ||
+    isRepositoryError(error)
   )
 }

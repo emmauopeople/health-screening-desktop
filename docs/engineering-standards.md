@@ -1,6 +1,6 @@
 # Engineering Standards
 
-HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure. HSD-008 adds main-process entity ID, UTC clock, and transaction boundaries, but still does not add repositories, seed data, authentication, clinical workflows, or synchronization.
+HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure. HSD-008 adds main-process entity ID, UTC clock, and transaction boundaries. HSD-009 adds the first main-process typed installation repository and read-only first-run state query, but still does not add first-run setup, seed data, authentication, clinical workflows, IPC, renderer changes, or synchronization.
 
 ## TypeScript
 
@@ -76,6 +76,29 @@ trusted values without main-process validation.
 Transaction and foundation errors must remain controlled. Do not attach raw
 native errors as causes, expose stacks, or log SQL text, bind values, row data,
 checksums, database paths, or raw driver messages.
+
+## Database Repositories
+
+Repositories live only under `src/main/database/repositories` and must not be
+imported by preload, renderer, or shared IPC code. Repository code owns exact SQL
+and strict row decoders; use explicit column lists and never `SELECT *`.
+
+Read methods may use the already-open main-process SQLite connection and must
+perform no writes, repairs, cache mutation, schema changes, or default row
+creation. Write methods must require the HSD-008 `DatabaseTransactionConnection`
+from a caller-owned transaction callback. Repositories must not run transaction
+control SQL, call `transaction()`, retry failures, or hide multi-table workflow
+decisions inside repository methods.
+
+Every value read from SQLite must be decoded from `unknown` through reviewed
+domain parsers. Malformed persisted data fails closed with a controlled
+data-integrity error rather than being treated as absent or repaired
+automatically.
+
+Repository errors must use fixed codes and messages. They may include only
+reviewed technical `errorType` values and must not retain raw causes, stacks,
+SQL, paths, row values, UUIDs, timestamps, deployment names, timezone values, or
+SQLite messages. Repository code must not log.
 
 ## Formatting And Linting
 

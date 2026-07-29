@@ -8,6 +8,11 @@ const reviewedErrorTypes = new Set<string>([
   'DatabaseTransactionStateError',
   'DatabaseTransactionAsyncWorkError',
   'DatabaseTransactionExecutionError',
+  'RepositoryValidationError',
+  'RepositoryReadError',
+  'RepositoryWriteError',
+  'RepositoryDataIntegrityError',
+  'InstallationAlreadyExistsError',
   'UnknownError'
 ])
 
