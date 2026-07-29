@@ -49,8 +49,16 @@ export function createDatabaseRuntime({
         connection = openedConnection
         logger.info('Database runtime initialized.')
       } catch (error) {
-        openedConnection?.close()
         connection = null
+        if (openedConnection) {
+          try {
+            openedConnection.close()
+          } catch (cleanupError) {
+            logger.error(
+              `Database runtime cleanup failed; phase=initialization; errorType=${getErrorType(cleanupError)}`
+            )
+          }
+        }
         logger.error(
           `Database runtime initialization failed; phase=open; errorType=${getErrorType(error)}`
         )
@@ -64,9 +72,15 @@ export function createDatabaseRuntime({
       }
 
       try {
-        const result = connection.prepare('SELECT 1 AS health').get() as { health?: unknown }
-        return result.health === 1 ? 'ready' : 'unavailable'
-      } catch {
+        const result = connection.prepare('SELECT 1 AS health').get() as unknown
+        if (isHealthyResult(result)) {
+          return 'ready'
+        }
+
+        logHealthFailure(logger, 'UnexpectedHealthResult')
+        return 'unavailable'
+      } catch (error) {
+        logHealthFailure(logger, getErrorType(error))
         return 'unavailable'
       }
     },
@@ -86,8 +100,14 @@ export function createDatabaseRuntime({
 
       const connectionToClose = connection
       connection = null
-      connectionToClose.close()
-      logger.info('Database runtime closed.')
+      try {
+        connectionToClose.close()
+        logger.info('Database runtime closed.')
+      } catch (error) {
+        logger.error(
+          `Database runtime close failed; phase=shutdown; errorType=${getErrorType(error)}`
+        )
+      }
     }
   }
 }
@@ -126,6 +146,14 @@ function assertPragma(connection: SqliteConnection, name: string, expected: numb
 
 function getErrorType(error: unknown): string {
   return error instanceof Error ? error.name : typeof error
+}
+
+function isHealthyResult(result: unknown): result is { health: 1 } {
+  return typeof result === 'object' && result !== null && 'health' in result && result.health === 1
+}
+
+function logHealthFailure(logger: DatabaseRuntimeLogger, errorType: string): void {
+  logger.error(`Database runtime health check failed; phase=health; errorType=${errorType}`)
 }
 
 export class DatabaseRuntimeInitializationError extends Error {

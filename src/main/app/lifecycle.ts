@@ -9,6 +9,7 @@ import {
   type MainWindowConfiguration
 } from '@main/app/main-window'
 import { createRendererNavigationPolicy } from '@main/app/navigation-policy'
+import { registerApplicationShutdown } from '@main/app/shutdown'
 import {
   createDatabaseHealthProvider,
   createDatabaseRuntime,
@@ -64,10 +65,7 @@ export function startApplicationLifecycle(): void {
         logger: console
       })
 
-      app.once('will-quit', () => {
-        disposeIpcHandlers()
-        databaseRuntime?.close()
-      })
+      registerApplicationShutdown(app, disposeIpcHandlers, () => databaseRuntime?.close())
 
       app.on('second-instance', () => {
         void createOrFocusMainWindow(configuration).catch((error: unknown) => {
