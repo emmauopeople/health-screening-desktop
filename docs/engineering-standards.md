@@ -1,6 +1,6 @@
 # Engineering Standards
 
-HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure. HSD-008 adds main-process entity ID, UTC clock, and transaction boundaries. HSD-009 adds the first main-process typed installation repository and read-only first-run state query. HSD-010 adds a main-process-only asynchronous password credential primitive, but still does not add first-run setup, seed data, user creation, login, sessions, clinical workflows, IPC, renderer changes, or synchronization.
+HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure. HSD-008 adds main-process entity ID, UTC clock, and transaction boundaries. HSD-009 adds the first main-process typed installation repository and read-only first-run state query. HSD-010 adds a main-process-only asynchronous password credential primitive. HSD-011 adds a typed local-user repository and username identity boundary over the existing users table, but still does not add first-run setup, seed data, login, sessions, clinical workflows, IPC, renderer changes, or synchronization.
 
 ## TypeScript
 
@@ -105,6 +105,13 @@ reviewed technical `errorType` values and must not retain raw causes, stacks,
 SQL, paths, row values, UUIDs, timestamps, deployment names, timezone values, or
 SQLite messages. Repository code must not log.
 
+Local user repositories must derive `username_normalized` internally from the
+canonical username, use credential-free ordinary projections, and expose
+credential text only through a separate main-process authentication projection.
+They must accept only pre-derived HSD-010 `StoredPasswordCredential` values and
+must never accept plaintext passwords, hash passwords, verify passwords, update
+login counters, create sessions, or perform authorization.
+
 ## Password Credentials
 
 Password derivation and verification must use the HSD-010 password credential
@@ -129,6 +136,11 @@ messages and must not retain plaintext, salts, password hashes, derived keys,
 raw crypto messages, causes, stacks, paths, SQL, or input metadata. Mutable
 password, salt, and key buffers should be zero-filled on a best-effort basis
 after use.
+
+The internal credential persistence validator may be imported only by reviewed
+main-process repository code. It validates canonical stored credential text and
+clears decoded buffers, but it must not be exported from application-facing
+security barrels or used as a credential creation or verification API.
 
 ## Formatting And Linting
 

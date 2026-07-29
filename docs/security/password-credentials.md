@@ -63,6 +63,19 @@ transaction callbacks. Later first-run services must hash before opening the
 write transaction, then re-check installation/user invariants inside that
 transaction before inserting related rows atomically.
 
+## Internal Persistence Validation
+
+HSD-011 adds an internal main-process helper,
+`password-persistence-validation.ts`, for repository persistence only. It is not
+exported from `src/main/security/index.ts` or `src/main/security/password`.
+
+The helper accepts unknown stored-credential input, uses the strict HSD-010
+credential parser, returns a new frozen `StoredPasswordCredential` containing
+only canonical `passwordHash` and `passwordSalt` strings, and clears decoded
+salt and derived-key buffers before returning or throwing. It does not create
+credentials, accept plaintext, derive keys, compare credentials, verify
+passwords, log, or expose decoded buffers.
+
 ## Error And Secret Safety
 
 Password modules do not log. Controlled password errors have fixed codes and
