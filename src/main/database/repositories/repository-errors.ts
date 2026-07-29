@@ -7,6 +7,7 @@ export type RepositoryErrorCode =
   | 'REPOSITORY_DATA_INTEGRITY_ERROR'
   | 'INSTALLATION_ALREADY_EXISTS'
   | 'LOCAL_USER_ALREADY_EXISTS'
+  | 'LOCATION_ALREADY_EXISTS'
 
 type RepositoryErrorName =
   | 'RepositoryValidationError'
@@ -15,6 +16,7 @@ type RepositoryErrorName =
   | 'RepositoryDataIntegrityError'
   | 'InstallationAlreadyExistsError'
   | 'LocalUserAlreadyExistsError'
+  | 'LocationAlreadyExistsError'
 
 class ControlledRepositoryError extends Error {
   readonly code: RepositoryErrorCode
@@ -100,6 +102,17 @@ export class LocalUserAlreadyExistsError extends ControlledRepositoryError {
   }
 }
 
+export class LocationAlreadyExistsError extends ControlledRepositoryError {
+  constructor(errorType?: string) {
+    super(
+      'LocationAlreadyExistsError',
+      'LOCATION_ALREADY_EXISTS',
+      'Location already exists.',
+      errorType
+    )
+  }
+}
+
 export type RepositoryError =
   | RepositoryValidationError
   | RepositoryReadError
@@ -107,6 +120,7 @@ export type RepositoryError =
   | RepositoryDataIntegrityError
   | InstallationAlreadyExistsError
   | LocalUserAlreadyExistsError
+  | LocationAlreadyExistsError
 
 export function isRepositoryError(error: unknown): error is RepositoryError {
   return (
@@ -115,7 +129,8 @@ export function isRepositoryError(error: unknown): error is RepositoryError {
     error instanceof RepositoryWriteError ||
     error instanceof RepositoryDataIntegrityError ||
     error instanceof InstallationAlreadyExistsError ||
-    error instanceof LocalUserAlreadyExistsError
+    error instanceof LocalUserAlreadyExistsError ||
+    error instanceof LocationAlreadyExistsError
   )
 }
 
@@ -140,7 +155,11 @@ export function rebuildRepositoryError(error: RepositoryError): RepositoryError 
     return new InstallationAlreadyExistsError(error.errorType)
   }
 
-  return new LocalUserAlreadyExistsError(error.errorType)
+  if (error instanceof LocalUserAlreadyExistsError) {
+    return new LocalUserAlreadyExistsError(error.errorType)
+  }
+
+  return new LocationAlreadyExistsError(error.errorType)
 }
 
 export function getRepositoryErrorType(error: unknown): string {

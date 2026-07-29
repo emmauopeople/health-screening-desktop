@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   InstallationAlreadyExistsError,
+  LocationAlreadyExistsError,
   LocalUserAlreadyExistsError,
   RepositoryDataIntegrityError,
   RepositoryReadError,
@@ -22,7 +23,8 @@ describe('repository errors', () => {
       new RepositoryWriteError('Error'),
       new RepositoryDataIntegrityError('RepositoryValidationError'),
       new InstallationAlreadyExistsError('InstallationAlreadyExistsError'),
-      new LocalUserAlreadyExistsError('LocalUserAlreadyExistsError')
+      new LocalUserAlreadyExistsError('LocalUserAlreadyExistsError'),
+      new LocationAlreadyExistsError('LocationAlreadyExistsError')
     ]
 
     expect(errors.map((error) => error.code)).toEqual([
@@ -31,7 +33,8 @@ describe('repository errors', () => {
       'REPOSITORY_WRITE_ERROR',
       'REPOSITORY_DATA_INTEGRITY_ERROR',
       'INSTALLATION_ALREADY_EXISTS',
-      'LOCAL_USER_ALREADY_EXISTS'
+      'LOCAL_USER_ALREADY_EXISTS',
+      'LOCATION_ALREADY_EXISTS'
     ])
     expect(errors.map((error) => error.message)).toEqual([
       'Repository input or row value failed validation.',
@@ -39,7 +42,8 @@ describe('repository errors', () => {
       'Repository write could not be completed.',
       'Repository data does not match the trusted contract.',
       'Installation already exists.',
-      'Local user already exists.'
+      'Local user already exists.',
+      'Location already exists.'
     ])
 
     for (const error of errors) {

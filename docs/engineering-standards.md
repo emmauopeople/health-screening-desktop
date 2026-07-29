@@ -1,6 +1,6 @@
 # Engineering Standards
 
-HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure. HSD-008 adds main-process entity ID, UTC clock, and transaction boundaries. HSD-009 adds the first main-process typed installation repository and read-only first-run state query. HSD-010 adds a main-process-only asynchronous password credential primitive. HSD-011 adds a typed local-user repository and username identity boundary over the existing users table, but still does not add first-run setup, seed data, login, sessions, clinical workflows, IPC, renderer changes, or synchronization.
+HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure. HSD-008 adds main-process entity ID, UTC clock, and transaction boundaries. HSD-009 adds the first main-process typed installation repository and read-only first-run state query. HSD-010 adds a main-process-only asynchronous password credential primitive. HSD-011 adds a typed local-user repository and username identity boundary over the existing users table. HSD-012 adds a typed location repository and location identity boundary over the existing locations table, but still does not add first-run setup, seed data, login, sessions, clinical workflows, IPC, renderer changes, or synchronization.
 
 ## TypeScript
 
@@ -111,6 +111,13 @@ credential text only through a separate main-process authentication projection.
 They must accept only pre-derived HSD-010 `StoredPasswordCredential` values and
 must never accept plaintext passwords, hash passwords, verify passwords, update
 login counters, create sessions, or perform authorization.
+
+Location repositories must derive `name_normalized` internally from the
+canonical location name, allow duplicate display names and duplicate normalized
+keys, and use deterministic `name_normalized, id` ordering for list reads. They
+must require authentic HSD-008 transaction capabilities for writes, set active
+and update provenance defaults internally, and fail closed on noncanonical
+persisted location names or optional geography text.
 
 ## Password Credentials
 

@@ -1,5 +1,6 @@
 export {
   InstallationAlreadyExistsError,
+  LocationAlreadyExistsError,
   RepositoryDataIntegrityError,
   LocalUserAlreadyExistsError,
   RepositoryReadError,
@@ -39,3 +40,21 @@ export {
   type Username,
   type UsernameIdentity
 } from './local-user'
+export {
+  createLocationRepository,
+  decodeSqliteLocationBoolean,
+  parseLocationAdministrativeArea,
+  parseLocationDirections,
+  parseLocationName,
+  parseLocationNameIdentity,
+  parseLocationType,
+  type CreateLocationInput,
+  type LocationAdministrativeArea,
+  type LocationDirections,
+  type LocationName,
+  type LocationNameIdentity,
+  type LocationRecord,
+  type LocationRepository,
+  type LocationType,
+  type NormalizedLocationName
+} from './location'
