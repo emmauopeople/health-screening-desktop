@@ -31,6 +31,11 @@ application must not discover migrations by scanning runtime directories.
 executor. Future repositories must use this boundary for `BEGIN IMMEDIATE`,
 commit, rollback, entity ID, and UTC timestamp coordination.
 
+`src/main/database/repositories` contains main-process-only repository
+boundaries. HSD-009 adds the typed installation repository and read-only
+first-run state query over schema version 1. Repositories own exact SQL and row
+decoding, while writes use caller-owned transaction-scoped capabilities.
+
 The renderer must not import from `src/main`.
 
 ## Preload Process
@@ -59,7 +64,7 @@ Shared files must not depend on Electron, Node-only APIs, browser globals, or pr
 
 ## Documentation
 
-`docs` stores architecture notes and implementation documentation. Architecture decision records belong in `docs/adr`. Database runtime, migration, and schema documentation belongs under `docs/database`.
+`docs` stores architecture notes and implementation documentation. Architecture decision records belong in `docs/adr`. Database runtime, migration, schema, transaction, and repository-boundary documentation belongs under `docs/database`.
 
 ## Tests
 
