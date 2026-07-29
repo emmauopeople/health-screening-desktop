@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   createPasswordCredentialService,
-  createStoredPasswordCredential,
   PasswordCredentialFormatError,
   PasswordHashingError,
   PasswordValidationError,
@@ -11,6 +10,7 @@ import {
   type PasswordCryptoProvider,
   type ScryptV1PasswordParameters
 } from '@main/security'
+import { createStoredPasswordCredential } from '@main/security/password/password-credential-format'
 
 interface RecordedScryptCall {
   readonly password: Buffer
@@ -78,6 +78,24 @@ describe('password credential service', () => {
     expect(first.passwordHash).not.toBe(second.passwordHash)
   })
 
+  it('zeros provider-returned salt and derived-key references after hashing', async () => {
+    const saltReference = fixedBytes(32, 31)
+    const derivedKeyReference = fixedBytes(64, 41)
+    const provider: PasswordCryptoProvider = {
+      randomBytes: vi.fn(async () => saltReference),
+      scrypt: vi.fn(async () => derivedKeyReference),
+      timingSafeEqual: vi.fn(() => false)
+    }
+    const service = createPasswordCredentialService(provider)
+
+    const credential = await service.hash(exactPassword)
+
+    expect(credential.passwordSalt).toHaveLength(43)
+    expect(credential.passwordHash).toMatch(/^scrypt-v1\$/u)
+    expect(saltReference.every((byte) => byte === 0)).toBe(true)
+    expect(derivedKeyReference.every((byte) => byte === 0)).toBe(true)
+  })
+
   it('validates password input before invoking crypto providers', async () => {
     const provider = createRecordingCryptoProvider()
     const service = createPasswordCredentialService(provider)
@@ -103,6 +121,39 @@ describe('password credential service', () => {
       expect(left.byteLength).toBe(64)
       expect(right.byteLength).toBe(64)
     }
+  })
+
+  it('zeros verification password, candidate, decoded-key, and decoded-salt references', async () => {
+    const salt = fixedBytes(32, 33)
+    const storedKey = deriveTestKey(Buffer.from(exactPassword, 'utf8'), salt)
+    const credential = createStoredPasswordCredential(storedKey, salt)
+    let passwordReference: Uint8Array | undefined
+    let decodedSaltReference: Uint8Array | undefined
+    let candidateKeyReference: Uint8Array | undefined
+    let decodedKeyReference: Uint8Array | undefined
+    const provider: PasswordCryptoProvider = {
+      randomBytes: vi.fn(async () => fixedBytes(32, 1)),
+      scrypt: vi.fn(async (password, decodedSalt) => {
+        passwordReference = password
+        decodedSaltReference = decodedSalt
+        candidateKeyReference = Buffer.from(storedKey)
+
+        return candidateKeyReference
+      }),
+      timingSafeEqual: vi.fn((candidateKey, decodedKey) => {
+        decodedKeyReference = decodedKey
+
+        return Buffer.from(candidateKey).equals(Buffer.from(decodedKey))
+      })
+    }
+    const service = createPasswordCredentialService(provider)
+
+    await expect(service.verify(exactPassword, credential)).resolves.toBe(true)
+
+    expectAllZero(passwordReference)
+    expectAllZero(decodedSaltReference)
+    expectAllZero(candidateKeyReference)
+    expectAllZero(decodedKeyReference)
   })
 
   it('preserves leading spaces and Unicode composition during verification', async () => {
@@ -138,6 +189,24 @@ describe('password credential service', () => {
       })
     ).rejects.toBeInstanceOf(PasswordCredentialFormatError)
 
+    expect(provider.scrypt).not.toHaveBeenCalled()
+    expect(provider.timingSafeEqual).not.toHaveBeenCalled()
+  })
+
+  it('fails cleanly when a valid hash is paired with a malformed salt', async () => {
+    const provider = createRecordingCryptoProvider()
+    const service = createPasswordCredentialService(provider)
+    const validHashCredential = createStoredPasswordCredential(fixedBytes(64, 1), fixedBytes(32, 2))
+
+    const error = await captureAsyncError(() =>
+      service.verify(exactPassword, {
+        passwordHash: validHashCredential.passwordHash,
+        passwordSalt: `${validHashCredential.passwordSalt}=`
+      })
+    )
+
+    expect(error).toBeInstanceOf(PasswordCredentialFormatError)
+    expectSafePasswordError(error)
     expect(provider.scrypt).not.toHaveBeenCalled()
     expect(provider.timingSafeEqual).not.toHaveBeenCalled()
   })
@@ -192,6 +261,90 @@ describe('password credential service', () => {
     expectSafePasswordError(hashScryptError)
     expectSafePasswordError(verifyError)
     expectSafePasswordError(compareError)
+  })
+
+  it('does not let cleanup failures replace successful or controlled outcomes', async () => {
+    const fillSpy = vi.spyOn(Uint8Array.prototype, 'fill').mockImplementation(() => {
+      throw new Error('C:\\secret\\cleanup.log SecretPassw0rd!')
+    })
+    const salt = fixedBytes(32, 9)
+    const storedKey = deriveTestKey(Buffer.from(exactPassword, 'utf8'), salt)
+    const credential = createStoredPasswordCredential(storedKey, salt)
+    const validHashCredential = createStoredPasswordCredential(
+      fixedBytes(64, 15),
+      fixedBytes(32, 16)
+    )
+
+    try {
+      await expect(
+        createPasswordCredentialService(
+          createStaticCryptoProvider({
+            salt: fixedBytes(32, 10),
+            derivedKey: fixedBytes(64, 11),
+            compareResult: true
+          })
+        ).hash(exactPassword)
+      ).resolves.toMatchObject({
+        passwordHash: expect.stringMatching(/^scrypt-v1\$/u),
+        passwordSalt: expect.any(String)
+      })
+
+      await expect(
+        createPasswordCredentialService(
+          createStaticCryptoProvider({
+            salt: fixedBytes(32, 12),
+            derivedKey: storedKey,
+            compareResult: true
+          })
+        ).verify(exactPassword, credential)
+      ).resolves.toBe(true)
+
+      await expect(
+        createPasswordCredentialService(
+          createStaticCryptoProvider({
+            salt: fixedBytes(32, 13),
+            derivedKey: fixedBytes(64, 14),
+            compareResult: false
+          })
+        ).verify(exactPassword, credential)
+      ).resolves.toBe(false)
+
+      await expect(
+        createPasswordCredentialService(createStaticCryptoProvider()).hash('too-short')
+      ).rejects.toBeInstanceOf(PasswordValidationError)
+
+      await expect(
+        createPasswordCredentialService(createStaticCryptoProvider()).verify(exactPassword, {
+          passwordHash: 'legacy-hash',
+          passwordSalt: 'legacy-salt'
+        })
+      ).rejects.toBeInstanceOf(PasswordCredentialFormatError)
+
+      await expect(
+        createPasswordCredentialService(createStaticCryptoProvider()).verify(exactPassword, {
+          passwordHash: validHashCredential.passwordHash,
+          passwordSalt: `${validHashCredential.passwordSalt}=`
+        })
+      ).rejects.toBeInstanceOf(PasswordCredentialFormatError)
+
+      await expect(
+        createPasswordCredentialService(
+          createStaticCryptoProvider({
+            scryptFailure: new Error('C:\\secret\\hashing.log')
+          })
+        ).hash(exactPassword)
+      ).rejects.toBeInstanceOf(PasswordHashingError)
+
+      await expect(
+        createPasswordCredentialService(
+          createStaticCryptoProvider({
+            scryptFailure: new Error('C:\\secret\\verification.log')
+          })
+        ).verify(exactPassword, credential)
+      ).rejects.toBeInstanceOf(PasswordVerificationError)
+    } finally {
+      fillSpy.mockRestore()
+    }
   })
 })
 
@@ -272,8 +425,34 @@ function deriveTestKey(
   return key
 }
 
+function createStaticCryptoProvider(
+  options: {
+    salt?: Buffer
+    derivedKey?: Buffer
+    compareResult?: boolean
+    scryptFailure?: Error
+  } = {}
+): PasswordCryptoProvider {
+  return {
+    randomBytes: vi.fn(async () => options.salt ?? fixedBytes(32, 1)),
+    scrypt: vi.fn(async () => {
+      if (options.scryptFailure !== undefined) {
+        throw options.scryptFailure
+      }
+
+      return options.derivedKey ?? fixedBytes(64, 2)
+    }),
+    timingSafeEqual: vi.fn(() => options.compareResult ?? true)
+  }
+}
+
 function fixedBytes(length: number, seed: number): Buffer {
   return Buffer.from(Array.from({ length }, (_, index) => (seed + index) % 256))
+}
+
+function expectAllZero(bytes: Uint8Array | undefined): void {
+  expect(bytes).toBeDefined()
+  expect(Array.from(bytes!)).toEqual(new Array(bytes!.byteLength).fill(0))
 }
 
 function expectSafePasswordError(error: unknown): void {
@@ -289,7 +468,13 @@ function expectSafePasswordError(error: unknown): void {
     'C:\\',
     'secret',
     'legacy-hash',
-    'legacy-salt'
+    'legacy-salt',
+    'Exact passphrase',
+    'scrypt-v1$',
+    'passwordHash',
+    'passwordSalt',
+    'metadata',
+    'SELECT'
   ]) {
     expect(serialized).not.toContain(unsafeFragment)
   }

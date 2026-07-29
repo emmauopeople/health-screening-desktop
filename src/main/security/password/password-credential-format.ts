@@ -1,3 +1,4 @@
+import { zeroByteBuffersBestEffort, zeroBytesBestEffort } from './password-buffer-cleanup'
 import { PasswordCredentialFormatError } from './password-errors'
 import {
   passwordDerivedKeyCharacterLength,
@@ -14,6 +15,8 @@ interface ParsedPasswordHash {
   readonly parameters: typeof scryptV1PasswordParameters
 }
 
+type DataCredentialPropertyDescriptor = PropertyDescriptor & { readonly value: unknown }
+
 export interface ParsedStoredPasswordCredential {
   readonly passwordHash: PasswordHash
   readonly passwordSalt: PasswordSalt
@@ -23,6 +26,7 @@ export interface ParsedStoredPasswordCredential {
 }
 
 const base64UrlPattern = /^[A-Za-z0-9_-]+$/u
+const credentialPropertyNames = Object.freeze(['passwordHash', 'passwordSalt'] as const)
 
 export function createStoredPasswordCredential(
   derivedKeyBytes: Uint8Array,
@@ -63,6 +67,59 @@ export function serializePasswordSalt(saltBytes: Uint8Array): PasswordSalt {
 }
 
 export function parsePasswordHash(value: unknown): ParsedPasswordHash {
+  const decodedBuffers: Uint8Array[] = []
+
+  try {
+    return parsePasswordHashInternal(value, decodedBuffers)
+  } catch (error) {
+    zeroByteBuffersBestEffort(decodedBuffers)
+    throw toCleanFormatError(error)
+  }
+}
+
+export function parsePasswordSalt(value: unknown): {
+  readonly passwordSalt: PasswordSalt
+  readonly saltBytes: Buffer
+} {
+  const decodedBuffers: Uint8Array[] = []
+
+  try {
+    return parsePasswordSaltInternal(value, decodedBuffers)
+  } catch (error) {
+    zeroByteBuffersBestEffort(decodedBuffers)
+    throw toCleanFormatError(error)
+  }
+}
+
+export function parseStoredPasswordCredential(value: unknown): ParsedStoredPasswordCredential {
+  const decodedBuffers: Uint8Array[] = []
+
+  try {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      throw new PasswordCredentialFormatError()
+    }
+
+    const dataProperties = readStoredCredentialDataProperties(value)
+    const parsedHash = parsePasswordHashInternal(dataProperties.passwordHash, decodedBuffers)
+    const parsedSalt = parsePasswordSaltInternal(dataProperties.passwordSalt, decodedBuffers)
+
+    return Object.freeze({
+      passwordHash: parsedHash.passwordHash,
+      passwordSalt: parsedSalt.passwordSalt,
+      derivedKeyBytes: parsedHash.derivedKeyBytes,
+      saltBytes: parsedSalt.saltBytes,
+      parameters: parsedHash.parameters
+    })
+  } catch (error) {
+    zeroByteBuffersBestEffort(decodedBuffers)
+    throw toCleanFormatError(error)
+  }
+}
+
+function parsePasswordHashInternal(
+  value: unknown,
+  decodedBuffers: Uint8Array[]
+): ParsedPasswordHash {
   if (typeof value !== 'string' || value.trim() !== value) {
     throw new PasswordCredentialFormatError()
   }
@@ -86,18 +143,24 @@ export function parsePasswordHash(value: unknown): ParsedPasswordHash {
     throw new PasswordCredentialFormatError()
   }
 
+  const derivedKeyBytes = decodeCanonicalBase64Url(
+    encodedKey,
+    passwordDerivedKeyCharacterLength,
+    scryptV1PasswordParameters.derivedKeyBytes
+  )
+  decodedBuffers.push(derivedKeyBytes)
+
   return Object.freeze({
     passwordHash: value as PasswordHash,
-    derivedKeyBytes: decodeCanonicalBase64Url(
-      encodedKey,
-      passwordDerivedKeyCharacterLength,
-      scryptV1PasswordParameters.derivedKeyBytes
-    ),
+    derivedKeyBytes,
     parameters: scryptV1PasswordParameters
   })
 }
 
-export function parsePasswordSalt(value: unknown): {
+function parsePasswordSaltInternal(
+  value: unknown,
+  decodedBuffers: Uint8Array[]
+): {
   readonly passwordSalt: PasswordSalt
   readonly saltBytes: Buffer
 } {
@@ -105,47 +168,62 @@ export function parsePasswordSalt(value: unknown): {
     throw new PasswordCredentialFormatError()
   }
 
+  const saltBytes = decodeCanonicalBase64Url(
+    value,
+    passwordSaltCharacterLength,
+    scryptV1PasswordParameters.saltBytes
+  )
+  decodedBuffers.push(saltBytes)
+
   return Object.freeze({
     passwordSalt: value as PasswordSalt,
-    saltBytes: decodeCanonicalBase64Url(
-      value,
-      passwordSaltCharacterLength,
-      scryptV1PasswordParameters.saltBytes
-    )
+    saltBytes
   })
 }
 
-export function parseStoredPasswordCredential(value: unknown): ParsedStoredPasswordCredential {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+function readStoredCredentialDataProperties(value: object): {
+  readonly passwordHash: unknown
+  readonly passwordSalt: unknown
+} {
+  let descriptors: PropertyDescriptorMap
+
+  try {
+    descriptors = Object.getOwnPropertyDescriptors(value)
+  } catch {
     throw new PasswordCredentialFormatError()
   }
 
-  const candidate = value as Record<string, unknown>
+  const keys = Reflect.ownKeys(descriptors)
 
-  if (!hasExactStoredCredentialKeys(candidate)) {
+  if (
+    keys.length !== credentialPropertyNames.length ||
+    !credentialPropertyNames.every((propertyName) => keys.includes(propertyName))
+  ) {
     throw new PasswordCredentialFormatError()
   }
 
-  const parsedHash = parsePasswordHash(candidate.passwordHash)
-  const parsedSalt = parsePasswordSalt(candidate.passwordSalt)
+  const passwordHashDescriptor = descriptors.passwordHash
+  const passwordSaltDescriptor = descriptors.passwordSalt
+
+  if (
+    passwordHashDescriptor === undefined ||
+    passwordSaltDescriptor === undefined ||
+    !isDataPropertyDescriptor(passwordHashDescriptor) ||
+    !isDataPropertyDescriptor(passwordSaltDescriptor)
+  ) {
+    throw new PasswordCredentialFormatError()
+  }
 
   return Object.freeze({
-    passwordHash: parsedHash.passwordHash,
-    passwordSalt: parsedSalt.passwordSalt,
-    derivedKeyBytes: parsedHash.derivedKeyBytes,
-    saltBytes: parsedSalt.saltBytes,
-    parameters: parsedHash.parameters
+    passwordHash: passwordHashDescriptor.value,
+    passwordSalt: passwordSaltDescriptor.value
   })
 }
 
-function hasExactStoredCredentialKeys(value: Record<string, unknown>): boolean {
-  const keys = Object.keys(value)
-
-  return (
-    keys.length === 2 &&
-    Object.prototype.hasOwnProperty.call(value, 'passwordHash') &&
-    Object.prototype.hasOwnProperty.call(value, 'passwordSalt')
-  )
+function isDataPropertyDescriptor(
+  descriptor: PropertyDescriptor
+): descriptor is DataCredentialPropertyDescriptor {
+  return Object.prototype.hasOwnProperty.call(descriptor, 'value')
 }
 
 function encodeCanonicalBase64Url(bytes: Uint8Array): string {
@@ -174,9 +252,17 @@ function decodeCanonicalBase64Url(
   }
 
   if (decoded.byteLength !== expectedByteLength || encodeCanonicalBase64Url(decoded) !== value) {
-    decoded.fill(0)
+    zeroBytesBestEffort(decoded)
     throw new PasswordCredentialFormatError()
   }
 
   return decoded
+}
+
+function toCleanFormatError(error: unknown): PasswordCredentialFormatError {
+  if (error instanceof PasswordCredentialFormatError) {
+    return new PasswordCredentialFormatError(error.errorType)
+  }
+
+  return new PasswordCredentialFormatError()
 }

@@ -3,6 +3,7 @@ import {
   parseStoredPasswordCredential,
   type ParsedStoredPasswordCredential
 } from './password-credential-format'
+import { zeroBytesBestEffort } from './password-buffer-cleanup'
 import { createNodePasswordCryptoProvider } from './password-crypto'
 import {
   getPasswordCredentialErrorType,
@@ -63,9 +64,9 @@ export function createPasswordCredentialService(
 
         throw new PasswordHashingError(getPasswordCredentialErrorType(error))
       } finally {
-        zeroBuffer(passwordBytes)
-        zeroBuffer(saltBytes)
-        zeroBuffer(derivedKeyBytes)
+        zeroBytesBestEffort(passwordBytes)
+        zeroBytesBestEffort(saltBytes)
+        zeroBytesBestEffort(derivedKeyBytes)
       }
     },
 
@@ -96,10 +97,10 @@ export function createPasswordCredentialService(
 
         throw new PasswordVerificationError(getPasswordCredentialErrorType(error))
       } finally {
-        zeroBuffer(passwordBytes)
-        zeroBuffer(candidateKeyBytes)
-        zeroBuffer(parsedCredential.saltBytes)
-        zeroBuffer(parsedCredential.derivedKeyBytes)
+        zeroBytesBestEffort(passwordBytes)
+        zeroBytesBestEffort(candidateKeyBytes)
+        zeroBytesBestEffort(parsedCredential.saltBytes)
+        zeroBytesBestEffort(parsedCredential.derivedKeyBytes)
       }
     }
   })
@@ -145,8 +146,4 @@ function parseCredentialForVerification(credential: unknown): ParsedStoredPasswo
 
     throw new PasswordCredentialFormatError(getPasswordCredentialErrorType(error))
   }
-}
-
-function zeroBuffer(bytes: Uint8Array | undefined): void {
-  bytes?.fill(0)
 }

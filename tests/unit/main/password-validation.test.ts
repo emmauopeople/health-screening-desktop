@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { parsePlaintextPassword, PasswordValidationError } from '@main/security'
+import { PasswordValidationError } from '@main/security'
+import { parsePlaintextPassword } from '@main/security/password/password-validation'
 
 describe('password validation', () => {
   it('accepts exact password strings at reviewed boundaries without transformation', () => {

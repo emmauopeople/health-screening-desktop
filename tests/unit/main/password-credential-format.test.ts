@@ -1,14 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
+import { PasswordCredentialFormatError } from '@main/security'
 import {
   createStoredPasswordCredential,
   parsePasswordHash,
   parsePasswordSalt,
   parseStoredPasswordCredential,
-  PasswordCredentialFormatError,
   serializePasswordHash,
   serializePasswordSalt
-} from '@main/security'
+} from '@main/security/password/password-credential-format'
 
 const canonicalSalt = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8'
 const canonicalDerivedKey =
@@ -113,6 +113,86 @@ describe('password credential format', () => {
     expectSafeFormatError(captureError(() => serializePasswordHash(bytes(63))))
     expectSafeFormatError(captureError(() => createStoredPasswordCredential(bytes(64), bytes(31))))
   })
+
+  it('rejects a valid hash with malformed salt and cleans partial decoded buffers', () => {
+    const { error, decodedBuffers } = captureBase64UrlDecodedBuffers(() =>
+      parseStoredPasswordCredential({
+        passwordHash: canonicalHash,
+        passwordSalt: `${canonicalSalt}=`
+      })
+    )
+
+    expectSafeFormatError(error)
+    expect(decodedBuffers.length).toBeGreaterThanOrEqual(1)
+    expect(decodedBuffers[0]!.every((byte) => byte === 0)).toBe(true)
+  })
+
+  it('rejects accessor-backed credential properties without invoking getters', () => {
+    let passwordHashGetterInvoked = false
+    let passwordSaltGetterInvoked = false
+    const hashAccessorCredential = Object.defineProperties(
+      {},
+      {
+        passwordHash: {
+          enumerable: true,
+          get() {
+            passwordHashGetterInvoked = true
+            throw new Error('C:\\secret\\hash-getter.log')
+          }
+        },
+        passwordSalt: {
+          enumerable: true,
+          value: canonicalSalt
+        }
+      }
+    )
+    const saltAccessorCredential = Object.defineProperties(
+      {},
+      {
+        passwordHash: {
+          enumerable: true,
+          value: canonicalHash
+        },
+        passwordSalt: {
+          enumerable: true,
+          get() {
+            passwordSaltGetterInvoked = true
+            throw new Error('C:\\secret\\salt-getter.log')
+          }
+        }
+      }
+    )
+
+    expectSafeFormatError(captureError(() => parseStoredPasswordCredential(hashAccessorCredential)))
+    expectSafeFormatError(captureError(() => parseStoredPasswordCredential(saltAccessorCredential)))
+    expect(passwordHashGetterInvoked).toBe(false)
+    expect(passwordSaltGetterInvoked).toBe(false)
+  })
+
+  it('converts proxy enumeration and descriptor traps to clean format errors', () => {
+    const ownKeysProxy = new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw new Error('C:\\secret\\ownKeys.log SELECT password_hash')
+        }
+      }
+    )
+    const descriptorProxy = new Proxy(
+      {
+        passwordHash: canonicalHash,
+        passwordSalt: canonicalSalt
+      },
+      {
+        getOwnPropertyDescriptor() {
+          throw new Error('C:\\secret\\descriptor.log password_salt')
+        }
+      }
+    )
+
+    expectSafeFormatError(captureError(() => parseStoredPasswordCredential(ownKeysProxy)))
+    expectSafeFormatError(captureError(() => parseStoredPasswordCredential(descriptorProxy)))
+  })
 })
 
 function bytes(length: number): Buffer {
@@ -134,9 +214,42 @@ function expectSafeFormatError(error: unknown): void {
     'SecretPassw0rd',
     'scrypt-v1$',
     '32768',
-    'AAECA'
+    'AAECA',
+    'ownKeys',
+    'descriptor',
+    'getter',
+    'password_hash',
+    'password_salt',
+    'C:\\',
+    'SELECT'
   ]) {
     expect(serialized).not.toContain(unsafeFragment)
+  }
+}
+
+function captureBase64UrlDecodedBuffers(action: () => void): {
+  readonly error: unknown
+  readonly decodedBuffers: readonly Buffer[]
+} {
+  const originalFrom = Buffer.from.bind(Buffer)
+  const decodedBuffers: Buffer[] = []
+  const fromSpy = vi.spyOn(Buffer, 'from').mockImplementation(((...args: unknown[]): Buffer => {
+    const result = Reflect.apply(originalFrom, Buffer, args) as Buffer
+
+    if (args[1] === 'base64url') {
+      decodedBuffers.push(result)
+    }
+
+    return result
+  }) as typeof Buffer.from)
+
+  try {
+    return {
+      error: captureError(action),
+      decodedBuffers
+    }
+  } finally {
+    fromSpy.mockRestore()
   }
 }
 

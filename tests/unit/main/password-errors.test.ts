@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  isPasswordCredentialError,
   PasswordCredentialFormatError,
   PasswordHashingError,
   PasswordValidationError,
   PasswordVerificationError,
-  rebuildPasswordCredentialError,
   type PasswordCredentialError
 } from '@main/security'
+import {
+  isPasswordCredentialError,
+  rebuildPasswordCredentialError
+} from '@main/security/password/password-errors'
 
 describe('password credential errors', () => {
   it('uses fixed safe codes, messages, and serialization shape', () => {
