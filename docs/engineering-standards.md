@@ -61,3 +61,32 @@ pnpm verify
 ```powershell
 pnpm build
 ```
+
+## Renderer CSP And Session Permissions
+
+Development and production use different CSP delivery mechanisms. Development uses an Electron
+`session.webRequest.onHeadersReceived` response header for the approved Vite renderer origin so
+Vite HMR can use its exact same-port WebSocket connection. Production uses a Vite build-time HTML
+transform that injects one CSP meta tag into the packaged renderer HTML.
+
+The only development CSP exceptions are `style-src 'unsafe-inline'` for Vite style injection,
+`script-src 'nonce-health-screening-vite-dev'` for Vite React's development preamble, and
+`connect-src 'self' <exact-websocket-origin>` for the configured loopback renderer port. Development
+must not add script `unsafe-inline`, `unsafe-eval`, broad `ws:` or `wss:` sources, wildcard hosts,
+or all-localhost-port access.
+
+Production currently has a no-network renderer policy: `connect-src 'none'`. Later backend or sync
+connectivity must be added through a narrowly reviewed `connect-src` change for the exact required
+origin; wildcard network access is not allowed.
+
+Electron session permissions are denied by default through both permission-check and
+permission-request handlers. Any future use of notifications, geolocation, media, clipboard,
+display capture, USB, HID, serial, Bluetooth, or an unknown browser permission requires a later
+reviewed task before it can be enabled.
+
+After building, verify the packaged CSP output:
+
+```powershell
+Select-String -Path out/renderer/index.html -Pattern 'Content-Security-Policy' -AllMatches
+Select-String -Path out/renderer/index.html -Pattern "unsafe-eval|unsafe-inline|connect-src[^;]*" -AllMatches
+```
