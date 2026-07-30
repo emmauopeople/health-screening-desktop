@@ -71,6 +71,13 @@ access, or dynamic channel dispatch.
 
 `src/renderer` contains the React presentation layer. `src/renderer/index.html` is the renderer shell, and `src/renderer/src` contains UI code, feature folders, routes, stores, and styles.
 
+`src/renderer/src/app/first-run` owns the HSD-016 renderer startup gate,
+first-run setup form, safe setup state screens, and pure form/controller
+helpers. These files depend only on renderer code and shared IPC types. They do
+not own persistence, IPC channels, preload exposure, database access,
+repository access, login, sessions, protocol activation, or clinical
+workflows.
+
 Renderer code should treat preload APIs as the only trusted bridge to desktop capabilities.
 
 ## Shared Contracts
