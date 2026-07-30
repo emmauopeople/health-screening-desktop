@@ -15,6 +15,7 @@ const reviewedErrorTypes = new Set<string>([
   'InstallationAlreadyExistsError',
   'LocalUserAlreadyExistsError',
   'LocationAlreadyExistsError',
+  'AuditEventAlreadyExistsError',
   'PasswordValidationError',
   'PasswordCredentialFormatError',
   'PasswordHashingError',
