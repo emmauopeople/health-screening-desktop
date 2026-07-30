@@ -48,19 +48,9 @@ const unsafeFragments = [
 
 describe('first-run IPC hostile error containment', () => {
   it('maps hostile proxy and revoked-proxy throws to INTERNAL_ERROR for both handlers', async () => {
-    const hostileValues = [createThrowingPrototypeProxy(), createRevokedProxy()]
-
-    for (const hostileValue of hostileValues) {
+    for (const hostileValue of [createThrowingPrototypeProxy(), createRevokedProxy()]) {
       const logger = createLogger()
-      const handlers = createHandlers({
-        logger,
-        getState: () => {
-          throw hostileValue
-        },
-        initialize: () => {
-          throw hostileValue
-        }
-      })
+      const handlers = createHandlers(createThrowingService(hostileValue), logger)
 
       const stateResult = await handlers.getState(createAllowedEvent(), {})
       const initializeResult = await handlers.initialize(createAllowedEvent(), validRequest)
@@ -72,17 +62,8 @@ describe('first-run IPC hostile error containment', () => {
   })
 
   it('contains an Error with a throwing name accessor for both handlers', async () => {
-    const hostileError = createThrowingNameError()
     const logger = createLogger()
-    const handlers = createHandlers({
-      logger,
-      getState: () => {
-        throw hostileError
-      },
-      initialize: () => {
-        throw hostileError
-      }
-    })
+    const handlers = createHandlers(createThrowingService(createThrowingNameError()), logger)
 
     const stateResult = await handlers.getState(createAllowedEvent(), {})
     const initializeResult = await handlers.initialize(createAllowedEvent(), validRequest)
@@ -102,11 +83,7 @@ describe('first-run IPC hostile error containment', () => {
     ] as const
 
     for (const [error, code] of cases) {
-      const handlers = createHandlers({
-        initialize: () => {
-          throw error
-        }
-      })
+      const handlers = createHandlers(createThrowingService(error))
 
       await expect(handlers.initialize(createAllowedEvent(), validRequest)).resolves.toEqual(
         createFirstRunFailure(code)
@@ -115,15 +92,14 @@ describe('first-run IPC hostile error containment', () => {
   })
 
   it('does not let warning logger failure alter a forbidden response', async () => {
-    const service = createService()
-    const handlers = createHandlers({
-      service,
-      logger: {
-        warn() {
-          throw new Error('C:\\secret\\warn-logger.txt')
-        },
-        error: vi.fn()
-      }
+    const getState = vi.fn(() => ({ status: 'REQUIRED' as const }))
+    const initialize = vi.fn<FirstRunBootstrapService['initialize']>()
+    const service = { getState, initialize } as unknown as FirstRunBootstrapService
+    const handlers = createHandlers(service, {
+      warn() {
+        throw new Error('C:\\secret\\warn-logger.txt')
+      },
+      error: vi.fn()
     })
 
     await expect(handlers.getState(createForbiddenEvent(), {})).resolves.toEqual(
@@ -132,23 +108,15 @@ describe('first-run IPC hostile error containment', () => {
     await expect(handlers.initialize(createForbiddenEvent(), validRequest)).resolves.toEqual(
       createFirstRunFailure('IPC_FORBIDDEN')
     )
-    expect(service.getState).not.toHaveBeenCalled()
-    expect(service.initialize).not.toHaveBeenCalled()
+    expect(getState).not.toHaveBeenCalled()
+    expect(initialize).not.toHaveBeenCalled()
   })
 
   it('does not let error logger failure alter internal-error responses', async () => {
-    const handlers = createHandlers({
-      logger: {
-        warn: vi.fn(),
-        error() {
-          throw new Error('C:\\secret\\error-logger.txt')
-        }
-      },
-      getState: () => {
-        throw new Error('C:\\secret\\state.txt')
-      },
-      initialize: () => {
-        throw new Error('C:\\secret\\initialize.txt')
+    const handlers = createHandlers(createThrowingService(new Error('C:\\secret\\service.txt')), {
+      warn: vi.fn(),
+      error() {
+        throw new Error('C:\\secret\\error-logger.txt')
       }
     })
 
@@ -161,13 +129,6 @@ describe('first-run IPC hostile error containment', () => {
   })
 })
 
-interface HandlerOverrides {
-  readonly service?: FirstRunBootstrapService
-  readonly getState?: FirstRunBootstrapService['getState']
-  readonly initialize?: FirstRunBootstrapService['initialize']
-  readonly logger?: FirstRunIpcOperationalLogger
-}
-
 interface TestLogger extends FirstRunIpcOperationalLogger {
   readonly warn: FirstRunIpcOperationalLogger['warn'] & {
     readonly mock: { readonly calls: unknown[][] }
@@ -177,31 +138,26 @@ interface TestLogger extends FirstRunIpcOperationalLogger {
   }
 }
 
-function createHandlers(overrides: HandlerOverrides = {}): FirstRunIpcHandlers {
+function createHandlers(
+  service: FirstRunBootstrapService,
+  logger: FirstRunIpcOperationalLogger = createLogger()
+): FirstRunIpcHandlers {
   return createFirstRunIpcHandlers({
     navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
-    firstRunBootstrapService:
-      overrides.service ??
-      createService({
-        getState: overrides.getState,
-        initialize: overrides.initialize
-      }),
-    logger: overrides.logger ?? createLogger()
+    firstRunBootstrapService: service,
+    logger
   })
 }
 
-function createService(
-  overrides: Partial<Pick<FirstRunBootstrapService, 'getState' | 'initialize'>> = {}
-): FirstRunBootstrapService {
+function createThrowingService(error: unknown): FirstRunBootstrapService {
   return {
-    getState: vi.fn(overrides.getState ?? (() => ({ status: 'REQUIRED' }))),
-    initialize: vi.fn(
-      overrides.initialize ??
-        (async () => {
-          throw new Error('Initialization result is not required by this test.')
-        })
-    )
-  } as unknown as FirstRunBootstrapService
+    getState() {
+      throw error
+    },
+    async initialize() {
+      throw error
+    }
+  } as FirstRunBootstrapService
 }
 
 function createThrowingPrototypeProxy(): unknown {
