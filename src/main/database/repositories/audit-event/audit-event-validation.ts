@@ -216,6 +216,7 @@ function validateMetadataArray(
   state: MetadataValidationState
 ): readonly AuditMetadataValue[] {
   claimMetadataNode(depth, state)
+  assertOrdinaryMetadataArray(value)
 
   if (state.activeObjects.has(value)) {
     throw new RepositoryValidationError()
@@ -287,6 +288,20 @@ function assertOrdinaryMetadataObject(value: object): void {
   }
 
   if (prototype !== Object.prototype && prototype !== null) {
+    throw new RepositoryValidationError()
+  }
+}
+
+function assertOrdinaryMetadataArray(value: object): void {
+  let prototype: unknown
+
+  try {
+    prototype = Object.getPrototypeOf(value)
+  } catch (error) {
+    throw new RepositoryValidationError(getRepositoryErrorType(error))
+  }
+
+  if (prototype !== Array.prototype) {
     throw new RepositoryValidationError()
   }
 }

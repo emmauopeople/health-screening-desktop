@@ -97,6 +97,43 @@ describe('audit event validation', () => {
     expect(parseAuditMetadata({}).metadataJson).toBe('{}')
   })
 
+  it('accepts only ordinary current-realm metadata arrays', () => {
+    expect(parseAuditMetadata({ array: [true] }).metadataJson).toBe('{"array":[true]}')
+    expect(parseAuditMetadata({ array: Object.freeze([true]) }).metadataJson).toBe(
+      '{"array":[true]}'
+    )
+    expect(parseAuditMetadata({ array: [] }).metadataJson).toBe('{"array":[]}')
+
+    class CustomAuditMetadataArray extends Array<unknown> {}
+
+    const nullPrototypeArray = [true]
+    Object.setPrototypeOf(nullPrototypeArray, null)
+
+    const intermediatePrototypeArray = [true]
+    Object.setPrototypeOf(intermediatePrototypeArray, Object.create(Array.prototype))
+
+    const subclassArray = new CustomAuditMetadataArray(true)
+
+    const nestedCustomPrototypeArray = [true]
+    Object.setPrototypeOf(nestedCustomPrototypeArray, Object.create(Array.prototype))
+
+    const throwingPrototypeProxy = new Proxy([true], {
+      getPrototypeOf() {
+        throw new Error('C:\\secret\\array-prototype.txt')
+      }
+    })
+
+    for (const value of [
+      { array: nullPrototypeArray },
+      { array: intermediatePrototypeArray },
+      { array: subclassArray },
+      { nested: { array: nestedCustomPrototypeArray } },
+      { array: throwingPrototypeProxy }
+    ]) {
+      expectSafeValidationError(captureError(() => parseAuditMetadata(value)))
+    }
+  })
+
   it('rejects unsafe metadata shapes, values, keys, and resource limits', () => {
     class CustomMetadata {
       readonly safe = true
@@ -227,8 +264,11 @@ function expectSafeValidationError(error: unknown): void {
     'exact string',
     'metadata-getter',
     'array-getter',
+    'array-prototype',
     'ownKeys',
     'descriptor',
+    'array',
+    'nested',
     'C:\\',
     'secret',
     'SELECT',
