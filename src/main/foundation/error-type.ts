@@ -20,6 +20,11 @@ const reviewedErrorTypes = new Set<string>([
   'PasswordCredentialFormatError',
   'PasswordHashingError',
   'PasswordVerificationError',
+  'FirstRunValidationError',
+  'FirstRunAlreadyInitializedError',
+  'FirstRunStateIntegrityError',
+  'FirstRunInitializationInProgressError',
+  'FirstRunInitializationError',
   'UnknownError'
 ])
 

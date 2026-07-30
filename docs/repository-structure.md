@@ -12,6 +12,13 @@ This repository separates Electron process responsibilities so trusted applicati
 
 `src/main` owns trusted desktop application behavior. Future work will place application lifecycle code, local configuration, database access, protocol logic, printing, logging, security, and sync/backup orchestration here.
 
+`src/main/application` owns main-process application-service use cases that
+compose reviewed lower-level contracts. HSD-014 adds the first-run bootstrap
+service here. It sequences installation, local-user, location, and audit writes
+through one caller-owned HSD-008 transaction after asynchronous password
+hashing, without adding startup wiring, IPC, preload APIs, renderer UI, login,
+sessions, authorization, protocol setup, settings writes, or clinical behavior.
+
 `src/main/foundation` owns main-process-only primitives for local data writes,
 including validated UUID v4 entity IDs and UTC timestamps. These providers are
 injectable for tests but are not shared with preload or renderer code.
@@ -33,12 +40,12 @@ commit, rollback, entity ID, and UTC timestamp coordination.
 
 `src/main/database/repositories` contains main-process-only repository
 boundaries. HSD-009 adds the typed installation repository and read-only
-first-run state query over schema version 1. HSD-011 adds the typed local-user
-repository over the existing schema-v1 `users` table. HSD-012 adds the typed
-location repository over the existing schema-v1 `locations` table. HSD-013
-adds the typed append-only audit-event repository over the existing schema-v1
-`audit_log` table. Repositories own exact SQL and row decoding, while writes
-use caller-owned transaction-scoped capabilities.
+installation state query over schema version 1. HSD-011 adds the typed
+local-user repository over the existing schema-v1 `users` table. HSD-012 adds
+the typed location repository over the existing schema-v1 `locations` table.
+HSD-013 adds the typed append-only audit-event repository over the existing
+schema-v1 `audit_log` table. Repositories own exact SQL and row decoding,
+while writes use caller-owned transaction-scoped capabilities.
 
 `src/main/security/password` owns the HSD-010 local password credential
 primitive. It validates exact plaintext password input, serializes strict
@@ -76,7 +83,7 @@ Shared files must not depend on Electron, Node-only APIs, browser globals, or pr
 
 ## Documentation
 
-`docs` stores architecture notes and implementation documentation. Architecture decision records belong in `docs/adr`. Database runtime, migration, schema, transaction, and repository-boundary documentation belongs under `docs/database`. Security implementation notes belong under `docs/security`.
+`docs` stores architecture notes and implementation documentation. Architecture decision records belong in `docs/adr`. Application-service documentation belongs under `docs/application`. Database runtime, migration, schema, transaction, and repository-boundary documentation belongs under `docs/database`. Security implementation notes belong under `docs/security`.
 
 ## Tests
 
