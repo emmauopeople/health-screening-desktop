@@ -3,6 +3,7 @@ export {
   decodeFailedLoginCount,
   decodeSqliteBoolean,
   encodeSqliteBoolean,
+  parseUpdateLocalUserAuthenticationStateInput,
   parseCreateMustChangePassword,
   parseLocalUserRole,
   parseUserDisplayName,
@@ -11,12 +12,14 @@ export {
 } from './local-user-validation'
 export type {
   CreateLocalUserInput,
+  LocalUserAuthenticationStateSnapshot,
   LocalUserAuthenticationRecord,
   LocalUserRecord,
   LocalUserRepository,
   LocalUserRole,
   NormalizedUsername,
   UserDisplayName,
+  UpdateLocalUserAuthenticationStateInput,
   Username,
   UsernameIdentity
 } from './local-user-types'

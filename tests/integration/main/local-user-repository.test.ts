@@ -10,7 +10,9 @@ import {
   createProductionDatabaseMigrationRunner,
   DatabaseTransactionExecutionError,
   DatabaseTransactionStateError,
+  LocalUserAuthenticationStateConflictError,
   LocalUserAlreadyExistsError,
+  LocalUserNotFoundError,
   parseLocalUserRole,
   parseUserDisplayName,
   parseUsernameIdentity,
@@ -21,6 +23,7 @@ import {
   type CreateLocalUserInput,
   type DatabaseTransactionConnection,
   type DatabaseTransactionExecutor,
+  type LocalUserAuthenticationStateSnapshot,
   type LocalUserRepository
 } from '@main/database'
 import { parseEntityId, type EntityIdGenerator } from '@main/foundation/entity-id'
@@ -31,6 +34,10 @@ import type { StoredPasswordCredential } from '@main/security'
 const now = '2026-07-29T12:34:56.789Z'
 const later = '2026-07-29T12:34:57.789Z'
 const earlier = '2026-07-29T12:34:55.789Z'
+const previousLoginAt = '2026-07-29T12:35:10.000Z'
+const failedAttemptAt = '2026-07-29T12:35:20.000Z'
+const successfulLoginAt = '2026-07-29T12:35:30.000Z'
+const futureLockUntil = '2026-07-29T12:50:20.000Z'
 const userId = '11111111-1111-4111-8111-111111111111'
 const secondUserId = '22222222-2222-4222-8222-222222222222'
 const canonicalCredential = createStoredPasswordCredential(fixedBytes(64, 1), fixedBytes(32, 2))
@@ -190,6 +197,349 @@ describe('local user repository', () => {
       expect(Object.isFrozen(authenticationRecord?.credential)).toBe(true)
       expect(authenticationRecord?.user).not.toHaveProperty('passwordHash')
       expect(authenticationRecord?.user).not.toHaveProperty('passwordSalt')
+    })
+  })
+
+  it('persists successful authentication state while preserving unrelated fields and credentials', async () => {
+    await withMigratedDatabase(({ connection, repository, executor }) => {
+      const inserted = executor.run((context) =>
+        repository.insert(context.connection, createValidInput())
+      )
+      updateRawAuthenticationState(connection, {
+        failedLoginCount: 3,
+        lockedUntil: futureLockUntil,
+        lastLoginAt: previousLoginAt,
+        updatedAt: failedAttemptAt
+      })
+      const credentialBefore = readCredentialColumns(connection)
+
+      const updated = executor.run((context) =>
+        repository.updateAuthenticationState(context.connection, {
+          id: parseEntityId(userId),
+          expected: createAuthenticationStateSnapshot({
+            failedLoginCount: 3,
+            lockedUntil: futureLockUntil,
+            lastLoginAt: previousLoginAt,
+            updatedAt: failedAttemptAt
+          }),
+          next: createAuthenticationStateSnapshot({
+            failedLoginCount: 0,
+            lockedUntil: null,
+            lastLoginAt: successfulLoginAt,
+            updatedAt: successfulLoginAt
+          })
+        })
+      )
+
+      expect(updated).toEqual({
+        ...inserted,
+        failedLoginCount: 0,
+        lockedUntil: null,
+        lastLoginAt: successfulLoginAt,
+        updatedAt: successfulLoginAt
+      })
+      expect(updated).not.toHaveProperty('credential')
+      expect(updated).not.toHaveProperty('passwordHash')
+      expect(updated).not.toHaveProperty('passwordSalt')
+      expect(readCredentialColumns(connection)).toEqual(credentialBefore)
+      expect(readRawUser(connection)).toMatchObject({
+        username: 'Admin.User',
+        username_normalized: 'admin.user',
+        display_name: 'Admin User',
+        role: 'LOCAL_ADMIN',
+        is_active: 1,
+        must_change_password: 1,
+        created_at: now,
+        failed_login_count: 0,
+        locked_until: null,
+        last_login_at: successfulLoginAt,
+        updated_at: successfulLoginAt
+      })
+    })
+  })
+
+  it('persists failed authentication state with and without a lock while preserving last login and credentials', async () => {
+    await withMigratedDatabase(({ connection, repository, executor }) => {
+      executor.run((context) => repository.insert(context.connection, createValidInput()))
+      updateRawAuthenticationState(connection, {
+        failedLoginCount: 1,
+        lockedUntil: null,
+        lastLoginAt: previousLoginAt,
+        updatedAt: later
+      })
+      const credentialBefore = readCredentialColumns(connection)
+
+      const locked = executor.run((context) =>
+        repository.updateAuthenticationState(context.connection, {
+          id: parseEntityId(userId),
+          expected: createAuthenticationStateSnapshot({
+            failedLoginCount: 1,
+            lockedUntil: null,
+            lastLoginAt: previousLoginAt,
+            updatedAt: later
+          }),
+          next: createAuthenticationStateSnapshot({
+            failedLoginCount: 2,
+            lockedUntil: futureLockUntil,
+            lastLoginAt: previousLoginAt,
+            updatedAt: failedAttemptAt
+          })
+        })
+      )
+
+      expect(locked.failedLoginCount).toBe(2)
+      expect(locked.lockedUntil).toBe(futureLockUntil)
+      expect(locked.lastLoginAt).toBe(previousLoginAt)
+      expect(locked.updatedAt).toBe(failedAttemptAt)
+      expect(readCredentialColumns(connection)).toEqual(credentialBefore)
+
+      const withoutLock = executor.run((context) =>
+        repository.updateAuthenticationState(context.connection, {
+          id: parseEntityId(userId),
+          expected: createAuthenticationStateSnapshot({
+            failedLoginCount: 2,
+            lockedUntil: futureLockUntil,
+            lastLoginAt: previousLoginAt,
+            updatedAt: failedAttemptAt
+          }),
+          next: createAuthenticationStateSnapshot({
+            failedLoginCount: 3,
+            lockedUntil: null,
+            lastLoginAt: previousLoginAt,
+            updatedAt: successfulLoginAt
+          })
+        })
+      )
+
+      expect(withoutLock.failedLoginCount).toBe(3)
+      expect(withoutLock.lockedUntil).toBeNull()
+      expect(withoutLock.lastLoginAt).toBe(previousLoginAt)
+      expect(withoutLock.updatedAt).toBe(successfulLoginAt)
+      expect(readCredentialColumns(connection)).toEqual(credentialBefore)
+    })
+  })
+
+  it('rejects stale expected authentication state for each compared field without changing the row', async () => {
+    await withMigratedDatabase(({ connection, repository, executor }) => {
+      executor.run((context) => repository.insert(context.connection, createValidInput()))
+      updateRawAuthenticationState(connection, {
+        failedLoginCount: 2,
+        lockedUntil: futureLockUntil,
+        lastLoginAt: previousLoginAt,
+        updatedAt: failedAttemptAt
+      })
+      const originalRow = readRawUser(connection)
+
+      for (const expectedOverride of [
+        { failedLoginCount: 1 },
+        { lockedUntil: null },
+        { lastLoginAt: null },
+        { updatedAt: later }
+      ]) {
+        const error = captureError(() =>
+          executor.run((context) =>
+            repository.updateAuthenticationState(context.connection, {
+              id: parseEntityId(userId),
+              expected: createAuthenticationStateSnapshot({
+                failedLoginCount: 2,
+                lockedUntil: futureLockUntil,
+                lastLoginAt: previousLoginAt,
+                updatedAt: failedAttemptAt,
+                ...expectedOverride
+              }),
+              next: createAuthenticationStateSnapshot({
+                failedLoginCount: 0,
+                lockedUntil: null,
+                lastLoginAt: successfulLoginAt,
+                updatedAt: successfulLoginAt
+              })
+            })
+          )
+        )
+
+        expect(error).toBeInstanceOf(LocalUserAuthenticationStateConflictError)
+        expectSafeControlledError(error)
+        expect(readRawUser(connection)).toEqual(originalRow)
+        expect(connection.inTransaction).toBe(false)
+      }
+    })
+  })
+
+  it('distinguishes missing users from stale authentication-state conflicts', async () => {
+    await withMigratedDatabase(({ connection, repository, executor }) => {
+      executor.run((context) => repository.insert(context.connection, createValidInput()))
+      const originalRow = readRawUser(connection)
+
+      const error = captureError(() =>
+        executor.run((context) =>
+          repository.updateAuthenticationState(context.connection, {
+            id: parseEntityId(secondUserId),
+            expected: createAuthenticationStateSnapshot({
+              failedLoginCount: 0,
+              lockedUntil: null,
+              lastLoginAt: null,
+              updatedAt: now
+            }),
+            next: createAuthenticationStateSnapshot({
+              failedLoginCount: 1,
+              lockedUntil: null,
+              lastLoginAt: null,
+              updatedAt: later
+            })
+          })
+        )
+      )
+
+      expect(error).toBeInstanceOf(LocalUserNotFoundError)
+      expect(error).not.toBeInstanceOf(LocalUserAuthenticationStateConflictError)
+      expectSafeControlledError(error)
+      expect(readRawUser(connection)).toEqual(originalRow)
+    })
+  })
+
+  it('checks the transaction capability before authentication input access or SQL', async () => {
+    await withMigratedDatabase(({ connection, repository, executor }) => {
+      connection.exec('BEGIN IMMEDIATE')
+      try {
+        const rawConnectionError = captureError(() =>
+          repository.updateAuthenticationState(
+            connection as unknown as DatabaseTransactionConnection,
+            createAccessorAuthenticationStateInput()
+          )
+        )
+
+        expect(rawConnectionError).toBeInstanceOf(DatabaseTransactionStateError)
+        expect(rawConnectionError).not.toBeInstanceOf(RepositoryValidationError)
+        expectSafeControlledError(rawConnectionError)
+        expect(connection.inTransaction).toBe(true)
+        expect(readTableCount(connection, 'users')).toBe(0)
+      } finally {
+        if (connection.inTransaction) {
+          connection.exec('ROLLBACK')
+        }
+      }
+
+      let capturedConnection: DatabaseTransactionConnection | undefined
+      executor.run((context) => {
+        capturedConnection = context.connection
+        return 'captured'
+      })
+
+      const expiredError = captureError(() =>
+        repository.updateAuthenticationState(
+          capturedConnection!,
+          createAccessorAuthenticationStateInput()
+        )
+      )
+
+      expect(expiredError).toBeInstanceOf(DatabaseTransactionStateError)
+      expect(expiredError).not.toBeInstanceOf(RepositoryValidationError)
+      expectSafeControlledError(expiredError)
+      expect(readTableCount(connection, 'users')).toBe(0)
+    })
+  })
+
+  it('rolls back authentication state with the surrounding transaction and persists it after commit and reopen', async () => {
+    await withMigratedDatabase(({ connection, repository, executor, databasePath }) => {
+      executor.run((context) => repository.insert(context.connection, createValidInput()))
+      const originalRow = readRawUser(connection)
+
+      const rollbackError = captureError(() =>
+        executor.run((context) => {
+          repository.updateAuthenticationState(context.connection, {
+            id: parseEntityId(userId),
+            expected: createAuthenticationStateSnapshot({
+              failedLoginCount: 0,
+              lockedUntil: null,
+              lastLoginAt: null,
+              updatedAt: now
+            }),
+            next: createAuthenticationStateSnapshot({
+              failedLoginCount: 1,
+              lockedUntil: null,
+              lastLoginAt: null,
+              updatedAt: later
+            })
+          })
+          insertSetting(context.connection, 'auth.rollback', '{"enabled":true}')
+          throw new Error('C:\\secret\\rollback.sqlite3 UPDATE users')
+        })
+      )
+
+      expect(rollbackError).toBeInstanceOf(DatabaseTransactionExecutionError)
+      expectSafeControlledError(rollbackError)
+      expect(readRawUser(connection)).toEqual(originalRow)
+      expect(readTableCount(connection, 'app_settings')).toBe(0)
+
+      executor.run((context) =>
+        repository.updateAuthenticationState(context.connection, {
+          id: parseEntityId(userId),
+          expected: createAuthenticationStateSnapshot({
+            failedLoginCount: 0,
+            lockedUntil: null,
+            lastLoginAt: null,
+            updatedAt: now
+          }),
+          next: createAuthenticationStateSnapshot({
+            failedLoginCount: 1,
+            lockedUntil: null,
+            lastLoginAt: null,
+            updatedAt: later
+          })
+        })
+      )
+
+      const reopened = new Database(databasePath)
+      try {
+        configureHsd006Pragmas(reopened)
+        expect(readRawUser(reopened)).toMatchObject({
+          failed_login_count: 1,
+          locked_until: null,
+          last_login_at: null,
+          updated_at: later
+        })
+      } finally {
+        reopened.close()
+      }
+    })
+  })
+
+  it('fails closed on malformed persisted rows after authentication-state mutation', async () => {
+    await withMigratedDatabase(({ connection, repository, executor }) => {
+      insertRawUserIgnoringChecks(connection, {
+        display_name: '  Admin User  '
+      })
+      const credentialBefore = readCredentialColumns(connection)
+
+      const error = captureError(() =>
+        executor.run((context) =>
+          repository.updateAuthenticationState(context.connection, {
+            id: parseEntityId(userId),
+            expected: createAuthenticationStateSnapshot({
+              failedLoginCount: 0,
+              lockedUntil: null,
+              lastLoginAt: null,
+              updatedAt: now
+            }),
+            next: createAuthenticationStateSnapshot({
+              failedLoginCount: 1,
+              lockedUntil: null,
+              lastLoginAt: null,
+              updatedAt: later
+            })
+          })
+        )
+      )
+
+      expect(error).toBeInstanceOf(RepositoryDataIntegrityError)
+      expectSafeControlledError(error)
+      expect(readCredentialColumns(connection)).toEqual(credentialBefore)
+      expect(readRawUser(connection)).toMatchObject({
+        failed_login_count: 0,
+        locked_until: null,
+        last_login_at: null,
+        updated_at: now
+      })
     })
   })
 
@@ -591,6 +941,7 @@ describe('local user repository', () => {
 })
 
 interface MigratedDatabaseContext {
+  databasePath: string
   connection: Database.Database
   repository: LocalUserRepository
   executor: DatabaseTransactionExecutor
@@ -644,6 +995,7 @@ async function withMigratedDatabase(
       clock: createFixedClock()
     })(connection)
     await test({
+      databasePath,
       connection,
       repository: createLocalUserRepository(connection),
       executor: createDatabaseTransactionExecutor({
@@ -698,6 +1050,53 @@ function createUncheckedInput(
   input: Record<keyof CreateLocalUserInput, unknown>
 ): CreateLocalUserInput {
   return input as CreateLocalUserInput
+}
+
+function createAuthenticationStateSnapshot({
+  failedLoginCount,
+  lockedUntil,
+  lastLoginAt,
+  updatedAt
+}: {
+  failedLoginCount: number
+  lockedUntil: string | null
+  lastLoginAt: string | null
+  updatedAt: string
+}): LocalUserAuthenticationStateSnapshot {
+  return {
+    failedLoginCount,
+    lockedUntil: lockedUntil === null ? null : parseUtcTimestamp(lockedUntil),
+    lastLoginAt: lastLoginAt === null ? null : parseUtcTimestamp(lastLoginAt),
+    updatedAt: parseUtcTimestamp(updatedAt)
+  }
+}
+
+function createAccessorAuthenticationStateInput(): Parameters<
+  LocalUserRepository['updateAuthenticationState']
+>[1] {
+  const input = {
+    expected: createAuthenticationStateSnapshot({
+      failedLoginCount: 0,
+      lockedUntil: null,
+      lastLoginAt: null,
+      updatedAt: now
+    }),
+    next: createAuthenticationStateSnapshot({
+      failedLoginCount: 1,
+      lockedUntil: null,
+      lastLoginAt: null,
+      updatedAt: later
+    })
+  } as Record<string, unknown>
+
+  Object.defineProperty(input, 'id', {
+    enumerable: true,
+    get() {
+      throw new Error('C:\\secret\\auth-id-getter.txt')
+    }
+  })
+
+  return input as unknown as Parameters<LocalUserRepository['updateAuthenticationState']>[1]
 }
 
 function createExecutorForConnection(connection: Database.Database): DatabaseTransactionExecutor {
@@ -995,6 +1394,27 @@ function insertRawUser(connection: Database.Database, override: Partial<RawUserR
     )
 }
 
+function updateRawAuthenticationState(
+  connection: Database.Database,
+  state: {
+    failedLoginCount: number
+    lockedUntil: string | null
+    lastLoginAt: string | null
+    updatedAt: string
+  }
+): void {
+  connection
+    .prepare(
+      `UPDATE users
+       SET failed_login_count = ?,
+           locked_until = ?,
+           last_login_at = ?,
+           updated_at = ?
+       WHERE id = ?`
+    )
+    .run(state.failedLoginCount, state.lockedUntil, state.lastLoginAt, state.updatedAt, userId)
+}
+
 function deleteUsers(connection: Database.Database): void {
   connection.prepare('DELETE FROM users').run()
 }
@@ -1021,6 +1441,21 @@ function readRawUser(connection: Database.Database): RawUserRow | undefined {
       WHERE id = ?`
     )
     .get(userId) as RawUserRow | undefined
+}
+
+function readCredentialColumns(connection: Database.Database): {
+  readonly password_hash: unknown
+  readonly password_salt: unknown
+} {
+  return connection
+    .prepare(
+      `SELECT
+        password_hash,
+        password_salt
+      FROM users
+      WHERE id = ?`
+    )
+    .get(userId) as { readonly password_hash: unknown; readonly password_salt: unknown }
 }
 
 function readUserVersion(connection: Database.Database): number {
@@ -1155,6 +1590,10 @@ function expectSafeControlledError(error: unknown): void {
     now,
     later,
     earlier,
+    previousLoginAt,
+    failedAttemptAt,
+    successfulLoginAt,
+    futureLockUntil,
     'Admin.User',
     'ADMIN.USER',
     '\uFF21dmin.User',

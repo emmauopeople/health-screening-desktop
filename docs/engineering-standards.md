@@ -6,6 +6,11 @@ only `app.getInfo()`, `app.getHealth()`, `firstRun.getState()`, and
 `firstRun.initialize()` through `window.healthScreening`; it must not add new
 IPC channels, preload capabilities, startup writes, login, sessions, protocol
 setup, settings writes, or clinical workflows.
+HSD-017 adds a main-process-only local-user authentication-state repository
+mutation. It persists caller-approved failed-login, lock, last-login, and
+updated timestamps through compare-and-set inside an existing transaction, but
+does not add password verification, lockout policy, audit events, sessions, IPC,
+preload, renderer login, or clinical behavior.
 
 ## TypeScript
 
@@ -133,9 +138,12 @@ SQLite messages. Repository code must not log.
 Local user repositories must derive `username_normalized` internally from the
 canonical username, use credential-free ordinary projections, and expose
 credential text only through a separate main-process authentication projection.
-They must accept only pre-derived HSD-010 `StoredPasswordCredential` values and
-must never accept plaintext passwords, hash passwords, verify passwords, update
-login counters, create sessions, or perform authorization.
+They must accept only pre-derived HSD-010 `StoredPasswordCredential` values.
+Authentication-state mutations may update only `failed_login_count`,
+`locked_until`, `last_login_at`, and `updated_at` through a caller-owned
+transaction-scoped compare-and-set operation. Local-user repositories must never
+accept plaintext passwords, hash passwords, verify passwords, decide lockout
+policy, create sessions, or perform authorization.
 
 Location repositories must derive `name_normalized` internally from the
 canonical location name, allow duplicate display names and duplicate normalized

@@ -1,9 +1,11 @@
 export {
   AuditEventAlreadyExistsError,
   InstallationAlreadyExistsError,
+  LocalUserAuthenticationStateConflictError,
   LocationAlreadyExistsError,
   RepositoryDataIntegrityError,
   LocalUserAlreadyExistsError,
+  LocalUserNotFoundError,
   RepositoryReadError,
   type RepositoryError,
   type RepositoryErrorCode,
@@ -44,6 +46,7 @@ export {
   decodeFailedLoginCount,
   decodeSqliteBoolean,
   encodeSqliteBoolean,
+  parseUpdateLocalUserAuthenticationStateInput,
   parseCreateMustChangePassword,
   parseLocalUserRole,
   parseUserDisplayName,
@@ -51,11 +54,13 @@ export {
   parseUsernameIdentity,
   type CreateLocalUserInput,
   type LocalUserAuthenticationRecord,
+  type LocalUserAuthenticationStateSnapshot,
   type LocalUserRecord,
   type LocalUserRepository,
   type LocalUserRole,
   type NormalizedUsername,
   type UserDisplayName,
+  type UpdateLocalUserAuthenticationStateInput,
   type Username,
   type UsernameIdentity
 } from './local-user'
