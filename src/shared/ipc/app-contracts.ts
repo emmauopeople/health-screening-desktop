@@ -1,5 +1,10 @@
 import { z } from 'zod'
 
+import type {
+  FirstRunGetStateResult,
+  FirstRunInitializeRequest,
+  FirstRunInitializeResult
+} from './first-run-contracts'
 import { createIpcResultSchema } from './result'
 
 export const appGetInfoRequestSchema = z.object({}).strict()
@@ -41,5 +46,9 @@ export interface HealthScreeningApi {
   app: {
     getInfo(): Promise<AppGetInfoResult>
     getHealth(): Promise<AppGetHealthResult>
+  }
+  firstRun: {
+    getState(): Promise<FirstRunGetStateResult>
+    initialize(request: FirstRunInitializeRequest): Promise<FirstRunInitializeResult>
   }
 }

@@ -501,9 +501,6 @@ describe('first-run bootstrap service', () => {
     expect(source).not.toContain('@renderer')
     expect(source).not.toContain('@preload')
     expect(source).not.toContain('@shared')
-    expect(readSource('src/preload/index.ts')).not.toContain('first-run')
-    expect(readSource('src/shared/ipc/index.ts')).not.toContain('first-run')
-    expect(readSource('src/main/ipc/register-handlers.ts')).not.toContain('first-run')
   })
 })
 

@@ -1,3 +1,7 @@
+export {
+  createProductionFirstRunBootstrapService,
+  type ProductionFirstRunBootstrapServiceOptions
+} from './first-run-composition'
 export { createFirstRunBootstrapService } from './first-run-bootstrap-service'
 export {
   FirstRunAlreadyInitializedError,

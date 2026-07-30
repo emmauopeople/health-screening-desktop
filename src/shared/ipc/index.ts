@@ -1,4 +1,4 @@
-export { ipcChannels, type AppIpcChannel } from './channels'
+export { ipcChannels, type AppIpcChannel, type FirstRunIpcChannel } from './channels'
 export {
   createIpcFailure,
   createIpcResultSchema,
@@ -11,6 +11,36 @@ export {
   type IpcErrorCode,
   type IpcSafeError
 } from './result'
+export {
+  createFirstRunFailure,
+  firstRunGetStateErrorCodeSchema,
+  firstRunGetStateRequestSchema,
+  firstRunGetStateResultSchema,
+  firstRunInconsistentStateSchema,
+  firstRunInconsistencyCodeSchema,
+  firstRunInitializeErrorCodeSchema,
+  firstRunInitializeRequestSchema,
+  firstRunInitializeResultSchema,
+  firstRunInitializedStateSchema,
+  firstRunLocationTypeSchema,
+  firstRunPublicStateSchema,
+  firstRunRequiredStateSchema,
+  firstRunSafeErrorMessages,
+  type FirstRunGetStateErrorCode,
+  type FirstRunGetStateFailure,
+  type FirstRunGetStateRequest,
+  type FirstRunGetStateResult,
+  type FirstRunInitializeErrorCode,
+  type FirstRunInitializeFailure,
+  type FirstRunInitializeRequest,
+  type FirstRunInitializeResult,
+  type FirstRunInitializedState,
+  type FirstRunInconsistentState,
+  type FirstRunLocationType,
+  type FirstRunPublicInconsistencyCode,
+  type FirstRunPublicState,
+  type FirstRunRequiredState
+} from './first-run-contracts'
 export {
   appGetHealthRequestSchema,
   appGetHealthResultSchema,

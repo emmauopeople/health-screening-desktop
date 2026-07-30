@@ -10,6 +10,7 @@ import {
 } from '@main/app/main-window'
 import { createRendererNavigationPolicy } from '@main/app/navigation-policy'
 import { registerApplicationShutdown } from '@main/app/shutdown'
+import { createProductionFirstRunBootstrapService } from '@main/application'
 import {
   createDatabaseHealthProvider,
   createDatabaseRuntime,
@@ -63,10 +64,19 @@ export function startApplicationLifecycle(): void {
 
       const applicationInfoProvider = createElectronApplicationInfoProvider(app)
       const databaseHealthProvider = createDatabaseHealthProvider(databaseRuntime)
+      const firstRunBootstrapService = createProductionFirstRunBootstrapService({
+        connection: databaseRuntime.getConnection(),
+        logger: console
+      })
       const disposeIpcHandlers = registerApplicationIpcHandlers(ipcMain, {
         navigationPolicy,
         applicationInfoProvider,
         databaseHealthProvider,
+        firstRun: {
+          navigationPolicy,
+          firstRunBootstrapService,
+          logger: console
+        },
         logger: console
       })
 
