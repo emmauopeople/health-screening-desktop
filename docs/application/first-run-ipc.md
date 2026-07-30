@@ -6,6 +6,11 @@ does not add first-run UI, startup writes, login, sessions, authorization,
 clinical workflows, settings writes, protocol setup, sync, backup, restore, or
 printing.
 
+HSD-016 is the first renderer consumer of this boundary. It calls the fixed
+preload methods only, maps safe result envelopes into renderer startup states,
+and submits the reviewed initialize command without adding channels or changing
+the preload surface.
+
 ## Channels
 
 The channel catalog lives in `src/shared/ipc/channels.ts`.

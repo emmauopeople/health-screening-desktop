@@ -1,125 +1,84 @@
-import { useEffect, useState } from 'react'
-import type { AppGetHealthResult, AppGetInfoResult, HealthScreeningApi } from '@shared/ipc'
-import type { AppInfo } from '@shared/ipc'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { HealthScreeningApi } from '@shared/ipc'
+
+import { FirstRunSetupScreen } from './first-run/FirstRunSetupScreen'
 import {
-  getClinicalFeatureText,
-  getDatabaseText,
-  getIpcText,
-  type AppLoadState
-} from './status-mapping'
+  InconsistentStateScreen,
+  LoadingScreen,
+  SetupCompleteScreen,
+  UnavailableScreen
+} from './first-run/FirstRunStateScreen'
+import {
+  createRendererStartupStateGate,
+  type RendererStartupStateGate
+} from './first-run/first-run-controller'
+import type { RendererStartupState } from './first-run/first-run-types'
 
-const fallbackApplicationName: AppInfo['applicationName'] = 'Health Screening Offline Desktop'
+interface AppProps {
+  api?: HealthScreeningApi
+}
 
-function App(): React.JSX.Element {
-  const [loadState, setLoadState] = useState<AppLoadState>({ status: 'loading' })
-  useEffect(() => {
-    let isMounted = true
-
-    async function loadFoundationState(): Promise<void> {
-      const healthScreening = (
-        window as unknown as Window & { healthScreening: HealthScreeningApi }
-      ).healthScreening
-      const [infoResult, healthResult] = await Promise.all([
-        healthScreening.app.getInfo(),
-        healthScreening.app.getHealth()
-      ])
-
-      if (!isMounted) {
-        return
-      }
-
-      if (infoResult.ok && healthResult.ok) {
-        setLoadState({
-          status: 'ready',
-          info: infoResult.data,
-          health: healthResult.data
-        })
-        return
-      }
-
-      setLoadState({
-        status: 'error',
-        message: getSafeFailureMessage(infoResult, healthResult)
-      })
-    }
-
-    void loadFoundationState().catch(() => {
-      if (isMounted) {
-        setLoadState({
-          status: 'error',
-          message: 'The desktop service is unavailable.'
-        })
-      }
-    })
-
-    return () => {
-      isMounted = false
-    }
+function App({ api = window.healthScreening }: AppProps): React.JSX.Element {
+  const { startupState, retryStartupLoad, setStartupState } = useStartupState(api)
+  const handleExit = useCallback(() => {
+    window.close()
   }, [])
 
-  const applicationName =
-    loadState.status === 'ready' ? loadState.info.applicationName : fallbackApplicationName
-
   return (
-    <main className="foundation-shell" aria-labelledby="application-title">
-      <section className="foundation-panel">
-        <div className="foundation-eyebrow">Engineering foundation</div>
-        <h1 id="application-title">{applicationName}</h1>
-        <p className="foundation-statement">No clinical features are implemented yet.</p>
-        <p className="foundation-metadata" aria-live="polite">
-          {getMetadataText(loadState)}
-        </p>
-        {loadState.status === 'error' ? (
-          <p className="foundation-error" role="status">
-            {loadState.message}
-          </p>
-        ) : null}
-        <dl className="foundation-status" aria-label="Shell foundation status">
-          <div>
-            <dt>Clinical workflows</dt>
-            <dd>{getClinicalFeatureText(loadState)}</dd>
-          </div>
-          <div>
-            <dt>Database</dt>
-            <dd>{getDatabaseText(loadState)}</dd>
-          </div>
-          <div>
-            <dt>Desktop IPC</dt>
-            <dd>{getIpcText(loadState)}</dd>
-          </div>
-        </dl>
-      </section>
+    <main className="foundation-shell setup-shell">
+      {startupState.status === 'LOADING' ? <LoadingScreen /> : null}
+      {startupState.status === 'SETUP_REQUIRED' ? (
+        <FirstRunSetupScreen
+          api={api}
+          state={startupState}
+          onStartupState={setStartupState}
+          onExit={handleExit}
+        />
+      ) : null}
+      {startupState.status === 'SETUP_COMPLETE' ? (
+        <SetupCompleteScreen state={startupState} onExit={handleExit} />
+      ) : null}
+      {startupState.status === 'INCONSISTENT' ? (
+        <InconsistentStateScreen state={startupState} onExit={handleExit} />
+      ) : null}
+      {startupState.status === 'UNAVAILABLE' ? (
+        <UnavailableScreen state={startupState} onRetry={retryStartupLoad} onExit={handleExit} />
+      ) : null}
     </main>
   )
 }
 
-function getSafeFailureMessage(
-  infoResult: AppGetInfoResult,
-  healthResult: AppGetHealthResult
-): string {
-  if (!infoResult.ok) {
-    return infoResult.error.message
-  }
+function useStartupState(api: HealthScreeningApi): {
+  startupState: RendererStartupState
+  retryStartupLoad(): void
+  setStartupState(state: RendererStartupState): void
+} {
+  const [startupState, setStartupState] = useState<RendererStartupState>({ status: 'LOADING' })
+  const gateRef = useRef<RendererStartupStateGate | null>(null)
 
-  if (!healthResult.ok) {
-    return healthResult.error.message
-  }
+  useEffect(() => {
+    const gate = createRendererStartupStateGate({
+      api,
+      onState: setStartupState
+    })
 
-  return 'The desktop service is unavailable.'
-}
+    gateRef.current = gate
+    void gate.load()
 
-function getMetadataText(loadState: AppLoadState): string {
-  if (loadState.status === 'loading') {
-    return 'Loading desktop service status.'
-  }
+    return () => {
+      gate.dispose()
 
-  if (loadState.status === 'error') {
-    return 'Desktop service status could not be loaded.'
-  }
+      if (gateRef.current === gate) {
+        gateRef.current = null
+      }
+    }
+  }, [api])
 
-  const runtime = loadState.info.packaged ? 'packaged preview' : 'development runtime'
+  const retryStartupLoad = useCallback(() => {
+    void gateRef.current?.load()
+  }, [])
 
-  return `Version ${loadState.info.applicationVersion} | ${loadState.info.platform}/${loadState.info.architecture} | ${runtime}`
+  return { startupState, retryStartupLoad, setStartupState }
 }
 
 export default App

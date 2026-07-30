@@ -1,6 +1,11 @@
 # Engineering Standards
 
 HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure. HSD-008 adds main-process entity ID, UTC clock, and transaction boundaries. HSD-009 adds the first main-process typed installation repository and read-only first-run state query. HSD-010 adds a main-process-only asynchronous password credential primitive. HSD-011 adds a typed local-user repository and username identity boundary over the existing users table. HSD-012 adds a typed location repository and location identity boundary over the existing locations table. HSD-013 adds a typed append-only audit-event repository and canonical metadata boundary over the existing audit log table. HSD-014 adds the main-process first-run bootstrap application service that composes approved repositories atomically. HSD-015 exposes that service through trusted first-run IPC and preload contracts, but still does not add first-run UI, startup writes, login, sessions, clinical workflows, protocol setup, settings writes, or synchronization.
+HSD-016 adds the renderer-owned first-run setup flow. The renderer may consume
+only `app.getInfo()`, `app.getHealth()`, `firstRun.getState()`, and
+`firstRun.initialize()` through `window.healthScreening`; it must not add new
+IPC channels, preload capabilities, startup writes, login, sessions, protocol
+setup, settings writes, or clinical workflows.
 
 ## TypeScript
 
@@ -32,6 +37,14 @@ Aliases are scoped by project:
 - Vitest unit tests resolve `@shared/*`.
 
 Renderer code cannot import Electron, Node built-ins, `src/main`, `src/preload`, `@main/*`, or `@preload/*`. ESLint enforces this boundary; renderer code must use the typed preload API exposed on `window.healthScreening`.
+
+Renderer first-run setup code must treat the preload bridge as the only desktop
+capability. It must not use browser persistence (`localStorage`,
+`sessionStorage`, IndexedDB, cookies, URLs, or files), network APIs, dynamic
+channels, direct Electron access, direct Node access, or shared mutable setup
+state. Renderer-visible setup errors must use fixed local guidance and must not
+display raw error messages, exception names, stacks, SQL, paths, IDs,
+timestamps, audit data, request serialization, or credential material.
 
 SQLite is owned only by `src/main/database`. The production database is a
 file-backed `userData/data/health-screening.sqlite3` runtime and its path,

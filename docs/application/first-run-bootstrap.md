@@ -86,3 +86,7 @@ Protocol placeholders, renderer setup, login, password-change workflow,
 sessions, authorization, administration UI, and clinical workflows remain
 deferred to later reviewed tasks. HSD-015 adds startup composition and fixed IPC
 methods only; it does not add setup UI or automatic first-run execution.
+HSD-016 adds the renderer setup UI as a consumer of the HSD-015 preload methods,
+but it does not change bootstrap service authority, persistence rules, returned
+service records, login, sessions, protocol setup, settings writes, or clinical
+behavior.

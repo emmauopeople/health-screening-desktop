@@ -26,11 +26,16 @@ describe('first-run IPC lifecycle and scope', () => {
     expect(lifecycle).not.toMatch(/firstRunBootstrapService\.(getState|initialize)\(/u)
   })
 
-  it('keeps renderer source unchanged from consuming first-run and preserves shell status text', () => {
+  it('keeps renderer first-run consumption scoped to the fixed preload API and preserves shell status text', () => {
     const rendererSource = readAllSource('src/renderer')
 
-    expect(rendererSource).not.toContain('firstRun')
-    expect(rendererSource).not.toContain('first-run')
+    expect(rendererSource).toContain('api.firstRun.getState()')
+    expect(rendererSource).toContain('api.firstRun.initialize(command)')
+    expect(rendererSource).not.toContain('ipcRenderer')
+    expect(rendererSource).not.toContain('ipcChannels')
+    expect(rendererSource).not.toContain('@main')
+    expect(rendererSource).not.toContain('@preload')
+    expect(rendererSource).not.toContain('better-sqlite3')
     expect(rendererSource).toContain('Clinical workflows')
     expect(rendererSource).toContain('Not implemented')
     expect(rendererSource).toContain('Database')
@@ -71,6 +76,11 @@ function readAllSource(relativeDirectory: string): string {
   const files = [
     'src/renderer/src/app/App.tsx',
     'src/renderer/src/app/status-mapping.ts',
+    'src/renderer/src/app/first-run/FirstRunSetupScreen.tsx',
+    'src/renderer/src/app/first-run/FirstRunStateScreen.tsx',
+    'src/renderer/src/app/first-run/first-run-controller.ts',
+    'src/renderer/src/app/first-run/first-run-form.ts',
+    'src/renderer/src/app/first-run/first-run-types.ts',
     'src/renderer/src/main.tsx',
     'src/renderer/src/styles/main.css'
   ]
