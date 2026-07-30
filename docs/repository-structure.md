@@ -16,8 +16,10 @@ This repository separates Electron process responsibilities so trusted applicati
 compose reviewed lower-level contracts. HSD-014 adds the first-run bootstrap
 service here. It sequences installation, local-user, location, and audit writes
 through one caller-owned HSD-008 transaction after asynchronous password
-hashing, without adding startup wiring, IPC, preload APIs, renderer UI, login,
-sessions, authorization, protocol setup, settings writes, or clinical behavior.
+hashing. HSD-015 adds production composition for this service so IPC handlers
+can call it after database initialization, without invoking setup at startup or
+adding renderer UI, login, sessions, authorization, protocol setup, settings
+writes, or clinical behavior.
 
 `src/main/foundation` owns main-process-only primitives for local data writes,
 including validated UUID v4 entity IDs and UTC timestamps. These providers are
@@ -59,7 +61,11 @@ The renderer must not import from `src/main`.
 
 ## Preload Process
 
-`src/preload` exposes a narrow typed bridge through `contextBridge`. HSD-005 exposes only fixed asynchronous application metadata and shell-health methods. It does not expose raw `ipcRenderer`, generic send/execute APIs, filesystem access, shell access, or business operations.
+`src/preload` exposes a narrow typed bridge through `contextBridge`. HSD-005
+exposes fixed asynchronous application metadata and shell-health methods.
+HSD-015 adds fixed first-run state and initialization methods. It does not
+expose raw `ipcRenderer`, generic send/execute APIs, filesystem access, shell
+access, or dynamic channel dispatch.
 
 ## Renderer
 

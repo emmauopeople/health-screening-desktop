@@ -7,14 +7,22 @@ import {
   appGetInfoResultSchema,
   appHealthSchema,
   appInfoSchema,
+  createFirstRunFailure,
   createIpcFailure,
   createIpcSuccess,
+  firstRunGetStateRequestSchema,
+  firstRunGetStateResultSchema,
+  firstRunInitializeRequestSchema,
+  firstRunInitializeResultSchema,
+  firstRunPublicStateSchema,
+  firstRunSafeErrorMessages,
   ipcChannels,
   ipcFailureResultSchema,
   type AppGetHealthResult,
   type AppGetInfoResult,
   type AppHealth,
-  type AppInfo
+  type AppInfo,
+  type FirstRunInitializeRequest
 } from '@shared/ipc'
 
 const validAppInfo: AppInfo = {
@@ -32,15 +40,39 @@ const validAppHealth: AppHealth = {
   clinicalFeatures: 'not-implemented'
 }
 
+const validFirstRunInitializeRequest: FirstRunInitializeRequest = {
+  deploymentName: '  Cameroon   Pilot  ',
+  timeZone: 'Africa/Douala',
+  administrator: {
+    username: ' Admin.User ',
+    displayName: ' Admin   User ',
+    temporaryPassword: 'ValidPassw0rd!'
+  },
+  initialLocation: {
+    name: ' Central   Church ',
+    locationType: 'CHURCH',
+    village: ' Messa ',
+    subdivision: ' Yaounde  I ',
+    region: ' Centre ',
+    directions: ' Opposite   market gate. '
+  }
+}
+
 describe('shared IPC contracts', () => {
-  it('defines exactly the approved app channel strings', () => {
+  it('defines exactly the approved app and first-run channel strings', () => {
     expect(ipcChannels).toEqual({
       app: {
         getInfo: 'health-screening:app:get-info',
         getHealth: 'health-screening:app:get-health'
+      },
+      firstRun: {
+        getState: 'health-screening:first-run:get-state',
+        initialize: 'health-screening:first-run:initialize'
       }
     })
-    expect(new Set(Object.values(ipcChannels.app)).size).toBe(2)
+    expect(
+      new Set([...Object.values(ipcChannels.app), ...Object.values(ipcChannels.firstRun)]).size
+    ).toBe(4)
   })
 
   it('uses strict empty request objects for app operations', () => {
@@ -151,5 +183,270 @@ describe('shared IPC contracts', () => {
   it('keeps approved response data structured-clone safe', () => {
     expect(structuredClone(validAppInfo)).toEqual(validAppInfo)
     expect(structuredClone(validAppHealth)).toEqual(validAppHealth)
+  })
+
+  it('uses strict first-run get-state requests', () => {
+    expect(firstRunGetStateRequestSchema.parse({})).toEqual({})
+    expect(firstRunGetStateRequestSchema.safeParse({ extra: true }).success).toBe(false)
+    expect(firstRunGetStateRequestSchema.safeParse([]).success).toBe(false)
+    expect(firstRunGetStateRequestSchema.safeParse(null).success).toBe(false)
+
+    const symbolRequest = Object.defineProperty({}, Symbol('secret'), {
+      value: true,
+      enumerable: true
+    })
+
+    expect(firstRunGetStateRequestSchema.safeParse(symbolRequest).success).toBe(false)
+  })
+
+  it('accepts one exact first-run initialization request without normalization', () => {
+    const parsed = firstRunInitializeRequestSchema.parse(validFirstRunInitializeRequest)
+
+    expect(parsed).toEqual(validFirstRunInitializeRequest)
+    expect(parsed.deploymentName).toBe('  Cameroon   Pilot  ')
+    expect(parsed.administrator.username).toBe(' Admin.User ')
+    expect(parsed.initialLocation.name).toBe(' Central   Church ')
+  })
+
+  it('rejects malformed first-run initialization requests at transport boundaries', () => {
+    const symbolRequest = Object.defineProperty(
+      { ...validFirstRunInitializeRequest },
+      Symbol('secret'),
+      { value: true, enumerable: true }
+    )
+    const nestedSymbolRequest = {
+      ...validFirstRunInitializeRequest,
+      administrator: Object.defineProperty(
+        { ...validFirstRunInitializeRequest.administrator },
+        Symbol('secret'),
+        { value: true, enumerable: true }
+      )
+    }
+
+    for (const value of [
+      null,
+      [],
+      'request',
+      { ...validFirstRunInitializeRequest, id: '11111111-1111-4111-8111-111111111111' },
+      Object.fromEntries(
+        Object.entries(validFirstRunInitializeRequest).filter(([key]) => key !== 'timeZone')
+      ),
+      {
+        ...validFirstRunInitializeRequest,
+        administrator: {
+          ...validFirstRunInitializeRequest.administrator,
+          role: 'LOCAL_ADMIN'
+        }
+      },
+      {
+        ...validFirstRunInitializeRequest,
+        initialLocation: {
+          ...validFirstRunInitializeRequest.initialLocation,
+          village: undefined
+        }
+      },
+      {
+        ...validFirstRunInitializeRequest,
+        initialLocation: {
+          ...validFirstRunInitializeRequest.initialLocation,
+          locationType: 'HOSPITAL'
+        }
+      },
+      { ...validFirstRunInitializeRequest, deploymentName: 'A'.repeat(241) },
+      {
+        ...validFirstRunInitializeRequest,
+        administrator: {
+          ...validFirstRunInitializeRequest.administrator,
+          temporaryPassword: 'A'.repeat(257)
+        }
+      },
+      {
+        ...validFirstRunInitializeRequest,
+        initialLocation: {
+          ...validFirstRunInitializeRequest.initialLocation,
+          directions: 'A'.repeat(1001)
+        }
+      },
+      {
+        ...validFirstRunInitializeRequest,
+        administrator: {
+          ...validFirstRunInitializeRequest.administrator,
+          temporaryPassword: 12
+        }
+      },
+      {
+        ...validFirstRunInitializeRequest,
+        administrator: {
+          ...validFirstRunInitializeRequest.administrator,
+          temporaryPassword: () => undefined
+        }
+      },
+      {
+        ...validFirstRunInitializeRequest,
+        administrator: {
+          ...validFirstRunInitializeRequest.administrator,
+          temporaryPassword: 1n
+        }
+      },
+      symbolRequest,
+      nestedSymbolRequest
+    ]) {
+      expect(firstRunInitializeRequestSchema.safeParse(value).success).toBe(false)
+    }
+  })
+
+  it('rejects prototype-sensitive first-run request values without invoking accessors', () => {
+    let topLevelGetterInvoked = false
+    const accessorRequest = { ...validFirstRunInitializeRequest }
+    Object.defineProperty(accessorRequest, 'deploymentName', {
+      enumerable: true,
+      get() {
+        topLevelGetterInvoked = true
+        return 'Cameroon Pilot'
+      }
+    })
+
+    let nestedGetterInvoked = false
+    const nestedAccessorRequest = {
+      ...validFirstRunInitializeRequest,
+      administrator: { ...validFirstRunInitializeRequest.administrator }
+    }
+    Object.defineProperty(nestedAccessorRequest.administrator, 'temporaryPassword', {
+      enumerable: true,
+      get() {
+        nestedGetterInvoked = true
+        return 'ValidPassw0rd!'
+      }
+    })
+
+    const nullPrototypeRequest = Object.assign(Object.create(null), validFirstRunInitializeRequest)
+    const customPrototypeRequest = Object.setPrototypeOf(
+      { ...validFirstRunInitializeRequest },
+      { trusted: false }
+    )
+    const descriptorTrapRequest = new Proxy(
+      { ...validFirstRunInitializeRequest },
+      {
+        getOwnPropertyDescriptor() {
+          throw new Error('C:\\secret\\descriptor.txt')
+        }
+      }
+    )
+
+    for (const value of [
+      accessorRequest,
+      nestedAccessorRequest,
+      nullPrototypeRequest,
+      customPrototypeRequest,
+      descriptorTrapRequest
+    ]) {
+      expect(firstRunInitializeRequestSchema.safeParse(value).success).toBe(false)
+    }
+    expect(topLevelGetterInvoked).toBe(false)
+    expect(nestedGetterInvoked).toBe(false)
+  })
+
+  it('validates minimized public first-run state and success responses', () => {
+    const initializedState = {
+      status: 'INITIALIZED',
+      deploymentName: 'Cameroon Pilot',
+      timeZone: 'Africa/Douala'
+    } as const
+
+    expect(firstRunPublicStateSchema.parse({ status: 'REQUIRED' })).toEqual({
+      status: 'REQUIRED'
+    })
+    expect(firstRunPublicStateSchema.parse(initializedState)).toEqual(initializedState)
+    expect(
+      firstRunPublicStateSchema.parse({
+        status: 'INCONSISTENT',
+        code: 'INSTALLATION_PRESENT_WITHOUT_LOCATION'
+      })
+    ).toEqual({
+      status: 'INCONSISTENT',
+      code: 'INSTALLATION_PRESENT_WITHOUT_LOCATION'
+    })
+    expect(firstRunGetStateResultSchema.parse(createIpcSuccess(initializedState))).toEqual(
+      createIpcSuccess(initializedState)
+    )
+    expect(firstRunInitializeResultSchema.parse(createIpcSuccess(initializedState))).toEqual(
+      createIpcSuccess(initializedState)
+    )
+
+    for (const value of [
+      { ...initializedState, id: '11111111-1111-4111-8111-111111111111' },
+      { ...initializedState, createdAt: '2026-07-29T12:34:56.789Z' },
+      { ...initializedState, installation: { id: 'secret' } },
+      { ...initializedState, administrator: { username: 'Admin.User' } },
+      { ...initializedState, initialLocation: { name: 'Central Church' } },
+      { ...initializedState, auditEvents: [] },
+      { ...initializedState, metadata: { bootstrap: true } },
+      { ...initializedState, passwordHash: 'hash' },
+      { ...initializedState, usernameNormalized: 'admin.user' }
+    ]) {
+      expect(firstRunPublicStateSchema.safeParse(value).success).toBe(false)
+    }
+  })
+
+  it('uses exact operation-specific first-run failure envelopes', () => {
+    expect(firstRunGetStateResultSchema.parse(createFirstRunFailure('IPC_FORBIDDEN'))).toEqual({
+      ok: false,
+      error: {
+        code: 'IPC_FORBIDDEN',
+        message: 'This operation is unavailable from the current window.'
+      }
+    })
+
+    for (const [code, message] of Object.entries(firstRunSafeErrorMessages)) {
+      expect(
+        firstRunInitializeResultSchema.parse({
+          ok: false,
+          error: { code, message }
+        })
+      ).toEqual({
+        ok: false,
+        error: { code, message }
+      })
+    }
+
+    expect(
+      firstRunGetStateResultSchema.safeParse(createFirstRunFailure('FIRST_RUN_ALREADY_INITIALIZED'))
+        .success
+    ).toBe(false)
+    expect(
+      firstRunInitializeResultSchema.safeParse({
+        ok: false,
+        error: {
+          code: 'FIRST_RUN_ALREADY_INITIALIZED',
+          message: 'arbitrary message'
+        }
+      }).success
+    ).toBe(false)
+    expect(
+      firstRunInitializeResultSchema.safeParse({
+        ok: false,
+        error: {
+          code: 'FIRST_RUN_INITIALIZATION_FAILED',
+          message: 'Application setup could not be completed.',
+          errorType: 'PasswordHashingError'
+        }
+      }).success
+    ).toBe(false)
+  })
+
+  it('keeps first-run request and response data structured-clone safe', () => {
+    const initializedState = {
+      status: 'INITIALIZED',
+      deploymentName: 'Cameroon Pilot',
+      timeZone: 'Africa/Douala'
+    } as const
+
+    expect(structuredClone(validFirstRunInitializeRequest)).toEqual(validFirstRunInitializeRequest)
+    expect(structuredClone(createIpcSuccess(initializedState))).toEqual(
+      createIpcSuccess(initializedState)
+    )
+    expect(structuredClone(createFirstRunFailure('FIRST_RUN_INITIALIZATION_FAILED'))).toEqual(
+      createFirstRunFailure('FIRST_RUN_INITIALIZATION_FAILED')
+    )
   })
 })

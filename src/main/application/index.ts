@@ -1,5 +1,6 @@
 export {
   createFirstRunBootstrapService,
+  createProductionFirstRunBootstrapService,
   FirstRunAlreadyInitializedError,
   FirstRunInitializationError,
   FirstRunInitializationInProgressError,
@@ -21,5 +22,6 @@ export {
   type FirstRunLocationInput,
   type ParsedFirstRunAdministratorInput,
   type ParsedFirstRunInitializationInput,
-  type ParsedFirstRunLocationInput
+  type ParsedFirstRunLocationInput,
+  type ProductionFirstRunBootstrapServiceOptions
 } from './first-run'

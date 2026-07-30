@@ -1,20 +1,23 @@
 # IPC Foundation
 
-HSD-005 establishes the first renderer-to-main IPC boundary. It is a security
-foundation only: no patient workflows, persistence, authentication, sync,
-settings, files, shell integration, or clinical operations are exposed.
+HSD-005 establishes the first renderer-to-main IPC boundary. HSD-015 adds the
+trusted first-run setup IPC boundary. These are security foundations only: no
+patient workflows, authentication, sync, settings, files, shell integration, or
+clinical operations are exposed.
 
 ## Channel Catalog
 
 The shared channel catalog is defined in `src/shared/ipc/channels.ts`.
 
-| Operation         | Channel                           | Request                  | Success data                                                                                                     |
-| ----------------- | --------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `app.getInfo()`   | `health-screening:app:get-info`   | `{}` strict empty object | `{ applicationName, applicationVersion, platform, architecture, packaged }`                                      |
-| `app.getHealth()` | `health-screening:app:get-health` | `{}` strict empty object | `{ status: 'ready', ipc: 'available', database: 'ready' or 'unavailable', clinicalFeatures: 'not-implemented' }` |
+| Operation                      | Channel                                 | Request                  | Success data                                                                                                     |
+| ------------------------------ | --------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `app.getInfo()`                | `health-screening:app:get-info`         | `{}` strict empty object | `{ applicationName, applicationVersion, platform, architecture, packaged }`                                      |
+| `app.getHealth()`              | `health-screening:app:get-health`       | `{}` strict empty object | `{ status: 'ready', ipc: 'available', database: 'ready' or 'unavailable', clinicalFeatures: 'not-implemented' }` |
+| `firstRun.getState()`          | `health-screening:first-run:get-state`  | `{}` strict empty object | Minimized first-run state                                                                                        |
+| `firstRun.initialize(command)` | `health-screening:first-run:initialize` | Strict first-run command | Minimized initialized state                                                                                      |
 
-Only these two channels exist for HSD-005. The renderer never receives a channel
-string argument, a generic invoke method, or any dynamic dispatch surface.
+The renderer never receives a channel string argument, a generic invoke method,
+or any dynamic dispatch surface.
 
 ## Result Envelope
 
@@ -43,8 +46,9 @@ Zod schemas in `src/shared/ipc` are the runtime authority for requests,
 responses, and envelopes. TypeScript types are inferred from those schemas.
 Do not manually duplicate contract shapes elsewhere.
 
-All HSD-005 request schemas are strict empty objects. All HSD-005 response data
-is structured-clone-safe plain data containing strings and booleans only.
+All app request schemas and the first-run state request schema are strict empty
+objects. First-run initialization uses one strict shared command schema. All IPC
+response data is structured-clone-safe plain data.
 
 ## Sender Validation
 
@@ -62,9 +66,9 @@ accepts only the packaged renderer document, with same-document hash navigation.
 
 ## Handler Lifecycle
 
-`registerApplicationIpcHandlers` removes the application-owned HSD-005 handlers,
-registers exactly the two supported channels, and returns a disposer. The
-disposer removes only those two namespaced handlers and leaves unrelated
+`registerApplicationIpcHandlers` removes the application-owned handlers,
+registers exactly the supported namespaced channels, and returns a disposer.
+The disposer removes only those namespaced handlers and leaves unrelated
 channels untouched. Re-registration must not accumulate duplicate handlers.
 
 Handlers are registered after `app.whenReady()` and HSD-004 session security
@@ -77,11 +81,14 @@ configuration, before the renderer is loaded.
 ```ts
 window.healthScreening.app.getInfo()
 window.healthScreening.app.getHealth()
+window.healthScreening.firstRun.getState()
+window.healthScreening.firstRun.initialize(command)
 ```
 
-Each method calls `ipcRenderer.invoke` with one compile-time channel constant
-and `{}`. The preload validates the returned envelope before passing it to the
-renderer. Invoke rejection or malformed responses map to `IPC_UNAVAILABLE`.
+Each method calls `ipcRenderer.invoke` with one compile-time channel constant.
+The preload validates first-run initialization input before invoking main and
+validates returned envelopes before passing them to the renderer. Invoke
+rejection or malformed responses map to `IPC_UNAVAILABLE`.
 
 The bridge must not expose `ipcRenderer`, `contextBridge`, `invoke`, `send`,
 `sendSync`, `on`, `once`, `off`, `postMessage`, Electron events, Node globals,

@@ -4,17 +4,18 @@ import { createDevelopmentNavigationPolicy } from '@main/app/navigation-policy'
 import type { ApplicationInfoProvider } from '@main/app/application-info'
 import {
   createAppIpcHandlers,
-  type AppIpcHandlerDependencies,
   type AppIpcHandlers,
   type IpcOperationalLogger
 } from '@main/ipc/handlers/app-handlers'
 import {
   disposeApplicationIpcHandlers,
   registerApplicationIpcHandlers,
+  type ApplicationIpcHandlerDependencies,
   type ApplicationIpcMain
 } from '@main/ipc/register-handlers'
 import type { IpcSenderValidationEvent } from '@main/ipc/sender-policy'
 import { ipcChannels, type AppHealth, type AppInfo } from '@shared/ipc'
+import type { FirstRunBootstrapService } from '@main/application'
 
 const validInfo: AppInfo = {
   applicationName: 'Health Screening Offline Desktop',
@@ -138,16 +139,18 @@ describe('application IPC handlers', () => {
 })
 
 describe('application IPC handler registration', () => {
-  it('registers exactly the two application handlers and preserves unrelated handlers', () => {
+  it('registers exactly the four owned handlers and preserves unrelated handlers', () => {
     const ipcMain = createMockIpcMain()
     ipcMain.handlers.set('unrelated:channel', vi.fn())
 
     const dispose = registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(2)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(4)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
+      'health-screening:first-run:get-state',
+      'health-screening:first-run:initialize',
       'unrelated:channel'
     ])
 
@@ -163,21 +166,27 @@ describe('application IPC handler registration', () => {
     registerApplicationIpcHandlers(ipcMain, createDependencies())
     registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(4)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(8)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getHealth)
+    expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
+    expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.initialize)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
+      'health-screening:first-run:get-state',
+      'health-screening:first-run:initialize',
       'unrelated:channel'
     ])
   })
 
-  it('disposes only HSD-005 handlers', () => {
+  it('disposes only application-owned handlers', () => {
     const ipcMain = createMockIpcMain()
     ipcMain.handlers.set('unrelated:channel', vi.fn())
     ipcMain.handlers.set(ipcChannels.app.getInfo, vi.fn())
     ipcMain.handlers.set(ipcChannels.app.getHealth, vi.fn())
+    ipcMain.handlers.set(ipcChannels.firstRun.getState, vi.fn())
+    ipcMain.handlers.set(ipcChannels.firstRun.initialize, vi.fn())
 
     disposeApplicationIpcHandlers(ipcMain)
 
@@ -211,13 +220,25 @@ function createHandlers(overrides: HandlerTestOverrides = {}): AppIpcHandlers {
   })
 }
 
-function createDependencies(): AppIpcHandlerDependencies {
+function createDependencies(): ApplicationIpcHandlerDependencies {
   return {
     navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
     applicationInfoProvider: createApplicationInfoProvider(),
     databaseHealthProvider: { getStatus: () => 'ready' },
+    firstRun: {
+      navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
+      firstRunBootstrapService: createFirstRunBootstrapService(),
+      logger: createLogger()
+    },
     logger: createLogger()
   }
+}
+
+function createFirstRunBootstrapService(): FirstRunBootstrapService {
+  return {
+    getState: vi.fn(() => ({ status: 'REQUIRED' })),
+    initialize: vi.fn()
+  } as unknown as FirstRunBootstrapService
 }
 
 function createApplicationInfoProvider(): ApplicationInfoProvider {

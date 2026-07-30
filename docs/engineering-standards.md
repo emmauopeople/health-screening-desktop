@@ -1,6 +1,6 @@
 # Engineering Standards
 
-HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure. HSD-008 adds main-process entity ID, UTC clock, and transaction boundaries. HSD-009 adds the first main-process typed installation repository and read-only first-run state query. HSD-010 adds a main-process-only asynchronous password credential primitive. HSD-011 adds a typed local-user repository and username identity boundary over the existing users table. HSD-012 adds a typed location repository and location identity boundary over the existing locations table. HSD-013 adds a typed append-only audit-event repository and canonical metadata boundary over the existing audit log table. HSD-014 adds the main-process first-run bootstrap application service that composes approved repositories atomically, but still does not add startup execution, IPC, renderer setup, login, sessions, clinical workflows, protocol setup, settings writes, or synchronization.
+HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure. HSD-008 adds main-process entity ID, UTC clock, and transaction boundaries. HSD-009 adds the first main-process typed installation repository and read-only first-run state query. HSD-010 adds a main-process-only asynchronous password credential primitive. HSD-011 adds a typed local-user repository and username identity boundary over the existing users table. HSD-012 adds a typed location repository and location identity boundary over the existing locations table. HSD-013 adds a typed append-only audit-event repository and canonical metadata boundary over the existing audit log table. HSD-014 adds the main-process first-run bootstrap application service that composes approved repositories atomically. HSD-015 exposes that service through trusted first-run IPC and preload contracts, but still does not add first-run UI, startup writes, login, sessions, clinical workflows, protocol setup, settings writes, or synchronization.
 
 ## TypeScript
 
@@ -242,12 +242,20 @@ Select-String -Path out/renderer/index.html -Pattern "unsafe-eval|unsafe-inline|
 
 ## Typed IPC And Preload Bridge
 
-HSD-005 permits exactly two renderer-to-main operations:
+HSD-005 permits two shell renderer-to-main operations:
 
 - `app.getInfo()` on `health-screening:app:get-info` with request `{}` and safe
   metadata response `{ applicationName, applicationVersion, platform, architecture, packaged }`.
 - `app.getHealth()` on `health-screening:app:get-health` with request `{}` and
   shell-health response `{ status: 'ready', ipc: 'available', database: 'ready' | 'unavailable', clinicalFeatures: 'not-implemented' }`.
+
+HSD-015 permits two first-run operations:
+
+- `firstRun.getState()` on `health-screening:first-run:get-state` with request
+  `{}` and minimized setup state.
+- `firstRun.initialize(command)` on
+  `health-screening:first-run:initialize` with a strict first-run command and
+  minimized initialized state.
 
 All IPC request, response, and result schemas live under `src/shared/ipc`.
 Schemas are authoritative and TypeScript types are inferred from them. Runtime
@@ -259,10 +267,12 @@ WebContents main frame, and authorizes the frame URL through the same HSD-003
 `NavigationPolicy` used by the main window. Do not authorize by channel name,
 process ID, a development boolean, or the existence of a BrowserWindow.
 
-The renderer receives only `window.healthScreening.app.getInfo` and
-`window.healthScreening.app.getHealth`. Do not expose raw `ipcRenderer`, generic
-`invoke` or `send` wrappers, synchronous IPC, event objects, arbitrary channels,
-Node globals, filesystem APIs, `process`, `Buffer`, or `require`.
+The renderer receives only `window.healthScreening.app.getInfo`,
+`window.healthScreening.app.getHealth`,
+`window.healthScreening.firstRun.getState`, and
+`window.healthScreening.firstRun.initialize`. Do not expose raw `ipcRenderer`,
+generic `invoke` or `send` wrappers, synchronous IPC, event objects, arbitrary
+channels, Node globals, filesystem APIs, `process`, `Buffer`, or `require`.
 
 IPC handlers are registered after session security configuration and before
 renderer loading. Registration must dispose and replace only the application
@@ -275,5 +285,6 @@ documentation, and tests. When authentication exists, role authorization must be
 reviewed before exposing the operation.
 
 Do not log IPC payloads or expose technical failures to the renderer. Logs may
-include channel name, safe error code, and exception type only. Renderer-visible
-errors must use the typed result envelope and stable safe messages.
+include channel name, safe error code, and allowlisted technical exception type
+only. Renderer-visible errors must use the typed result envelope and stable safe
+messages.

@@ -4,7 +4,8 @@ HSD-014 adds a main-process application service for the first local setup
 write. It composes the approved installation, password, local-user, location,
 audit-event, entity-ID, UTC-clock, and transaction contracts without adding
 startup execution, IPC, preload exposure, renderer UI, login, sessions, or
-clinical workflows.
+clinical workflows. HSD-015 later exposes this service through trusted IPC and
+preload contracts without invoking setup at startup.
 
 ## State Semantics
 
@@ -81,6 +82,7 @@ The initial location is the first active location created during bootstrap; it
 is not a persisted primary or selected location. Schema-v1 has no approved
 primary-location setting.
 
-Protocol placeholders, startup wiring, IPC, preload methods, renderer setup,
-login, password-change workflow, sessions, authorization, administration UI,
-and clinical workflows remain deferred to later reviewed tasks.
+Protocol placeholders, renderer setup, login, password-change workflow,
+sessions, authorization, administration UI, and clinical workflows remain
+deferred to later reviewed tasks. HSD-015 adds startup composition and fixed IPC
+methods only; it does not add setup UI or automatic first-run execution.
