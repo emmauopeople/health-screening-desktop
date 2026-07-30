@@ -167,23 +167,23 @@ export function toPublicFirstRunState(state: FirstRunBootstrapState): FirstRunPu
 }
 
 function getInitializeFailureCode(error: unknown): FirstRunInitializeErrorCode {
-  if (error instanceof FirstRunValidationError) {
+  if (isSafeInstanceOf(error, FirstRunValidationError)) {
     return 'VALIDATION_FAILED'
   }
 
-  if (error instanceof FirstRunAlreadyInitializedError) {
+  if (isSafeInstanceOf(error, FirstRunAlreadyInitializedError)) {
     return 'FIRST_RUN_ALREADY_INITIALIZED'
   }
 
-  if (error instanceof FirstRunStateIntegrityError) {
+  if (isSafeInstanceOf(error, FirstRunStateIntegrityError)) {
     return 'FIRST_RUN_STATE_INTEGRITY'
   }
 
-  if (error instanceof FirstRunInitializationInProgressError) {
+  if (isSafeInstanceOf(error, FirstRunInitializationInProgressError)) {
     return 'FIRST_RUN_INITIALIZATION_IN_PROGRESS'
   }
 
-  if (error instanceof FirstRunInitializationError) {
+  if (isSafeInstanceOf(error, FirstRunInitializationError)) {
     return 'FIRST_RUN_INITIALIZATION_FAILED'
   }
 
@@ -196,27 +196,47 @@ function logFirstRunIpcFailure(
   code: FirstRunInitializeErrorCode,
   error?: unknown
 ): void {
-  const errorType = error === undefined ? '' : `; errorType=${getSafeErrorType(error)}`
-  const message = `IPC handler result channel=${channel}; code=${code}${errorType}`
+  try {
+    const errorType = error === undefined ? '' : `; errorType=${getSafeErrorType(error)}`
+    const message = `IPC handler result channel=${channel}; code=${code}${errorType}`
 
-  if (code === 'INTERNAL_ERROR' || code === 'FIRST_RUN_INITIALIZATION_FAILED') {
-    logger.error(message)
-    return
+    if (code === 'INTERNAL_ERROR' || code === 'FIRST_RUN_INITIALIZATION_FAILED') {
+      logger.error(message)
+      return
+    }
+
+    logger.warn(message)
+  } catch {
+    // Operational logging is best-effort and must never alter the IPC result.
   }
-
-  logger.warn(message)
 }
 
 function getSafeErrorType(error: unknown): string {
-  if (error instanceof z.ZodError) {
+  try {
+    if (isSafeInstanceOf(error, z.ZodError)) {
+      return 'UnknownError'
+    }
+
+    if (isSafeInstanceOf(error, Error)) {
+      const errorName = Reflect.get(error as object, 'name')
+
+      return typeof errorName === 'string'
+        ? (sanitizeErrorType(errorName) ?? 'UnknownError')
+        : 'UnknownError'
+    }
+
+    return sanitizeErrorType(typeof error) ?? 'UnknownError'
+  } catch {
     return 'UnknownError'
   }
+}
 
-  if (error instanceof Error) {
-    return sanitizeErrorType(error.name) ?? 'UnknownError'
+function isSafeInstanceOf(value: unknown, constructor: { readonly prototype: object }): boolean {
+  try {
+    return Function.prototype[Symbol.hasInstance].call(constructor, value) as boolean
+  } catch {
+    return false
   }
-
-  return sanitizeErrorType(typeof error) ?? 'UnknownError'
 }
 
 interface IpcSchema<TResult> {
