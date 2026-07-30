@@ -11,6 +11,13 @@ mutation. It persists caller-approved failed-login, lock, last-login, and
 updated timestamps through compare-and-set inside an existing transaction, but
 does not add password verification, lockout policy, audit events, sessions, IPC,
 preload, renderer login, or clinical behavior.
+HSD-018 adds a main-process-only local login authentication service. It verifies
+real or dummy credentials outside SQLite transactions, applies the fixed
+five-attempt and 15-minute lockout policy, revalidates observations inside the
+transaction, persists state through the HSD-017 compare-and-set boundary, and
+appends exactly one security audit event. It does not add sessions, IPC,
+preload, renderer login, authorization, password change/reset, schema
+migrations, or clinical workflows.
 
 ## TypeScript
 
@@ -69,6 +76,14 @@ providers, and security services, but they must not expose raw SQLite handles,
 SQL, transaction contexts, credentials, or dependency references to preload,
 renderer, shared IPC, or logs.
 
+Application authentication services own login decision policy, expected
+rejection results, transaction-time revalidation, and security audit
+classification. They may use credential-bearing repository projections only
+inside the main process and must return credential-free records or fixed
+rejection reasons. Authentication services must not create sessions, expose IPC,
+change preload APIs, import renderer code, or perform authorization unless a
+later reviewed task grants that boundary.
+
 ## Database Migrations
 
 Released migration files are immutable. Do not edit, rename, reorder, squash, or
@@ -103,6 +118,12 @@ hashing, must complete that work before entering `DatabaseTransactionExecutor.ru
 They must then re-check workflow invariants inside the synchronous callback
 before writing. No promise, thenable, random byte generation, scrypt work, file
 I/O, IPC, timer, or network operation belongs inside a transaction callback.
+
+Local login follows the same rule: password verification, including dummy
+verification for unknown usernames, completes before the transaction opens. The
+transaction callback only revalidates the authoritative installation and user
+observation, mutates authentication state through the HSD-017 repository method
+when needed, and inserts the corresponding audit event.
 
 Entity IDs and UTC timestamps for local writes come from
 `src/main/foundation`. Do not accept renderer-generated IDs or timestamps as
@@ -201,6 +222,14 @@ service, and the resulting stored credential may be passed only into the
 local-user repository write input. Bootstrap results, audit metadata, errors,
 logs, IPC contracts, and renderer-facing values must not include plaintext,
 hashes, salts, derived keys, or credential objects.
+
+Local login services must minimize credential exposure in the same way.
+Plaintext passwords remain function-local and are passed only to
+`PasswordCredentialService.verify()`. The production login service creates one
+private dummy credential during composition. Login results, audit metadata,
+errors, logs, IPC contracts, and renderer-facing values must not include
+plaintext, hashes, salts, derived keys, dummy credentials, or credential-bearing
+authentication projections.
 
 ## Formatting And Linting
 

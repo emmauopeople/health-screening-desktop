@@ -39,6 +39,14 @@ Each callback receives a frozen context:
 The executor returns a callback result only after `COMMIT` completes and the
 connection is no longer in a transaction.
 
+HSD-018 local login uses this boundary to finalize one authentication outcome.
+Password verification and dummy verification complete before `run()` is called.
+Inside the callback, the service revalidates the observed installation and
+credential-bearing user record, applies the already-reviewed policy decision,
+persists authentication state through the local-user repository when needed,
+and inserts one audit event. No password verification, hashing, random-byte
+generation, timers, IPC, or network work belongs in that callback.
+
 ## Error And Log Safety
 
 Transaction failures throw controlled errors:

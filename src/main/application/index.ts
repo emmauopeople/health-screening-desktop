@@ -25,3 +25,4 @@ export {
   type ParsedFirstRunLocationInput,
   type ProductionFirstRunBootstrapServiceOptions
 } from './first-run'
+export * from './authentication'

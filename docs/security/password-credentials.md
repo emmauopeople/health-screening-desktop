@@ -63,6 +63,14 @@ transaction callbacks. Later first-run services must hash before opening the
 write transaction, then re-check installation/user invariants inside that
 transaction before inserting related rows atomically.
 
+HSD-018 local login follows the same boundary for verification. It validates
+the raw command with `parsePlaintextPassword()`, verifies the candidate password
+through `PasswordCredentialService.verify()` before opening the transaction,
+and never places scrypt work inside a transaction callback. The production
+login service creates one private dummy credential during composition so
+unknown usernames can perform dummy verification without returning or logging
+that credential.
+
 ## Internal Persistence Validation
 
 HSD-011 adds an internal main-process helper,

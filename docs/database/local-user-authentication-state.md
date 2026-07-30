@@ -62,6 +62,14 @@ Later application services own policy and orchestration:
 The repository only persists a caller-approved next state if the caller's
 expected snapshot still matches the database.
 
+HSD-018 is the first approved caller of this mutation. The local login
+application service verifies passwords before opening the transaction, derives
+the next failed-login, lock, and last-login state, revalidates the authoritative
+authentication record inside the transaction, and then calls
+`updateAuthenticationState()` with the exact expected snapshot. The repository
+still does not choose the five-attempt or 15-minute policy and still does not
+write audit events.
+
 ## Errors
 
 The mutation uses fixed controlled repository errors:
