@@ -165,6 +165,47 @@ describe('first-run renderer startup controller', () => {
     })
   })
 
+  it('treats forbidden app info startup failure as blocking and non-retryable', async () => {
+    await expect(
+      loadRendererStartupState(
+        createApi({ infoResult: createIpcFailure('IPC_FORBIDDEN') as AppGetInfoResult })
+      )
+    ).resolves.toEqual(createForbiddenStartupState())
+  })
+
+  it('treats forbidden app health startup failure as blocking and non-retryable', async () => {
+    await expect(
+      loadRendererStartupState(
+        createApi({ healthResult: createIpcFailure('IPC_FORBIDDEN') as AppGetHealthResult })
+      )
+    ).resolves.toEqual(createForbiddenStartupState())
+  })
+
+  it('prioritizes forbidden first-run state over retryable app info failure', async () => {
+    await expect(
+      loadRendererStartupState(
+        createApi({
+          infoResult: createIpcFailure('IPC_UNAVAILABLE') as AppGetInfoResult,
+          getStateResult: createFirstRunFailure('IPC_FORBIDDEN') as FirstRunGetStateResult
+        })
+      )
+    ).resolves.toEqual(createForbiddenStartupState())
+  })
+
+  it('prioritizes forbidden first-run state over unavailable database health', async () => {
+    await expect(
+      loadRendererStartupState(
+        createApi({
+          healthResult: createIpcSuccess({
+            ...readyHealth,
+            database: 'unavailable'
+          }) as AppGetHealthResult,
+          getStateResult: createFirstRunFailure('IPC_FORBIDDEN') as FirstRunGetStateResult
+        })
+      )
+    ).resolves.toEqual(createForbiddenStartupState())
+  })
+
   it('does not show setup when health reports an unavailable database', async () => {
     await expect(
       loadRendererStartupState(
@@ -467,6 +508,14 @@ function createApi({
         return Promise.resolve(initializeResult)
       })
     }
+  }
+}
+
+function createForbiddenStartupState(): RendererStartupState {
+  return {
+    status: 'UNAVAILABLE',
+    message: startupUnavailableMessages.forbidden,
+    canRetry: false
   }
 }
 

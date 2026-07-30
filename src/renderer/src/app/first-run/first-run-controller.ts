@@ -63,6 +63,14 @@ export function mapStartupResults(
   healthResult: AppGetHealthResult,
   firstRunResult: FirstRunGetStateResult
 ): RendererStartupState {
+  if (hasForbiddenStartupFailure(infoResult, healthResult, firstRunResult)) {
+    return {
+      status: 'UNAVAILABLE',
+      message: startupUnavailableMessages.forbidden,
+      canRetry: false
+    }
+  }
+
   if (!infoResult.ok || !healthResult.ok) {
     return {
       status: 'UNAVAILABLE',
@@ -84,6 +92,18 @@ export function mapStartupResults(
   }
 
   return mapFirstRunPublicState(infoResult.data, healthResult.data, firstRunResult.data)
+}
+
+function hasForbiddenStartupFailure(
+  infoResult: AppGetInfoResult,
+  healthResult: AppGetHealthResult,
+  firstRunResult: FirstRunGetStateResult
+): boolean {
+  return (
+    (!infoResult.ok && infoResult.error.code === 'IPC_FORBIDDEN') ||
+    (!healthResult.ok && healthResult.error.code === 'IPC_FORBIDDEN') ||
+    (!firstRunResult.ok && firstRunResult.error.code === 'IPC_FORBIDDEN')
+  )
 }
 
 export function mapFirstRunPublicState(
