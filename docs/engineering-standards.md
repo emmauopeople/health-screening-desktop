@@ -18,6 +18,12 @@ transaction, persists state through the HSD-017 compare-and-set boundary, and
 appends exactly one security audit event. It does not add sessions, IPC,
 preload, renderer login, authorization, password change/reset, schema
 migrations, or clinical workflows.
+HSD-019 adds a main-process-only local-user credential-state repository
+mutation. It persists pre-derived stored credentials and `mustChangePassword`
+through compare-and-set inside an existing transaction, but does not add
+plaintext password handling, password hashing, password policy, forced
+password-change services, audit events, sessions, IPC, preload, renderer login,
+or clinical behavior.
 
 ## TypeScript
 
@@ -125,6 +131,11 @@ transaction callback only revalidates the authoritative installation and user
 observation, mutates authentication state through the HSD-017 repository method
 when needed, and inserts the corresponding audit event.
 
+Credential rotation follows the same rule. Password hashing must complete
+before the transaction opens, and any future application service must use the
+HSD-019 `updateCredentialState()` compare-and-set boundary inside the
+synchronous callback with an exact expected credential-state snapshot.
+
 Entity IDs and UTC timestamps for local writes come from
 `src/main/foundation`. Do not accept renderer-generated IDs or timestamps as
 trusted values without main-process validation.
@@ -162,9 +173,12 @@ credential text only through a separate main-process authentication projection.
 They must accept only pre-derived HSD-010 `StoredPasswordCredential` values.
 Authentication-state mutations may update only `failed_login_count`,
 `locked_until`, `last_login_at`, and `updated_at` through a caller-owned
-transaction-scoped compare-and-set operation. Local-user repositories must never
-accept plaintext passwords, hash passwords, verify passwords, decide lockout
-policy, create sessions, or perform authorization.
+transaction-scoped compare-and-set operation. Credential-state mutations may
+update only `password_hash`, `password_salt`, `must_change_password`, and
+`updated_at` through a caller-owned transaction-scoped compare-and-set
+operation. Local-user repositories must never accept plaintext passwords, hash
+passwords, verify passwords, decide lockout policy, compose audit events, create
+sessions, or perform authorization.
 
 Location repositories must derive `name_normalized` internally from the
 canonical location name, allow duplicate display names and duplicate normalized
@@ -215,6 +229,10 @@ The internal credential persistence validator may be imported only by reviewed
 main-process repository code. It validates canonical stored credential text and
 clears decoded buffers, but it must not be exported from application-facing
 security barrels or used as a credential creation or verification API.
+HSD-019 local-user credential-state writes use this validator only for
+pre-derived stored credentials. HSD-020 is expected to add the reviewed
+application service that derives replacement credentials before the transaction
+and audits credential rotation.
 
 First-run bootstrap services must minimize credential exposure. A temporary
 administrator password may be passed only to the HSD-010 password credential

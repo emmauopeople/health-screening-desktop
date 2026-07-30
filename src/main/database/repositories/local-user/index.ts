@@ -14,12 +14,14 @@ export type {
   CreateLocalUserInput,
   LocalUserAuthenticationStateSnapshot,
   LocalUserAuthenticationRecord,
+  LocalUserCredentialStateSnapshot,
   LocalUserRecord,
   LocalUserRepository,
   LocalUserRole,
   NormalizedUsername,
   UserDisplayName,
   UpdateLocalUserAuthenticationStateInput,
+  UpdateLocalUserCredentialStateInput,
   Username,
   UsernameIdentity
 } from './local-user-types'

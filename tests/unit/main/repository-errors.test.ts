@@ -3,8 +3,11 @@ import { describe, expect, it } from 'vitest'
 import {
   AuditEventAlreadyExistsError,
   InstallationAlreadyExistsError,
+  LocalUserAuthenticationStateConflictError,
   LocationAlreadyExistsError,
   LocalUserAlreadyExistsError,
+  LocalUserCredentialStateConflictError,
+  LocalUserNotFoundError,
   RepositoryDataIntegrityError,
   RepositoryReadError,
   RepositoryValidationError,
@@ -25,6 +28,9 @@ describe('repository errors', () => {
       new RepositoryDataIntegrityError('RepositoryValidationError'),
       new InstallationAlreadyExistsError('InstallationAlreadyExistsError'),
       new LocalUserAlreadyExistsError('LocalUserAlreadyExistsError'),
+      new LocalUserNotFoundError('LocalUserNotFoundError'),
+      new LocalUserAuthenticationStateConflictError('LocalUserAuthenticationStateConflictError'),
+      new LocalUserCredentialStateConflictError('LocalUserCredentialStateConflictError'),
       new LocationAlreadyExistsError('LocationAlreadyExistsError'),
       new AuditEventAlreadyExistsError('AuditEventAlreadyExistsError')
     ]
@@ -36,6 +42,9 @@ describe('repository errors', () => {
       'REPOSITORY_DATA_INTEGRITY_ERROR',
       'INSTALLATION_ALREADY_EXISTS',
       'LOCAL_USER_ALREADY_EXISTS',
+      'LOCAL_USER_NOT_FOUND',
+      'LOCAL_USER_AUTHENTICATION_STATE_CONFLICT',
+      'LOCAL_USER_CREDENTIAL_STATE_CONFLICT',
       'LOCATION_ALREADY_EXISTS',
       'AUDIT_EVENT_ALREADY_EXISTS'
     ])
@@ -46,6 +55,9 @@ describe('repository errors', () => {
       'Repository data does not match the trusted contract.',
       'Installation already exists.',
       'Local user already exists.',
+      'Local user was not found.',
+      'Local user authentication state no longer matches the expected state.',
+      'Local user credential state no longer matches the expected state.',
       'Location already exists.',
       'Audit event already exists.'
     ])
@@ -80,6 +92,14 @@ describe('repository errors', () => {
     expect(rebuilt.stack).toBeUndefined()
     expect(JSON.stringify(rebuilt)).not.toContain('Secret Deployment')
     expect(JSON.stringify(rebuilt)).not.toContain('SELECT')
+
+    const rebuiltConflict = rebuildRepositoryError(
+      new LocalUserCredentialStateConflictError('LocalUserCredentialStateConflictError')
+    )
+
+    expect(rebuiltConflict).toBeInstanceOf(LocalUserCredentialStateConflictError)
+    expect(rebuiltConflict).not.toHaveProperty('cause')
+    expect(rebuiltConflict.stack).toBeUndefined()
   })
 
   it('does not trust raw errors renamed as repository errors', () => {

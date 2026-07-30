@@ -12,6 +12,7 @@ import {
   DatabaseTransactionStateError,
   LocalUserAuthenticationStateConflictError,
   LocalUserAlreadyExistsError,
+  LocalUserCredentialStateConflictError,
   LocalUserNotFoundError,
   parseLocalUserRole,
   parseUserDisplayName,
@@ -24,6 +25,7 @@ import {
   type DatabaseTransactionConnection,
   type DatabaseTransactionExecutor,
   type LocalUserAuthenticationStateSnapshot,
+  type LocalUserCredentialStateSnapshot,
   type LocalUserRepository
 } from '@main/database'
 import { parseEntityId, type EntityIdGenerator } from '@main/foundation/entity-id'
@@ -41,6 +43,8 @@ const futureLockUntil = '2026-07-29T12:50:20.000Z'
 const userId = '11111111-1111-4111-8111-111111111111'
 const secondUserId = '22222222-2222-4222-8222-222222222222'
 const canonicalCredential = createStoredPasswordCredential(fixedBytes(64, 1), fixedBytes(32, 2))
+const rotatedCredential = createStoredPasswordCredential(fixedBytes(64, 3), fixedBytes(32, 4))
+const staleCredential = createStoredPasswordCredential(fixedBytes(64, 5), fixedBytes(32, 6))
 
 describe('local user repository', () => {
   it('reports a fresh migrated database without writing user rows', async () => {
@@ -540,6 +544,403 @@ describe('local user repository', () => {
         last_login_at: null,
         updated_at: now
       })
+    })
+  })
+
+  it('persists credential state while preserving ordinary and authentication fields', async () => {
+    await withMigratedDatabase(({ connection, repository, executor, databasePath }) => {
+      const inserted = executor.run((context) =>
+        repository.insert(context.connection, createValidInput())
+      )
+      updateRawAuthenticationState(connection, {
+        failedLoginCount: 2,
+        lockedUntil: futureLockUntil,
+        lastLoginAt: previousLoginAt,
+        updatedAt: failedAttemptAt
+      })
+      const authenticationColumnsBefore = readAuthenticationColumns(connection)
+
+      const updated = executor.run((context) =>
+        repository.updateCredentialState(context.connection, {
+          id: parseEntityId(userId),
+          expected: createCredentialStateSnapshot({
+            credential: canonicalCredential,
+            mustChangePassword: true,
+            updatedAt: failedAttemptAt
+          }),
+          next: createCredentialStateSnapshot({
+            credential: rotatedCredential,
+            mustChangePassword: false,
+            updatedAt: successfulLoginAt
+          })
+        })
+      )
+
+      expect(updated).toEqual({
+        ...inserted,
+        mustChangePassword: false,
+        failedLoginCount: 2,
+        lockedUntil: futureLockUntil,
+        lastLoginAt: previousLoginAt,
+        updatedAt: successfulLoginAt
+      })
+      expect(Object.isFrozen(updated)).toBe(true)
+      expect(updated).not.toHaveProperty('credential')
+      expect(updated).not.toHaveProperty('passwordHash')
+      expect(updated).not.toHaveProperty('passwordSalt')
+      expect(readAuthenticationColumns(connection)).toEqual(authenticationColumnsBefore)
+      expect(readTableCount(connection, 'audit_log')).toBe(0)
+      expect(readRawUser(connection)).toMatchObject({
+        username: 'Admin.User',
+        username_normalized: 'admin.user',
+        display_name: 'Admin User',
+        password_hash: rotatedCredential.passwordHash,
+        password_salt: rotatedCredential.passwordSalt,
+        role: 'LOCAL_ADMIN',
+        is_active: 1,
+        must_change_password: 0,
+        failed_login_count: 2,
+        locked_until: futureLockUntil,
+        last_login_at: previousLoginAt,
+        created_at: now,
+        updated_at: successfulLoginAt
+      })
+      expect(
+        repository.getAuthenticationByUsername(parseUsernameIdentity('Admin.User').username)
+          ?.credential
+      ).toEqual(rotatedCredential)
+
+      const reopened = new Database(databasePath)
+      try {
+        configureHsd006Pragmas(reopened)
+        expect(readRawUser(reopened)).toMatchObject({
+          password_hash: rotatedCredential.passwordHash,
+          password_salt: rotatedCredential.passwordSalt,
+          must_change_password: 0,
+          failed_login_count: 2,
+          locked_until: futureLockUntil,
+          last_login_at: previousLoginAt,
+          updated_at: successfulLoginAt
+        })
+      } finally {
+        reopened.close()
+      }
+    })
+  })
+
+  it('uses one explicit credential-state compare-and-set update and credential-free readback', async () => {
+    await withMigratedDatabase(({ connection, repository, executor }) => {
+      executor.run((context) => repository.insert(context.connection, createValidInput()))
+
+      const preparedSql: string[] = []
+      const instrumentedConnection = createInstrumentedTransactionConnection(
+        connection,
+        preparedSql
+      )
+      const instrumentedRepository = createLocalUserRepository(instrumentedConnection)
+      const instrumentedExecutor = createExecutorForConnection(instrumentedConnection)
+
+      instrumentedExecutor.run((context) =>
+        instrumentedRepository.updateCredentialState(context.connection, {
+          id: parseEntityId(userId),
+          expected: createCredentialStateSnapshot({
+            credential: canonicalCredential,
+            mustChangePassword: true,
+            updatedAt: now
+          }),
+          next: createCredentialStateSnapshot({
+            credential: rotatedCredential,
+            mustChangePassword: false,
+            updatedAt: later
+          })
+        })
+      )
+
+      const updateSql = preparedSql.filter((source) => /UPDATE users/i.test(source))
+      const readbackSql = preparedSql.find(
+        (source) =>
+          /SELECT/i.test(source) &&
+          /FROM users/i.test(source) &&
+          /WHERE id = \?/i.test(source) &&
+          source.includes('username_normalized')
+      )
+
+      expect(updateSql).toHaveLength(1)
+      expect(updateSql[0]).toContain('password_hash = ?')
+      expect(updateSql[0]).toContain('password_salt = ?')
+      expect(updateSql[0]).toContain('must_change_password = ?')
+      expect(updateSql[0]).toContain('updated_at = ?')
+      expect(updateSql[0]).toContain('AND password_hash = ?')
+      expect(updateSql[0]).toContain('AND password_salt = ?')
+      expect(updateSql[0]).toContain('AND must_change_password = ?')
+      expect(updateSql[0]).toContain('AND updated_at = ?')
+      expect(updateSql[0]).not.toContain('failed_login_count')
+      expect(updateSql[0]).not.toContain('locked_until')
+      expect(updateSql[0]).not.toContain('last_login_at')
+      expect(readbackSql).toBeDefined()
+      expect(readbackSql).not.toContain('password_hash')
+      expect(readbackSql).not.toContain('password_salt')
+      expect(preparedSql.join('\n')).not.toMatch(/\bSELECT\s+\*/i)
+      expect(preparedSql.join('\n')).not.toMatch(
+        /\b(BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE|DELETE|REPLACE|UPSERT)\b/i
+      )
+    })
+  })
+
+  it('rejects stale expected credential state for each compared field without changing the row', async () => {
+    await withMigratedDatabase(({ connection, repository, executor }) => {
+      executor.run((context) => repository.insert(context.connection, createValidInput()))
+      const originalRow = readRawUser(connection)
+
+      const credentialWithStaleHash = Object.freeze({
+        passwordHash: rotatedCredential.passwordHash,
+        passwordSalt: canonicalCredential.passwordSalt
+      }) as StoredPasswordCredential
+      const credentialWithStaleSalt = Object.freeze({
+        passwordHash: canonicalCredential.passwordHash,
+        passwordSalt: rotatedCredential.passwordSalt
+      }) as StoredPasswordCredential
+
+      for (const expectedOverride of [
+        { credential: credentialWithStaleHash },
+        { credential: credentialWithStaleSalt },
+        { mustChangePassword: false },
+        { updatedAt: later }
+      ]) {
+        const error = captureError(() =>
+          executor.run((context) =>
+            repository.updateCredentialState(context.connection, {
+              id: parseEntityId(userId),
+              expected: createCredentialStateSnapshot({
+                credential: canonicalCredential,
+                mustChangePassword: true,
+                updatedAt: now,
+                ...expectedOverride
+              }),
+              next: createCredentialStateSnapshot({
+                credential: staleCredential,
+                mustChangePassword: false,
+                updatedAt: successfulLoginAt
+              })
+            })
+          )
+        )
+
+        expect(error).toBeInstanceOf(LocalUserCredentialStateConflictError)
+        expectSafeControlledError(error)
+        expect(readRawUser(connection)).toEqual(originalRow)
+        expect(connection.inTransaction).toBe(false)
+      }
+    })
+  })
+
+  it('distinguishes missing users from stale credential-state conflicts', async () => {
+    await withMigratedDatabase(({ connection, repository, executor }) => {
+      executor.run((context) => repository.insert(context.connection, createValidInput()))
+      const originalRow = readRawUser(connection)
+
+      const error = captureError(() =>
+        executor.run((context) =>
+          repository.updateCredentialState(context.connection, {
+            id: parseEntityId(secondUserId),
+            expected: createCredentialStateSnapshot({
+              credential: canonicalCredential,
+              mustChangePassword: true,
+              updatedAt: now
+            }),
+            next: createCredentialStateSnapshot({
+              credential: rotatedCredential,
+              mustChangePassword: false,
+              updatedAt: later
+            })
+          })
+        )
+      )
+
+      expect(error).toBeInstanceOf(LocalUserNotFoundError)
+      expect(error).not.toBeInstanceOf(LocalUserCredentialStateConflictError)
+      expectSafeControlledError(error)
+      expect(readRawUser(connection)).toEqual(originalRow)
+    })
+  })
+
+  it('checks the transaction capability before credential input access or SQL', async () => {
+    await withMigratedDatabase(({ connection, repository, executor }) => {
+      connection.exec('BEGIN IMMEDIATE')
+      try {
+        const rawConnectionError = captureError(() =>
+          repository.updateCredentialState(
+            connection as unknown as DatabaseTransactionConnection,
+            createAccessorCredentialStateInput()
+          )
+        )
+
+        expect(rawConnectionError).toBeInstanceOf(DatabaseTransactionStateError)
+        expect(rawConnectionError).not.toBeInstanceOf(RepositoryValidationError)
+        expectSafeControlledError(rawConnectionError)
+        expect(connection.inTransaction).toBe(true)
+        expect(readTableCount(connection, 'users')).toBe(0)
+      } finally {
+        if (connection.inTransaction) {
+          connection.exec('ROLLBACK')
+        }
+      }
+
+      let capturedConnection: DatabaseTransactionConnection | undefined
+      executor.run((context) => {
+        capturedConnection = context.connection
+        return 'captured'
+      })
+
+      const expiredError = captureError(() =>
+        repository.updateCredentialState(capturedConnection!, createAccessorCredentialStateInput())
+      )
+
+      expect(expiredError).toBeInstanceOf(DatabaseTransactionStateError)
+      expect(expiredError).not.toBeInstanceOf(RepositoryValidationError)
+      expectSafeControlledError(expiredError)
+      expect(readTableCount(connection, 'users')).toBe(0)
+    })
+  })
+
+  it('rolls back credential state with the surrounding transaction', async () => {
+    await withMigratedDatabase(({ connection, repository, executor }) => {
+      executor.run((context) => repository.insert(context.connection, createValidInput()))
+      const originalRow = readRawUser(connection)
+
+      const rollbackError = captureError(() =>
+        executor.run((context) => {
+          repository.updateCredentialState(context.connection, {
+            id: parseEntityId(userId),
+            expected: createCredentialStateSnapshot({
+              credential: canonicalCredential,
+              mustChangePassword: true,
+              updatedAt: now
+            }),
+            next: createCredentialStateSnapshot({
+              credential: rotatedCredential,
+              mustChangePassword: false,
+              updatedAt: later
+            })
+          })
+          insertSetting(context.connection, 'credential.rollback', '{"enabled":true}')
+          throw new Error('C:\\secret\\rollback.sqlite3 UPDATE users')
+        })
+      )
+
+      expect(rollbackError).toBeInstanceOf(DatabaseTransactionExecutionError)
+      expectSafeControlledError(rollbackError)
+      expect(readRawUser(connection)).toEqual(originalRow)
+      expect(readTableCount(connection, 'app_settings')).toBe(0)
+      expect(readTableCount(connection, 'audit_log')).toBe(0)
+    })
+  })
+
+  it('fails closed on malformed persisted rows after credential-state mutation', async () => {
+    await withMigratedDatabase(({ connection, repository, executor }) => {
+      insertRawUserIgnoringChecks(connection, {
+        display_name: '  Admin User  '
+      })
+      const originalRow = readRawUser(connection)
+
+      const error = captureError(() =>
+        executor.run((context) =>
+          repository.updateCredentialState(context.connection, {
+            id: parseEntityId(userId),
+            expected: createCredentialStateSnapshot({
+              credential: canonicalCredential,
+              mustChangePassword: true,
+              updatedAt: now
+            }),
+            next: createCredentialStateSnapshot({
+              credential: rotatedCredential,
+              mustChangePassword: false,
+              updatedAt: later
+            })
+          })
+        )
+      )
+
+      expect(error).toBeInstanceOf(RepositoryDataIntegrityError)
+      expectSafeControlledError(error)
+      expect(readRawUser(connection)).toEqual(originalRow)
+      expect(readTableCount(connection, 'audit_log')).toBe(0)
+    })
+  })
+
+  it('maps credential-state write and readback failures to safe write errors', async () => {
+    await withMigratedDatabase(({ connection, repository, executor }) => {
+      executor.run((context) => repository.insert(context.connection, createValidInput()))
+      const originalRow = readRawUser(connection)
+
+      connection.exec(
+        `CREATE TRIGGER refuse_credential_state_update
+         BEFORE UPDATE OF password_hash ON users
+         BEGIN
+           SELECT RAISE(ABORT, 'C:\\secret\\credential-state.sqlite3 UPDATE users');
+         END;`
+      )
+
+      const error = captureError(() =>
+        executor.run((context) =>
+          repository.updateCredentialState(context.connection, {
+            id: parseEntityId(userId),
+            expected: createCredentialStateSnapshot({
+              credential: canonicalCredential,
+              mustChangePassword: true,
+              updatedAt: now
+            }),
+            next: createCredentialStateSnapshot({
+              credential: rotatedCredential,
+              mustChangePassword: false,
+              updatedAt: later
+            })
+          })
+        )
+      )
+
+      expect(error).toBeInstanceOf(RepositoryWriteError)
+      expectSafeControlledError(error)
+      expect(readRawUser(connection)).toEqual(originalRow)
+    })
+
+    await withMigratedDatabase(({ connection, repository, executor }) => {
+      executor.run((context) => repository.insert(context.connection, createValidInput()))
+      const originalRow = readRawUser(connection)
+      const readbackFailure = new Error(
+        'raw driver refused C:\\secret\\credential-state.sqlite3 SELECT users'
+      )
+      readbackFailure.name = 'C:\\secret\\ReadbackError'
+      const failingConnection = createCredentialReadbackFailureConnection(
+        connection,
+        readbackFailure
+      )
+      const failingRepository = createLocalUserRepository(failingConnection)
+      const failingExecutor = createExecutorForConnection(failingConnection)
+
+      const error = captureError(() =>
+        failingExecutor.run((context) =>
+          failingRepository.updateCredentialState(context.connection, {
+            id: parseEntityId(userId),
+            expected: createCredentialStateSnapshot({
+              credential: canonicalCredential,
+              mustChangePassword: true,
+              updatedAt: now
+            }),
+            next: createCredentialStateSnapshot({
+              credential: rotatedCredential,
+              mustChangePassword: false,
+              updatedAt: later
+            })
+          })
+        )
+      )
+
+      expect(error).toBeInstanceOf(RepositoryWriteError)
+      expect((error as RepositoryWriteError).errorType).toBe('UnknownError')
+      expectSafeControlledError(error)
+      expect(readRawUser(connection)).toEqual(originalRow)
+      expect(readTableCount(connection, 'audit_log')).toBe(0)
     })
   })
 
@@ -1071,6 +1472,22 @@ function createAuthenticationStateSnapshot({
   }
 }
 
+function createCredentialStateSnapshot({
+  credential,
+  mustChangePassword,
+  updatedAt
+}: {
+  credential: StoredPasswordCredential
+  mustChangePassword: boolean
+  updatedAt: string
+}): LocalUserCredentialStateSnapshot {
+  return {
+    credential,
+    mustChangePassword,
+    updatedAt: parseUtcTimestamp(updatedAt)
+  }
+}
+
 function createAccessorAuthenticationStateInput(): Parameters<
   LocalUserRepository['updateAuthenticationState']
 >[1] {
@@ -1097,6 +1514,32 @@ function createAccessorAuthenticationStateInput(): Parameters<
   })
 
   return input as unknown as Parameters<LocalUserRepository['updateAuthenticationState']>[1]
+}
+
+function createAccessorCredentialStateInput(): Parameters<
+  LocalUserRepository['updateCredentialState']
+>[1] {
+  const input = {
+    expected: createCredentialStateSnapshot({
+      credential: canonicalCredential,
+      mustChangePassword: true,
+      updatedAt: now
+    }),
+    next: createCredentialStateSnapshot({
+      credential: rotatedCredential,
+      mustChangePassword: false,
+      updatedAt: later
+    })
+  } as Record<string, unknown>
+
+  Object.defineProperty(input, 'id', {
+    enumerable: true,
+    get() {
+      throw new Error('C:\\secret\\credential-id-getter.txt')
+    }
+  })
+
+  return input as unknown as Parameters<LocalUserRepository['updateCredentialState']>[1]
 }
 
 function createExecutorForConnection(connection: Database.Database): DatabaseTransactionExecutor {
@@ -1136,6 +1579,102 @@ function createInstrumentedReadConnection(
       return connection.prepare(source)
     }
   } as unknown as Database.Database
+}
+
+function createInstrumentedTransactionConnection(
+  connection: Database.Database,
+  preparedSql: string[]
+): Database.Database {
+  const wrapped = {
+    get open(): boolean {
+      return connection.open
+    },
+    get inTransaction(): boolean {
+      return connection.inTransaction
+    },
+    exec(source: string): Database.Database {
+      connection.exec(source)
+      return wrapped as unknown as Database.Database
+    },
+    prepare(source: string): Database.Statement {
+      preparedSql.push(source)
+      return connection.prepare(source) as unknown as Database.Statement
+    }
+  }
+
+  return wrapped as unknown as Database.Database
+}
+
+function createCredentialReadbackFailureConnection(
+  connection: Database.Database,
+  failure: Error
+): Database.Database {
+  let credentialUpdateRan = false
+
+  const wrapped = {
+    get open(): boolean {
+      return connection.open
+    },
+    get inTransaction(): boolean {
+      return connection.inTransaction
+    },
+    exec(source: string): Database.Database {
+      connection.exec(source)
+      return wrapped as unknown as Database.Database
+    },
+    prepare(source: string): Database.Statement {
+      if (credentialUpdateRan && isCredentialFreeUserReadbackSql(source)) {
+        throw failure
+      }
+
+      const statement = connection.prepare(source)
+
+      if (!isCredentialStateUpdateSql(source)) {
+        return statement as unknown as Database.Statement
+      }
+
+      return createRunTrackingStatement(statement as Database.Statement, () => {
+        credentialUpdateRan = true
+      })
+    }
+  }
+
+  return wrapped as unknown as Database.Database
+}
+
+function createRunTrackingStatement(
+  statement: Database.Statement,
+  onRun: () => void
+): Database.Statement {
+  return {
+    run(...params: unknown[]): Database.RunResult {
+      const result = statement.run(...params)
+      onRun()
+
+      return result
+    }
+  } as unknown as Database.Statement
+}
+
+function isCredentialStateUpdateSql(source: string): boolean {
+  return (
+    /UPDATE users/i.test(source) &&
+    source.includes('password_hash = ?') &&
+    source.includes('password_salt = ?') &&
+    source.includes('must_change_password = ?')
+  )
+}
+
+function isCredentialFreeUserReadbackSql(source: string): boolean {
+  return (
+    /SELECT/i.test(source) &&
+    /FROM users/i.test(source) &&
+    /WHERE id = \?/i.test(source) &&
+    source.includes('username_normalized') &&
+    source.includes('display_name') &&
+    !source.includes('password_hash') &&
+    !source.includes('password_salt')
+  )
 }
 
 function createFakeExecutorConnection(
@@ -1456,6 +1995,27 @@ function readCredentialColumns(connection: Database.Database): {
       WHERE id = ?`
     )
     .get(userId) as { readonly password_hash: unknown; readonly password_salt: unknown }
+}
+
+function readAuthenticationColumns(connection: Database.Database): {
+  readonly failed_login_count: unknown
+  readonly locked_until: unknown
+  readonly last_login_at: unknown
+} {
+  return connection
+    .prepare(
+      `SELECT
+        failed_login_count,
+        locked_until,
+        last_login_at
+      FROM users
+      WHERE id = ?`
+    )
+    .get(userId) as {
+    readonly failed_login_count: unknown
+    readonly locked_until: unknown
+    readonly last_login_at: unknown
+  }
 }
 
 function readUserVersion(connection: Database.Database): number {

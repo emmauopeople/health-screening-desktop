@@ -2,9 +2,11 @@
 
 HSD-011 adds a main-process-only typed repository over the schema-v1 `users`
 table. HSD-017 extends that repository with a narrow transaction-scoped
-authentication-state mutation. It does not add login, password verification,
-lockout policy, sessions, account administration, IPC, renderer UI, startup
-writes, or clinical workflow behavior.
+authentication-state mutation. HSD-019 adds a narrow transaction-scoped
+credential-state mutation. It does not add login, password verification,
+password hashing, password policy, lockout policy, audited credential rotation,
+sessions, account administration, IPC, renderer UI, startup writes, or clinical
+workflow behavior.
 
 ## Table Mapping
 
@@ -91,6 +93,32 @@ repository validates those persistence invariants only; later application
 services decide password verification, thresholds, lock durations, and audit
 events.
 
+## Credential State Mutation
+
+`updateCredentialState()` requires an authentic active HSD-008
+`DatabaseTransactionConnection` as its first executable check. The caller
+supplies a user ID, an expected credential-state snapshot, and a requested next
+snapshot.
+
+The mutation performs one compare-and-set `UPDATE` and may change only:
+
+- `password_hash`
+- `password_salt`
+- `must_change_password`
+- `updated_at`
+
+The compare-and-set predicate matches the user ID plus the expected hash, salt,
+`mustChangePassword`, and `updatedAt`. A missing user fails with
+`LocalUserNotFoundError`; an existing user whose credential state no longer
+matches fails with `LocalUserCredentialStateConflictError`.
+
+The next state must contain a canonical pre-derived HSD-010 credential, a
+boolean forced-change flag, and a canonical UTC `updatedAt` that is not earlier
+than the expected row version. The repository validates those persistence
+invariants only; HSD-020 is expected to add the application service that hashes
+new passwords before the transaction, composes audit events, and drives the
+forced password-change workflow.
+
 ## Credential Handling
 
 The repository accepts only an HSD-010 `StoredPasswordCredential`. It never
@@ -106,6 +134,11 @@ Authentication-state updates do not select, update, return, or serialize
 `password_hash` or `password_salt`. They return the ordinary credential-free
 `LocalUserRecord`.
 
+Credential-state updates write `password_hash` and `password_salt` only from a
+validated stored credential and return the ordinary credential-free
+`LocalUserRecord`. The post-update readback uses the ordinary credential-free
+column list.
+
 ## Errors
 
 Rows and inputs are decoded from `unknown` and fail closed through controlled
@@ -118,11 +151,14 @@ credential fields in the authentication projection also produce
 `RepositoryDataIntegrityError`; ordinary credential-free reads may still succeed
 when only credential columns are corrupt. Stale authentication-state writes are
 reported separately from missing users so later services can make safe policy
-decisions without inspecting SQL results.
+decisions without inspecting SQL results. Stale credential-state writes are
+likewise reported separately from missing users.
 
 ## Deferred Behavior
 
-HSD-017 still deliberately defers login orchestration, password verification,
-lockout thresholds and durations, audit composition, password changes, forced
-password change, sessions, authorization, user administration, sync writes, IPC,
-preload, renderer routes, and UI.
+HSD-019 still deliberately defers plaintext password handling, password
+hashing, password verification, password policy, forced password-change
+application service behavior, audited credential rotation, sessions,
+authorization, user administration, sync writes, IPC, preload, renderer routes,
+and UI. HSD-020 is the likely next reviewed task for forced password change and
+audited credential rotation.

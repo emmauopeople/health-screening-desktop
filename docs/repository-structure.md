@@ -49,11 +49,14 @@ boundaries. HSD-009 adds the typed installation repository and read-only
 installation state query over schema version 1. HSD-011 adds the typed
 local-user repository over the existing schema-v1 `users` table. HSD-017 adds
 the local-user authentication-state compare-and-set mutation boundary without
-adding login, lockout policy, sessions, IPC, or renderer behavior. HSD-012 adds
-the typed location repository over the existing schema-v1 `locations` table.
-HSD-013 adds the typed append-only audit-event repository over the existing
-schema-v1 `audit_log` table. Repositories own exact SQL and row decoding, while
-writes use caller-owned transaction-scoped capabilities.
+adding login, lockout policy, sessions, IPC, or renderer behavior. HSD-019 adds
+the local-user credential-state compare-and-set mutation boundary without
+adding plaintext password handling, password hashing, forced password-change
+workflow, audit events, sessions, IPC, or renderer behavior. HSD-012 adds the
+typed location repository over the existing schema-v1 `locations` table. HSD-013
+adds the typed append-only audit-event repository over the existing schema-v1
+`audit_log` table. Repositories own exact SQL and row decoding, while writes
+use caller-owned transaction-scoped capabilities.
 
 `src/main/security/password` owns the HSD-010 local password credential
 primitive. It validates exact plaintext password input, serializes strict
@@ -62,6 +65,9 @@ IPC, preload, renderer, login, session, or user-repository behavior. HSD-011
 adds a narrow internal persistence-validation bridge in this folder so
 repositories can validate canonical credential text without exposing low-level
 credential constructors or decoders through application-facing barrels.
+HSD-019 uses that bridge for credential-state persistence only; the forced
+password-change service and audited credential rotation remain deferred to
+HSD-020.
 
 The renderer must not import from `src/main`.
 
