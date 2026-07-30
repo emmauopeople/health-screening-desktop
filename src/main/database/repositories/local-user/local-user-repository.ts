@@ -10,7 +10,9 @@ import { validateStoredPasswordCredentialForPersistence } from '@main/security/p
 import {
   getRepositoryErrorType,
   isRepositoryError,
+  LocalUserAuthenticationStateConflictError,
   LocalUserAlreadyExistsError,
+  LocalUserNotFoundError,
   rebuildRepositoryError,
   RepositoryDataIntegrityError,
   RepositoryReadError,
@@ -24,6 +26,7 @@ import {
   parseCreateMustChangePassword,
   parseLocalUserRole,
   parseUserDisplayName,
+  parseUpdateLocalUserAuthenticationStateInput,
   parseUsernameIdentity
 } from './local-user-validation'
 import type {
@@ -31,7 +34,8 @@ import type {
   LocalUserAuthenticationRecord,
   LocalUserRecord,
   LocalUserRepository,
-  NormalizedUsername
+  NormalizedUsername,
+  UpdateLocalUserAuthenticationStateInput
 } from './local-user-types'
 
 interface LocalUserReadConnection {
@@ -72,6 +76,10 @@ interface ParsedCreateLocalUserInput {
   readonly createdAt: string
   readonly updatedAt: string
 }
+
+type ParsedUpdateLocalUserAuthenticationStateInput = ReturnType<
+  typeof parseUpdateLocalUserAuthenticationStateInput
+>
 
 const localUserRecordColumns = `
   id,
@@ -136,6 +144,14 @@ WHERE id = ? OR username_normalized = ?
 LIMIT 1;
 `
 
+const selectExistingLocalUserByIdSql = `
+SELECT
+  1 AS has_existing
+FROM users
+WHERE id = ?
+LIMIT 1;
+`
+
 const insertLocalUserSql = `
 INSERT INTO users (
   id,
@@ -153,6 +169,26 @@ INSERT INTO users (
   created_at,
   updated_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 0, NULL, NULL, ?, ?);
+`
+
+const updateLocalUserAuthenticationStateSql = `
+UPDATE users
+SET
+  failed_login_count = ?,
+  locked_until = ?,
+  last_login_at = ?,
+  updated_at = ?
+WHERE id = ?
+  AND failed_login_count = ?
+  AND (
+    (locked_until IS NULL AND ? IS NULL)
+    OR locked_until = ?
+  )
+  AND (
+    (last_login_at IS NULL AND ? IS NULL)
+    OR last_login_at = ?
+  )
+  AND updated_at = ?;
 `
 
 const createLocalUserInputKeys = Object.freeze([
@@ -291,12 +327,39 @@ export function createLocalUserRepository(connection: Database.Database): LocalU
     return created
   }
 
+  const updateAuthenticationState = (
+    scopedConnection: DatabaseTransactionConnection,
+    input: UpdateLocalUserAuthenticationStateInput
+  ): LocalUserRecord => {
+    assertActiveDatabaseTransactionConnection(scopedConnection)
+
+    const validatedInput = parseUpdateLocalUserAuthenticationStateInput(input)
+    const updateResult = runAuthenticationStateUpdate(scopedConnection, validatedInput)
+
+    if (updateResult.changes === 0) {
+      classifyAuthenticationStateUpdateMiss(scopedConnection, validatedInput.id)
+    }
+
+    if (updateResult.changes !== 1) {
+      throw new RepositoryDataIntegrityError()
+    }
+
+    const updated = readLocalUserAfterAuthenticationStateUpdate(scopedConnection, validatedInput.id)
+
+    if (updated === null) {
+      throw new RepositoryWriteError()
+    }
+
+    return updated
+  }
+
   return Object.freeze({
     hasAny,
     getById,
     getByUsername,
     getAuthenticationByUsername,
-    insert
+    insert,
+    updateAuthenticationState
   })
 }
 
@@ -356,6 +419,36 @@ function readLocalUserAfterWrite(
   }
 }
 
+function readLocalUserAfterAuthenticationStateUpdate(
+  connection: DatabaseTransactionConnection,
+  id: string
+): LocalUserRecord | null {
+  const row = readLocalUserRow(
+    connection,
+    selectLocalUserByIdSql,
+    [id],
+    (error) => new RepositoryWriteError(error)
+  )
+
+  if (row === null) {
+    return null
+  }
+
+  try {
+    return decodeLocalUserRow(row)
+  } catch (error) {
+    if (error instanceof DatabaseTransactionStateError) {
+      throw new DatabaseTransactionStateError(error.errorType)
+    }
+
+    if (error instanceof RepositoryDataIntegrityError) {
+      throw new RepositoryDataIntegrityError(error.errorType)
+    }
+
+    throw new RepositoryDataIntegrityError(getRepositoryErrorType(error))
+  }
+}
+
 function readLocalUserRow(
   connection: LocalUserReadConnection,
   sql: string,
@@ -401,6 +494,78 @@ function hasExistingLocalUser(
     const row = connection
       .prepare<[string, string], unknown>(selectExistingLocalUserSql)
       .get(id, usernameNormalized)
+
+    return decodeExistingLocalUserRow(row)
+  } catch (error) {
+    if (error instanceof DatabaseTransactionStateError) {
+      throw new DatabaseTransactionStateError(error.errorType)
+    }
+
+    if (error instanceof RepositoryDataIntegrityError) {
+      throw new RepositoryDataIntegrityError(error.errorType)
+    }
+
+    throw new RepositoryWriteError(getRepositoryErrorType(error))
+  }
+}
+
+function runAuthenticationStateUpdate(
+  connection: DatabaseTransactionConnection,
+  input: ParsedUpdateLocalUserAuthenticationStateInput
+): Database.RunResult {
+  try {
+    return connection
+      .prepare<
+        [
+          number,
+          string | null,
+          string | null,
+          string,
+          string,
+          number,
+          string | null,
+          string | null,
+          string | null,
+          string | null,
+          string
+        ]
+      >(updateLocalUserAuthenticationStateSql)
+      .run(
+        input.next.failedLoginCount,
+        input.next.lockedUntil,
+        input.next.lastLoginAt,
+        input.next.updatedAt,
+        input.id,
+        input.expected.failedLoginCount,
+        input.expected.lockedUntil,
+        input.expected.lockedUntil,
+        input.expected.lastLoginAt,
+        input.expected.lastLoginAt,
+        input.expected.updatedAt
+      )
+  } catch (error) {
+    if (error instanceof DatabaseTransactionStateError) {
+      throw new DatabaseTransactionStateError(error.errorType)
+    }
+
+    throw new RepositoryWriteError(getRepositoryErrorType(error))
+  }
+}
+
+function classifyAuthenticationStateUpdateMiss(
+  connection: DatabaseTransactionConnection,
+  id: string
+): never {
+  if (!hasExistingLocalUserById(connection, id)) {
+    throw new LocalUserNotFoundError()
+  }
+
+  throw new LocalUserAuthenticationStateConflictError()
+}
+
+function hasExistingLocalUserById(connection: DatabaseTransactionConnection, id: string): boolean {
+  try {
+    const row = connection.prepare<[string], unknown>(selectExistingLocalUserByIdSql).get(id)
 
     return decodeExistingLocalUserRow(row)
   } catch (error) {

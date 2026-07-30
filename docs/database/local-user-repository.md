@@ -1,8 +1,10 @@
 # Local User Repository
 
 HSD-011 adds a main-process-only typed repository over the schema-v1 `users`
-table. It does not add login, first-run setup, sessions, account administration,
-IPC, renderer UI, startup writes, or clinical workflow behavior.
+table. HSD-017 extends that repository with a narrow transaction-scoped
+authentication-state mutation. It does not add login, password verification,
+lockout policy, sessions, account administration, IPC, renderer UI, startup
+writes, or clinical workflow behavior.
 
 ## Table Mapping
 
@@ -63,6 +65,32 @@ display name, pre-derived credential, role, `mustChangePassword`, and matching
 `createdAt`/`updatedAt` timestamps. Duplicate IDs or normalized usernames fail
 with `LocalUserAlreadyExistsError`.
 
+## Authentication State Mutation
+
+`updateAuthenticationState()` requires an authentic active HSD-008
+`DatabaseTransactionConnection` as its first executable check. The caller
+supplies a user ID, an expected authentication-state snapshot, and a requested
+next snapshot.
+
+The mutation performs one compare-and-set `UPDATE` and may change only:
+
+- `failed_login_count`
+- `locked_until`
+- `last_login_at`
+- `updated_at`
+
+All expected fields participate in stale-state detection, including null-safe
+matching for `locked_until` and `last_login_at`. A missing user fails with
+`LocalUserNotFoundError`; an existing user whose authentication state no longer
+matches fails with `LocalUserAuthenticationStateConflictError`.
+
+The next state must use a non-negative safe integer failed-login count,
+canonical UTC timestamps, a nondecreasing `updatedAt`, a nondecreasing
+`lastLoginAt`, and a non-null `lockedUntil` later than `updatedAt`. The
+repository validates those persistence invariants only; later application
+services decide password verification, thresholds, lock durations, and audit
+events.
+
 ## Credential Handling
 
 The repository accepts only an HSD-010 `StoredPasswordCredential`. It never
@@ -74,6 +102,10 @@ the internal password persistence validator to prove credential text is
 canonical. That helper returns only canonical strings and clears decoded salt
 and derived-key buffers before it returns or throws.
 
+Authentication-state updates do not select, update, return, or serialize
+`password_hash` or `password_salt`. They return the ordinary credential-free
+`LocalUserRecord`.
+
 ## Errors
 
 Rows and inputs are decoded from `unknown` and fail closed through controlled
@@ -84,10 +116,13 @@ constraint names, and raw driver messages.
 Malformed ordinary row fields produce `RepositoryDataIntegrityError`. Malformed
 credential fields in the authentication projection also produce
 `RepositoryDataIntegrityError`; ordinary credential-free reads may still succeed
-when only credential columns are corrupt.
+when only credential columns are corrupt. Stale authentication-state writes are
+reported separately from missing users so later services can make safe policy
+decisions without inspecting SQL results.
 
 ## Deferred Behavior
 
-HSD-011 deliberately defers first-run orchestration, user administration, login,
-lockout, failed-login counters, last-login updates, password changes, sessions,
-authorization, audit writes, sync writes, IPC, preload, renderer routes, and UI.
+HSD-017 still deliberately defers login orchestration, password verification,
+lockout thresholds and durations, audit composition, password changes, forced
+password change, sessions, authorization, user administration, sync writes, IPC,
+preload, renderer routes, and UI.

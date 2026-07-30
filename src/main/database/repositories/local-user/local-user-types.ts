@@ -33,6 +33,13 @@ export interface LocalUserAuthenticationRecord {
   readonly credential: StoredPasswordCredential
 }
 
+export interface LocalUserAuthenticationStateSnapshot {
+  readonly failedLoginCount: number
+  readonly lockedUntil: UtcTimestamp | null
+  readonly lastLoginAt: UtcTimestamp | null
+  readonly updatedAt: UtcTimestamp
+}
+
 export interface CreateLocalUserInput {
   readonly id: EntityId
   readonly username: Username
@@ -44,10 +51,20 @@ export interface CreateLocalUserInput {
   readonly updatedAt: UtcTimestamp
 }
 
+export interface UpdateLocalUserAuthenticationStateInput {
+  readonly id: EntityId
+  readonly expected: LocalUserAuthenticationStateSnapshot
+  readonly next: LocalUserAuthenticationStateSnapshot
+}
+
 export interface LocalUserRepository {
   hasAny(): boolean
   getById(id: EntityId): LocalUserRecord | null
   getByUsername(username: Username): LocalUserRecord | null
   getAuthenticationByUsername(username: Username): LocalUserAuthenticationRecord | null
   insert(connection: DatabaseTransactionConnection, input: CreateLocalUserInput): LocalUserRecord
+  updateAuthenticationState(
+    connection: DatabaseTransactionConnection,
+    input: UpdateLocalUserAuthenticationStateInput
+  ): LocalUserRecord
 }

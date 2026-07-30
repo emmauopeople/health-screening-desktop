@@ -1,3 +1,6 @@
+import { parseEntityId } from '@main/foundation/entity-id'
+import { parseUtcTimestamp } from '@main/foundation/utc-clock'
+
 import { getRepositoryErrorType, RepositoryValidationError } from '../repository-errors'
 import type {
   LocalUserRole,
@@ -10,8 +13,29 @@ import type {
 const minimumUsernameCodePoints = 3
 const maximumUsernameCodePoints = 64
 const maximumDisplayNameCodePoints = 120
+const maximumAuthenticationFailedLoginCount = Number.MAX_SAFE_INTEGER
 const usernamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9]$/u
 const localUserRoles = new Set<LocalUserRole>(['LOCAL_ADMIN', 'NURSE', 'TRAINED_SCREENER'])
+const authenticationStateSnapshotKeys = Object.freeze([
+  'failedLoginCount',
+  'lockedUntil',
+  'lastLoginAt',
+  'updatedAt'
+] as const)
+const updateAuthenticationStateInputKeys = Object.freeze(['id', 'expected', 'next'] as const)
+
+export interface ParsedLocalUserAuthenticationStateSnapshot {
+  readonly failedLoginCount: number
+  readonly lockedUntil: string | null
+  readonly lastLoginAt: string | null
+  readonly updatedAt: string
+}
+
+export interface ParsedUpdateLocalUserAuthenticationStateInput {
+  readonly id: string
+  readonly expected: ParsedLocalUserAuthenticationStateSnapshot
+  readonly next: ParsedLocalUserAuthenticationStateSnapshot
+}
 
 export function parseUsernameIdentity(value: unknown): UsernameIdentity {
   try {
@@ -116,11 +140,127 @@ export function encodeSqliteBoolean(value: boolean): 0 | 1 {
 }
 
 export function decodeFailedLoginCount(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value < 0 ||
+    value > maximumAuthenticationFailedLoginCount
+  ) {
     throw new RepositoryValidationError()
   }
 
   return value
+}
+
+export function parseUpdateLocalUserAuthenticationStateInput(
+  value: unknown
+): ParsedUpdateLocalUserAuthenticationStateInput {
+  try {
+    const data = readStrictPlainDataProperties(value, updateAuthenticationStateInputKeys)
+    const id = parseEntityId(data.id)
+    const expected = parseAuthenticationStateSnapshot(data.expected)
+    const next = parseAuthenticationStateSnapshot(data.next)
+
+    validateAuthenticationStateTransition(expected, next)
+
+    return Object.freeze({
+      id,
+      expected,
+      next
+    })
+  } catch (error) {
+    if (error instanceof RepositoryValidationError) {
+      throw new RepositoryValidationError(error.errorType)
+    }
+
+    throw new RepositoryValidationError(getRepositoryErrorType(error))
+  }
+}
+
+function parseAuthenticationStateSnapshot(
+  value: unknown
+): ParsedLocalUserAuthenticationStateSnapshot {
+  const data = readStrictPlainDataProperties(value, authenticationStateSnapshotKeys)
+
+  return Object.freeze({
+    failedLoginCount: decodeFailedLoginCount(data.failedLoginCount),
+    lockedUntil: parseNullableUtcTimestamp(data.lockedUntil),
+    lastLoginAt: parseNullableUtcTimestamp(data.lastLoginAt),
+    updatedAt: parseUtcTimestamp(data.updatedAt)
+  })
+}
+
+function validateAuthenticationStateTransition(
+  expected: ParsedLocalUserAuthenticationStateSnapshot,
+  next: ParsedLocalUserAuthenticationStateSnapshot
+): void {
+  if (next.updatedAt < expected.updatedAt) {
+    throw new RepositoryValidationError()
+  }
+
+  if (expected.lastLoginAt !== null) {
+    if (next.lastLoginAt === null || next.lastLoginAt < expected.lastLoginAt) {
+      throw new RepositoryValidationError()
+    }
+  }
+
+  if (next.lockedUntil !== null && next.lockedUntil <= next.updatedAt) {
+    throw new RepositoryValidationError()
+  }
+}
+
+function parseNullableUtcTimestamp(value: unknown): ReturnType<typeof parseUtcTimestamp> | null {
+  if (value === null) {
+    return null
+  }
+
+  return parseUtcTimestamp(value)
+}
+
+function readStrictPlainDataProperties<TExpectedKey extends string>(
+  value: unknown,
+  expectedKeys: readonly TExpectedKey[]
+): Record<TExpectedKey, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new RepositoryValidationError()
+  }
+
+  let prototype: object | null
+  let descriptors: PropertyDescriptorMap
+
+  try {
+    prototype = Object.getPrototypeOf(value)
+    descriptors = Object.getOwnPropertyDescriptors(value)
+  } catch {
+    throw new RepositoryValidationError()
+  }
+
+  if (prototype !== Object.prototype) {
+    throw new RepositoryValidationError()
+  }
+
+  const keys = Reflect.ownKeys(descriptors)
+
+  if (
+    keys.length !== expectedKeys.length ||
+    !expectedKeys.every((propertyName) => keys.includes(propertyName))
+  ) {
+    throw new RepositoryValidationError()
+  }
+
+  const data = {} as Record<TExpectedKey, unknown>
+
+  for (const propertyName of expectedKeys) {
+    const descriptor = descriptors[propertyName]
+
+    if (descriptor === undefined || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+      throw new RepositoryValidationError()
+    }
+
+    data[propertyName] = descriptor.value
+  }
+
+  return data
 }
 
 function toAsciiLowercase(value: string): string {
