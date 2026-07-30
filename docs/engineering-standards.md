@@ -1,6 +1,6 @@
 # Engineering Standards
 
-HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure. HSD-008 adds main-process entity ID, UTC clock, and transaction boundaries. HSD-009 adds the first main-process typed installation repository and read-only first-run state query. HSD-010 adds a main-process-only asynchronous password credential primitive. HSD-011 adds a typed local-user repository and username identity boundary over the existing users table. HSD-012 adds a typed location repository and location identity boundary over the existing locations table. HSD-013 adds a typed append-only audit-event repository and canonical metadata boundary over the existing audit log table, but still does not add first-run setup, seed data, login, sessions, clinical workflows, IPC, renderer changes, or synchronization.
+HSD-002 keeps the application in an engineering-foundation state. Tooling may improve reliability, but it must not introduce clinical workflows, authentication, routing, business IPC, or synchronization. HSD-006 adds the trusted local SQLite runtime foundation. HSD-007 adds numbered migrations and an empty schema-v1 structure. HSD-008 adds main-process entity ID, UTC clock, and transaction boundaries. HSD-009 adds the first main-process typed installation repository and read-only first-run state query. HSD-010 adds a main-process-only asynchronous password credential primitive. HSD-011 adds a typed local-user repository and username identity boundary over the existing users table. HSD-012 adds a typed location repository and location identity boundary over the existing locations table. HSD-013 adds a typed append-only audit-event repository and canonical metadata boundary over the existing audit log table. HSD-014 adds the main-process first-run bootstrap application service that composes approved repositories atomically, but still does not add startup execution, IPC, renderer setup, login, sessions, clinical workflows, protocol setup, settings writes, or synchronization.
 
 ## TypeScript
 
@@ -45,6 +45,12 @@ use built-in Node `crypto` APIs but must not be imported by preload, renderer,
 or shared IPC code, and must not import SQLite, repositories, or transaction
 modules.
 
+Main-process application services live under `src/main/application`. They may
+compose reviewed main-process repositories, transaction executors, foundation
+providers, and security services, but they must not expose raw SQLite handles,
+SQL, transaction contexts, credentials, or dependency references to preload,
+renderer, shared IPC, or logs.
+
 ## Database Migrations
 
 Released migration files are immutable. Do not edit, rename, reorder, squash, or
@@ -73,6 +79,12 @@ Future write paths must use the main-process transaction executor from
 transactions, create savepoints, run async work inside a transaction callback, or
 nest executor calls. Each accepted write boundary runs synchronously under
 `BEGIN IMMEDIATE` and returns only after commit.
+
+Application services that need asynchronous preparation, such as password
+hashing, must complete that work before entering `DatabaseTransactionExecutor.run()`.
+They must then re-check workflow invariants inside the synchronous callback
+before writing. No promise, thenable, random byte generation, scrypt work, file
+I/O, IPC, timer, or network operation belongs inside a transaction callback.
 
 Entity IDs and UTC timestamps for local writes come from
 `src/main/foundation`. Do not accept renderer-generated IDs or timestamps as
@@ -161,6 +173,13 @@ The internal credential persistence validator may be imported only by reviewed
 main-process repository code. It validates canonical stored credential text and
 clears decoded buffers, but it must not be exported from application-facing
 security barrels or used as a credential creation or verification API.
+
+First-run bootstrap services must minimize credential exposure. A temporary
+administrator password may be passed only to the HSD-010 password credential
+service, and the resulting stored credential may be passed only into the
+local-user repository write input. Bootstrap results, audit metadata, errors,
+logs, IPC contracts, and renderer-facing values must not include plaintext,
+hashes, salts, derived keys, or credential objects.
 
 ## Formatting And Linting
 
