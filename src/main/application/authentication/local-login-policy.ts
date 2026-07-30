@@ -39,6 +39,7 @@ export function evaluateLocalLoginPolicyState(
 ): LocalLoginPolicyEvaluation {
   assertCanonicalUtcTimestamp(currentTime)
   assertValidLocalLoginPolicyState(state)
+  assertCurrentTimeCanEvaluateState(state, currentTime)
 
   const activeLock = state.lockedUntil !== null && state.lockedUntil > currentTime
   const expiredLock = state.lockedUntil !== null && state.lockedUntil <= currentTime
@@ -159,10 +160,18 @@ function assertValidLocalLoginPolicyState(state: LocalUserAuthenticationStateSna
 
     if (state.lastLoginAt !== null) {
       assertCanonicalUtcTimestamp(state.lastLoginAt)
+
+      if (state.lastLoginAt > state.updatedAt) {
+        throw new LocalLoginStateIntegrityError()
+      }
     }
 
     if (state.lockedUntil !== null) {
       assertCanonicalUtcTimestamp(state.lockedUntil)
+
+      if (state.lockedUntil <= state.updatedAt) {
+        throw new LocalLoginStateIntegrityError()
+      }
     }
 
     if (
@@ -185,6 +194,15 @@ function assertValidLocalLoginPolicyState(state: LocalUserAuthenticationStateSna
       throw new LocalLoginStateIntegrityError(error.errorType)
     }
 
+    throw new LocalLoginStateIntegrityError()
+  }
+}
+
+function assertCurrentTimeCanEvaluateState(
+  state: LocalUserAuthenticationStateSnapshot,
+  currentTime: UtcTimestamp
+): void {
+  if (currentTime < state.updatedAt) {
     throw new LocalLoginStateIntegrityError()
   }
 }

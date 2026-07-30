@@ -41,6 +41,7 @@ const transactionTime = parseUtcTimestamp('2026-07-30T12:01:00.000Z')
 const activeLockedUntil = parseUtcTimestamp('2026-07-30T12:10:00.000Z')
 const expiringLockedUntil = parseUtcTimestamp('2026-07-30T12:00:30.000Z')
 const expiredLockedUntil = parseUtcTimestamp('2026-07-30T11:50:00.000Z')
+const expiredLockUpdatedAt = parseUtcTimestamp('2026-07-30T11:35:00.000Z')
 const fifthAttemptRetryAt = parseUtcTimestamp('2026-07-30T12:16:00.000Z')
 const installationId = parseEntityId('11111111-1111-4111-8111-111111111111')
 const otherInstallationId = parseEntityId('99999999-9999-4999-8999-999999999999')
@@ -164,7 +165,8 @@ describe('local login authentication service', () => {
   it('starts a new failed cycle after an expired lock', async () => {
     const authentication = createAuthenticationRecord({
       failedLoginCount: 5,
-      lockedUntil: expiredLockedUntil
+      lockedUntil: expiredLockedUntil,
+      updatedAt: expiredLockUpdatedAt
     })
     const harness = createHarness({
       observedAuthentication: authentication,

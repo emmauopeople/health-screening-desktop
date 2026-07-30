@@ -16,6 +16,7 @@ import { parseUtcTimestamp, type UtcTimestamp } from '@main/foundation'
 const now = parseUtcTimestamp('2026-07-30T12:00:00.000Z')
 const earlier = parseUtcTimestamp('2026-07-30T11:59:59.999Z')
 const later = parseUtcTimestamp('2026-07-30T12:00:00.001Z')
+const lockUpdatedAt = parseUtcTimestamp('2026-07-30T11:44:59.999Z')
 const previousLoginAt = parseUtcTimestamp('2026-07-29T10:15:00.000Z')
 const activeLockedUntil = parseUtcTimestamp('2026-07-30T12:10:00.000Z')
 const exactFifteenMinuteLock = parseUtcTimestamp('2026-07-30T12:15:00.000Z')
@@ -44,7 +45,7 @@ describe('local login lockout policy', () => {
     })
     expect(
       evaluateLocalLoginPolicyState(
-        createSnapshot({ failedLoginCount: 5, lockedUntil: earlier }),
+        createSnapshot({ failedLoginCount: 5, lockedUntil: earlier, updatedAt: lockUpdatedAt }),
         now
       )
     ).toEqual({
@@ -64,6 +65,42 @@ describe('local login lockout policy', () => {
     ]) {
       expect(() => evaluateLocalLoginPolicyState(state, now)).toThrow(LocalLoginStateIntegrityError)
     }
+  })
+
+  it('rejects temporally inconsistent persisted states', () => {
+    for (const state of [
+      createSnapshot({
+        failedLoginCount: 5,
+        lockedUntil: later,
+        updatedAt: later
+      }),
+      createSnapshot({
+        failedLoginCount: 5,
+        lockedUntil: now,
+        updatedAt: later
+      }),
+      createSnapshot({
+        failedLoginCount: 1,
+        lastLoginAt: later,
+        updatedAt: now
+      })
+    ]) {
+      expect(() => evaluateLocalLoginPolicyState(state, later)).toThrow(
+        LocalLoginStateIntegrityError
+      )
+    }
+  })
+
+  it('rejects policy evaluation before the persisted updatedAt timestamp', () => {
+    expect(() =>
+      evaluateLocalLoginPolicyState(
+        createSnapshot({
+          failedLoginCount: 1,
+          updatedAt: later
+        }),
+        now
+      )
+    ).toThrow(LocalLoginStateIntegrityError)
   })
 
   it('increments wrong-password attempts and applies the fifth-attempt lock', () => {
@@ -99,7 +136,7 @@ describe('local login lockout policy', () => {
   it('starts a new failure cycle after an expired lock', () => {
     expect(
       createInvalidPasswordTransition(
-        createSnapshot({ failedLoginCount: 5, lockedUntil: earlier }),
+        createSnapshot({ failedLoginCount: 5, lockedUntil: earlier, updatedAt: lockUpdatedAt }),
         now
       ).nextState
     ).toEqual({

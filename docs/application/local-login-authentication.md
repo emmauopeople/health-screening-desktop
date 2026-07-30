@@ -51,6 +51,10 @@ The policy is deterministic:
 - Count `5` must have a non-null `lockedUntil`, active or expired.
 - An active lock is `lockedUntil > current UTC time`.
 - An expired lock is `lockedUntil <= current UTC time`.
+- `lastLoginAt`, when present, must be equal to or earlier than `updatedAt`.
+- `lockedUntil`, when present, must be later than `updatedAt`.
+- Policy evaluation time must be equal to or later than the persisted
+  `updatedAt`.
 
 Wrong passwords increment the effective failed count. If an expired lock is
 observed, the effective prior count is `0`. The fifth wrong password sets
@@ -61,8 +65,9 @@ Successful active-user login resets `failedLoginCount=0`, clears
 
 Attempts during an active lock preserve `failedLoginCount`, `lockedUntil`, and
 `lastLoginAt`, set only `updatedAt=transactionTime`, and never extend the lock.
-Invalid persisted policy combinations fail closed with
-`LocalLoginStateIntegrityError`.
+Invalid persisted policy combinations or timestamp orderings fail closed with
+`LocalLoginStateIntegrityError`; the service does not silently repair them or
+defer them to repository validation.
 
 ## Transaction Flow
 

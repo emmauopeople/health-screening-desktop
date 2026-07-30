@@ -8,7 +8,8 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createLocalLoginAuthenticationService,
   LocalLoginConcurrencyError,
-  LocalLoginPersistenceError
+  LocalLoginPersistenceError,
+  LocalLoginStateIntegrityError
 } from '@main/application'
 import {
   AuditEventAlreadyExistsError,
@@ -370,6 +371,59 @@ describe('local login authentication service integration', () => {
         expect(readRawAuditRows(connection)).toEqual([])
       },
       { failCommit: true }
+    )
+  })
+
+  it('fails closed on temporally inconsistent persisted authentication state', async () => {
+    let updateCalls = 0
+    let auditInsertCalls = 0
+
+    await withLoginDatabase(
+      async ({ connection, service, passwordCredentialService }) => {
+        updateRawAuthenticationState(connection, {
+          failedLoginCount: 1,
+          lockedUntil: null,
+          lastLoginAt: transactionTime,
+          updatedAt: createdAt
+        })
+        const before = readRawUser(connection)
+
+        await expect(service.authenticate(createCommand(correctPassword))).rejects.toBeInstanceOf(
+          LocalLoginStateIntegrityError
+        )
+
+        expect(passwordCredentialService.verify).not.toHaveBeenCalled()
+        expect(updateCalls).toBe(0)
+        expect(auditInsertCalls).toBe(0)
+        expect(readRawUser(connection)).toEqual(before)
+        expect(readRawAuditRows(connection)).toEqual([])
+      },
+      {
+        wrapLocalUserRepository: (repository) =>
+          Object.freeze({
+            ...repository,
+            updateAuthenticationState(
+              connection: Parameters<LocalUserRepository['updateAuthenticationState']>[0],
+              input: Parameters<LocalUserRepository['updateAuthenticationState']>[1]
+            ) {
+              updateCalls += 1
+
+              return repository.updateAuthenticationState(connection, input)
+            }
+          }),
+        wrapAuditEventRepository: (repository) =>
+          Object.freeze({
+            ...repository,
+            insert(
+              connection: Parameters<AuditEventRepository['insert']>[0],
+              input: Parameters<AuditEventRepository['insert']>[1]
+            ) {
+              auditInsertCalls += 1
+
+              return repository.insert(connection, input)
+            }
+          })
+      }
     )
   })
 
