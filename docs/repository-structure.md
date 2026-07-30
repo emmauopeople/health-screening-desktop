@@ -19,7 +19,11 @@ through one caller-owned HSD-008 transaction after asynchronous password
 hashing. HSD-015 adds production composition for this service so IPC handlers
 can call it after database initialization, without invoking setup at startup or
 adding renderer UI, login, sessions, authorization, protocol setup, settings
-writes, or clinical behavior.
+writes, or clinical behavior. HSD-018 adds `application/authentication`, a
+main-process-only local login service that verifies credentials, applies
+lockout policy, revalidates state, persists authentication outcomes, and audits
+the attempt without exposing IPC, preload, renderer login, sessions,
+authorization, or password-change behavior.
 
 `src/main/foundation` owns main-process-only primitives for local data writes,
 including validated UUID v4 entity IDs and UTC timestamps. These providers are

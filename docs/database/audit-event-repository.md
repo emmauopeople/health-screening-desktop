@@ -97,6 +97,13 @@ Duplicate event IDs fail with `AuditEventAlreadyExistsError`. Only SQLite
 `SQLITE_CONSTRAINT_PRIMARYKEY` and `SQLITE_CONSTRAINT_UNIQUE` map to that error;
 foreign-key failures and other constraints map to `RepositoryWriteError`.
 
+HSD-018 uses this append-only boundary for local login audit events. The
+application service chooses the fixed action codes, entity semantics, and
+minimal metadata, then inserts exactly one audit event inside the same
+transaction as any authentication-state mutation. The repository still does
+not classify login outcomes, inspect credentials, create sessions, or emit
+events on its own.
+
 ## Errors
 
 Repository errors use fixed messages and sanitized reviewed `errorType` values.
@@ -107,7 +114,7 @@ rows, canonical JSON, or driver messages. Audit repository code does not log.
 ## Deferred Behavior
 
 HSD-013 deliberately defers event-emission services, first-run orchestration,
-login and session auditing, authorization, audit-review UI, filtering, export,
+session auditing, authorization, audit-review UI, filtering, export,
 retention, sync, FHIR publication, remote logging, hash chains, signatures,
 encryption, backup, restore, reporting, printing, and clinical workflow
 behavior.

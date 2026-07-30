@@ -25,6 +25,13 @@ const reviewedErrorTypes = new Set<string>([
   'FirstRunStateIntegrityError',
   'FirstRunInitializationInProgressError',
   'FirstRunInitializationError',
+  'LocalLoginValidationError',
+  'LocalLoginUnavailableError',
+  'LocalLoginStateIntegrityError',
+  'LocalLoginConcurrencyError',
+  'LocalLoginVerificationError',
+  'LocalLoginPersistenceError',
+  'LocalLoginCompositionError',
   'UnknownError'
 ])
 

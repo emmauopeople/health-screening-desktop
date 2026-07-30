@@ -8,6 +8,7 @@ export {
 } from './password-errors'
 export { scryptV1PasswordParameters } from './password-parameters'
 export { createPasswordCredentialService } from './password-service'
+export { parsePlaintextPassword } from './password-validation'
 export {
   type PasswordCredentialService,
   type PasswordCryptoProvider,

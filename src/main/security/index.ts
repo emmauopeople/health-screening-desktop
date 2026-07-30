@@ -7,6 +7,7 @@ export {
   type PasswordCredentialService,
   type PasswordCryptoProvider,
   type PasswordHash,
+  parsePlaintextPassword,
   PasswordValidationError,
   PasswordVerificationError,
   type PasswordSalt,
