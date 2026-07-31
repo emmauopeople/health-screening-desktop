@@ -21,6 +21,22 @@ only canonical hash and salt strings and clears decoded buffers.
 
 `next.updatedAt` must not be earlier than `expected.updatedAt`.
 
+## Temporal Invariant
+
+Credential rotation advances the shared `users.updated_at` row version while
+preserving `failed_login_count`, `locked_until`, and `last_login_at`. To keep
+the HSD-018 local-login state contract valid, a preserved non-null
+`locked_until` must remain later than `next.updatedAt`.
+
+`updateCredentialState()` reads the authoritative lockout value for the exact
+expected credential state inside the caller-owned transaction. If that value is
+non-null and `locked_until <= next.updatedAt`, the repository rejects the
+rotation with `LocalUserCredentialStateConflictError` and does not modify the
+credential, forced-change flag, timestamp, authentication state, or audit log.
+Callers that need to rotate after an expired lock must first clear the lock
+through HSD-017 `updateAuthenticationState()` in the same transaction or in a
+previous committed transaction.
+
 ## Mutation
 
 `updateCredentialState(connection, input)` requires an authentic active HSD-008
@@ -43,7 +59,8 @@ one row and returns the ordinary credential-free `LocalUserRecord`.
 Zero changed rows are classified inside the same transaction:
 
 - Missing user: `LocalUserNotFoundError`.
-- Existing user with stale credential state: `LocalUserCredentialStateConflictError`.
+- Existing user with stale credential state or an unsafe preserved lockout
+  timestamp: `LocalUserCredentialStateConflictError`.
 
 More than one changed row is `RepositoryDataIntegrityError`. Driver write
 failures and post-update readback failures are `RepositoryWriteError`. Malformed

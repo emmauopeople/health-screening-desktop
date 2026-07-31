@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import { describe, expect, it, vi } from 'vitest'
 
+import { evaluateLocalLoginPolicyState } from '@main/application'
 import {
   createDatabaseTransactionExecutor,
   createLocalUserRepository,
@@ -26,6 +27,7 @@ import {
   type DatabaseTransactionExecutor,
   type LocalUserAuthenticationStateSnapshot,
   type LocalUserCredentialStateSnapshot,
+  type LocalUserRecord,
   type LocalUserRepository
 } from '@main/database'
 import { parseEntityId, type EntityIdGenerator } from '@main/foundation/entity-id'
@@ -39,6 +41,7 @@ const earlier = '2026-07-29T12:34:55.789Z'
 const previousLoginAt = '2026-07-29T12:35:10.000Z'
 const failedAttemptAt = '2026-07-29T12:35:20.000Z'
 const successfulLoginAt = '2026-07-29T12:35:30.000Z'
+const afterSuccessfulLoginAt = '2026-07-29T12:35:31.000Z'
 const futureLockUntil = '2026-07-29T12:50:20.000Z'
 const userId = '11111111-1111-4111-8111-111111111111'
 const secondUserId = '22222222-2222-4222-8222-222222222222'
@@ -553,7 +556,7 @@ describe('local user repository', () => {
         repository.insert(context.connection, createValidInput())
       )
       updateRawAuthenticationState(connection, {
-        failedLoginCount: 2,
+        failedLoginCount: 5,
         lockedUntil: futureLockUntil,
         lastLoginAt: previousLoginAt,
         updatedAt: failedAttemptAt
@@ -579,7 +582,7 @@ describe('local user repository', () => {
       expect(updated).toEqual({
         ...inserted,
         mustChangePassword: false,
-        failedLoginCount: 2,
+        failedLoginCount: 5,
         lockedUntil: futureLockUntil,
         lastLoginAt: previousLoginAt,
         updatedAt: successfulLoginAt
@@ -599,7 +602,7 @@ describe('local user repository', () => {
         role: 'LOCAL_ADMIN',
         is_active: 1,
         must_change_password: 0,
-        failed_login_count: 2,
+        failed_login_count: 5,
         locked_until: futureLockUntil,
         last_login_at: previousLoginAt,
         created_at: now,
@@ -617,7 +620,7 @@ describe('local user repository', () => {
           password_hash: rotatedCredential.passwordHash,
           password_salt: rotatedCredential.passwordSalt,
           must_change_password: 0,
-          failed_login_count: 2,
+          failed_login_count: 5,
           locked_until: futureLockUntil,
           last_login_at: previousLoginAt,
           updated_at: successfulLoginAt
@@ -625,6 +628,8 @@ describe('local user repository', () => {
       } finally {
         reopened.close()
       }
+
+      expectAcceptedByLocalLoginPolicy(updated)
     })
   })
 
@@ -640,7 +645,7 @@ describe('local user repository', () => {
       const instrumentedRepository = createLocalUserRepository(instrumentedConnection)
       const instrumentedExecutor = createExecutorForConnection(instrumentedConnection)
 
-      instrumentedExecutor.run((context) =>
+      const updated = instrumentedExecutor.run((context) =>
         instrumentedRepository.updateCredentialState(context.connection, {
           id: parseEntityId(userId),
           expected: createCredentialStateSnapshot({
@@ -684,6 +689,113 @@ describe('local user repository', () => {
       expect(preparedSql.join('\n')).not.toMatch(
         /\b(BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE|DELETE|REPLACE|UPSERT)\b/i
       )
+      expectAcceptedByLocalLoginPolicy(updated)
+    })
+  })
+
+  it('rejects credential rotation that would preserve an expired or due lock', async () => {
+    await withMigratedDatabase(({ connection, repository, executor }) => {
+      executor.run((context) => repository.insert(context.connection, createValidInput()))
+
+      for (const { lockedUntil, nextUpdatedAt } of [
+        { lockedUntil: successfulLoginAt, nextUpdatedAt: successfulLoginAt },
+        { lockedUntil: successfulLoginAt, nextUpdatedAt: afterSuccessfulLoginAt }
+      ]) {
+        updateRawAuthenticationState(connection, {
+          failedLoginCount: 5,
+          lockedUntil,
+          lastLoginAt: previousLoginAt,
+          updatedAt: failedAttemptAt
+        })
+        const originalRow = readRawUser(connection)
+
+        const error = captureError(() =>
+          executor.run((context) =>
+            repository.updateCredentialState(context.connection, {
+              id: parseEntityId(userId),
+              expected: createCredentialStateSnapshot({
+                credential: canonicalCredential,
+                mustChangePassword: true,
+                updatedAt: failedAttemptAt
+              }),
+              next: createCredentialStateSnapshot({
+                credential: rotatedCredential,
+                mustChangePassword: false,
+                updatedAt: nextUpdatedAt
+              })
+            })
+          )
+        )
+
+        expect(error).toBeInstanceOf(LocalUserCredentialStateConflictError)
+        expectSafeControlledError(error)
+        expect(readRawUser(connection)).toEqual(originalRow)
+        expect(readTableCount(connection, 'audit_log')).toBe(0)
+        expect(connection.inTransaction).toBe(false)
+      }
+    })
+  })
+
+  it('allows HSD-017 to clear an expired lock before credential rotation in one transaction', async () => {
+    await withMigratedDatabase(({ connection, repository, executor }) => {
+      executor.run((context) => repository.insert(context.connection, createValidInput()))
+      updateRawAuthenticationState(connection, {
+        failedLoginCount: 5,
+        lockedUntil: successfulLoginAt,
+        lastLoginAt: previousLoginAt,
+        updatedAt: failedAttemptAt
+      })
+
+      const updated = executor.run((context) => {
+        repository.updateAuthenticationState(context.connection, {
+          id: parseEntityId(userId),
+          expected: createAuthenticationStateSnapshot({
+            failedLoginCount: 5,
+            lockedUntil: successfulLoginAt,
+            lastLoginAt: previousLoginAt,
+            updatedAt: failedAttemptAt
+          }),
+          next: createAuthenticationStateSnapshot({
+            failedLoginCount: 0,
+            lockedUntil: null,
+            lastLoginAt: previousLoginAt,
+            updatedAt: successfulLoginAt
+          })
+        })
+
+        return repository.updateCredentialState(context.connection, {
+          id: parseEntityId(userId),
+          expected: createCredentialStateSnapshot({
+            credential: canonicalCredential,
+            mustChangePassword: true,
+            updatedAt: successfulLoginAt
+          }),
+          next: createCredentialStateSnapshot({
+            credential: rotatedCredential,
+            mustChangePassword: false,
+            updatedAt: afterSuccessfulLoginAt
+          })
+        })
+      })
+
+      expect(updated).toMatchObject({
+        mustChangePassword: false,
+        failedLoginCount: 0,
+        lockedUntil: null,
+        lastLoginAt: previousLoginAt,
+        updatedAt: afterSuccessfulLoginAt
+      })
+      expect(readRawUser(connection)).toMatchObject({
+        password_hash: rotatedCredential.passwordHash,
+        password_salt: rotatedCredential.passwordSalt,
+        must_change_password: 0,
+        failed_login_count: 0,
+        locked_until: null,
+        last_login_at: previousLoginAt,
+        updated_at: afterSuccessfulLoginAt
+      })
+      expect(readTableCount(connection, 'audit_log')).toBe(0)
+      expectAcceptedByLocalLoginPolicy(updated)
     })
   })
 
@@ -1488,6 +1600,20 @@ function createCredentialStateSnapshot({
   }
 }
 
+function expectAcceptedByLocalLoginPolicy(user: LocalUserRecord): void {
+  expect(() =>
+    evaluateLocalLoginPolicyState(
+      {
+        failedLoginCount: user.failedLoginCount,
+        lockedUntil: user.lockedUntil,
+        lastLoginAt: user.lastLoginAt,
+        updatedAt: user.updatedAt
+      },
+      user.updatedAt
+    )
+  ).not.toThrow()
+}
+
 function createAccessorAuthenticationStateInput(): Parameters<
   LocalUserRepository['updateAuthenticationState']
 >[1] {
@@ -2153,6 +2279,7 @@ function expectSafeControlledError(error: unknown): void {
     previousLoginAt,
     failedAttemptAt,
     successfulLoginAt,
+    afterSuccessfulLoginAt,
     futureLockUntil,
     'Admin.User',
     'ADMIN.USER',

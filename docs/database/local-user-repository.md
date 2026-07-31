@@ -114,7 +114,13 @@ matches fails with `LocalUserCredentialStateConflictError`.
 
 The next state must contain a canonical pre-derived HSD-010 credential, a
 boolean forced-change flag, and a canonical UTC `updatedAt` that is not earlier
-than the expected row version. The repository validates those persistence
+than the expected row version. Because this mutation preserves authentication
+state, any preserved non-null `locked_until` must remain later than
+`next.updatedAt`. If the authoritative row has `locked_until <= next.updatedAt`,
+the repository rejects the rotation with `LocalUserCredentialStateConflictError`
+without modifying credentials, the forced-change flag, timestamps,
+authentication state, or audit rows. Callers must clear an expired lock through
+HSD-017 before rotating credentials. The repository validates those persistence
 invariants only; HSD-020 is expected to add the application service that hashes
 new passwords before the transaction, composes audit events, and drives the
 forced password-change workflow.

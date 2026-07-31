@@ -67,6 +67,10 @@ interface LocalUserAuthenticationSqlRow extends LocalUserSqlRow {
   readonly password_salt: unknown
 }
 
+interface LocalUserCredentialStateLockoutSqlRow {
+  readonly locked_until: unknown
+}
+
 interface ParsedCreateLocalUserInput {
   readonly id: string
   readonly username: string
@@ -155,6 +159,18 @@ SELECT
   1 AS has_existing
 FROM users
 WHERE id = ?
+LIMIT 1;
+`
+
+const selectLocalUserCredentialStateLockoutSql = `
+SELECT
+  locked_until
+FROM users
+WHERE id = ?
+  AND password_hash = ?
+  AND password_salt = ?
+  AND must_change_password = ?
+  AND updated_at = ?
 LIMIT 1;
 `
 
@@ -253,6 +269,7 @@ const localUserAuthenticationRowKeys = Object.freeze([
   'created_at',
   'updated_at'
 ] as const)
+const localUserCredentialStateLockoutRowKeys = Object.freeze(['locked_until'] as const)
 
 export function createLocalUserRepository(connection: Database.Database): LocalUserRepository {
   const hasAny = (): boolean => decodeHasAnyRow(readHasAnyRow(connection))
@@ -380,6 +397,8 @@ export function createLocalUserRepository(connection: Database.Database): LocalU
     assertActiveDatabaseTransactionConnection(scopedConnection)
 
     const validatedInput = parseUpdateLocalUserCredentialStateInput(input)
+    assertCredentialStatePreservesAuthenticationState(scopedConnection, validatedInput)
+
     const updateResult = runCredentialStateUpdate(scopedConnection, validatedInput)
 
     if (updateResult.changes === 0) {
@@ -655,6 +674,77 @@ function runCredentialStateUpdate(
     }
 
     throw new RepositoryWriteError(getRepositoryErrorType(error))
+  }
+}
+
+function assertCredentialStatePreservesAuthenticationState(
+  connection: DatabaseTransactionConnection,
+  input: ParsedUpdateLocalUserCredentialStateInput
+): void {
+  const lockedUntil = readExpectedCredentialStateLockout(connection, input)
+
+  if (lockedUntil === undefined) {
+    classifyCredentialStateUpdateMiss(connection, input.id)
+  }
+
+  if (lockedUntil !== null && lockedUntil <= input.next.updatedAt) {
+    throw new LocalUserCredentialStateConflictError()
+  }
+}
+
+function readExpectedCredentialStateLockout(
+  connection: DatabaseTransactionConnection,
+  input: ParsedUpdateLocalUserCredentialStateInput
+): string | null | undefined {
+  const row = readLocalUserCredentialStateLockoutRow(connection, input)
+
+  if (row === null) {
+    return undefined
+  }
+
+  return decodeLocalUserCredentialStateLockoutRow(row)
+}
+
+function readLocalUserCredentialStateLockoutRow(
+  connection: DatabaseTransactionConnection,
+  input: ParsedUpdateLocalUserCredentialStateInput
+): LocalUserCredentialStateLockoutSqlRow | null {
+  try {
+    return (
+      (connection
+        .prepare<[string, string, string, 0 | 1, string], LocalUserCredentialStateLockoutSqlRow>(
+          selectLocalUserCredentialStateLockoutSql
+        )
+        .get(
+          input.id,
+          input.expected.credential.passwordHash,
+          input.expected.credential.passwordSalt,
+          encodeSqliteBoolean(input.expected.mustChangePassword),
+          input.expected.updatedAt
+        ) as LocalUserCredentialStateLockoutSqlRow | undefined) ?? null
+    )
+  } catch (error) {
+    if (error instanceof DatabaseTransactionStateError) {
+      throw new DatabaseTransactionStateError(error.errorType)
+    }
+
+    throw new RepositoryWriteError(getRepositoryErrorType(error))
+  }
+}
+
+function decodeLocalUserCredentialStateLockoutRow(
+  row: LocalUserCredentialStateLockoutSqlRow
+): string | null {
+  try {
+    const data = readDataProperties(row, localUserCredentialStateLockoutRowKeys)
+
+    return parseNullableUtcTimestamp(data.locked_until)
+  } catch (error) {
+    if (error instanceof RepositoryDataIntegrityError) {
+      throw new RepositoryDataIntegrityError(error.errorType)
+    }
+
+    throw new RepositoryDataIntegrityError(getRepositoryErrorType(error))
   }
 }
 
