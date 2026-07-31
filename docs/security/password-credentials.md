@@ -71,6 +71,13 @@ login service creates one private dummy credential during composition so
 unknown usernames can perform dummy verification without returning or logging
 that credential.
 
+HSD-020 forced password change follows the same async credential boundary. It
+verifies the current password before opening the transaction, verifies the new
+password against the existing credential to reject reuse, and hashes the
+replacement password before `DatabaseTransactionExecutor.run()`. Active locks
+skip verification and hashing. Reused passwords are rejected before any
+replacement hash is created.
+
 ## Internal Persistence Validation
 
 HSD-011 adds an internal main-process helper,
@@ -87,7 +94,8 @@ passwords, log, or expose decoded buffers.
 HSD-019 uses this helper for the local-user credential-state repository
 mutation. That repository accepts only pre-derived stored credentials; password
 hashing, password policy, forced password-change orchestration, and audited
-credential rotation remain outside the repository boundary.
+credential rotation remain outside the repository boundary and are composed by
+HSD-020.
 
 ## Error And Secret Safety
 
@@ -104,3 +112,11 @@ derived keys, crypto options, raw provider errors, paths, SQL, or input
 metadata. Mutable password, salt, and key buffers are zero-filled on a
 best-effort basis after use. JavaScript string memory cannot be reliably
 erased, so callers should also avoid retaining plaintext longer than needed.
+
+Forced password-change services must minimize credential exposure in the same
+way. Current and replacement plaintext passwords remain function-local and are
+passed only to `PasswordCredentialService.verify()` or
+`PasswordCredentialService.hash()`. Password-change results, audit metadata,
+errors, logs, IPC contracts, and renderer-facing values must not include
+plaintext, hashes, salts, derived keys, or credential-bearing authentication
+projections.

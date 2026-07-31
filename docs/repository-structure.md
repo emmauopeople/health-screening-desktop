@@ -23,7 +23,11 @@ writes, or clinical behavior. HSD-018 adds `application/authentication`, a
 main-process-only local login service that verifies credentials, applies
 lockout policy, revalidates state, persists authentication outcomes, and audits
 the attempt without exposing IPC, preload, renderer login, sessions,
-authorization, or password-change behavior.
+authorization, or password-change behavior. HSD-020 adds the forced
+password-change application service in the same folder; it verifies the current
+password, rejects reused replacements, rotates credentials atomically, and
+audits the finalized outcome without exposing IPC, preload, renderer UI,
+sessions, or authorization.
 
 `src/main/foundation` owns main-process-only primitives for local data writes,
 including validated UUID v4 entity IDs and UTC timestamps. These providers are
@@ -52,9 +56,10 @@ the local-user authentication-state compare-and-set mutation boundary without
 adding login, lockout policy, sessions, IPC, or renderer behavior. HSD-019 adds
 the local-user credential-state compare-and-set mutation boundary without
 adding plaintext password handling, password hashing, forced password-change
-workflow, audit events, sessions, IPC, or renderer behavior. HSD-012 adds the
-typed location repository over the existing schema-v1 `locations` table. HSD-013
-adds the typed append-only audit-event repository over the existing schema-v1
+workflow, audit events, sessions, IPC, or renderer behavior; HSD-020 composes
+that repository method only from the application layer. HSD-012 adds the typed
+location repository over the existing schema-v1 `locations` table. HSD-013 adds
+the typed append-only audit-event repository over the existing schema-v1
 `audit_log` table. Repositories own exact SQL and row decoding, while writes
 use caller-owned transaction-scoped capabilities.
 
@@ -65,9 +70,10 @@ IPC, preload, renderer, login, session, or user-repository behavior. HSD-011
 adds a narrow internal persistence-validation bridge in this folder so
 repositories can validate canonical credential text without exposing low-level
 credential constructors or decoders through application-facing barrels.
-HSD-019 uses that bridge for credential-state persistence only; the forced
-password-change service and audited credential rotation remain deferred to
-HSD-020.
+HSD-019 uses that bridge for credential-state persistence only. HSD-020 uses
+the application-facing password credential service for current-password
+verification, replacement reuse checks, and replacement hashing before
+transactional credential rotation.
 
 The renderer must not import from `src/main`.
 

@@ -6,7 +6,8 @@ authentication-state mutation. HSD-019 adds a narrow transaction-scoped
 credential-state mutation. It does not add login, password verification,
 password hashing, password policy, lockout policy, audited credential rotation,
 sessions, account administration, IPC, renderer UI, startup writes, or clinical
-workflow behavior.
+workflow behavior; HSD-020 composes forced password change from the
+application-service layer.
 
 ## Table Mapping
 
@@ -121,9 +122,9 @@ the repository rejects the rotation with `LocalUserCredentialStateConflictError`
 without modifying credentials, the forced-change flag, timestamps,
 authentication state, or audit rows. Callers must clear an expired lock through
 HSD-017 before rotating credentials. The repository validates those persistence
-invariants only; HSD-020 is expected to add the application service that hashes
-new passwords before the transaction, composes audit events, and drives the
-forced password-change workflow.
+invariants only; HSD-020 hashes replacement passwords before the transaction,
+composes audit events, and drives the forced password-change workflow outside
+the repository boundary.
 
 ## Credential Handling
 
@@ -162,9 +163,10 @@ likewise reported separately from missing users.
 
 ## Deferred Behavior
 
-HSD-019 still deliberately defers plaintext password handling, password
-hashing, password verification, password policy, forced password-change
-application service behavior, audited credential rotation, sessions,
-authorization, user administration, sync writes, IPC, preload, renderer routes,
-and UI. HSD-020 is the likely next reviewed task for forced password change and
-audited credential rotation.
+The repository boundary still deliberately defers plaintext password handling,
+password hashing, password verification, password policy, forced
+password-change application service behavior, audited credential rotation,
+sessions, authorization, user administration, sync writes, IPC, preload,
+renderer routes, and UI. HSD-020 implements forced password change and audited
+credential rotation at the application-service layer without broadening this
+repository boundary.

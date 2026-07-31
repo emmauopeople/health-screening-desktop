@@ -1,3 +1,39 @@
+export { createLocalForcedPasswordChangeService } from './forced-password-change-service'
+export {
+  createProductionLocalForcedPasswordChangeService,
+  type ProductionLocalForcedPasswordChangeServiceOptions
+} from './forced-password-change-composition'
+export {
+  getLocalForcedPasswordChangeErrorType,
+  isLocalForcedPasswordChangeError,
+  LocalForcedPasswordChangeCompositionError,
+  LocalForcedPasswordChangeConcurrencyError,
+  LocalForcedPasswordChangeHashingError,
+  LocalForcedPasswordChangePersistenceError,
+  LocalForcedPasswordChangeStateIntegrityError,
+  LocalForcedPasswordChangeUnavailableError,
+  LocalForcedPasswordChangeValidationError,
+  LocalForcedPasswordChangeVerificationError,
+  rebuildLocalForcedPasswordChangeError,
+  type LocalForcedPasswordChangeError,
+  type LocalForcedPasswordChangeErrorCode
+} from './forced-password-change-errors'
+export {
+  createForcedPasswordChangeActiveLockAttemptState,
+  createForcedPasswordChangeInvalidCurrentPasswordTransition,
+  createForcedPasswordChangeProofState,
+  evaluateForcedPasswordChangeState
+} from './forced-password-change-policy'
+export { parseLocalForcedPasswordChangeInput } from './forced-password-change-validation'
+export type {
+  ForcedPasswordChangeAuthenticationObservation,
+  LocalForcedPasswordChangeInput,
+  LocalForcedPasswordChangeRejectionReason,
+  LocalForcedPasswordChangeResult,
+  LocalForcedPasswordChangeService,
+  LocalForcedPasswordChangeServiceDependencies,
+  ParsedLocalForcedPasswordChangeInput
+} from './forced-password-change-types'
 export { createLocalLoginAuthenticationService } from './local-login-authentication-service'
 export {
   createProductionLocalLoginAuthenticationService,

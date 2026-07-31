@@ -24,6 +24,14 @@ through compare-and-set inside an existing transaction, but does not add
 plaintext password handling, password hashing, password policy, forced
 password-change services, audit events, sessions, IPC, preload, renderer login,
 or clinical behavior.
+HSD-020 adds the main-process-only forced password-change application service.
+It validates hostile commands, verifies current and replacement-password reuse
+outside SQLite transactions, hashes the replacement credential before opening a
+transaction, revalidates authoritative user state inside the transaction,
+persists HSD-017 authentication-state reset and HSD-019 credential rotation
+atomically, and appends exactly one security audit event. It does not add
+sessions, IPC, preload, renderer login, migrations, password reset, voluntary
+password change, or clinical behavior.
 
 ## TypeScript
 
@@ -83,12 +91,13 @@ SQL, transaction contexts, credentials, or dependency references to preload,
 renderer, shared IPC, or logs.
 
 Application authentication services own login decision policy, expected
-rejection results, transaction-time revalidation, and security audit
-classification. They may use credential-bearing repository projections only
-inside the main process and must return credential-free records or fixed
-rejection reasons. Authentication services must not create sessions, expose IPC,
-change preload APIs, import renderer code, or perform authorization unless a
-later reviewed task grants that boundary.
+rejection results, forced password-change workflow decisions, transaction-time
+revalidation, and security audit classification. They may use
+credential-bearing repository projections only inside the main process and must
+return credential-free records or fixed rejection reasons. Authentication
+services must not create sessions, expose IPC, change preload APIs, import
+renderer code, or perform authorization unless a later reviewed task grants
+that boundary.
 
 ## Database Migrations
 
@@ -132,9 +141,12 @@ observation, mutates authentication state through the HSD-017 repository method
 when needed, and inserts the corresponding audit event.
 
 Credential rotation follows the same rule. Password hashing must complete
-before the transaction opens, and any future application service must use the
-HSD-019 `updateCredentialState()` compare-and-set boundary inside the
-synchronous callback with an exact expected credential-state snapshot.
+before the transaction opens. Forced password change follows that boundary by
+verifying the current password, checking replacement-password reuse, and hashing
+the replacement credential before the transaction opens. The transaction
+callback may only revalidate authoritative state, use HSD-017 and HSD-019
+compare-and-set mutations with exact expected snapshots, and append the audit
+event.
 
 Entity IDs and UTC timestamps for local writes come from
 `src/main/foundation`. Do not accept renderer-generated IDs or timestamps as
@@ -230,9 +242,9 @@ main-process repository code. It validates canonical stored credential text and
 clears decoded buffers, but it must not be exported from application-facing
 security barrels or used as a credential creation or verification API.
 HSD-019 local-user credential-state writes use this validator only for
-pre-derived stored credentials. HSD-020 is expected to add the reviewed
-application service that derives replacement credentials before the transaction
-and audits credential rotation.
+pre-derived stored credentials. HSD-020 forced password change derives
+replacement credentials through the password credential service before the
+transaction and audits credential rotation at the application-service boundary.
 
 First-run bootstrap services must minimize credential exposure. A temporary
 administrator password may be passed only to the HSD-010 password credential
@@ -248,6 +260,13 @@ private dummy credential during composition. Login results, audit metadata,
 errors, logs, IPC contracts, and renderer-facing values must not include
 plaintext, hashes, salts, derived keys, dummy credentials, or credential-bearing
 authentication projections.
+
+Forced password-change services must minimize credential exposure in the same
+way. Current and replacement plaintext passwords remain function-local and are
+passed only to password verification, reuse verification, or replacement
+hashing. Password-change results, audit metadata, errors, logs, IPC contracts,
+and renderer-facing values must not include plaintext, hashes, salts, derived
+keys, or credential-bearing authentication projections.
 
 ## Formatting And Linting
 
