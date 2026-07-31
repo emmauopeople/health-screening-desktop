@@ -27,7 +27,8 @@ or clinical behavior.
 HSD-020 adds the main-process-only forced password-change application service.
 It validates hostile commands, verifies current and replacement-password reuse
 outside SQLite transactions, hashes the replacement credential before opening a
-transaction, revalidates authoritative user state inside the transaction,
+transaction, validates the replacement through the public password credential
+service boundary, revalidates authoritative user state inside the transaction,
 persists HSD-017 authentication-state reset and HSD-019 credential rotation
 atomically, and appends exactly one security audit event. It does not add
 sessions, IPC, preload, renderer login, migrations, password reset, voluntary
@@ -143,10 +144,11 @@ when needed, and inserts the corresponding audit event.
 Credential rotation follows the same rule. Password hashing must complete
 before the transaction opens. Forced password change follows that boundary by
 verifying the current password, checking replacement-password reuse, and hashing
-the replacement credential before the transaction opens. The transaction
-callback may only revalidate authoritative state, use HSD-017 and HSD-019
-compare-and-set mutations with exact expected snapshots, and append the audit
-event.
+the replacement credential before the transaction opens. Replacement credential
+validation, exact credential comparison, and replacement verification also
+complete before the transaction opens. The transaction callback may only
+revalidate authoritative state, use HSD-017 and HSD-019 compare-and-set
+mutations with exact expected snapshots, and append the audit event.
 
 Entity IDs and UTC timestamps for local writes come from
 `src/main/foundation`. Do not accept renderer-generated IDs or timestamps as
@@ -231,6 +233,12 @@ Hashing and verification return promises and must not run inside
 credentials before opening synchronous SQLite transactions, then re-check
 workflow invariants inside the transaction.
 
+`PasswordCredentialService.validateCredential()` is the public security-layer
+boundary for unknown already-derived credential values that application services
+must inspect before persistence. It strictly validates canonical credential
+shape and encoding, returns a new frozen credential copy, clears decoded buffers,
+and has no repository, persistence, hashing, or verification responsibility.
+
 Password modules must not log. Controlled password errors use fixed codes and
 messages and must not retain plaintext, salts, password hashes, derived keys,
 raw crypto messages, causes, stacks, paths, SQL, or input metadata. Mutable
@@ -240,11 +248,12 @@ after use.
 The internal credential persistence validator may be imported only by reviewed
 main-process repository code. It validates canonical stored credential text and
 clears decoded buffers, but it must not be exported from application-facing
-security barrels or used as a credential creation or verification API.
-HSD-019 local-user credential-state writes use this validator only for
-pre-derived stored credentials. HSD-020 forced password change derives
-replacement credentials through the password credential service before the
-transaction and audits credential rotation at the application-service boundary.
+security barrels or used as an application-service credential validation,
+creation, or verification API. HSD-019 local-user credential-state writes use
+this validator only for pre-derived stored credentials. HSD-020 forced password
+change derives and validates replacement credentials through the password
+credential service before the transaction and audits credential rotation at the
+application-service boundary.
 
 First-run bootstrap services must minimize credential exposure. A temporary
 administrator password may be passed only to the HSD-010 password credential

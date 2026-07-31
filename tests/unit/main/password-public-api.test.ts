@@ -10,6 +10,7 @@ const removedLowLevelExports = [
   'parsePasswordHash',
   'parsePasswordSalt',
   'parseStoredPasswordCredential',
+  'validateStoredPasswordCredential',
   'createNodePasswordCryptoProvider',
   'passwordHashAlgorithm',
   'passwordHashPrefix',
@@ -33,6 +34,9 @@ describe('password public API', () => {
     expect(securityApi.createPasswordCredentialService).toBe(
       passwordApi.createPasswordCredentialService
     )
+    const service = securityApi.createPasswordCredentialService()
+
+    expect(typeof service.validateCredential).toBe('function')
     expect(securityApi.scryptV1PasswordParameters).toBe(passwordApi.scryptV1PasswordParameters)
     expect(securityApi.PasswordValidationError).toBe(passwordApi.PasswordValidationError)
     expect(securityApi.PasswordCredentialFormatError).toBe(

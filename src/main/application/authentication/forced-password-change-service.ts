@@ -34,7 +34,6 @@ import {
   PasswordVerificationError,
   type StoredPasswordCredential
 } from '@main/security'
-import { validateStoredPasswordCredentialForPersistence } from '@main/security/password/password-persistence-validation'
 
 import {
   getLocalForcedPasswordChangeErrorType,
@@ -717,8 +716,7 @@ async function validateReplacementCredential({
   readonly replacementCredential: StoredPasswordCredential
 }): Promise<StoredPasswordCredential> {
   try {
-    const validatedReplacement =
-      validateStoredPasswordCredentialForPersistence(replacementCredential)
+    const validatedReplacement = passwordCredentialService.validateCredential(replacementCredential)
 
     if (credentialsMatch(validatedReplacement, currentCredential)) {
       throw new LocalForcedPasswordChangeHashingError()

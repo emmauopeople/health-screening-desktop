@@ -585,6 +585,7 @@ function createHarness(options: HarnessOptions = {}): Harness {
     })
   } as unknown as Harness['auditEventRepository']
   const passwordCredentialService = {
+    validateCredential: vi.fn((credential) => credential),
     hash: vi.fn(),
     verify: vi.fn(async () => {
       if (options.verifyError !== undefined) {

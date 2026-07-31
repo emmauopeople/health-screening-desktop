@@ -75,6 +75,12 @@ replacement hash is created.
 
 Replacement credential hashing completes before
 `DatabaseTransactionExecutor.run()` opens the synchronous SQLite transaction.
+The service then validates the replacement credential through
+`PasswordCredentialService.validateCredential()` before exact hash/salt
+comparison, before verifying `newPassword` against the replacement, and before
+verifying `currentPassword` against the replacement. Malformed, noncanonical, or
+semantically inconsistent replacement credentials fail as
+`LocalForcedPasswordChangeHashingError` and open no transaction.
 Inside the callback, the service revalidates the installation, user identity,
 ordinary user fields, credential hash, credential salt, forced-change flag,
 failed-login count, lock timestamp, last-login timestamp, and `updatedAt`

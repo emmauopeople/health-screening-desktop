@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { join, relative } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 import { PasswordCredentialFormatError } from '@main/security'
@@ -104,6 +106,32 @@ describe('password persistence validation', () => {
       expect(Object.prototype.hasOwnProperty.call(api, 'passwordPersistenceValidation')).toBe(false)
     }
   })
+
+  it('is not imported by application authentication code', () => {
+    for (const sourceFile of readTypeScriptSources(
+      join(process.cwd(), 'src/main/application/authentication')
+    )) {
+      expect(readFileSync(sourceFile, 'utf8')).not.toContain('password-persistence-validation')
+      expect(readFileSync(sourceFile, 'utf8')).not.toContain(
+        'validateStoredPasswordCredentialForPersistence'
+      )
+    }
+  })
+
+  it('is consumed only by reviewed repository code', () => {
+    const consumers = readTypeScriptSources(join(process.cwd(), 'src/main'))
+      .filter((sourceFile) => !sourceFile.endsWith('password-persistence-validation.ts'))
+      .filter((sourceFile) =>
+        readFileSync(sourceFile, 'utf8').includes('password-persistence-validation')
+      )
+      .map((sourceFile) => normalizePath(relative(process.cwd(), sourceFile)))
+      .sort()
+
+    expect(consumers).toEqual([
+      'src/main/database/repositories/local-user/local-user-repository.ts',
+      'src/main/database/repositories/local-user/local-user-validation.ts'
+    ])
+  })
 })
 
 function captureDecodedBuffers<T>(action: () => T): {
@@ -160,6 +188,30 @@ function captureDecodedBuffersForError(action: () => void): {
 
 function fixedBytes(length: number, offset: number): Buffer {
   return Buffer.from(Array.from({ length }, (_, index) => (index + offset) % 256))
+}
+
+function readTypeScriptSources(directory: string): readonly string[] {
+  const sources: string[] = []
+
+  for (const entry of readdirSync(directory)) {
+    const path = join(directory, entry)
+    const stat = statSync(path)
+
+    if (stat.isDirectory()) {
+      sources.push(...readTypeScriptSources(path))
+      continue
+    }
+
+    if (entry.endsWith('.ts') || entry.endsWith('.tsx')) {
+      sources.push(path)
+    }
+  }
+
+  return sources
+}
+
+function normalizePath(path: string): string {
+  return path.replaceAll('\\', '/')
 }
 
 function expectZeroed(buffers: readonly Buffer[]): void {

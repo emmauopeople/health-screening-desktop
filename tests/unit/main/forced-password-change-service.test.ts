@@ -15,6 +15,7 @@ import type {
 } from '@main/database'
 import { parseEntityId, parseUtcTimestamp } from '@main/foundation'
 import { createStoredPasswordCredential } from '@main/security/password/password-credential-format'
+import { PasswordCredentialFormatError } from '@main/security'
 import type { PasswordCredentialService, StoredPasswordCredential } from '@main/security'
 
 const userId = parseEntityId('11111111-1111-4111-8111-111111111111')
@@ -107,6 +108,7 @@ describe('forced password change service', () => {
     expect(error).toBeInstanceOf(LocalForcedPasswordChangeHashingError)
     expect(passwordCredentialService.verify).toHaveBeenCalledTimes(2)
     expect(passwordCredentialService.hash).toHaveBeenCalledOnce()
+    expect(passwordCredentialService.validateCredential).toHaveBeenCalledOnce()
     expectNoTransactionOrAudit(harness)
   })
 
@@ -121,6 +123,7 @@ describe('forced password change service', () => {
     expect(error).toBeInstanceOf(LocalForcedPasswordChangeHashingError)
     expect(passwordCredentialService.verify).toHaveBeenCalledTimes(3)
     expect(passwordCredentialService.hash).toHaveBeenCalledOnce()
+    expect(passwordCredentialService.validateCredential).toHaveBeenCalledOnce()
     expectNoTransactionOrAudit(harness)
   })
 
@@ -135,6 +138,7 @@ describe('forced password change service', () => {
     expect(error).toBeInstanceOf(LocalForcedPasswordChangeHashingError)
     expect(passwordCredentialService.verify).toHaveBeenCalledTimes(4)
     expect(passwordCredentialService.hash).toHaveBeenCalledOnce()
+    expect(passwordCredentialService.validateCredential).toHaveBeenCalledOnce()
     expectNoTransactionOrAudit(harness)
   })
 
@@ -144,6 +148,7 @@ describe('forced password change service', () => {
         passwordHash: 'not-a-password-hash',
         passwordSalt: 'not-a-password-salt'
       }) as StoredPasswordCredential,
+      validateCredentialError: new PasswordCredentialFormatError('PasswordCredentialFormatError'),
       verifyResults: [true, false]
     })
     const harness = createHarness({ passwordCredentialService })
@@ -153,6 +158,7 @@ describe('forced password change service', () => {
     expect(error).toBeInstanceOf(LocalForcedPasswordChangeHashingError)
     expect(passwordCredentialService.verify).toHaveBeenCalledTimes(2)
     expect(passwordCredentialService.hash).toHaveBeenCalledOnce()
+    expect(passwordCredentialService.validateCredential).toHaveBeenCalledOnce()
     expectNoTransactionOrAudit(harness)
   })
 
@@ -179,6 +185,7 @@ describe('forced password change service', () => {
       'verify-current',
       'verify-reuse',
       'hash-new',
+      'validate-replacement',
       'verify-replacement-new',
       'verify-replacement-current',
       'transaction',
@@ -312,14 +319,19 @@ function createHarness({
 function createMockPasswordCredentialService({
   hashCredential = replacementCredential,
   order = [],
+  validateCredentialError,
   verifyResults = [true, false, true, false]
 }: {
   readonly hashCredential?: StoredPasswordCredential
   readonly order?: string[]
+  readonly validateCredentialError?: Error
   readonly verifyResults?: readonly boolean[]
 } = {}): PasswordCredentialService & {
   readonly hash: ReturnType<typeof vi.fn<PasswordCredentialService['hash']>>
   readonly verify: ReturnType<typeof vi.fn<PasswordCredentialService['verify']>>
+  readonly validateCredential: ReturnType<
+    typeof vi.fn<PasswordCredentialService['validateCredential']>
+  >
 } {
   let verifyCount = 0
   const verificationSteps = Object.freeze([
@@ -330,6 +342,18 @@ function createMockPasswordCredentialService({
   ] as const)
 
   return {
+    validateCredential: vi.fn(() => {
+      order.push('validate-replacement')
+
+      if (validateCredentialError !== undefined) {
+        throw validateCredentialError
+      }
+
+      return Object.freeze({
+        passwordHash: hashCredential.passwordHash,
+        passwordSalt: hashCredential.passwordSalt
+      })
+    }),
     verify: vi.fn(async () => {
       const step = verificationSteps[verifyCount] ?? `verify-${verifyCount + 1}`
       const result = verifyResults[verifyCount]

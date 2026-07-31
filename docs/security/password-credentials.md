@@ -58,10 +58,19 @@ parameters, and compares equal-length byte arrays with `timingSafeEqual`.
 Wrong passwords return `false`; malformed credentials throw
 `PasswordCredentialFormatError`.
 
-Both operations are asynchronous and must run outside HSD-008 synchronous
-transaction callbacks. Later first-run services must hash before opening the
-write transaction, then re-check installation/user invariants inside that
-transaction before inserting related rows atomically.
+`validateCredential(credential)` is the reviewed public security-layer
+validation boundary for already-derived stored credentials. It accepts unknown
+input, strictly validates the exact credential shape and canonical `scrypt-v1`
+encoding, returns a new frozen `StoredPasswordCredential` containing only
+canonical `passwordHash` and `passwordSalt` strings, and clears decoded salt and
+derived-key buffers before returning or throwing. It does not accept plaintext,
+derive keys, compare credentials, write repositories, or add persistence
+responsibility.
+
+Hashing and verification are asynchronous and must run outside HSD-008
+synchronous transaction callbacks. Later first-run services must hash before
+opening the write transaction, then re-check installation/user invariants inside
+that transaction before inserting related rows atomically.
 
 HSD-018 local login follows the same boundary for verification. It validates
 the raw command with `parsePlaintextPassword()`, verifies the candidate password
@@ -74,15 +83,19 @@ that credential.
 HSD-020 forced password change follows the same async credential boundary. It
 verifies the current password before opening the transaction, verifies the new
 password against the existing credential to reject reuse, and hashes the
-replacement password before `DatabaseTransactionExecutor.run()`. Active locks
-skip verification and hashing. Reused passwords are rejected before any
-replacement hash is created.
+replacement password before `DatabaseTransactionExecutor.run()`. After hashing,
+it validates the replacement through `PasswordCredentialService.validateCredential()`
+before exact credential comparison or replacement verification. Active locks skip
+verification and hashing. Reused passwords are rejected before any replacement
+hash is created.
 
 ## Internal Persistence Validation
 
 HSD-011 adds an internal main-process helper,
 `password-persistence-validation.ts`, for repository persistence only. It is not
-exported from `src/main/security/index.ts` or `src/main/security/password`.
+exported from `src/main/security/index.ts` or `src/main/security/password`, and
+application services must use the public security-layer validation boundary
+instead.
 
 The helper accepts unknown stored-credential input, uses the strict HSD-010
 credential parser, returns a new frozen `StoredPasswordCredential` containing
