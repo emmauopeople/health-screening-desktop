@@ -624,6 +624,7 @@ function createCountingPasswordService(): PasswordCredentialService & {
   const service = createPasswordCredentialService(createDeterministicCryptoProvider())
 
   return {
+    validateCredential: vi.fn((credential) => service.validateCredential(credential)),
     hash: vi.fn((password) => service.hash(password)),
     verify: vi.fn((password, credential) => service.verify(password, credential))
   }
@@ -637,6 +638,9 @@ function createDeferredPasswordService(): {
 
   return {
     service: {
+      validateCredential: vi.fn(
+        (credential) => credential as ReturnType<PasswordCredentialService['validateCredential']>
+      ),
       hash: vi.fn(),
       verify: vi.fn(() => {
         const deferred = createDeferred<boolean>()

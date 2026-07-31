@@ -528,6 +528,9 @@ interface WithMigratedDatabaseContext {
   readonly passwordService: PasswordCredentialService & {
     readonly hash: ReturnType<typeof vi.fn<PasswordCredentialService['hash']>>
     readonly verify: ReturnType<typeof vi.fn<PasswordCredentialService['verify']>>
+    readonly validateCredential: ReturnType<
+      typeof vi.fn<PasswordCredentialService['validateCredential']>
+    >
   }
   readonly transactionExecutor: CountingTransactionExecutor
   readonly idGenerator: CountingEntityIdGenerator
@@ -754,10 +757,14 @@ function createCountingTransactionExecutor(
 function createCountingPasswordService(): PasswordCredentialService & {
   readonly hash: ReturnType<typeof vi.fn<PasswordCredentialService['hash']>>
   readonly verify: ReturnType<typeof vi.fn<PasswordCredentialService['verify']>>
+  readonly validateCredential: ReturnType<
+    typeof vi.fn<PasswordCredentialService['validateCredential']>
+  >
 } {
   const service = createPasswordCredentialService(createDeterministicCryptoProvider())
 
   return {
+    validateCredential: vi.fn((credential) => service.validateCredential(credential)),
     hash: vi.fn((password) => service.hash(password)),
     verify: vi.fn((password, credential) => service.verify(password, credential))
   }

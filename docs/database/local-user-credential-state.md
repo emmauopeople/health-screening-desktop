@@ -4,7 +4,7 @@ HSD-019 adds a main-process-only local-user credential-state mutation boundary
 over the existing schema-v1 `users` table. It does not add plaintext password
 handling, password hashing, password verification, password policy, forced
 password-change orchestration, sessions, IPC, preload APIs, renderer UI, audit
-events, migrations, or HSD-020 behavior.
+events, migrations, or HSD-020 application-service behavior.
 
 ## Snapshot
 
@@ -36,6 +36,11 @@ credential, forced-change flag, timestamp, authentication state, or audit log.
 Callers that need to rotate after an expired lock must first clear the lock
 through HSD-017 `updateAuthenticationState()` in the same transaction or in a
 previous committed transaction.
+
+HSD-020 uses that ordering for successful forced password changes. It first
+resets authentication state through HSD-017 with the transaction timestamp,
+then rotates the credential through HSD-019 with the same timestamp and
+`mustChangePassword=false`.
 
 ## Mutation
 
@@ -69,6 +74,7 @@ ordinary row fields observed during readback fail closed as
 
 ## Scope
 
-This repository boundary accepts only pre-derived credentials. HSD-020 is the
-expected next reviewed task for the forced password-change application service
-and audited credential rotation workflow.
+This repository boundary accepts only pre-derived credentials. HSD-020 performs
+current-password verification, new-password reuse detection, replacement
+hashing, forced-change workflow decisions, and audit orchestration outside this
+repository boundary.

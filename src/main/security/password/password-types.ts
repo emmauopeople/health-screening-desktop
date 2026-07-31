@@ -12,6 +12,7 @@ export interface StoredPasswordCredential {
 export interface PasswordCredentialService {
   hash(password: unknown): Promise<StoredPasswordCredential>
   verify(password: unknown, credential: unknown): Promise<boolean>
+  validateCredential(credential: unknown): StoredPasswordCredential
 }
 
 export type ScryptV1PasswordParameters = typeof scryptV1PasswordParameters

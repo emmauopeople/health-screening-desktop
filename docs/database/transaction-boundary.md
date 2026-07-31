@@ -48,9 +48,11 @@ and inserts one audit event. No password verification, hashing, random-byte
 generation, timers, IPC, or network work belongs in that callback.
 
 HSD-019 credential-state repository writes use the same caller-owned transaction
-capability. Any future password-change service must hash the new password
-before `run()` is called, then use `updateCredentialState()` inside the
-synchronous callback with an exact expected snapshot.
+capability. HSD-020 forced password change verifies the current password,
+checks replacement-password reuse, and hashes the replacement credential before
+`run()` is called. Inside the synchronous callback it revalidates the
+authoritative observation, uses HSD-017 to reset authentication state, uses
+HSD-019 to rotate credential state, and appends one audit event.
 
 ## Error And Log Safety
 

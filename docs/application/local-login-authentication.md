@@ -7,8 +7,9 @@ the HSD-017 compare-and-set repository method, and writes one security audit
 event in the same SQLite transaction.
 
 This service does not create sessions, authorization context, IPC handlers,
-preload APIs, renderer login UI, password-change/reset behavior, role
-administration, schema migrations, synchronization, or clinical workflow.
+preload APIs, renderer login UI, password reset behavior, role administration,
+schema migrations, synchronization, or clinical workflow. HSD-020 owns the
+separate forced password-change flow for authenticated temporary-password users.
 
 ## Result Contract
 
@@ -26,6 +27,10 @@ an active lock or the fifth failed attempt that applies a new lock.
 Unknown usernames and incorrect passwords both return `INVALID_CREDENTIALS`.
 A correct password for an inactive account returns `ACCOUNT_INACTIVE`. Attempts
 against an active lock return `ACCOUNT_LOCKED` without password verification.
+An active account that authenticates with `mustChangePassword=true` still
+returns `AUTHENTICATED`; the returned credential-free `LocalUserRecord` carries
+that flag so HSD-020 can complete the forced password change before HSD-021 adds
+session management.
 
 ## Validation
 
@@ -135,6 +140,6 @@ or production composition failure.
 ## Deferred Work
 
 Sessions, refresh tokens, current-user state, authorization, IPC exposure,
-preload methods, renderer login UI, password change/reset, user administration,
-multi-factor authentication, synchronization, backup, restore, and clinical
-workflow remain deferred to later reviewed tasks.
+preload methods, renderer login UI, voluntary password change, password reset,
+user administration, multi-factor authentication, synchronization, backup,
+restore, and clinical workflow remain deferred to later reviewed tasks.

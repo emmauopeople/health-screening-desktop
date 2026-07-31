@@ -193,6 +193,85 @@ describe('password credential service', () => {
     expect(provider.timingSafeEqual).not.toHaveBeenCalled()
   })
 
+  it('validates canonical stored credentials as frozen copies and clears decoded buffers', () => {
+    const provider = createRecordingCryptoProvider()
+    const service = createPasswordCredentialService(provider)
+    const credential = createStoredPasswordCredential(fixedBytes(64, 17), fixedBytes(32, 18))
+
+    const { result, decodedBuffers } = captureDecodedBuffers(() =>
+      service.validateCredential(credential)
+    )
+
+    expect(result).toEqual(credential)
+    expect(result).not.toBe(credential)
+    expect(Object.isFrozen(result)).toBe(true)
+    expect(decodedBuffers).toHaveLength(2)
+    for (const buffer of decodedBuffers) {
+      expectAllZero(buffer)
+    }
+    expect(provider.randomBytes).not.toHaveBeenCalled()
+    expect(provider.scrypt).not.toHaveBeenCalled()
+    expect(provider.timingSafeEqual).not.toHaveBeenCalled()
+  })
+
+  it('rejects hostile credential shapes without leaking credential data', () => {
+    const credential = createStoredPasswordCredential(fixedBytes(64, 19), fixedBytes(32, 20))
+    const service = createPasswordCredentialService(createRecordingCryptoProvider())
+    const accessorCredential = Object.create(null) as {
+      passwordHash: unknown
+      passwordSalt: unknown
+    }
+    Object.defineProperties(accessorCredential, {
+      passwordHash: {
+        enumerable: true,
+        get() {
+          throw new Error('C:\\secret\\hash-getter.txt')
+        }
+      },
+      passwordSalt: {
+        enumerable: true,
+        value: credential.passwordSalt
+      }
+    })
+    const proxyCredential = new Proxy(
+      {
+        passwordHash: credential.passwordHash,
+        passwordSalt: credential.passwordSalt
+      },
+      {
+        getOwnPropertyDescriptor() {
+          throw new Error('C:\\secret\\descriptor.txt')
+        }
+      }
+    )
+
+    for (const malformedCredential of [
+      {
+        passwordHash: credential.passwordHash,
+        passwordSalt: `${credential.passwordSalt}=`
+      },
+      {
+        ...credential,
+        passwordSalt: `+${credential.passwordSalt.slice(1)}`
+      },
+      {
+        ...credential,
+        metadata: 'C:\\secret\\credential.json'
+      },
+      accessorCredential,
+      proxyCredential
+    ]) {
+      const error = captureError(() => service.validateCredential(malformedCredential))
+
+      expect(error).toBeInstanceOf(PasswordCredentialFormatError)
+      expectSafePasswordError(error)
+      expect(JSON.stringify(error)).not.toContain(credential.passwordHash)
+      expect(JSON.stringify(error)).not.toContain(credential.passwordSalt)
+      expect(JSON.stringify(error)).not.toContain('hash-getter')
+      expect(JSON.stringify(error)).not.toContain('descriptor')
+    }
+  })
+
   it('fails cleanly when a valid hash is paired with a malformed salt', async () => {
     const provider = createRecordingCryptoProvider()
     const service = createPasswordCredentialService(provider)
@@ -455,6 +534,32 @@ function expectAllZero(bytes: Uint8Array | undefined): void {
   expect(Array.from(bytes!)).toEqual(new Array(bytes!.byteLength).fill(0))
 }
 
+function captureDecodedBuffers<T>(action: () => T): {
+  readonly result: T
+  readonly decodedBuffers: readonly Buffer[]
+} {
+  const originalFrom = Buffer.from.bind(Buffer)
+  const decodedBuffers: Buffer[] = []
+  const fromSpy = vi.spyOn(Buffer, 'from').mockImplementation(((...args: unknown[]): Buffer => {
+    const result = Reflect.apply(originalFrom, Buffer, args) as Buffer
+
+    if (args[1] === 'base64url') {
+      decodedBuffers.push(result)
+    }
+
+    return result
+  }) as typeof Buffer.from)
+
+  try {
+    return {
+      result: action(),
+      decodedBuffers
+    }
+  } finally {
+    fromSpy.mockRestore()
+  }
+}
+
 function expectSafePasswordError(error: unknown): void {
   const serialized = JSON.stringify(error)
 
@@ -483,6 +588,16 @@ function expectSafePasswordError(error: unknown): void {
 async function captureAsyncError(action: () => Promise<unknown>): Promise<unknown> {
   try {
     await action()
+  } catch (error) {
+    return error
+  }
+
+  throw new Error('Expected action to throw')
+}
+
+function captureError(action: () => void): unknown {
+  try {
+    action()
   } catch (error) {
     return error
   }

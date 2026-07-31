@@ -269,6 +269,7 @@ function createValidationOnlyDependencies(): {
       insert: vi.fn()
     } as unknown as AuditEventRepository,
     passwordCredentialService: {
+      validateCredential: vi.fn(),
       hash: vi.fn(),
       verify: vi.fn()
     } as unknown as PasswordCredentialService & {

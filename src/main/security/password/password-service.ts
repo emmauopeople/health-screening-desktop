@@ -3,6 +3,7 @@ import {
   parseStoredPasswordCredential,
   type ParsedStoredPasswordCredential
 } from './password-credential-format'
+import { validateStoredPasswordCredential } from './password-credential-validation'
 import { zeroBytesBestEffort } from './password-buffer-cleanup'
 import { createNodePasswordCryptoProvider } from './password-crypto'
 import {
@@ -27,6 +28,10 @@ export function createPasswordCredentialService(
   cryptoProvider: PasswordCryptoProvider = createNodePasswordCryptoProvider()
 ): PasswordCredentialService {
   return Object.freeze({
+    validateCredential(credential: unknown): StoredPasswordCredential {
+      return validateStoredPasswordCredential(credential)
+    },
+
     async hash(password: unknown): Promise<StoredPasswordCredential> {
       const plaintextPassword = parsePlaintextForHash(password)
       let passwordBytes: Buffer | undefined
