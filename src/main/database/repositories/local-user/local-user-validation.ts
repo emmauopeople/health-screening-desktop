@@ -1,5 +1,7 @@
 import { parseEntityId } from '@main/foundation/entity-id'
 import { parseUtcTimestamp } from '@main/foundation/utc-clock'
+import { validateStoredPasswordCredentialForPersistence } from '@main/security/password/password-persistence-validation'
+import type { StoredPasswordCredential } from '@main/security'
 
 import { getRepositoryErrorType, RepositoryValidationError } from '../repository-errors'
 import type {
@@ -23,6 +25,12 @@ const authenticationStateSnapshotKeys = Object.freeze([
   'updatedAt'
 ] as const)
 const updateAuthenticationStateInputKeys = Object.freeze(['id', 'expected', 'next'] as const)
+const credentialStateSnapshotKeys = Object.freeze([
+  'credential',
+  'mustChangePassword',
+  'updatedAt'
+] as const)
+const updateCredentialStateInputKeys = Object.freeze(['id', 'expected', 'next'] as const)
 
 export interface ParsedLocalUserAuthenticationStateSnapshot {
   readonly failedLoginCount: number
@@ -35,6 +43,18 @@ export interface ParsedUpdateLocalUserAuthenticationStateInput {
   readonly id: string
   readonly expected: ParsedLocalUserAuthenticationStateSnapshot
   readonly next: ParsedLocalUserAuthenticationStateSnapshot
+}
+
+export interface ParsedLocalUserCredentialStateSnapshot {
+  readonly credential: StoredPasswordCredential
+  readonly mustChangePassword: boolean
+  readonly updatedAt: string
+}
+
+export interface ParsedUpdateLocalUserCredentialStateInput {
+  readonly id: string
+  readonly expected: ParsedLocalUserCredentialStateSnapshot
+  readonly next: ParsedLocalUserCredentialStateSnapshot
 }
 
 export function parseUsernameIdentity(value: unknown): UsernameIdentity {
@@ -177,6 +197,31 @@ export function parseUpdateLocalUserAuthenticationStateInput(
   }
 }
 
+export function parseUpdateLocalUserCredentialStateInput(
+  value: unknown
+): ParsedUpdateLocalUserCredentialStateInput {
+  try {
+    const data = readStrictPlainDataProperties(value, updateCredentialStateInputKeys)
+    const id = parseEntityId(data.id)
+    const expected = parseCredentialStateSnapshot(data.expected)
+    const next = parseCredentialStateSnapshot(data.next)
+
+    validateCredentialStateTransition(expected, next)
+
+    return Object.freeze({
+      id,
+      expected,
+      next
+    })
+  } catch (error) {
+    if (error instanceof RepositoryValidationError) {
+      throw new RepositoryValidationError(error.errorType)
+    }
+
+    throw new RepositoryValidationError(getRepositoryErrorType(error))
+  }
+}
+
 function parseAuthenticationStateSnapshot(
   value: unknown
 ): ParsedLocalUserAuthenticationStateSnapshot {
@@ -186,6 +231,16 @@ function parseAuthenticationStateSnapshot(
     failedLoginCount: decodeFailedLoginCount(data.failedLoginCount),
     lockedUntil: parseNullableUtcTimestamp(data.lockedUntil),
     lastLoginAt: parseNullableUtcTimestamp(data.lastLoginAt),
+    updatedAt: parseUtcTimestamp(data.updatedAt)
+  })
+}
+
+function parseCredentialStateSnapshot(value: unknown): ParsedLocalUserCredentialStateSnapshot {
+  const data = readStrictPlainDataProperties(value, credentialStateSnapshotKeys)
+
+  return Object.freeze({
+    credential: validateStoredPasswordCredentialForPersistence(data.credential),
+    mustChangePassword: parseCreateMustChangePassword(data.mustChangePassword),
     updatedAt: parseUtcTimestamp(data.updatedAt)
   })
 }
@@ -205,6 +260,15 @@ function validateAuthenticationStateTransition(
   }
 
   if (next.lockedUntil !== null && next.lockedUntil <= next.updatedAt) {
+    throw new RepositoryValidationError()
+  }
+}
+
+function validateCredentialStateTransition(
+  expected: ParsedLocalUserCredentialStateSnapshot,
+  next: ParsedLocalUserCredentialStateSnapshot
+): void {
+  if (next.updatedAt < expected.updatedAt) {
     throw new RepositoryValidationError()
   }
 }

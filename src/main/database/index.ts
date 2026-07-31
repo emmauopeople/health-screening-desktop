@@ -48,6 +48,7 @@ export {
   encodeSqliteBoolean,
   InstallationAlreadyExistsError,
   LocalUserAuthenticationStateConflictError,
+  LocalUserCredentialStateConflictError,
   LocationAlreadyExistsError,
   LocalUserAlreadyExistsError,
   LocalUserNotFoundError,
@@ -101,6 +102,7 @@ export {
   type LocationType,
   type LocalUserAuthenticationRecord,
   type LocalUserAuthenticationStateSnapshot,
+  type LocalUserCredentialStateSnapshot,
   type LocalUserRecord,
   type LocalUserRepository,
   type LocalUserRole,
@@ -109,6 +111,7 @@ export {
   type ParsedAuditMetadata,
   type UserDisplayName,
   type UpdateLocalUserAuthenticationStateInput,
+  type UpdateLocalUserCredentialStateInput,
   type Username,
   type UsernameIdentity
 } from './repositories'

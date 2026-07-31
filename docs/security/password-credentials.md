@@ -84,6 +84,11 @@ salt and derived-key buffers before returning or throwing. It does not create
 credentials, accept plaintext, derive keys, compare credentials, verify
 passwords, log, or expose decoded buffers.
 
+HSD-019 uses this helper for the local-user credential-state repository
+mutation. That repository accepts only pre-derived stored credentials; password
+hashing, password policy, forced password-change orchestration, and audited
+credential rotation remain outside the repository boundary.
+
 ## Error And Secret Safety
 
 Password modules do not log. Controlled password errors have fixed codes and

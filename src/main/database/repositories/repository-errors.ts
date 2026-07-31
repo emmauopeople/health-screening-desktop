@@ -9,6 +9,7 @@ export type RepositoryErrorCode =
   | 'LOCAL_USER_ALREADY_EXISTS'
   | 'LOCAL_USER_NOT_FOUND'
   | 'LOCAL_USER_AUTHENTICATION_STATE_CONFLICT'
+  | 'LOCAL_USER_CREDENTIAL_STATE_CONFLICT'
   | 'LOCATION_ALREADY_EXISTS'
   | 'AUDIT_EVENT_ALREADY_EXISTS'
 
@@ -21,6 +22,7 @@ type RepositoryErrorName =
   | 'LocalUserAlreadyExistsError'
   | 'LocalUserNotFoundError'
   | 'LocalUserAuthenticationStateConflictError'
+  | 'LocalUserCredentialStateConflictError'
   | 'LocationAlreadyExistsError'
   | 'AuditEventAlreadyExistsError'
 
@@ -125,6 +127,17 @@ export class LocalUserAuthenticationStateConflictError extends ControlledReposit
   }
 }
 
+export class LocalUserCredentialStateConflictError extends ControlledRepositoryError {
+  constructor(errorType?: string) {
+    super(
+      'LocalUserCredentialStateConflictError',
+      'LOCAL_USER_CREDENTIAL_STATE_CONFLICT',
+      'Local user credential state no longer matches the expected state.',
+      errorType
+    )
+  }
+}
+
 export class LocationAlreadyExistsError extends ControlledRepositoryError {
   constructor(errorType?: string) {
     super(
@@ -156,6 +169,7 @@ export type RepositoryError =
   | LocalUserAlreadyExistsError
   | LocalUserNotFoundError
   | LocalUserAuthenticationStateConflictError
+  | LocalUserCredentialStateConflictError
   | LocationAlreadyExistsError
   | AuditEventAlreadyExistsError
 
@@ -169,6 +183,7 @@ export function isRepositoryError(error: unknown): error is RepositoryError {
     error instanceof LocalUserAlreadyExistsError ||
     error instanceof LocalUserNotFoundError ||
     error instanceof LocalUserAuthenticationStateConflictError ||
+    error instanceof LocalUserCredentialStateConflictError ||
     error instanceof LocationAlreadyExistsError ||
     error instanceof AuditEventAlreadyExistsError
   )
@@ -205,6 +220,10 @@ export function rebuildRepositoryError(error: RepositoryError): RepositoryError 
 
   if (error instanceof LocalUserAuthenticationStateConflictError) {
     return new LocalUserAuthenticationStateConflictError(error.errorType)
+  }
+
+  if (error instanceof LocalUserCredentialStateConflictError) {
+    return new LocalUserCredentialStateConflictError(error.errorType)
   }
 
   if (error instanceof LocationAlreadyExistsError) {

@@ -47,6 +47,11 @@ persists authentication state through the local-user repository when needed,
 and inserts one audit event. No password verification, hashing, random-byte
 generation, timers, IPC, or network work belongs in that callback.
 
+HSD-019 credential-state repository writes use the same caller-owned transaction
+capability. Any future password-change service must hash the new password
+before `run()` is called, then use `updateCredentialState()` inside the
+synchronous callback with an exact expected snapshot.
+
 ## Error And Log Safety
 
 Transaction failures throw controlled errors:

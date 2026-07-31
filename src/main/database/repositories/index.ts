@@ -2,6 +2,7 @@ export {
   AuditEventAlreadyExistsError,
   InstallationAlreadyExistsError,
   LocalUserAuthenticationStateConflictError,
+  LocalUserCredentialStateConflictError,
   LocationAlreadyExistsError,
   RepositoryDataIntegrityError,
   LocalUserAlreadyExistsError,
@@ -55,12 +56,14 @@ export {
   type CreateLocalUserInput,
   type LocalUserAuthenticationRecord,
   type LocalUserAuthenticationStateSnapshot,
+  type LocalUserCredentialStateSnapshot,
   type LocalUserRecord,
   type LocalUserRepository,
   type LocalUserRole,
   type NormalizedUsername,
   type UserDisplayName,
   type UpdateLocalUserAuthenticationStateInput,
+  type UpdateLocalUserCredentialStateInput,
   type Username,
   type UsernameIdentity
 } from './local-user'
