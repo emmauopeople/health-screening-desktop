@@ -97,14 +97,13 @@ export function parseLocalSessionRoleList(input: unknown): ParsedLocalSessionRol
       throw new LocalSessionValidationError(getErrorType(error))
     }
 
-    if (prototype !== Array.prototype || input.length < 1) {
+    const length = parseOwnArrayLengthDescriptor(descriptors.length)
+
+    if (prototype !== Array.prototype || length < 1) {
       throw new LocalSessionValidationError()
     }
 
-    const expectedKeys = [
-      ...Array.from({ length: input.length }, (_value, index) => String(index)),
-      'length'
-    ]
+    const expectedKeys = [...Array.from({ length }, (_value, index) => String(index)), 'length']
     const keys = Reflect.ownKeys(descriptors)
 
     if (
@@ -117,7 +116,7 @@ export function parseLocalSessionRoleList(input: unknown): ParsedLocalSessionRol
     const roles: LocalUserRole[] = []
     const seen = new Set<LocalUserRole>()
 
-    for (let index = 0; index < input.length; index += 1) {
+    for (let index = 0; index < length; index += 1) {
       const descriptor = descriptors[String(index)]
 
       if (descriptor === undefined || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
@@ -222,6 +221,20 @@ function readExactPlainDataProperties<TExpectedKey extends ExpectedKey | string>
   }
 
   return data
+}
+
+function parseOwnArrayLengthDescriptor(descriptor: PropertyDescriptor | undefined): number {
+  if (
+    descriptor === undefined ||
+    !Object.prototype.hasOwnProperty.call(descriptor, 'value') ||
+    typeof descriptor.value !== 'number' ||
+    !Number.isSafeInteger(descriptor.value) ||
+    descriptor.value < 0
+  ) {
+    throw new LocalSessionValidationError()
+  }
+
+  return descriptor.value
 }
 
 function parseBoolean(value: unknown): boolean {

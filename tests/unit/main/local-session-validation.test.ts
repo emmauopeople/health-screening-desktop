@@ -120,6 +120,42 @@ describe('local session validation', () => {
     expect(getterTouched).toBe(false)
   })
 
+  it('derives role array length from the captured descriptor without reading input.length', () => {
+    const observedGets: PropertyKey[] = []
+    const roles = new Proxy(['LOCAL_ADMIN'], {
+      get(target, property, receiver) {
+        observedGets.push(property)
+
+        if (property === 'length') {
+          throw new Error('RAW_LENGTH_TRAP_TEXT')
+        }
+
+        return Reflect.get(target, property, receiver)
+      }
+    })
+
+    expect(parseLocalSessionRoleList(roles)).toEqual(['LOCAL_ADMIN'])
+    expect(observedGets).toEqual([])
+
+    const invalidObservedGets: PropertyKey[] = []
+    const invalidRoles = new Proxy(['UNKNOWN_ROLE'], {
+      get(target, property, receiver) {
+        invalidObservedGets.push(property)
+
+        if (property === 'length') {
+          throw new Error('RAW_INVALID_LENGTH_TRAP_TEXT')
+        }
+
+        return Reflect.get(target, property, receiver)
+      }
+    })
+    const error = captureError(() => parseLocalSessionRoleList(invalidRoles))
+
+    expectSafeValidationError(error)
+    expect(invalidObservedGets).toEqual([])
+    expect(JSON.stringify(error)).not.toContain('RAW_INVALID_LENGTH_TRAP_TEXT')
+  })
+
   it('returns frozen canonical credential-free user records', () => {
     const user = createUser()
     const parsed = parseCredentialFreeLocalSessionUser(user)

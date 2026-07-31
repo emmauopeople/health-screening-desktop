@@ -351,6 +351,161 @@ describe('local authentication session service', () => {
     expect(unlockHarness.service.getSnapshot()).toMatchObject({ status: 'SIGNED_OUT' })
   })
 
+  it('lock during deferred login invalidates the stale result and leaves signed out', async () => {
+    const deferred =
+      createDeferred<Awaited<ReturnType<LocalLoginAuthenticationService['authenticate']>>>()
+    const harness = createHarness()
+    harness.loginService.authenticate.mockReturnValueOnce(deferred.promise)
+
+    const loginAttempt = harness.service.login(createLoginCommand())
+
+    expect(() => harness.service.lock()).toThrow(LocalSessionUnauthenticatedError)
+    expect(harness.service.getSnapshot()).toEqual({ status: 'SIGNED_OUT', revision: 1 })
+
+    deferred.resolve({ status: 'AUTHENTICATED', user: createUser() })
+    await expect(loginAttempt).rejects.toBeInstanceOf(LocalSessionConcurrencyError)
+    expect(harness.service.getSnapshot()).toEqual({ status: 'SIGNED_OUT', revision: 1 })
+  })
+
+  it('lock during deferred forced password change preserves provisional context and invalidates promotion', async () => {
+    const deferred =
+      createDeferred<Awaited<ReturnType<LocalForcedPasswordChangeService['changePassword']>>>()
+    const harness = createHarness({
+      loginResult: {
+        status: 'AUTHENTICATED',
+        user: createUser({ mustChangePassword: true })
+      }
+    })
+    await harness.service.login(createLoginCommand())
+    const beforeLock = harness.service.getSnapshot()
+
+    harness.forcedPasswordChangeService.changePassword.mockReturnValueOnce(deferred.promise)
+    const changeAttempt = harness.service.changeRequiredPassword(createPasswordChangeCommand())
+
+    expect(() => harness.service.lock()).toThrow(LocalSessionPasswordChangeRequiredError)
+
+    const afterLock = harness.service.getSnapshot()
+    expect(afterLock).toMatchObject({
+      status: 'PASSWORD_CHANGE_REQUIRED',
+      revision: 2
+    })
+
+    if (beforeLock.status !== 'PASSWORD_CHANGE_REQUIRED') {
+      throw new Error('Expected provisional session before lock')
+    }
+
+    if (afterLock.status !== 'PASSWORD_CHANGE_REQUIRED') {
+      throw new Error('Expected provisional session after lock')
+    }
+
+    expect(afterLock.establishedAt).toBe(beforeLock.establishedAt)
+    expect(afterLock.expiresAt).toBe(beforeLock.expiresAt)
+    expect(afterLock.user).toEqual(beforeLock.user)
+    expect(afterLock.user).not.toBe(beforeLock.user)
+    expect(Object.isFrozen(afterLock.user)).toBe(true)
+
+    deferred.resolve({
+      status: 'PASSWORD_CHANGED',
+      user: createUser({ mustChangePassword: false, updatedAt: t5 })
+    })
+    await expect(changeAttempt).rejects.toBeInstanceOf(LocalSessionConcurrencyError)
+    expect(harness.service.getSnapshot()).toMatchObject({
+      status: 'PASSWORD_CHANGE_REQUIRED',
+      revision: 2
+    })
+  })
+
+  it('lock during deferred unlock preserves lock fields, copies user, and invalidates promotion', async () => {
+    const deferred =
+      createDeferred<Awaited<ReturnType<LocalLoginAuthenticationService['authenticate']>>>()
+    const harness = createHarness()
+    await harness.service.login(createLoginCommand())
+    harness.clock.set(t10)
+    harness.service.lock()
+    const beforeLock = harness.service.getSnapshot()
+
+    harness.loginService.authenticate.mockReturnValueOnce(deferred.promise)
+    const unlockAttempt = harness.service.unlock({ password: currentPassword })
+    const afterLock = harness.service.lock()
+
+    expect(afterLock).toMatchObject({
+      status: 'LOCKED',
+      revision: 3
+    })
+
+    if (beforeLock.status !== 'LOCKED') {
+      throw new Error('Expected locked session before pending unlock lock')
+    }
+
+    if (afterLock.status !== 'LOCKED') {
+      throw new Error('Expected locked session after pending unlock lock')
+    }
+
+    expect(afterLock.authenticatedAt).toBe(beforeLock.authenticatedAt)
+    expect(afterLock.absoluteExpiresAt).toBe(beforeLock.absoluteExpiresAt)
+    expect(afterLock.lockedAt).toBe(beforeLock.lockedAt)
+    expect(afterLock.reason).toBe(beforeLock.reason)
+    expect(afterLock.user).toEqual(beforeLock.user)
+    expect(afterLock.user).not.toBe(beforeLock.user)
+    expect(Object.isFrozen(afterLock.user)).toBe(true)
+
+    deferred.resolve({
+      status: 'AUTHENTICATED',
+      user: createUser({ updatedAt: t10, lastLoginAt: t10 })
+    })
+    await expect(unlockAttempt).rejects.toBeInstanceOf(LocalSessionConcurrencyError)
+    expect(harness.service.getSnapshot()).toMatchObject({
+      status: 'LOCKED',
+      revision: 3
+    })
+  })
+
+  it('provisional expiry during pending password change prevents promotion', async () => {
+    const deferred =
+      createDeferred<Awaited<ReturnType<LocalForcedPasswordChangeService['changePassword']>>>()
+    const harness = createHarness({
+      loginResult: {
+        status: 'AUTHENTICATED',
+        user: createUser({ mustChangePassword: true })
+      }
+    })
+    await harness.service.login(createLoginCommand())
+    harness.forcedPasswordChangeService.changePassword.mockReturnValueOnce(deferred.promise)
+
+    const changeAttempt = harness.service.changeRequiredPassword(createPasswordChangeCommand())
+
+    harness.clock.set(t15)
+    expect(harness.service.getSnapshot()).toEqual({ status: 'SIGNED_OUT', revision: 2 })
+
+    deferred.resolve({
+      status: 'PASSWORD_CHANGED',
+      user: createUser({ mustChangePassword: false, updatedAt: t15 })
+    })
+    await expect(changeAttempt).rejects.toBeInstanceOf(LocalSessionConcurrencyError)
+    expect(harness.service.getSnapshot()).toEqual({ status: 'SIGNED_OUT', revision: 2 })
+  })
+
+  it('absolute expiry during pending unlock prevents promotion', async () => {
+    const deferred =
+      createDeferred<Awaited<ReturnType<LocalLoginAuthenticationService['authenticate']>>>()
+    const harness = createHarness()
+    await harness.service.login(createLoginCommand())
+    harness.service.lock()
+    harness.loginService.authenticate.mockReturnValueOnce(deferred.promise)
+
+    const unlockAttempt = harness.service.unlock({ password: currentPassword })
+
+    harness.clock.set(t12h)
+    expect(harness.service.getSnapshot()).toEqual({ status: 'SIGNED_OUT', revision: 3 })
+
+    deferred.resolve({
+      status: 'AUTHENTICATED',
+      user: createUser({ updatedAt: t12h, lastLoginAt: t12h })
+    })
+    await expect(unlockAttempt).rejects.toBeInstanceOf(LocalSessionConcurrencyError)
+    expect(harness.service.getSnapshot()).toEqual({ status: 'SIGNED_OUT', revision: 3 })
+  })
+
   it('fails closed on backward time and wrong-user unlock success', async () => {
     const backward = createHarness()
     await backward.service.login(createLoginCommand())

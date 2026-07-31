@@ -21,7 +21,8 @@ import {
   createSignedOutLocalSessionState,
   evaluateLocalSessionDeadlines,
   refreshActiveLocalSessionActivity,
-  copyLocalSessionSnapshot
+  copyLocalSessionSnapshot,
+  copyLocalSessionSnapshotWithRevision
 } from './local-session-policy'
 import {
   getLocalSessionErrorType,
@@ -337,6 +338,18 @@ export function createLocalAuthenticationSessionService({
     lock(): LocalSessionSnapshot {
       const currentTime = evaluateDeadlines()
 
+      if (pendingOperation !== undefined) {
+        state = copyLocalSessionSnapshotWithRevision(state, nextRevision())
+        pendingOperation = undefined
+        lastTransitionAt = currentTime
+
+        if (state.status === 'SIGNED_OUT' || state.status === 'PASSWORD_CHANGE_REQUIRED') {
+          throwStateAccessError(state)
+        }
+
+        return copyLocalSessionSnapshot(state)
+      }
+
       if (state.status === 'ACTIVE') {
         state = createLockedLocalSessionState({
           state,
@@ -351,20 +364,6 @@ export function createLocalAuthenticationSessionService({
       }
 
       if (state.status === 'LOCKED') {
-        if (pendingOperation !== undefined) {
-          state = Object.freeze({
-            status: 'LOCKED' as const,
-            user: state.user,
-            authenticatedAt: state.authenticatedAt,
-            lockedAt: state.lockedAt,
-            absoluteExpiresAt: state.absoluteExpiresAt,
-            reason: state.reason,
-            revision: nextRevision()
-          })
-          pendingOperation = undefined
-          lastTransitionAt = currentTime
-        }
-
         return copyLocalSessionSnapshot(state)
       }
 

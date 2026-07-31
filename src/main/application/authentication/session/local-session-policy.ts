@@ -252,6 +252,59 @@ export function copyLocalSessionSnapshot(state: LocalSessionState): LocalSession
   return snapshot
 }
 
+export function copyLocalSessionSnapshotWithRevision(
+  state: LocalSessionState,
+  revision: number
+): LocalSessionSnapshot {
+  assertLocalSessionStateInvariants(state)
+  assertSafeRevision(revision)
+
+  if (state.status === 'SIGNED_OUT') {
+    return createSignedOutLocalSessionState(revision)
+  }
+
+  if (state.status === 'PASSWORD_CHANGE_REQUIRED') {
+    const snapshot = Object.freeze({
+      status: 'PASSWORD_CHANGE_REQUIRED' as const,
+      user: copyLocalUserRecord(state.user),
+      establishedAt: state.establishedAt,
+      expiresAt: state.expiresAt,
+      revision
+    })
+    assertLocalSessionStateInvariants(snapshot)
+
+    return snapshot
+  }
+
+  if (state.status === 'ACTIVE') {
+    const snapshot = Object.freeze({
+      status: 'ACTIVE' as const,
+      user: copyLocalUserRecord(state.user),
+      authenticatedAt: state.authenticatedAt,
+      lastActivityAt: state.lastActivityAt,
+      idleExpiresAt: state.idleExpiresAt,
+      absoluteExpiresAt: state.absoluteExpiresAt,
+      revision
+    })
+    assertLocalSessionStateInvariants(snapshot)
+
+    return snapshot
+  }
+
+  const snapshot = Object.freeze({
+    status: 'LOCKED' as const,
+    user: copyLocalUserRecord(state.user),
+    authenticatedAt: state.authenticatedAt,
+    lockedAt: state.lockedAt,
+    absoluteExpiresAt: state.absoluteExpiresAt,
+    reason: state.reason,
+    revision
+  })
+  assertLocalSessionStateInvariants(snapshot)
+
+  return snapshot
+}
+
 export function createActiveLocalSessionContext(
   state: ActiveLocalSessionSnapshot
 ): ActiveLocalSessionContext {
