@@ -43,6 +43,16 @@ const reviewedErrorTypes = new Set<string>([
   'LocalForcedPasswordChangeHashingError',
   'LocalForcedPasswordChangePersistenceError',
   'LocalForcedPasswordChangeCompositionError',
+  'LocalSessionValidationError',
+  'LocalSessionStateIntegrityError',
+  'LocalSessionOperationInProgressError',
+  'LocalSessionConcurrencyError',
+  'LocalSessionUnauthenticatedError',
+  'LocalSessionLockedError',
+  'LocalSessionPasswordChangeRequiredError',
+  'LocalSessionAuthorizationError',
+  'LocalSessionAuthenticationError',
+  'LocalSessionCompositionError',
   'UnknownError'
 ])
 

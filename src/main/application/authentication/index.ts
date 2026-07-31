@@ -75,3 +75,4 @@ export type {
   LocalLoginResult,
   ParsedLocalLoginInput
 } from './local-login-types'
+export * from './session'
