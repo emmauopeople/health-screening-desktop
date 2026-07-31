@@ -27,7 +27,11 @@ authorization, or password-change behavior. HSD-020 adds the forced
 password-change application service in the same folder; it verifies the current
 password, rejects reused replacements, rotates credentials atomically, and
 audits the finalized outcome without exposing IPC, preload, renderer UI,
-sessions, or authorization.
+session management, or authorization. HSD-021 adds
+`application/authentication/session`, an in-memory main-process session service
+that coordinates local login and forced password change, enforces idle lock,
+same-user unlock, logout, stale-result cancellation, and role authorization
+without adding IPC, preload, renderer code, migrations, or persistent sessions.
 
 `src/main/foundation` owns main-process-only primitives for local data writes,
 including validated UUID v4 entity IDs and UTC timestamps. These providers are
@@ -72,8 +76,9 @@ repositories can validate canonical credential text without exposing low-level
 credential constructors or decoders through application-facing barrels.
 HSD-019 uses that bridge for credential-state persistence only. HSD-020 uses
 the application-facing password credential service for current-password
-verification, replacement reuse checks, and replacement hashing before
-transactional credential rotation.
+verification, replacement reuse checks, replacement hashing, and replacement
+credential validation before transactional credential rotation. HSD-021 stores
+no password credential material in session state.
 
 The renderer must not import from `src/main`.
 

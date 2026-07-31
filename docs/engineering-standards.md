@@ -33,6 +33,14 @@ persists HSD-017 authentication-state reset and HSD-019 credential rotation
 atomically, and appends exactly one security audit event. It does not add
 sessions, IPC, preload, renderer login, migrations, password reset, voluntary
 password change, or clinical behavior.
+HSD-021 adds the main-process-only local authentication session service. It
+keeps exactly one credential-free in-memory context, coordinates HSD-018 login
+and HSD-020 forced password change, enforces fixed idle/provisional/absolute
+deadlines lazily through one UTC clock, supports manual lock, same-user unlock,
+logout, stale async result cancellation, and role authorization. It does not add
+session persistence, migrations, IPC, preload, renderer UI, background timers,
+new audit action codes, password reset, voluntary password change, or clinical
+authorization policy beyond role membership.
 
 ## TypeScript
 
@@ -93,12 +101,13 @@ renderer, shared IPC, or logs.
 
 Application authentication services own login decision policy, expected
 rejection results, forced password-change workflow decisions, transaction-time
-revalidation, and security audit classification. They may use
+revalidation, session state, and security audit classification. They may use
 credential-bearing repository projections only inside the main process and must
-return credential-free records or fixed rejection reasons. Authentication
-services must not create sessions, expose IPC, change preload APIs, import
-renderer code, or perform authorization unless a later reviewed task grants
-that boundary.
+return credential-free records, fixed rejection reasons, or frozen session
+snapshots. HSD-021 is the reviewed boundary for in-memory session management and
+role authorization. Authentication services must not expose IPC, change preload
+APIs, import renderer code, persist sessions, or trust renderer-supplied user
+IDs, roles, session tokens, or timestamps.
 
 ## Database Migrations
 
@@ -276,6 +285,13 @@ passed only to password verification, reuse verification, or replacement
 hashing. Password-change results, audit metadata, errors, logs, IPC contracts,
 and renderer-facing values must not include plaintext, hashes, salts, derived
 keys, or credential-bearing authentication projections.
+
+Local authentication session services must store only credential-free
+`LocalUserRecord` copies and session timestamps in memory. Session snapshots,
+authorization contexts, errors, logs, IPC contracts, and renderer-facing values
+must not include plaintext, password hashes, salts, stored credentials,
+credential-bearing projections, database handles, repository objects, audit
+metadata, or bearer tokens.
 
 ## Formatting And Linting
 

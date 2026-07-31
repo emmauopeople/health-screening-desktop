@@ -29,8 +29,8 @@ A correct password for an inactive account returns `ACCOUNT_INACTIVE`. Attempts
 against an active lock return `ACCOUNT_LOCKED` without password verification.
 An active account that authenticates with `mustChangePassword=true` still
 returns `AUTHENTICATED`; the returned credential-free `LocalUserRecord` carries
-that flag so HSD-020 can complete the forced password change before HSD-021 adds
-session management.
+that flag so HSD-021 can establish a restricted password-change context and
+coordinate HSD-020 without accepting a renderer-selected user ID.
 
 ## Validation
 
@@ -139,7 +139,8 @@ or production composition failure.
 
 ## Deferred Work
 
-Sessions, refresh tokens, current-user state, authorization, IPC exposure,
-preload methods, renderer login UI, voluntary password change, password reset,
-user administration, multi-factor authentication, synchronization, backup,
-restore, and clinical workflow remain deferred to later reviewed tasks.
+HSD-021 consumes this service to create in-memory main-process session state.
+Refresh tokens, IPC exposure, preload methods, renderer login UI, voluntary
+password change, password reset, user administration, multi-factor
+authentication, synchronization, backup, restore, and clinical workflow remain
+deferred to later reviewed tasks.

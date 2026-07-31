@@ -7,8 +7,10 @@ password credential, transaction, and audit boundaries without adding sessions,
 IPC handlers, preload APIs, renderer UI, migrations, password reset, voluntary
 password change, or clinical workflow.
 
-HSD-021 remains responsible for local authenticated session management after a
-forced password change succeeds.
+HSD-021 owns the local authenticated session handoff. It injects the trusted
+temporary-password user ID from a restricted password-change context and
+promotes that same user to an active in-memory session only after this service
+returns `PASSWORD_CHANGED`.
 
 ## Result Contract
 
