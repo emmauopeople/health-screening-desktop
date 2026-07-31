@@ -47,12 +47,23 @@ describe('preload API factory', () => {
   it('exposes only the fixed app and first-run methods as frozen groups', () => {
     const api = createHealthScreeningApi(vi.fn())
 
-    expect(Object.keys(api)).toEqual(['app', 'firstRun'])
+    expect(Object.keys(api)).toEqual(['app', 'firstRun', 'auth'])
     expect(Object.keys(api.app)).toEqual(['getInfo', 'getHealth'])
     expect(Object.keys(api.firstRun)).toEqual(['getState', 'initialize'])
+    expect(Object.keys(api.auth)).toEqual([
+      'getSession',
+      'login',
+      'changeRequiredPassword',
+      'unlock',
+      'lock',
+      'logout',
+      'recordActivity',
+      'onSessionChanged'
+    ])
     expect(Object.isFrozen(api)).toBe(true)
     expect(Object.isFrozen(api.app)).toBe(true)
     expect(Object.isFrozen(api.firstRun)).toBe(true)
+    expect(Object.isFrozen(api.auth)).toBe(true)
     expect('invoke' in api).toBe(false)
     expect('send' in api).toBe(false)
     expect('on' in api).toBe(false)
@@ -60,6 +71,7 @@ describe('preload API factory', () => {
     expect('removeListener' in api).toBe(false)
     expect('ipcRenderer' in api).toBe(false)
     expect('channel' in api.firstRun).toBe(false)
+    expect('channel' in api.auth).toBe(false)
   })
 
   it('invokes app.getInfo over the exact fixed channel with an empty request', async () => {

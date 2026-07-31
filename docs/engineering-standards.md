@@ -41,6 +41,12 @@ logout, stale async result cancellation, and role authorization. It does not add
 session persistence, migrations, IPC, preload, renderer UI, background timers,
 new audit action codes, password reset, voluntary password change, or clinical
 authorization policy beyond role membership.
+HSD-022 exposes that session service through fixed authenticated IPC, a narrow
+preload `auth` group, validated session-change events, and a pure renderer
+authentication route controller. It does not add complete login,
+password-change, unlock, or clinical shell UI, and it must not add persistent
+sessions, tokens, cookies, browser storage, migrations, background timers, or
+generic IPC.
 
 ## TypeScript
 
@@ -105,9 +111,10 @@ revalidation, session state, and security audit classification. They may use
 credential-bearing repository projections only inside the main process and must
 return credential-free records, fixed rejection reasons, or frozen session
 snapshots. HSD-021 is the reviewed boundary for in-memory session management and
-role authorization. Authentication services must not expose IPC, change preload
-APIs, import renderer code, persist sessions, or trust renderer-supplied user
-IDs, roles, session tokens, or timestamps.
+role authorization. HSD-022 may expose only minimized public session data
+through authenticated IPC and preload. Authentication services and IPC handlers
+must not persist sessions or trust renderer-supplied user IDs, roles, session
+tokens, revisions, or timestamps.
 
 ## Database Migrations
 
@@ -382,9 +389,11 @@ process ID, a development boolean, or the existence of a BrowserWindow.
 The renderer receives only `window.healthScreening.app.getInfo`,
 `window.healthScreening.app.getHealth`,
 `window.healthScreening.firstRun.getState`, and
-`window.healthScreening.firstRun.initialize`. Do not expose raw `ipcRenderer`,
-generic `invoke` or `send` wrappers, synchronous IPC, event objects, arbitrary
-channels, Node globals, filesystem APIs, `process`, `Buffer`, or `require`.
+`window.healthScreening.firstRun.initialize`, plus the fixed
+`window.healthScreening.auth` methods from HSD-022. Do not expose raw
+`ipcRenderer`, generic `invoke` or `send` wrappers, synchronous IPC, event
+objects, arbitrary channels, Node globals, filesystem APIs, `process`,
+`Buffer`, or `require`.
 
 IPC handlers are registered after session security configuration and before
 renderer loading. Registration must dispose and replace only the application

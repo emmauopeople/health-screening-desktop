@@ -15,7 +15,7 @@ import {
 } from '@main/ipc/register-handlers'
 import type { IpcSenderValidationEvent } from '@main/ipc/sender-policy'
 import { ipcChannels, type AppHealth, type AppInfo } from '@shared/ipc'
-import type { FirstRunBootstrapService } from '@main/application'
+import type { FirstRunBootstrapService, LocalAuthenticationSessionService } from '@main/application'
 
 const validInfo: AppInfo = {
   applicationName: 'Health Screening Offline Desktop',
@@ -139,16 +139,23 @@ describe('application IPC handlers', () => {
 })
 
 describe('application IPC handler registration', () => {
-  it('registers exactly the four owned handlers and preserves unrelated handlers', () => {
+  it('registers exactly the owned handlers and preserves unrelated handlers', () => {
     const ipcMain = createMockIpcMain()
     ipcMain.handlers.set('unrelated:channel', vi.fn())
 
     const dispose = registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(4)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(11)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
+      'health-screening:auth:change-required-password',
+      'health-screening:auth:get-session',
+      'health-screening:auth:lock',
+      'health-screening:auth:login',
+      'health-screening:auth:logout',
+      'health-screening:auth:record-activity',
+      'health-screening:auth:unlock',
       'health-screening:first-run:get-state',
       'health-screening:first-run:initialize',
       'unrelated:channel'
@@ -166,7 +173,7 @@ describe('application IPC handler registration', () => {
     registerApplicationIpcHandlers(ipcMain, createDependencies())
     registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(8)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(22)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getHealth)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
@@ -174,6 +181,13 @@ describe('application IPC handler registration', () => {
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
+      'health-screening:auth:change-required-password',
+      'health-screening:auth:get-session',
+      'health-screening:auth:lock',
+      'health-screening:auth:login',
+      'health-screening:auth:logout',
+      'health-screening:auth:record-activity',
+      'health-screening:auth:unlock',
       'health-screening:first-run:get-state',
       'health-screening:first-run:initialize',
       'unrelated:channel'
@@ -187,6 +201,13 @@ describe('application IPC handler registration', () => {
     ipcMain.handlers.set(ipcChannels.app.getHealth, vi.fn())
     ipcMain.handlers.set(ipcChannels.firstRun.getState, vi.fn())
     ipcMain.handlers.set(ipcChannels.firstRun.initialize, vi.fn())
+    ipcMain.handlers.set(ipcChannels.auth.getSession, vi.fn())
+    ipcMain.handlers.set(ipcChannels.auth.login, vi.fn())
+    ipcMain.handlers.set(ipcChannels.auth.changeRequiredPassword, vi.fn())
+    ipcMain.handlers.set(ipcChannels.auth.unlock, vi.fn())
+    ipcMain.handlers.set(ipcChannels.auth.lock, vi.fn())
+    ipcMain.handlers.set(ipcChannels.auth.logout, vi.fn())
+    ipcMain.handlers.set(ipcChannels.auth.recordActivity, vi.fn())
 
     disposeApplicationIpcHandlers(ipcMain)
 
@@ -230,6 +251,15 @@ function createDependencies(): ApplicationIpcHandlerDependencies {
       firstRunBootstrapService: createFirstRunBootstrapService(),
       logger: createLogger()
     },
+    auth: {
+      navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
+      authenticationSessionService: createAuthenticationSessionService(),
+      sessionPublisher: {
+        publish: vi.fn(),
+        dispose: vi.fn()
+      },
+      logger: createLogger()
+    },
     logger: createLogger()
   }
 }
@@ -239,6 +269,20 @@ function createFirstRunBootstrapService(): FirstRunBootstrapService {
     getState: vi.fn(() => ({ status: 'REQUIRED' })),
     initialize: vi.fn()
   } as unknown as FirstRunBootstrapService
+}
+
+function createAuthenticationSessionService(): LocalAuthenticationSessionService {
+  return {
+    getSnapshot: vi.fn(() => ({ status: 'SIGNED_OUT', revision: 0 })),
+    login: vi.fn(),
+    changeRequiredPassword: vi.fn(),
+    unlock: vi.fn(),
+    lock: vi.fn(() => ({ status: 'SIGNED_OUT', revision: 0 })),
+    logout: vi.fn(() => ({ status: 'SIGNED_OUT', revision: 1 })),
+    recordActivity: vi.fn(),
+    requireActiveSession: vi.fn(),
+    requireAnyRole: vi.fn()
+  } as unknown as LocalAuthenticationSessionService
 }
 
 function createApplicationInfoProvider(): ApplicationInfoProvider {

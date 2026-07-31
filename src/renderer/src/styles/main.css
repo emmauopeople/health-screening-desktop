@@ -355,6 +355,45 @@ h1 {
   line-height: 1.35;
 }
 
+.auth-panel {
+  width: min(840px, 100%);
+}
+
+.auth-identity-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 26px 0 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-border);
+}
+
+.auth-identity-list div {
+  min-width: 0;
+  padding: 18px;
+  background: #f9fbfd;
+}
+
+.auth-identity-list dt {
+  margin: 0 0 7px;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.auth-identity-list dd {
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--color-ink);
+  font-size: 1.05rem;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
 .setup-reference code {
   overflow-wrap: anywhere;
   color: #6f2a20;
@@ -380,7 +419,8 @@ h1 {
   }
 
   .setup-grid,
-  .setup-result-list {
+  .setup-result-list,
+  .auth-identity-list {
     grid-template-columns: 1fr;
   }
 

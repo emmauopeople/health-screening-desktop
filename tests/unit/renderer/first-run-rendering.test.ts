@@ -140,7 +140,10 @@ describe('first-run renderer view model and source boundaries', () => {
       join(__dirname, '../../../src/shared/ipc/channels.ts'),
       'utf8'
     )
-    const preloadSource = readFileSync(join(__dirname, '../../../src/preload/api.ts'), 'utf8')
+    const preloadSource = readFileSync(
+      join(__dirname, '../../../src/preload/health-screening-api.ts'),
+      'utf8'
+    )
 
     expect(channelsSource.match(/health-screening:first-run:/g)).toHaveLength(2)
     expect(preloadSource.match(/firstRun:/g)).toHaveLength(1)

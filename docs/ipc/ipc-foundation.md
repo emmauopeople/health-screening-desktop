@@ -1,20 +1,28 @@
 # IPC Foundation
 
 HSD-005 establishes the first renderer-to-main IPC boundary. HSD-015 adds the
-trusted first-run setup IPC boundary. These are security foundations only: no
-patient workflows, authentication, sync, settings, files, shell integration, or
-clinical operations are exposed.
+trusted first-run setup IPC boundary. HSD-022 adds the authenticated session IPC
+and event boundary. These are security foundations only: no patient workflows,
+sync, settings, files, shell integration, or clinical operations are exposed.
 
 ## Channel Catalog
 
 The shared channel catalog is defined in `src/shared/ipc/channels.ts`.
 
-| Operation                      | Channel                                 | Request                  | Success data                                                                                                     |
-| ------------------------------ | --------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `app.getInfo()`                | `health-screening:app:get-info`         | `{}` strict empty object | `{ applicationName, applicationVersion, platform, architecture, packaged }`                                      |
-| `app.getHealth()`              | `health-screening:app:get-health`       | `{}` strict empty object | `{ status: 'ready', ipc: 'available', database: 'ready' or 'unavailable', clinicalFeatures: 'not-implemented' }` |
-| `firstRun.getState()`          | `health-screening:first-run:get-state`  | `{}` strict empty object | Minimized first-run state                                                                                        |
-| `firstRun.initialize(command)` | `health-screening:first-run:initialize` | Strict first-run command | Minimized initialized state                                                                                      |
+| Operation                              | Channel                                          | Request                        | Success data                                                                                                     |
+| -------------------------------------- | ------------------------------------------------ | ------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `app.getInfo()`                        | `health-screening:app:get-info`                  | `{}` strict empty object       | `{ applicationName, applicationVersion, platform, architecture, packaged }`                                      |
+| `app.getHealth()`                      | `health-screening:app:get-health`                | `{}` strict empty object       | `{ status: 'ready', ipc: 'available', database: 'ready' or 'unavailable', clinicalFeatures: 'not-implemented' }` |
+| `firstRun.getState()`                  | `health-screening:first-run:get-state`           | `{}` strict empty object       | Minimized first-run state                                                                                        |
+| `firstRun.initialize(command)`         | `health-screening:first-run:initialize`          | Strict first-run command       | Minimized initialized state                                                                                      |
+| `auth.getSession()`                    | `health-screening:auth:get-session`              | `{}` strict empty object       | Minimized public session                                                                                         |
+| `auth.login(command)`                  | `health-screening:auth:login`                    | Strict login command           | Public active/password-change-required session or safe rejection data                                            |
+| `auth.changeRequiredPassword(command)` | `health-screening:auth:change-required-password` | Strict password-change command | Public active session or safe rejection data                                                                     |
+| `auth.unlock(command)`                 | `health-screening:auth:unlock`                   | Strict unlock command          | Public active session or safe rejection data                                                                     |
+| `auth.lock()`                          | `health-screening:auth:lock`                     | `{}` strict empty object       | Minimized public session                                                                                         |
+| `auth.logout()`                        | `health-screening:auth:logout`                   | `{}` strict empty object       | Public signed-out session                                                                                        |
+| `auth.recordActivity()`                | `health-screening:auth:record-activity`          | `{}` strict empty object       | Public active session                                                                                            |
+| `auth.onSessionChanged(listener)`      | `health-screening:auth:session-changed`          | Main-to-renderer event only    | Minimized public session                                                                                         |
 
 The renderer never receives a channel string argument, a generic invoke method,
 or any dynamic dispatch surface.
@@ -83,12 +91,22 @@ window.healthScreening.app.getInfo()
 window.healthScreening.app.getHealth()
 window.healthScreening.firstRun.getState()
 window.healthScreening.firstRun.initialize(command)
+window.healthScreening.auth.getSession()
+window.healthScreening.auth.login(command)
+window.healthScreening.auth.changeRequiredPassword(command)
+window.healthScreening.auth.unlock(command)
+window.healthScreening.auth.lock()
+window.healthScreening.auth.logout()
+window.healthScreening.auth.recordActivity()
+window.healthScreening.auth.onSessionChanged(listener)
 ```
 
 Each method calls `ipcRenderer.invoke` with one compile-time channel constant.
-The preload validates first-run initialization input before invoking main and
-validates returned envelopes before passing them to the renderer. Invoke
-rejection or malformed responses map to `IPC_UNAVAILABLE`.
+The preload validates first-run and authentication input before invoking main
+and validates returned envelopes before passing them to the renderer. Invoke
+rejection or malformed responses map to `IPC_UNAVAILABLE`. Authentication event
+payloads are validated before listener delivery, and Electron event objects are
+not exposed.
 
 The bridge must not expose `ipcRenderer`, `contextBridge`, `invoke`, `send`,
 `sendSync`, `on`, `once`, `off`, `postMessage`, Electron events, Node globals,

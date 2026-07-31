@@ -3,12 +3,12 @@
 HSD-021 adds a main-process-only, single-user, in-memory local authentication
 session service. It composes HSD-018 login and HSD-020 forced password change,
 keeps only credential-free user identity in memory, and provides the trusted
-authorization gate that HSD-022 will later expose through reviewed IPC and
-preload contracts.
+authorization gate.
 
-The service creates no renderer-visible token, cookie, session ID, IPC channel,
-preload API, persisted current user, session table, migration, background
-timer, BrowserWindow wiring, or new audit action.
+HSD-022 exposes that service through reviewed authenticated IPC, preload, and
+renderer route-state contracts. The service still creates no renderer-visible
+token, cookie, session ID, persisted current user, session table, migration,
+background timer, BrowserWindow wiring, or new audit action.
 
 ## State Model
 
@@ -139,9 +139,18 @@ results, stale async results, protected operations in the wrong state,
 authorization denial, operational authentication failure, or composition
 failure.
 
-## Deferred Work
+## Transport Boundary
 
-HSD-022 is the next bounded task for authenticated IPC, preload exposure,
-renderer routing, sender validation, and use of this main-process authorization
-gate. HSD-021 intentionally does not expose the session service to renderer
-code.
+HSD-022 maps internal session snapshots to a new minimized public session before
+data crosses the main/preload boundary. The public shape contains only
+`username`, `displayName`, `role`, UI deadlines, lock reason, status, and
+revision. It omits user IDs, persistence timestamps, failed-login counters,
+credentials, hashes, salts, audit data, database data, and internal contexts.
+
+The HSD-021 service remains the authority for login handoff, forced password
+change, lock, unlock, activity, logout, deadlines, stale-result cancellation,
+and role authorization. IPC, preload, and renderer code must not reproduce that
+policy.
+
+HSD-023 is the next bounded task for the complete login, required password
+change, unlock, and authenticated shell UI.

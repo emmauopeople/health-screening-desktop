@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { HealthScreeningApi } from '@shared/ipc'
 
+import {
+  AuthenticationRoutePlaceholder,
+  createRendererAuthenticationRouteController,
+  type RendererAuthenticationRoute
+} from './authentication'
 import { FirstRunSetupScreen } from './first-run/FirstRunSetupScreen'
 import {
   InconsistentStateScreen,
   LoadingScreen,
-  SetupCompleteScreen,
   UnavailableScreen
 } from './first-run/FirstRunStateScreen'
 import {
@@ -35,9 +39,7 @@ function App({ api = window.healthScreening }: AppProps): React.JSX.Element {
           onExit={handleExit}
         />
       ) : null}
-      {startupState.status === 'SETUP_COMPLETE' ? (
-        <SetupCompleteScreen state={startupState} onExit={handleExit} />
-      ) : null}
+      {startupState.status === 'SETUP_COMPLETE' ? <AuthenticationBoundary api={api} /> : null}
       {startupState.status === 'INCONSISTENT' ? (
         <InconsistentStateScreen state={startupState} onExit={handleExit} />
       ) : null}
@@ -46,6 +48,25 @@ function App({ api = window.healthScreening }: AppProps): React.JSX.Element {
       ) : null}
     </main>
   )
+}
+
+function AuthenticationBoundary({ api }: { api: HealthScreeningApi }): React.JSX.Element {
+  const [route, setRoute] = useState<RendererAuthenticationRoute>({ status: 'AUTH_LOADING' })
+
+  useEffect(() => {
+    const controller = createRendererAuthenticationRouteController({
+      api,
+      onRoute: setRoute
+    })
+
+    void controller.load()
+
+    return () => {
+      controller.dispose()
+    }
+  }, [api])
+
+  return <AuthenticationRoutePlaceholder route={route} />
 }
 
 function useStartupState(api: HealthScreeningApi): {
