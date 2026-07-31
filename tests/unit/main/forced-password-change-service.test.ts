@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   createLocalForcedPasswordChangeService,
+  LocalForcedPasswordChangeHashingError,
   type LocalForcedPasswordChangeService,
   type LocalForcedPasswordChangeServiceDependencies
 } from '@main/application'
@@ -14,7 +15,7 @@ import type {
 } from '@main/database'
 import { parseEntityId, parseUtcTimestamp } from '@main/foundation'
 import { createStoredPasswordCredential } from '@main/security/password/password-credential-format'
-import type { PasswordCredentialService } from '@main/security'
+import type { PasswordCredentialService, StoredPasswordCredential } from '@main/security'
 
 const userId = parseEntityId('11111111-1111-4111-8111-111111111111')
 const auditId = parseEntityId('22222222-2222-4222-8222-222222222222')
@@ -94,7 +95,68 @@ describe('forced password change service', () => {
     )
   })
 
-  it('successful flow verifies, checks reuse, hashes, then writes state, credential, and audit', async () => {
+  it('rejects when hash returns the existing credential without opening a transaction', async () => {
+    const passwordCredentialService = createMockPasswordCredentialService({
+      hashCredential: credential,
+      verifyResults: [true, false]
+    })
+    const harness = createHarness({ passwordCredentialService })
+
+    const error = await captureAsyncError(() => harness.service.changePassword(createCommand()))
+
+    expect(error).toBeInstanceOf(LocalForcedPasswordChangeHashingError)
+    expect(passwordCredentialService.verify).toHaveBeenCalledTimes(2)
+    expect(passwordCredentialService.hash).toHaveBeenCalledOnce()
+    expectNoTransactionOrAudit(harness)
+  })
+
+  it('rejects when the replacement credential does not verify the new password', async () => {
+    const passwordCredentialService = createMockPasswordCredentialService({
+      verifyResults: [true, false, false]
+    })
+    const harness = createHarness({ passwordCredentialService })
+
+    const error = await captureAsyncError(() => harness.service.changePassword(createCommand()))
+
+    expect(error).toBeInstanceOf(LocalForcedPasswordChangeHashingError)
+    expect(passwordCredentialService.verify).toHaveBeenCalledTimes(3)
+    expect(passwordCredentialService.hash).toHaveBeenCalledOnce()
+    expectNoTransactionOrAudit(harness)
+  })
+
+  it('rejects when the replacement credential still verifies the current password', async () => {
+    const passwordCredentialService = createMockPasswordCredentialService({
+      verifyResults: [true, false, true, true]
+    })
+    const harness = createHarness({ passwordCredentialService })
+
+    const error = await captureAsyncError(() => harness.service.changePassword(createCommand()))
+
+    expect(error).toBeInstanceOf(LocalForcedPasswordChangeHashingError)
+    expect(passwordCredentialService.verify).toHaveBeenCalledTimes(4)
+    expect(passwordCredentialService.hash).toHaveBeenCalledOnce()
+    expectNoTransactionOrAudit(harness)
+  })
+
+  it('rejects malformed replacement credentials without opening a transaction', async () => {
+    const passwordCredentialService = createMockPasswordCredentialService({
+      hashCredential: Object.freeze({
+        passwordHash: 'not-a-password-hash',
+        passwordSalt: 'not-a-password-salt'
+      }) as StoredPasswordCredential,
+      verifyResults: [true, false]
+    })
+    const harness = createHarness({ passwordCredentialService })
+
+    const error = await captureAsyncError(() => harness.service.changePassword(createCommand()))
+
+    expect(error).toBeInstanceOf(LocalForcedPasswordChangeHashingError)
+    expect(passwordCredentialService.verify).toHaveBeenCalledTimes(2)
+    expect(passwordCredentialService.hash).toHaveBeenCalledOnce()
+    expectNoTransactionOrAudit(harness)
+  })
+
+  it('valid distinct replacement verifies before writing state, credential, and audit', async () => {
     const order: string[] = []
     const harness = createHarness({ order })
 
@@ -117,6 +179,8 @@ describe('forced password change service', () => {
       'verify-current',
       'verify-reuse',
       'hash-new',
+      'verify-replacement-new',
+      'verify-replacement-current',
       'transaction',
       'update-authentication-state',
       'update-credential-state',
@@ -155,13 +219,18 @@ describe('forced password change service', () => {
 interface HarnessOptions {
   readonly user?: LocalUserRecord
   readonly order?: string[]
+  readonly passwordCredentialService?: PasswordCredentialService
 }
 
 interface Harness extends LocalForcedPasswordChangeServiceDependencies {
   readonly service: LocalForcedPasswordChangeService
 }
 
-function createHarness({ user = createUser(), order = [] }: HarnessOptions = {}): Harness {
+function createHarness({
+  user = createUser(),
+  order = [],
+  passwordCredentialService = createMockPasswordCredentialService({ order })
+}: HarnessOptions = {}): Harness {
   let currentUser = user
 
   const installationRepository = {
@@ -212,20 +281,6 @@ function createHarness({ user = createUser(), order = [] }: HarnessOptions = {})
       }) as AuditEventRecord
     })
   }
-  let verifyCount = 0
-  const passwordCredentialService: PasswordCredentialService = {
-    verify: vi.fn(async () => {
-      verifyCount += 1
-      order.push(verifyCount === 1 ? 'verify-current' : 'verify-reuse')
-
-      return verifyCount === 1
-    }),
-    hash: vi.fn(async () => {
-      order.push('hash-new')
-
-      return replacementCredential
-    })
-  }
   const transactionExecutor = {
     run: vi.fn(<T>(work: (context: DatabaseTransactionContext) => T): T => {
       order.push('transaction')
@@ -252,6 +307,54 @@ function createHarness({ user = createUser(), order = [] }: HarnessOptions = {})
     ...dependencies,
     service: createLocalForcedPasswordChangeService(dependencies)
   }
+}
+
+function createMockPasswordCredentialService({
+  hashCredential = replacementCredential,
+  order = [],
+  verifyResults = [true, false, true, false]
+}: {
+  readonly hashCredential?: StoredPasswordCredential
+  readonly order?: string[]
+  readonly verifyResults?: readonly boolean[]
+} = {}): PasswordCredentialService & {
+  readonly hash: ReturnType<typeof vi.fn<PasswordCredentialService['hash']>>
+  readonly verify: ReturnType<typeof vi.fn<PasswordCredentialService['verify']>>
+} {
+  let verifyCount = 0
+  const verificationSteps = Object.freeze([
+    'verify-current',
+    'verify-reuse',
+    'verify-replacement-new',
+    'verify-replacement-current'
+  ] as const)
+
+  return {
+    verify: vi.fn(async () => {
+      const step = verificationSteps[verifyCount] ?? `verify-${verifyCount + 1}`
+      const result = verifyResults[verifyCount]
+      verifyCount += 1
+      order.push(step)
+
+      if (result === undefined) {
+        throw new Error('Unexpected replacement credential verification')
+      }
+
+      return result
+    }),
+    hash: vi.fn(async () => {
+      order.push('hash-new')
+
+      return hashCredential
+    })
+  }
+}
+
+function expectNoTransactionOrAudit(harness: Harness): void {
+  expect(harness.transactionExecutor.run).not.toHaveBeenCalled()
+  expect(harness.localUserRepository.updateAuthenticationState).not.toHaveBeenCalled()
+  expect(harness.localUserRepository.updateCredentialState).not.toHaveBeenCalled()
+  expect(harness.auditEventRepository.insert).not.toHaveBeenCalled()
 }
 
 function createCommand(): Record<string, unknown> {
@@ -292,4 +395,14 @@ function createUser(override: Partial<LocalUserRecord> = {}): LocalUserRecord {
 
 function fixedBytes(length: number, offset: number): Buffer {
   return Buffer.from(Array.from({ length }, (_, index) => (index + offset) % 256))
+}
+
+async function captureAsyncError(action: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await action()
+  } catch (error) {
+    return error
+  }
+
+  throw new Error('Expected action to throw')
 }

@@ -34,6 +34,7 @@ import {
   PasswordVerificationError,
   type StoredPasswordCredential
 } from '@main/security'
+import { validateStoredPasswordCredentialForPersistence } from '@main/security/password/password-persistence-validation'
 
 import {
   getLocalForcedPasswordChangeErrorType,
@@ -190,7 +191,13 @@ export function createLocalForcedPasswordChangeService({
         passwordCredentialService,
         parsedInput.newPassword
       )
-      const nextCredential = replacementCredential
+      const nextCredential = await validateReplacementCredential({
+        passwordCredentialService,
+        currentPassword: parsedInput.currentPassword,
+        newPassword: parsedInput.newPassword,
+        currentCredential: observation.credential,
+        replacementCredential
+      })
 
       return transactionExecutor.run((context) =>
         finalizeSuccessfulChange({
@@ -694,6 +701,71 @@ async function hashReplacementPassword(
 
     throw new LocalForcedPasswordChangeHashingError(getErrorType(error))
   }
+}
+
+async function validateReplacementCredential({
+  passwordCredentialService,
+  currentPassword,
+  newPassword,
+  currentCredential,
+  replacementCredential
+}: {
+  readonly passwordCredentialService: LocalForcedPasswordChangeServiceDependencies['passwordCredentialService']
+  readonly currentPassword: ParsedLocalForcedPasswordChangeInput['currentPassword']
+  readonly newPassword: ParsedLocalForcedPasswordChangeInput['newPassword']
+  readonly currentCredential: StoredPasswordCredential
+  readonly replacementCredential: StoredPasswordCredential
+}): Promise<StoredPasswordCredential> {
+  try {
+    const validatedReplacement =
+      validateStoredPasswordCredentialForPersistence(replacementCredential)
+
+    if (credentialsMatch(validatedReplacement, currentCredential)) {
+      throw new LocalForcedPasswordChangeHashingError()
+    }
+
+    const verifiesNewPassword = await passwordCredentialService.verify(
+      newPassword,
+      validatedReplacement
+    )
+
+    if (verifiesNewPassword !== true) {
+      throw new LocalForcedPasswordChangeHashingError()
+    }
+
+    const verifiesCurrentPassword = await passwordCredentialService.verify(
+      currentPassword,
+      validatedReplacement
+    )
+
+    if (verifiesCurrentPassword !== false) {
+      throw new LocalForcedPasswordChangeHashingError()
+    }
+
+    return validatedReplacement
+  } catch (error) {
+    if (error instanceof LocalForcedPasswordChangeHashingError) {
+      throw new LocalForcedPasswordChangeHashingError(error.errorType)
+    }
+
+    if (
+      error instanceof PasswordHashingError ||
+      error instanceof PasswordCredentialFormatError ||
+      error instanceof PasswordValidationError ||
+      error instanceof PasswordVerificationError
+    ) {
+      throw new LocalForcedPasswordChangeHashingError(error.errorType)
+    }
+
+    throw new LocalForcedPasswordChangeHashingError(getErrorType(error))
+  }
+}
+
+function credentialsMatch(
+  left: StoredPasswordCredential,
+  right: StoredPasswordCredential
+): boolean {
+  return left.passwordHash === right.passwordHash && left.passwordSalt === right.passwordSalt
 }
 
 function assertObservationTimeCanFinalize(

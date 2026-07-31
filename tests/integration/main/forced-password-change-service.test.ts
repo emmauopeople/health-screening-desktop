@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   createLocalForcedPasswordChangeService,
+  LocalForcedPasswordChangeConcurrencyError,
   LocalForcedPasswordChangePersistenceError
 } from '@main/application'
 import {
@@ -30,7 +31,8 @@ import { parseUtcTimestamp, type UtcClock, type UtcTimestamp } from '@main/found
 import {
   createPasswordCredentialService,
   type PasswordCredentialService,
-  type PasswordCryptoProvider
+  type PasswordCryptoProvider,
+  type StoredPasswordCredential
 } from '@main/security'
 import { createStoredPasswordCredential } from '@main/security/password/password-credential-format'
 
@@ -49,6 +51,15 @@ const userId = parseEntityId('22222222-2222-4222-8222-222222222222')
 const auditId = parseEntityId('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
 const secondAuditId = parseEntityId('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')
 const userCredential = createStoredPasswordCredential(fixedBytes(64, 21), fixedBytes(32, 11))
+const externallyRotatedCredential = createStoredPasswordCredential(
+  fixedBytes(64, 61),
+  fixedBytes(32, 71)
+)
+
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve(value: T): void
+}
 
 describe('forced password change service integration', () => {
   it('changes a temporary password durably and invalidates the old credential', async () => {
@@ -384,6 +395,276 @@ describe('forced password change service integration', () => {
       }
     )
   })
+
+  it('does not rotate credentials or audit when authentication-state update fails', async () => {
+    let credentialUpdateAttempts = 0
+
+    await withForcedPasswordChangeDatabase(
+      async ({ connection, service }) => {
+        const beforeUser = readRawUser(connection)
+        const beforeCredential = readCredentialColumns(connection)
+
+        const error = await captureAsyncError(() => service.changePassword(createCommand()))
+
+        expect(error).toBeInstanceOf(LocalForcedPasswordChangePersistenceError)
+        expect(credentialUpdateAttempts).toBe(0)
+        expect(readRawUser(connection)).toEqual(beforeUser)
+        expect(readCredentialColumns(connection)).toEqual(beforeCredential)
+        expect(readRawAuditRows(connection)).toEqual([])
+      },
+      {
+        wrapLocalUserRepository(repository) {
+          return {
+            ...repository,
+            updateAuthenticationState() {
+              throw new RepositoryWriteError('RepositoryWriteError')
+            },
+            updateCredentialState(connection, input) {
+              credentialUpdateAttempts += 1
+
+              return repository.updateCredentialState(connection, input)
+            }
+          }
+        }
+      }
+    )
+  })
+
+  it('rolls back the authentication reset when credential rotation fails', async () => {
+    await withForcedPasswordChangeDatabase(
+      async ({ connection, service }) => {
+        const beforeUser = readRawUser(connection)
+        const beforeCredential = readCredentialColumns(connection)
+
+        const error = await captureAsyncError(() => service.changePassword(createCommand()))
+
+        expect(error).toBeInstanceOf(LocalForcedPasswordChangePersistenceError)
+        expect(readRawUser(connection)).toEqual(beforeUser)
+        expect(readCredentialColumns(connection)).toEqual(beforeCredential)
+        expect(readRawAuditRows(connection)).toEqual([])
+      },
+      {
+        wrapLocalUserRepository(repository) {
+          return {
+            ...repository,
+            updateCredentialState() {
+              throw new RepositoryWriteError('RepositoryWriteError')
+            }
+          }
+        }
+      }
+    )
+  })
+
+  it('preserves the old credential and mustChangePassword flag when commit fails', async () => {
+    await withForcedPasswordChangeDatabase(
+      async ({ connection, service }) => {
+        const beforeUser = readRawUser(connection)
+        const beforeCredential = readCredentialColumns(connection)
+
+        const error = await captureAsyncError(() => service.changePassword(createCommand()))
+
+        expect(error).toBeInstanceOf(LocalForcedPasswordChangePersistenceError)
+        expect(readRawUser(connection)).toEqual(beforeUser)
+        expect(readCredentialColumns(connection)).toEqual(beforeCredential)
+        expect(readRawUser(connection)).toMatchObject({ must_change_password: 1 })
+        expect(readRawAuditRows(connection)).toEqual([])
+      },
+      {
+        wrapTransactionConnection(connection) {
+          return createTransactionConnectionProxy(connection, { failCommit: true })
+        }
+      }
+    )
+  })
+
+  it('prevents two attempts based on the same observed credential from both committing', async () => {
+    const firstCurrentPasswordVerification = createDeferred<void>()
+    const secondCurrentPasswordVerification = createDeferred<void>()
+    const bothAttemptsObservedCredential = createDeferred<void>()
+    let currentPasswordVerificationCount = 0
+
+    await withForcedPasswordChangeDatabase(
+      async ({ connection, service }) => {
+        const firstAttempt = service.changePassword(createCommand())
+        const secondAttempt = service.changePassword(createCommand())
+
+        await bothAttemptsObservedCredential.promise
+        firstCurrentPasswordVerification.resolve()
+
+        const firstResult = await firstAttempt
+
+        expect(firstResult).toMatchObject({
+          status: 'PASSWORD_CHANGED',
+          user: {
+            mustChangePassword: false,
+            updatedAt: transactionTime
+          }
+        })
+
+        secondCurrentPasswordVerification.resolve()
+
+        const secondError = await captureAsyncError(() => secondAttempt)
+
+        expect(secondError).toBeInstanceOf(LocalForcedPasswordChangeConcurrencyError)
+        expect(readRawAuditRows(connection)).toHaveLength(1)
+        expect(readRawUser(connection)).toMatchObject({
+          must_change_password: 0,
+          updated_at: transactionTime
+        })
+      },
+      {
+        clock: createQueuedClock([
+          observationTime,
+          observationTime,
+          transactionTime,
+          transactionTime
+        ]),
+        wrapPasswordCredentialService(service) {
+          return {
+            hash: vi.fn((password) => service.hash(password)),
+            verify: vi.fn(async (password, credential) => {
+              if (password === currentPassword && credentialsEqual(credential, userCredential)) {
+                currentPasswordVerificationCount += 1
+
+                if (currentPasswordVerificationCount === 2) {
+                  bothAttemptsObservedCredential.resolve()
+                }
+
+                await (currentPasswordVerificationCount === 1
+                  ? firstCurrentPasswordVerification.promise
+                  : secondCurrentPasswordVerification.promise)
+              }
+
+              return service.verify(password, credential)
+            })
+          }
+        }
+      }
+    )
+  })
+
+  it.each([
+    {
+      field: 'credential',
+      mutate: (connection: Database.Database) =>
+        updateRawCredential(connection, externallyRotatedCredential)
+    },
+    {
+      field: 'username',
+      mutate: (connection: Database.Database) => {
+        const changedIdentity = parseUsernameIdentity('Changed.User')
+        connection
+          .prepare('UPDATE users SET username = ?, username_normalized = ? WHERE id = ?')
+          .run(changedIdentity.username, changedIdentity.usernameNormalized, userId)
+      }
+    },
+    {
+      field: 'role',
+      mutate: (connection: Database.Database) =>
+        connection
+          .prepare('UPDATE users SET role = ? WHERE id = ?')
+          .run(parseLocalUserRole('NURSE'), userId)
+    },
+    {
+      field: 'isActive',
+      mutate: (connection: Database.Database) =>
+        connection.prepare('UPDATE users SET is_active = 0 WHERE id = ?').run(userId)
+    },
+    {
+      field: 'mustChangePassword',
+      mutate: (connection: Database.Database) =>
+        connection.prepare('UPDATE users SET must_change_password = 0 WHERE id = ?').run(userId)
+    },
+    {
+      field: 'failedLoginCount',
+      mutate: (connection: Database.Database) =>
+        connection.prepare('UPDATE users SET failed_login_count = 1 WHERE id = ?').run(userId)
+    },
+    {
+      field: 'lockedUntil',
+      mutate: (connection: Database.Database) =>
+        connection
+          .prepare('UPDATE users SET locked_until = ? WHERE id = ?')
+          .run(activeLockedUntil, userId)
+    },
+    {
+      field: 'lastLoginAt',
+      mutate: (connection: Database.Database) =>
+        connection
+          .prepare('UPDATE users SET last_login_at = ? WHERE id = ?')
+          .run(previousLoginAt, userId)
+    },
+    {
+      field: 'updatedAt',
+      mutate: (connection: Database.Database) =>
+        connection
+          .prepare('UPDATE users SET updated_at = ? WHERE id = ?')
+          .run(transactionTime, userId)
+    }
+  ])(
+    'raises a concurrency error when $field changes before the transaction',
+    async ({ mutate }) => {
+      let mutationApplied = false
+
+      await withForcedPasswordChangeDatabase(
+        async ({ connection, service }) => {
+          const error = await captureAsyncError(() => service.changePassword(createCommand()))
+
+          expect(mutationApplied).toBe(true)
+          expect(error).toBeInstanceOf(LocalForcedPasswordChangeConcurrencyError)
+          expect(readRawAuditRows(connection)).toEqual([])
+        },
+        {
+          wrapPasswordCredentialService(service, connection) {
+            return {
+              hash: vi.fn(async (password) => {
+                const replacement = await service.hash(password)
+
+                if (!mutationApplied) {
+                  mutate(connection)
+                  mutationApplied = true
+                }
+
+                return replacement
+              }),
+              verify: vi.fn((password, credential) => service.verify(password, credential))
+            }
+          }
+        }
+      )
+    }
+  )
+
+  it('does not expose a successful result before commit completes', async () => {
+    let commitObserved = false
+    let resultExposed = false
+
+    await withForcedPasswordChangeDatabase(
+      async ({ service }) => {
+        const changePassword = service.changePassword(createCommand()).then((result) => {
+          resultExposed = true
+
+          return result
+        })
+
+        const result = await changePassword
+
+        expect(result).toMatchObject({ status: 'PASSWORD_CHANGED' })
+        expect(commitObserved).toBe(true)
+      },
+      {
+        wrapTransactionConnection(connection) {
+          return createTransactionConnectionProxy(connection, {
+            onCommit() {
+              commitObserved = true
+              expect(resultExposed).toBe(false)
+            }
+          })
+        }
+      }
+    )
+  })
 })
 
 interface AuthenticationStateOverride {
@@ -396,18 +677,25 @@ interface AuthenticationStateOverride {
 interface WithForcedPasswordChangeDatabaseOptions {
   readonly clock?: UtcClock
   readonly idGenerator?: EntityIdGenerator
+  readonly wrapPasswordCredentialService?: (
+    service: TestPasswordCredentialService,
+    connection: Database.Database
+  ) => TestPasswordCredentialService
+  readonly wrapTransactionConnection?: (connection: Database.Database) => Database.Database
   readonly wrapLocalUserRepository?: (repository: LocalUserRepository) => LocalUserRepository
   readonly wrapAuditEventRepository?: (repository: AuditEventRepository) => AuditEventRepository
+}
+
+type TestPasswordCredentialService = PasswordCredentialService & {
+  readonly hash: ReturnType<typeof vi.fn<PasswordCredentialService['hash']>>
+  readonly verify: ReturnType<typeof vi.fn<PasswordCredentialService['verify']>>
 }
 
 interface WithForcedPasswordChangeDatabaseContext {
   readonly connection: Database.Database
   readonly databasePath: string
   readonly service: ReturnType<typeof createLocalForcedPasswordChangeService>
-  readonly passwordCredentialService: PasswordCredentialService & {
-    readonly hash: ReturnType<typeof vi.fn<PasswordCredentialService['hash']>>
-    readonly verify: ReturnType<typeof vi.fn<PasswordCredentialService['verify']>>
-  }
+  readonly passwordCredentialService: TestPasswordCredentialService
 }
 
 async function withForcedPasswordChangeDatabase(
@@ -427,7 +715,10 @@ async function withForcedPasswordChangeDatabase(
     })(connection)
     seedInstallationAndUser(connection)
 
-    const passwordCredentialService = createCountingPasswordService()
+    const basePasswordCredentialService = createCountingPasswordService()
+    const passwordCredentialService = options.wrapPasswordCredentialService
+      ? options.wrapPasswordCredentialService(basePasswordCredentialService, connection)
+      : basePasswordCredentialService
     const clock = options.clock ?? createQueuedClock([observationTime, transactionTime])
     const idGenerator = options.idGenerator ?? createQueuedIdGenerator([auditId, secondAuditId])
     const baseLocalUserRepository = createLocalUserRepository(connection)
@@ -439,7 +730,9 @@ async function withForcedPasswordChangeDatabase(
       ? options.wrapAuditEventRepository(baseAuditEventRepository)
       : baseAuditEventRepository
     const transactionExecutor = createDatabaseTransactionExecutor({
-      connection,
+      connection: options.wrapTransactionConnection
+        ? options.wrapTransactionConnection(connection)
+        : connection,
       idGenerator,
       clock,
       logger: { error: vi.fn() }
@@ -457,8 +750,7 @@ async function withForcedPasswordChangeDatabase(
       connection,
       databasePath,
       service,
-      passwordCredentialService:
-        passwordCredentialService as WithForcedPasswordChangeDatabaseContext['passwordCredentialService']
+      passwordCredentialService
     })
   } finally {
     if (connection.open) {
@@ -519,15 +811,57 @@ function createCommand(
   }
 }
 
-function createCountingPasswordService(): PasswordCredentialService & {
-  readonly hash: ReturnType<typeof vi.fn<PasswordCredentialService['hash']>>
-  readonly verify: ReturnType<typeof vi.fn<PasswordCredentialService['verify']>>
-} {
+function createCountingPasswordService(): TestPasswordCredentialService {
   const service = createPasswordCredentialService(createDeterministicCryptoProvider())
 
   return {
     hash: vi.fn((password) => service.hash(password)),
     verify: vi.fn((password, credential) => service.verify(password, credential))
+  }
+}
+
+function createTransactionConnectionProxy(
+  connection: Database.Database,
+  options: {
+    readonly failCommit?: boolean
+    readonly onCommit?: () => void
+  }
+): Database.Database {
+  const wrappedConnection = {
+    get open(): boolean {
+      return connection.open
+    },
+    get inTransaction(): boolean {
+      return connection.inTransaction
+    },
+    prepare: connection.prepare.bind(connection),
+    exec(source: string) {
+      if (source === 'COMMIT') {
+        options.onCommit?.()
+
+        if (options.failCommit === true) {
+          throw new Error('C:\\secret\\commit.sqlite3')
+        }
+      }
+
+      connection.exec(source)
+
+      return wrappedConnection
+    }
+  }
+
+  return wrappedConnection as unknown as Database.Database
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolveDeferred: (value: T) => void = () => undefined
+  const promise = new Promise<T>((resolve) => {
+    resolveDeferred = resolve
+  })
+
+  return {
+    promise,
+    resolve: resolveDeferred
   }
 }
 
@@ -603,6 +937,33 @@ function updateRawAuthenticationState(
        WHERE id = ?`
     )
     .run(state.failedLoginCount, state.lockedUntil, state.lastLoginAt, state.updatedAt, userId)
+}
+
+function updateRawCredential(
+  connection: Database.Database,
+  credential: StoredPasswordCredential
+): void {
+  connection
+    .prepare(
+      `UPDATE users
+       SET password_hash = ?,
+           password_salt = ?
+       WHERE id = ?`
+    )
+    .run(credential.passwordHash, credential.passwordSalt, userId)
+}
+
+function credentialsEqual(value: unknown, credential: StoredPasswordCredential): boolean {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+
+  const candidate = value as Partial<StoredPasswordCredential>
+
+  return (
+    candidate.passwordHash === credential.passwordHash &&
+    candidate.passwordSalt === credential.passwordSalt
+  )
 }
 
 function readRawUser(connection: Database.Database): Record<string, unknown> | undefined {
