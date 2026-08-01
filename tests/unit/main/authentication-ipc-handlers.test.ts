@@ -24,6 +24,7 @@ import {
   type AuthenticationSessionPublisher
 } from '@main/ipc/authentication'
 import type { LocalUserRecord } from '@main/database'
+import type { UtcClock, UtcTimestamp } from '@main/foundation'
 import type { IpcSenderValidationEvent } from '@main/ipc/sender-policy'
 import {
   createAuthenticationFailure,
@@ -36,6 +37,9 @@ const loginRequest: AuthLoginRequest = {
   username: 'Admin.User',
   password: 'CurrentPassw0rd!'
 }
+const t0 = '2026-07-31T12:00:00.000Z' as UtcTimestamp
+const tIdle = '2026-07-31T12:15:00.000Z' as UtcTimestamp
+const tAbsolute = '2026-08-01T00:00:00.000Z' as UtcTimestamp
 
 describe('authentication IPC handlers', () => {
   it('returns minimized public sessions and publishes only changed public state', async () => {
@@ -354,7 +358,7 @@ describe('authentication IPC handlers', () => {
     expect(publisher.publish).not.toHaveBeenCalled()
   })
 
-  it('keeps successful login authoritative when session event delivery fails and retries later', async () => {
+  it('keeps successful login authoritative when session event delivery fails', async () => {
     let snapshot: LocalSessionSnapshot = { status: 'SIGNED_OUT', revision: 0 }
     const activeSnapshot = createActiveSnapshot(1)
     const service = createService({
@@ -402,7 +406,7 @@ describe('authentication IPC handlers', () => {
         revision: 1
       })
     )
-    expect(target.send).toHaveBeenCalledTimes(1)
+    expect(target.send).toHaveBeenCalledTimes(2)
 
     await expect(handlers.getSession(createAllowedEvent(), {})).resolves.toEqual(loginResult)
     expect(target.send).toHaveBeenCalledTimes(2)
@@ -415,6 +419,159 @@ describe('authentication IPC handlers', () => {
     expect(logs).not.toContain('renderer-send')
     expect(logs).not.toContain('CurrentPassw0rd')
     expect(logs).not.toContain('C:\\secret')
+  })
+
+  it('publishes lazy locked and signed-out transitions observed by getSession', async () => {
+    const idleHarness = createActualSessionService()
+    const idlePublisher = createPublisher()
+    const idleHandlers = createHandlers({
+      service: idleHarness.service,
+      publisher: idlePublisher
+    })
+
+    await idleHandlers.login(createAllowedEvent(), loginRequest)
+    idlePublisher.publish.mockClear()
+    idleHarness.clock.set(tIdle)
+
+    await expect(idleHandlers.getSession(createAllowedEvent(), {})).resolves.toMatchObject({
+      ok: true,
+      data: {
+        status: 'LOCKED',
+        revision: 2,
+        reason: 'IDLE_TIMEOUT'
+      }
+    })
+    expect(idlePublisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'LOCKED', revision: 2, reason: 'IDLE_TIMEOUT' })
+    )
+
+    const absoluteHarness = createActualSessionService()
+    const absolutePublisher = createPublisher()
+    const absoluteHandlers = createHandlers({
+      service: absoluteHarness.service,
+      publisher: absolutePublisher
+    })
+
+    await absoluteHandlers.login(createAllowedEvent(), loginRequest)
+    absolutePublisher.publish.mockClear()
+    absoluteHarness.clock.set(tAbsolute)
+
+    await expect(absoluteHandlers.getSession(createAllowedEvent(), {})).resolves.toEqual(
+      createIpcSuccess({ status: 'SIGNED_OUT', revision: 2 })
+    )
+    expect(absolutePublisher.publish).toHaveBeenCalledWith({ status: 'SIGNED_OUT', revision: 2 })
+  })
+
+  it('publishes provisional expiry before returning AUTH_UNAUTHENTICATED for password change', async () => {
+    const harness = createActualSessionService({
+      loginResult: {
+        status: 'AUTHENTICATED',
+        user: createUser({ mustChangePassword: true })
+      }
+    })
+    const publisher = createPublisher()
+    const handlers = createHandlers({
+      service: harness.service,
+      publisher
+    })
+
+    await handlers.login(createAllowedEvent(), loginRequest)
+    publisher.publish.mockClear()
+    harness.clock.set(tIdle)
+
+    await expect(
+      handlers.changeRequiredPassword(createAllowedEvent(), {
+        currentPassword: 'CurrentPassw0rd!',
+        newPassword: 'ReplacementPassw0rd!',
+        confirmNewPassword: 'ReplacementPassw0rd!'
+      })
+    ).resolves.toEqual(createAuthenticationFailure('AUTH_UNAUTHENTICATED'))
+    expect(harness.forcedPasswordChangeService.changePassword).not.toHaveBeenCalled()
+    expect(publisher.publish).toHaveBeenCalledWith({ status: 'SIGNED_OUT', revision: 2 })
+  })
+
+  it('publishes idle expiry before returning AUTH_LOCKED for recordActivity', async () => {
+    const harness = createActualSessionService()
+    const publisher = createPublisher()
+    const handlers = createHandlers({
+      service: harness.service,
+      publisher
+    })
+
+    await handlers.login(createAllowedEvent(), loginRequest)
+    publisher.publish.mockClear()
+    harness.clock.set(tIdle)
+
+    await expect(handlers.recordActivity(createAllowedEvent(), {})).resolves.toEqual(
+      createAuthenticationFailure('AUTH_LOCKED')
+    )
+    expect(publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'LOCKED', revision: 2, reason: 'IDLE_TIMEOUT' })
+    )
+  })
+
+  it('publishes absolute expiry before returning AUTH_UNAUTHENTICATED for unlock', async () => {
+    const harness = createActualSessionService()
+    const publisher = createPublisher()
+    const handlers = createHandlers({
+      service: harness.service,
+      publisher
+    })
+
+    await handlers.login(createAllowedEvent(), loginRequest)
+    await handlers.lock(createAllowedEvent(), {})
+    publisher.publish.mockClear()
+    harness.clock.set(tAbsolute)
+
+    await expect(
+      handlers.unlock(createAllowedEvent(), { password: 'CurrentPassw0rd!' })
+    ).resolves.toEqual(createAuthenticationFailure('AUTH_UNAUTHENTICATED'))
+    expect(publisher.publish).toHaveBeenCalledWith({ status: 'SIGNED_OUT', revision: 3 })
+  })
+
+  it('retries failed lazy-transition delivery on the next observation', async () => {
+    const harness = createActualSessionService()
+    const publisher = createPublisher()
+    const handlers = createHandlers({
+      service: harness.service,
+      publisher
+    })
+
+    await handlers.login(createAllowedEvent(), loginRequest)
+    publisher.publish.mockClear()
+    publisher.publish.mockImplementationOnce(() => false)
+    harness.clock.set(tIdle)
+
+    await handlers.getSession(createAllowedEvent(), {})
+    expect(publisher.publish).toHaveBeenCalledTimes(1)
+    expect(publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'LOCKED', revision: 2 })
+    )
+
+    publisher.publish.mockClear()
+
+    await handlers.getSession(createAllowedEvent(), {})
+    expect(publisher.publish).toHaveBeenCalledTimes(1)
+    expect(publisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'LOCKED', revision: 2 })
+    )
+  })
+
+  it('does not publish duplicate unchanged observations', async () => {
+    const harness = createActualSessionService()
+    const publisher = createPublisher()
+    const handlers = createHandlers({
+      service: harness.service,
+      publisher
+    })
+
+    await handlers.login(createAllowedEvent(), loginRequest)
+    publisher.publish.mockClear()
+
+    await handlers.getSession(createAllowedEvent(), {})
+    await handlers.getSession(createAllowedEvent(), {})
+
+    expect(publisher.publish).not.toHaveBeenCalled()
   })
 
   it('rejects forbidden senders before request parsing or service access', async () => {
@@ -539,12 +696,8 @@ interface HandlerOptions {
 }
 
 interface TestPublisher extends AuthenticationSessionPublisher {
-  publish: AuthenticationSessionPublisher['publish'] & {
-    mock: { calls: unknown[][] }
-  }
-  dispose: AuthenticationSessionPublisher['dispose'] & {
-    mock: { calls: unknown[][] }
-  }
+  publish: ReturnType<typeof vi.fn<AuthenticationSessionPublisher['publish']>>
+  dispose: ReturnType<typeof vi.fn<AuthenticationSessionPublisher['dispose']>>
 }
 
 interface TestLogger extends AuthenticationIpcOperationalLogger {
@@ -628,8 +781,13 @@ function createPasswordChangeRequiredSnapshot(
 
 interface ActualSessionHarness {
   readonly service: LocalAuthenticationSessionService
+  readonly clock: MutableClock
   readonly loginService: MockLoginService
   readonly forcedPasswordChangeService: MockForcedPasswordChangeService
+}
+
+interface MutableClock extends UtcClock {
+  set(value: UtcTimestamp): void
 }
 
 interface ActualSessionHarnessOptions {
@@ -659,6 +817,7 @@ function createActualSessionService({
     user: createUser({ updatedAt: '2026-07-31T12:05:00.000Z' as never })
   }
 }: ActualSessionHarnessOptions = {}): ActualSessionHarness {
+  const clock = createMutableClock(t0)
   const loginService = {
     authenticate: vi.fn(async () => loginResult)
   } as MockLoginService
@@ -668,13 +827,25 @@ function createActualSessionService({
   const service = createLocalAuthenticationSessionService({
     loginService,
     forcedPasswordChangeService,
-    clock: { now: () => '2026-07-31T12:00:00.000Z' as never }
+    clock
   })
 
   return {
     service,
+    clock,
     loginService,
     forcedPasswordChangeService
+  }
+}
+
+function createMutableClock(initialValue: UtcTimestamp): MutableClock {
+  let current = initialValue
+
+  return {
+    now: () => current,
+    set(value: UtcTimestamp) {
+      current = value
+    }
   }
 }
 

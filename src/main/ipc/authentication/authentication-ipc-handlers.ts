@@ -76,13 +76,8 @@ export function createAuthenticationIpcHandlers({
   sessionPublisher,
   logger = console
 }: AuthenticationIpcHandlerDependencies): AuthenticationIpcHandlers {
+  let lastObservedRevision: number | undefined
   let undeliveredRevision: number | undefined
-
-  function retryUndeliveredSession(session: PublicAuthenticationSession): void {
-    if (undeliveredRevision === session.revision) {
-      publishSession(session)
-    }
-  }
 
   return Object.freeze({
     async getSession(
@@ -106,7 +101,7 @@ export function createAuthenticationIpcHandlers({
         const publicSession = toPublicAuthenticationSession(
           authenticationSessionService.getSnapshot()
         )
-        retryUndeliveredSession(publicSession)
+        observeSession(publicSession, false)
 
         return createValidatedSuccessResult({
           channel,
@@ -143,6 +138,10 @@ export function createAuthenticationIpcHandlers({
         const result = await authenticationSessionService.login(requestResult.data)
         const data = toAuthenticationLoginData(result)
 
+        if (data.status !== 'REJECTED') {
+          observeSession(data, true)
+        }
+
         const response = createValidatedSuccessResult({
           channel,
           data,
@@ -150,14 +149,14 @@ export function createAuthenticationIpcHandlers({
           logger
         }) as AuthLoginResult
 
-        publishSessionIfRevisionChanged(before.revision)
+        inspectCurrentPublicSession()
 
         return response
       } catch (error) {
         const failure = createFailureFromError(channel, logger, error)
 
         if (isControlledAuthenticationFailure(failure)) {
-          publishSessionIfRevisionChanged(before.revision)
+          inspectCurrentPublicSession()
         }
 
         return failure as AuthLoginResult
@@ -193,6 +192,10 @@ export function createAuthenticationIpcHandlers({
         const result = await authenticationSessionService.changeRequiredPassword(requestResult.data)
         const data = toAuthenticationPasswordChangeData(result)
 
+        if (data.status !== 'REJECTED') {
+          observeSession(data, true)
+        }
+
         const response = createValidatedSuccessResult({
           channel,
           data,
@@ -200,14 +203,14 @@ export function createAuthenticationIpcHandlers({
           logger
         }) as AuthChangeRequiredPasswordResult
 
-        publishSessionIfRevisionChanged(before.revision)
+        inspectCurrentPublicSession()
 
         return response
       } catch (error) {
         const failure = createFailureFromError(channel, logger, error)
 
         if (isControlledAuthenticationFailure(failure)) {
-          publishSessionIfRevisionChanged(before.revision)
+          inspectCurrentPublicSession()
         }
 
         return failure as AuthChangeRequiredPasswordResult
@@ -238,6 +241,10 @@ export function createAuthenticationIpcHandlers({
         const result = await authenticationSessionService.unlock(requestResult.data)
         const data = toAuthenticationUnlockData(result)
 
+        if (data.status !== 'REJECTED') {
+          observeSession(data, true)
+        }
+
         const response = createValidatedSuccessResult({
           channel,
           data,
@@ -245,14 +252,14 @@ export function createAuthenticationIpcHandlers({
           logger
         }) as AuthUnlockResult
 
-        publishSessionIfRevisionChanged(before.revision)
+        inspectCurrentPublicSession()
 
         return response
       } catch (error) {
         const failure = createFailureFromError(channel, logger, error)
 
         if (isControlledAuthenticationFailure(failure)) {
-          publishSessionIfRevisionChanged(before.revision)
+          inspectCurrentPublicSession()
         }
 
         return failure as AuthUnlockResult
@@ -281,6 +288,7 @@ export function createAuthenticationIpcHandlers({
 
       try {
         const publicSession = toPublicAuthenticationSession(authenticationSessionService.lock())
+        observeSession(publicSession, true)
 
         const response = createValidatedSuccessResult({
           channel,
@@ -289,14 +297,14 @@ export function createAuthenticationIpcHandlers({
           logger
         }) as AuthLockResult
 
-        publishSessionIfRevisionChanged(before.revision)
+        inspectCurrentPublicSession()
 
         return response
       } catch (error) {
         const failure = createFailureFromError(channel, logger, error)
 
         if (isControlledAuthenticationFailure(failure)) {
-          publishSessionIfRevisionChanged(before.revision)
+          inspectCurrentPublicSession()
         }
 
         return failure as AuthLockResult
@@ -327,6 +335,7 @@ export function createAuthenticationIpcHandlers({
         const publicSession = toPublicSignedOutAuthenticationSession(
           authenticationSessionService.logout()
         )
+        observeSession(publicSession, true)
 
         const response = createValidatedSuccessResult({
           channel,
@@ -335,14 +344,14 @@ export function createAuthenticationIpcHandlers({
           logger
         }) as AuthLogoutResult
 
-        publishSessionIfRevisionChanged(before.revision)
+        inspectCurrentPublicSession()
 
         return response
       } catch (error) {
         const failure = createFailureFromError(channel, logger, error)
 
         if (isControlledAuthenticationFailure(failure)) {
-          publishSessionIfRevisionChanged(before.revision)
+          inspectCurrentPublicSession()
         }
 
         return failure as AuthLogoutResult
@@ -376,6 +385,7 @@ export function createAuthenticationIpcHandlers({
         const publicSession = toPublicActiveAuthenticationSession(
           authenticationSessionService.recordActivity()
         )
+        observeSession(publicSession, true)
 
         const response = createValidatedSuccessResult({
           channel,
@@ -384,14 +394,14 @@ export function createAuthenticationIpcHandlers({
           logger
         }) as AuthRecordActivityResult
 
-        publishSessionIfRevisionChanged(before.revision)
+        inspectCurrentPublicSession()
 
         return response
       } catch (error) {
         const failure = createFailureFromError(channel, logger, error)
 
         if (isControlledAuthenticationFailure(failure)) {
-          publishSessionIfRevisionChanged(before.revision)
+          inspectCurrentPublicSession()
         }
 
         return failure as AuthRecordActivityResult
@@ -407,6 +417,7 @@ export function createAuthenticationIpcHandlers({
       } {
     try {
       const session = toPublicAuthenticationSession(authenticationSessionService.getSnapshot())
+      observeSession(session, false)
 
       return { success: true, revision: session.revision }
     } catch (error) {
@@ -414,17 +425,30 @@ export function createAuthenticationIpcHandlers({
     }
   }
 
-  function publishSessionIfRevisionChanged(beforeRevision: number): void {
-    let session: PublicAuthenticationSession
-
+  function inspectCurrentPublicSession(): void {
     try {
-      session = toPublicAuthenticationSession(authenticationSessionService.getSnapshot())
+      observeSession(
+        toPublicAuthenticationSession(authenticationSessionService.getSnapshot()),
+        false
+      )
     } catch {
-      return
+      // Observation is best-effort and must never alter the handler result.
     }
+  }
 
-    if (session.revision !== beforeRevision) {
-      publishSession(session)
+  function observeSession(session: PublicAuthenticationSession, publishFirst: boolean): void {
+    try {
+      const previousRevision = lastObservedRevision
+      lastObservedRevision = session.revision
+      const shouldPublish =
+        undeliveredRevision === session.revision ||
+        (previousRevision === undefined ? publishFirst : previousRevision !== session.revision)
+
+      if (shouldPublish) {
+        publishSession(session)
+      }
+    } catch {
+      // Observation is best-effort and must never alter the handler result.
     }
   }
 
