@@ -13,14 +13,18 @@ import {
   type AuthenticationFormController,
   type AuthenticationOperationState
 } from './authentication-form-controller'
+import {
+  applyAuthenticationFailureRouteAction,
+  classifyAuthenticationFailureAction,
+  classifyThrownAuthenticationFailureAction,
+  shouldReconcileAfterPasswordChangeRejection
+} from './authentication-failure-actions'
 import type { RendererAuthenticationRouteController } from './authentication-route-controller'
 import type { RendererAuthenticationRoute } from './authentication-route-types'
 import { AuthenticationLayout } from './AuthenticationLayout'
 import {
   authenticationUiMessages,
-  mapAuthenticationFailureMessage,
-  mapPasswordChangeRejectionMessage,
-  shouldReconcileAfterAuthenticationFailure
+  mapPasswordChangeRejectionMessage
 } from './authentication-message-mapping'
 import { formatAuthenticationRole } from './authentication-role-labels'
 
@@ -113,24 +117,31 @@ export function RequiredPasswordChangeScreen({
       if (result.ok) {
         if (result.data.status === 'REJECTED') {
           formController.fail(operationId, mapPasswordChangeRejectionMessage(result.data))
-          await controller.reconcile()
+          if (shouldReconcileAfterPasswordChangeRejection(result.data.reason)) {
+            await applyAuthenticationFailureRouteAction(controller, {
+              kind: 'RECONCILE',
+              message: mapPasswordChangeRejectionMessage(result.data)
+            })
+          }
           return
         }
 
+        form.reset()
+        clearAuthenticationPasswordFields(form)
         formController.complete(operationId)
         controller.acceptSession(result.data)
         return
       }
 
-      formController.fail(operationId, mapAuthenticationFailureMessage(result.error.code))
-
-      if (shouldReconcileAfterAuthenticationFailure(result.error.code)) {
-        await controller.reconcile()
-      }
+      const action = classifyAuthenticationFailureAction('PASSWORD_CHANGE', result.error.code)
+      formController.fail(operationId, action.message)
+      await applyAuthenticationFailureRouteAction(controller, action)
     } catch {
       if (formController.isCurrent(operationId)) {
         clearAuthenticationPasswordFields(form)
-        formController.fail(operationId, authenticationUiMessages.unavailable)
+        const action = classifyThrownAuthenticationFailureAction()
+        formController.fail(operationId, action.message)
+        await applyAuthenticationFailureRouteAction(controller, action)
       }
     }
   }
@@ -156,14 +167,14 @@ export function RequiredPasswordChangeScreen({
         return
       }
 
-      formController.fail(operationId, mapAuthenticationFailureMessage(result.error.code))
-
-      if (shouldReconcileAfterAuthenticationFailure(result.error.code)) {
-        await controller.reconcile()
-      }
+      const action = classifyAuthenticationFailureAction('LOGOUT', result.error.code)
+      formController.fail(operationId, action.message)
+      await applyAuthenticationFailureRouteAction(controller, action)
     } catch {
       if (formController.isCurrent(operationId)) {
-        formController.fail(operationId, authenticationUiMessages.unavailable)
+        const action = classifyThrownAuthenticationFailureAction()
+        formController.fail(operationId, action.message)
+        await applyAuthenticationFailureRouteAction(controller, action)
       }
     }
   }
@@ -190,6 +201,10 @@ export function RequiredPasswordChangeScreen({
         </div>
       </dl>
       <p className="auth-deadline">Required change expires {formatDeadline(route.expiresAt)}.</p>
+      <p className="auth-helper">
+        Use 12-128 characters, avoid control characters, and choose a password different from the
+        current password.
+      </p>
       <form
         className="auth-form"
         aria-busy={isSubmitting}
@@ -216,6 +231,8 @@ export function RequiredPasswordChangeScreen({
                 name="currentPassword"
                 type="password"
                 required
+                minLength={12}
+                maxLength={128}
                 autoComplete="current-password"
                 aria-describedby="auth-current-password-help"
               />
@@ -230,6 +247,8 @@ export function RequiredPasswordChangeScreen({
                 name="newPassword"
                 type="password"
                 required
+                minLength={12}
+                maxLength={128}
                 autoComplete="new-password"
                 aria-describedby="auth-new-password-help"
               />
@@ -244,6 +263,8 @@ export function RequiredPasswordChangeScreen({
                 name="confirmNewPassword"
                 type="password"
                 required
+                minLength={12}
+                maxLength={128}
                 autoComplete="new-password"
               />
             </div>

@@ -7,6 +7,14 @@ export { LockedSessionScreen } from './LockedSessionScreen'
 export { LoginScreen } from './LoginScreen'
 export { RequiredPasswordChangeScreen } from './RequiredPasswordChangeScreen'
 export {
+  applyAuthenticationFailureRouteAction,
+  classifyAuthenticationFailureAction,
+  classifyThrownAuthenticationFailureAction,
+  shouldReconcileAfterPasswordChangeRejection,
+  type AuthenticationFailureAction,
+  type AuthenticationInteractiveOperation
+} from './authentication-failure-actions'
+export {
   authenticationFormCopy,
   authenticationPasswordHelp,
   clearAuthenticationPasswordFields,

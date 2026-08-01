@@ -31,13 +31,20 @@ requests, and clear password inputs after completed attempts. They do not trim,
 normalize, lowercase, compose, store, log, or persist password values.
 
 Renderer form validation covers ordinary required-field and confirmation-match
-checks only. The HSD-010-compatible transport policy remains owned by shared IPC
-schemas and preload/main validation.
+checks, plus native 12-128 character password length hints. The
+HSD-010-compatible transport policy remains owned by shared IPC schemas and
+preload/main validation.
+
+Required password-change guidance visibly states that replacement passwords
+must use 12-128 characters, avoid control characters, and differ from the
+current password.
 
 Expected credential rejections are treated as successful typed result data and
-mapped to fixed renderer messages. Controlled failure envelopes are mapped to
-fixed renderer messages; raw errors, stacks, database details, and credential
-material are not rendered.
+mapped to fixed renderer messages. Controlled failure envelopes are classified
+separately from message mapping so forbidden failures hide the current route,
+uncertain or state-changing failures reconcile once, and validation or
+operation-in-progress failures keep the current screen. Raw errors, stacks,
+database details, and credential material are not rendered.
 
 ## Session Observation
 
@@ -66,9 +73,12 @@ does not listen to `mousemove`.
 The first activity is reported promptly. Later events are throttled to one
 `auth.recordActivity()` call per 60 seconds, with a single trailing report
 coalesced when activity happens during the throttle window or while a call is
-in flight. Only one call is in flight at a time. Successful active results are
-accepted through the route controller; wrong-state or concurrency failures
-trigger one reconciliation. IPC failures do not auto-retry.
+in flight. The reporter stays mounted across ordinary `ACTIVE` revision changes
+so a successful `recordActivity()` result cannot reset the throttle. Leaving the
+`SESSION_ACTIVE` route disposes it immediately. Only one call is in flight at a
+time. Successful active results are accepted through the route controller;
+wrong-state or concurrency failures trigger one reconciliation. IPC failures do
+not auto-retry.
 
 ## Boundaries
 

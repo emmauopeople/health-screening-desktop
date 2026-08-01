@@ -70,7 +70,12 @@ export function createAuthenticationActivityReporter({
       return
     }
 
-    if (inFlight || !canSendImmediately()) {
+    if (inFlight) {
+      pendingTrailingActivity = true
+      return
+    }
+
+    if (!canSendImmediately()) {
       pendingTrailingActivity = true
       scheduleTrailingSend()
       return
@@ -84,7 +89,7 @@ export function createAuthenticationActivityReporter({
   }
 
   function scheduleTrailingSend(): void {
-    if (timer !== undefined) {
+    if (inFlight || timer !== undefined) {
       return
     }
 
@@ -106,7 +111,12 @@ export function createAuthenticationActivityReporter({
       return
     }
 
-    if (inFlight || !canSendImmediately()) {
+    if (inFlight) {
+      pendingTrailingActivity = true
+      return
+    }
+
+    if (!canSendImmediately()) {
       scheduleTrailingSend()
       return
     }

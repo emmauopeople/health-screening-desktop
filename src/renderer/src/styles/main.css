@@ -356,7 +356,7 @@ h1 {
 }
 
 .auth-panel {
-  width: min(620px, 100%);
+  width: min(560px, 100%);
 }
 
 .auth-panel h1,

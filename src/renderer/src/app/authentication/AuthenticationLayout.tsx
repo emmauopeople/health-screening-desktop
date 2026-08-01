@@ -20,7 +20,7 @@ export function AuthenticationLayout({
   const headingRef = useRef<HTMLHeadingElement | null>(null)
 
   useEffect(() => {
-    headingRef.current?.focus()
+    headingRef.current?.focus({ preventScroll: true })
   }, [heading])
 
   return (

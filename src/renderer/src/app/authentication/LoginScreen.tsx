@@ -12,14 +12,14 @@ import {
   type AuthenticationFormController,
   type AuthenticationOperationState
 } from './authentication-form-controller'
+import {
+  applyAuthenticationFailureRouteAction,
+  classifyAuthenticationFailureAction,
+  classifyThrownAuthenticationFailureAction
+} from './authentication-failure-actions'
 import type { RendererAuthenticationRouteController } from './authentication-route-controller'
 import { AuthenticationLayout } from './AuthenticationLayout'
-import {
-  authenticationUiMessages,
-  mapAuthenticationFailureMessage,
-  mapLoginRejectionMessage,
-  shouldReconcileAfterAuthenticationFailure
-} from './authentication-message-mapping'
+import { mapLoginRejectionMessage } from './authentication-message-mapping'
 
 interface LoginScreenProps {
   readonly api: HealthScreeningApi
@@ -99,7 +99,6 @@ export function LoginScreen({ api, controller, onExit }: LoginScreenProps): Reac
       if (result.ok) {
         if (result.data.status === 'REJECTED') {
           formController.fail(operationId, mapLoginRejectionMessage(result.data))
-          await controller.reconcile()
           return
         }
 
@@ -108,15 +107,15 @@ export function LoginScreen({ api, controller, onExit }: LoginScreenProps): Reac
         return
       }
 
-      formController.fail(operationId, mapAuthenticationFailureMessage(result.error.code))
-
-      if (shouldReconcileAfterAuthenticationFailure(result.error.code)) {
-        await controller.reconcile()
-      }
+      const action = classifyAuthenticationFailureAction('LOGIN', result.error.code)
+      formController.fail(operationId, action.message)
+      await applyAuthenticationFailureRouteAction(controller, action)
     } catch {
       if (formController.isCurrent(operationId)) {
         clearAuthenticationPasswordFields(form)
-        formController.fail(operationId, authenticationUiMessages.unavailable)
+        const action = classifyThrownAuthenticationFailureAction()
+        formController.fail(operationId, action.message)
+        await applyAuthenticationFailureRouteAction(controller, action)
       }
     }
   }
@@ -166,6 +165,8 @@ export function LoginScreen({ api, controller, onExit }: LoginScreenProps): Reac
               name="password"
               type="password"
               required
+              minLength={12}
+              maxLength={128}
               autoComplete="current-password"
               aria-describedby="auth-login-password-help"
             />

@@ -91,11 +91,13 @@ describe('authentication session runtime', () => {
     target.dispatch('wheel')
 
     expect(api.auth.recordActivity).toHaveBeenCalledOnce()
-    expect(scheduler.timers).toHaveLength(1)
-    expect(scheduler.timers[0]?.delayMs).toBe(60_000)
+    expect(scheduler.timers).toHaveLength(0)
 
     first.resolve(createIpcSuccess(activeSession) as AuthRecordActivityResult)
     await flushPromises()
+
+    expect(scheduler.timers).toHaveLength(1)
+    expect(scheduler.timers[0]?.delayMs).toBe(60_000)
 
     currentTime = 60_000
     scheduler.run(0)
@@ -104,6 +106,36 @@ describe('authentication session runtime', () => {
     expect(api.auth.recordActivity).toHaveBeenCalledTimes(2)
     expect(controller.acceptSession).toHaveBeenCalledWith(activeSession)
     expect(controller.acceptSession).toHaveBeenCalledWith({ ...activeSession, revision: 5 })
+  })
+
+  it('does not create repeated zero-delay trailing timers while a request remains in flight', () => {
+    let currentTime = 0
+    const scheduler = createScheduler()
+    const first = deferred<AuthRecordActivityResult>()
+    const api = createApi({
+      recordActivity: vi.fn(() => first.promise)
+    })
+    const controller = createController()
+    const target = new FakeEventTarget()
+
+    createAuthenticationActivityReporter({
+      api,
+      controller,
+      eventTarget: target,
+      now: () => currentTime,
+      setTimeout: scheduler.setTimeout,
+      clearTimeout: scheduler.clearTimeout
+    })
+
+    target.dispatch('pointerdown')
+    currentTime = 120_000
+
+    for (const eventType of authenticationActivityEventTypes) {
+      target.dispatch(eventType)
+    }
+
+    expect(api.auth.recordActivity).toHaveBeenCalledOnce()
+    expect(scheduler.timers).toHaveLength(0)
   })
 
   it('reconciles wrong-state activity failures without retrying IPC failures', async () => {
@@ -247,6 +279,7 @@ function createController(): RendererAuthenticationRouteController & {
     load: vi.fn(),
     reconcile: vi.fn(() => Promise.resolve()),
     acceptSession: vi.fn(),
+    showUnavailable: vi.fn(),
     dispose: vi.fn()
   }
 }

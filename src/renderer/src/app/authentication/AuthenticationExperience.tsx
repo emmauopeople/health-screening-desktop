@@ -27,8 +27,6 @@ export function AuthenticationExperience({
   controller,
   onExit
 }: AuthenticationExperienceProps): React.JSX.Element {
-  const activeRevision = route.status === 'SESSION_ACTIVE' ? route.revision : undefined
-
   useEffect(() => {
     if (route.status !== 'SESSION_ACTIVE') {
       return undefined
@@ -39,7 +37,7 @@ export function AuthenticationExperience({
     return () => {
       reporter.dispose()
     }
-  }, [api, controller, route.status, activeRevision])
+  }, [api, controller, route.status])
 
   useEffect(() => {
     if (

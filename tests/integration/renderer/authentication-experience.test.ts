@@ -34,7 +34,7 @@ describe('renderer authentication experience integration', () => {
 
     await controller.load()
 
-    expect(render(route, api, controller)).toContain('Sign in.')
+    expect(render(route, api, controller)).toContain('Sign in to Health Screening.')
 
     controller.acceptSession({
       status: 'PASSWORD_CHANGE_REQUIRED',

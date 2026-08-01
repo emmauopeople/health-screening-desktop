@@ -55,12 +55,14 @@ describe('authentication renderer experience', () => {
       })
     )
 
-    expect(markup).toContain('Sign in.')
+    expect(markup).toContain('Sign in to Health Screening.')
     expect(markup).toContain('Username required')
     expect(markup).toContain('Password required')
     expect(markup).toContain('name="username"')
     expect(markup).toContain('name="password"')
     expect(markup).toContain('type="password"')
+    expect(markup).toContain('minLength="12"')
+    expect(markup).toContain('maxLength="128"')
     expect(markup).toContain('Sign in')
     expect(markup).toContain('Exit application')
     expect(markup).not.toContain('value=')
@@ -83,6 +85,9 @@ describe('authentication renderer experience', () => {
     expect(markup).toContain('name="currentPassword"')
     expect(markup).toContain('name="newPassword"')
     expect(markup).toContain('name="confirmNewPassword"')
+    expect(markup).toContain('12-128 characters')
+    expect(markup).toContain('avoid control characters')
+    expect(markup).toContain('choose a password different from the current password')
     expect(markup).toContain('Change password')
     expect(markup).toContain('Sign out')
     assertNoInternalAuthenticationFragments(markup)
@@ -166,7 +171,7 @@ describe('authentication renderer experience', () => {
     expect(markup[0]).toContain('Checking local session.')
     expect(markup[1]).toContain('Authentication is unavailable.')
     expect(markup[1]).toContain('Retry')
-    expect(markup[2]).toContain('Sign in.')
+    expect(markup[2]).toContain('Sign in to Health Screening.')
     expect(markup[3]).toContain('Change required password.')
     expect(markup[4]).toContain('Session locked.')
     expect(markup[5]).toContain('Authenticated workspace.')
@@ -182,6 +187,7 @@ describe('authentication renderer experience', () => {
       'src/renderer/src/app/authentication/LockedSessionScreen.tsx',
       'src/renderer/src/app/authentication/LoginScreen.tsx',
       'src/renderer/src/app/authentication/RequiredPasswordChangeScreen.tsx',
+      'src/renderer/src/app/authentication/authentication-failure-actions.ts',
       'src/renderer/src/app/authentication/authentication-form-controller.ts',
       'src/renderer/src/app/authentication/authentication-message-mapping.ts',
       'src/renderer/src/app/authentication/authentication-role-labels.ts',
@@ -224,6 +230,7 @@ describe('authentication renderer experience', () => {
 
     expect(css).toContain('min-width: 320px;')
     expect(css).toContain('min-height: 44px;')
+    expect(css).toContain('width: min(560px, 100%);')
     expect(css).toContain('.auth-grid')
     expect(css).toContain('.auth-shell-bar')
     expect(css).toContain('grid-template-columns: 1fr;')
@@ -259,6 +266,7 @@ function createController(): RendererAuthenticationRouteController {
     load: vi.fn(),
     reconcile: vi.fn(),
     acceptSession: vi.fn(),
+    showUnavailable: vi.fn(),
     dispose: vi.fn()
   }
 }

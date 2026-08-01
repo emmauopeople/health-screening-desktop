@@ -29,6 +29,8 @@ route-load generation and subscribes to `auth.onSessionChanged()`. It disposes
 the subscription when the generation is replaced or the component unmounts.
 HSD-023 also exposes `acceptSession(session)` for successful operation results
 and `reconcile()` for deadline, focus, visibility, and wrong-state observations.
+Forbidden operation failures use the controller to transition to a nonretryable
+`AUTH_UNAVAILABLE` route so the previous identity is not left visible.
 
 The controller uses a generation guard so stale load results and stale callbacks
 cannot mutate the current route. Within one generation, lower-revision events
@@ -66,4 +68,6 @@ IPC channels, or direct Electron access.
 Renderer deadline and activity helpers are advisory. They observe public
 deadlines, focus, visibility, and approved user-activity events so they can ask
 HSD-021 to re-evaluate the session. They never decide authoritative expiry and
-use no background interval.
+use no background interval. The active-session activity reporter is keyed only
+to entering or leaving `SESSION_ACTIVE`, not to active revision changes, so the
+60-second throttle survives successful activity refreshes.

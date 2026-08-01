@@ -7,14 +7,15 @@ import {
   type AuthenticationFormController,
   type AuthenticationOperationState
 } from './authentication-form-controller'
+import {
+  applyAuthenticationFailureRouteAction,
+  classifyAuthenticationFailureAction,
+  classifyThrownAuthenticationFailureAction,
+  type AuthenticationInteractiveOperation
+} from './authentication-failure-actions'
 import type { RendererAuthenticationRouteController } from './authentication-route-controller'
 import type { RendererAuthenticationRoute } from './authentication-route-types'
 import { AuthenticationLayout } from './AuthenticationLayout'
-import {
-  authenticationUiMessages,
-  mapAuthenticationFailureMessage,
-  shouldReconcileAfterAuthenticationFailure
-} from './authentication-message-mapping'
 import { formatAuthenticationRole } from './authentication-role-labels'
 
 interface AuthenticatedShellProps {
@@ -55,14 +56,15 @@ export function AuthenticatedShell({
   const isSubmitting = operationState.status === 'SUBMITTING'
 
   async function handleLock(): Promise<void> {
-    await runSessionTransition(() => api.auth.lock())
+    await runSessionTransition('LOCK', () => api.auth.lock())
   }
 
   async function handleLogout(): Promise<void> {
-    await runSessionTransition(() => api.auth.logout())
+    await runSessionTransition('LOGOUT', () => api.auth.logout())
   }
 
   async function runSessionTransition(
+    operationKind: Extract<AuthenticationInteractiveOperation, 'LOCK' | 'LOGOUT'>,
     operation: () => Promise<AuthLockResult | AuthLogoutResult>
   ): Promise<void> {
     const formController = formControllerRef.current
@@ -85,14 +87,14 @@ export function AuthenticatedShell({
         return
       }
 
-      formController.fail(operationId, mapAuthenticationFailureMessage(result.error.code))
-
-      if (shouldReconcileAfterAuthenticationFailure(result.error.code)) {
-        await controller.reconcile()
-      }
+      const action = classifyAuthenticationFailureAction(operationKind, result.error.code)
+      formController.fail(operationId, action.message)
+      await applyAuthenticationFailureRouteAction(controller, action)
     } catch {
       if (formController.isCurrent(operationId)) {
-        formController.fail(operationId, authenticationUiMessages.unavailable)
+        const action = classifyThrownAuthenticationFailureAction()
+        formController.fail(operationId, action.message)
+        await applyAuthenticationFailureRouteAction(controller, action)
       }
     }
   }

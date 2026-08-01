@@ -12,15 +12,15 @@ import {
   type AuthenticationFormController,
   type AuthenticationOperationState
 } from './authentication-form-controller'
+import {
+  applyAuthenticationFailureRouteAction,
+  classifyAuthenticationFailureAction,
+  classifyThrownAuthenticationFailureAction
+} from './authentication-failure-actions'
 import type { RendererAuthenticationRouteController } from './authentication-route-controller'
 import type { RendererAuthenticationRoute } from './authentication-route-types'
 import { AuthenticationLayout } from './AuthenticationLayout'
-import {
-  authenticationUiMessages,
-  mapAuthenticationFailureMessage,
-  mapLoginRejectionMessage,
-  shouldReconcileAfterAuthenticationFailure
-} from './authentication-message-mapping'
+import { mapLoginRejectionMessage } from './authentication-message-mapping'
 import { formatAuthenticationRole } from './authentication-role-labels'
 
 interface LockedSessionScreenProps {
@@ -108,20 +108,22 @@ export function LockedSessionScreen({
           return
         }
 
+        form.reset()
+        clearAuthenticationPasswordFields(form)
         formController.complete(operationId)
         controller.acceptSession(result.data)
         return
       }
 
-      formController.fail(operationId, mapAuthenticationFailureMessage(result.error.code))
-
-      if (shouldReconcileAfterAuthenticationFailure(result.error.code)) {
-        await controller.reconcile()
-      }
+      const action = classifyAuthenticationFailureAction('UNLOCK', result.error.code)
+      formController.fail(operationId, action.message)
+      await applyAuthenticationFailureRouteAction(controller, action)
     } catch {
       if (formController.isCurrent(operationId)) {
         clearAuthenticationPasswordFields(form)
-        formController.fail(operationId, authenticationUiMessages.unavailable)
+        const action = classifyThrownAuthenticationFailureAction()
+        formController.fail(operationId, action.message)
+        await applyAuthenticationFailureRouteAction(controller, action)
       }
     }
   }
@@ -147,14 +149,14 @@ export function LockedSessionScreen({
         return
       }
 
-      formController.fail(operationId, mapAuthenticationFailureMessage(result.error.code))
-
-      if (shouldReconcileAfterAuthenticationFailure(result.error.code)) {
-        await controller.reconcile()
-      }
+      const action = classifyAuthenticationFailureAction('LOGOUT', result.error.code)
+      formController.fail(operationId, action.message)
+      await applyAuthenticationFailureRouteAction(controller, action)
     } catch {
       if (formController.isCurrent(operationId)) {
-        formController.fail(operationId, authenticationUiMessages.unavailable)
+        const action = classifyThrownAuthenticationFailureAction()
+        formController.fail(operationId, action.message)
+        await applyAuthenticationFailureRouteAction(controller, action)
       }
     }
   }
@@ -211,6 +213,8 @@ export function LockedSessionScreen({
               name="password"
               type="password"
               required
+              minLength={12}
+              maxLength={128}
               autoComplete="current-password"
               aria-describedby="auth-unlock-password-help"
             />

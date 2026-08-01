@@ -28,6 +28,7 @@ export interface RendererAuthenticationRouteController {
   load(): Promise<void>
   reconcile(): Promise<void>
   acceptSession(session: PublicAuthenticationSession): void
+  showUnavailable(forbidden?: boolean): void
   dispose(): void
 }
 
@@ -129,6 +130,18 @@ export function createRendererAuthenticationRouteController({
     applySessionRoute(session)
   }
 
+  function showUnavailable(forbidden = false): void {
+    if (disposed) {
+      return
+    }
+
+    generation += 1
+    latestRevision = undefined
+    unsubscribe()
+    unsubscribe = noop
+    onRoute(createUnavailableRoute(forbidden))
+  }
+
   function applySessionRoute(session: PublicAuthenticationSession): void {
     if (latestRevision !== undefined && session.revision <= latestRevision) {
       return
@@ -148,6 +161,7 @@ export function createRendererAuthenticationRouteController({
     load,
     reconcile,
     acceptSession,
+    showUnavailable,
     dispose() {
       disposed = true
       generation += 1

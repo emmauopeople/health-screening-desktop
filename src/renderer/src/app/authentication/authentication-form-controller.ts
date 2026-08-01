@@ -44,7 +44,7 @@ export interface UnlockFormValues {
 
 export const authenticationFormCopy = {
   reviewFormMessage: 'Review the form and correct missing or invalid values.',
-  loginHeading: 'Sign in.',
+  loginHeading: 'Sign in to Health Screening.',
   loginStatement: 'Use a local account for this screening installation.',
   loginSubmitLabel: 'Sign in',
   loginSubmittingLabel: 'Signing in...',

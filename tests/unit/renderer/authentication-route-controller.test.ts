@@ -270,6 +270,32 @@ describe('renderer authentication route controller', () => {
     ])
   })
 
+  it('can move a previously valid route to forbidden unavailable without a retry action', () => {
+    const states: RendererAuthenticationRoute[] = []
+    const controller = createRendererAuthenticationRouteController({
+      api: createApi(),
+      onRoute: (state) => states.push(state)
+    })
+
+    controller.acceptSession(activeSession)
+    controller.showUnavailable(true)
+
+    expect(states).toEqual([
+      {
+        status: 'SESSION_ACTIVE',
+        user: activeSession.user,
+        idleExpiresAt: activeSession.idleExpiresAt,
+        absoluteExpiresAt: activeSession.absoluteExpiresAt,
+        revision: activeSession.revision
+      },
+      {
+        status: 'AUTH_UNAVAILABLE',
+        message: 'Authentication is unavailable from the current window.',
+        retryable: false
+      }
+    ])
+  })
+
   it('ignores stale load results, stale events, and disposed callbacks', async () => {
     const first = deferred<AuthGetSessionResult>()
     const second = deferred<AuthGetSessionResult>()
