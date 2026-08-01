@@ -18,6 +18,7 @@ import {
   type RendererStartupStateGate
 } from './first-run/first-run-controller'
 import type { RendererStartupState } from './first-run/first-run-types'
+import type { ApplicationShellContext } from './shell'
 
 interface AppProps {
   api?: HealthScreeningApi
@@ -28,9 +29,11 @@ function App({ api = window.healthScreening }: AppProps): React.JSX.Element {
   const handleExit = useCallback(() => {
     window.close()
   }, [])
+  const rootClassName =
+    startupState.status === 'SETUP_COMPLETE' ? 'application-root' : 'foundation-shell setup-shell'
 
   return (
-    <main className="foundation-shell setup-shell">
+    <div className={rootClassName}>
       {startupState.status === 'LOADING' ? <LoadingScreen /> : null}
       {startupState.status === 'SETUP_REQUIRED' ? (
         <FirstRunSetupScreen
@@ -41,7 +44,11 @@ function App({ api = window.healthScreening }: AppProps): React.JSX.Element {
         />
       ) : null}
       {startupState.status === 'SETUP_COMPLETE' ? (
-        <AuthenticationBoundary api={api} onExit={handleExit} />
+        <AuthenticationBoundary
+          api={api}
+          shellContext={createApplicationShellContext(startupState)}
+          onExit={handleExit}
+        />
       ) : null}
       {startupState.status === 'INCONSISTENT' ? (
         <InconsistentStateScreen state={startupState} onExit={handleExit} />
@@ -49,15 +56,17 @@ function App({ api = window.healthScreening }: AppProps): React.JSX.Element {
       {startupState.status === 'UNAVAILABLE' ? (
         <UnavailableScreen state={startupState} onRetry={retryStartupLoad} onExit={handleExit} />
       ) : null}
-    </main>
+    </div>
   )
 }
 
 function AuthenticationBoundary({
   api,
+  shellContext,
   onExit
 }: {
   api: HealthScreeningApi
+  shellContext: ApplicationShellContext
   onExit(): void
 }): React.JSX.Element {
   const [route, setRoute] = useState<RendererAuthenticationRoute>({ status: 'AUTH_LOADING' })
@@ -79,8 +88,25 @@ function AuthenticationBoundary({
   }, [controller])
 
   return (
-    <AuthenticationExperience api={api} route={route} controller={controller} onExit={onExit} />
+    <AuthenticationExperience
+      api={api}
+      route={route}
+      controller={controller}
+      shellContext={shellContext}
+      onExit={onExit}
+    />
   )
+}
+
+function createApplicationShellContext(
+  state: Extract<RendererStartupState, { status: 'SETUP_COMPLETE' }>
+): ApplicationShellContext {
+  return {
+    applicationName: state.info.applicationName,
+    applicationVersion: state.info.applicationVersion,
+    deploymentName: state.deploymentName,
+    timeZone: state.timeZone
+  }
 }
 
 function useStartupState(api: HealthScreeningApi): {

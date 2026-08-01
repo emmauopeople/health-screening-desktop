@@ -16,12 +16,15 @@ The renderer maps the current authentication route to one concrete screen:
   password-change form.
 - `SESSION_LOCKED` renders the public user summary, lock reason, unlock form,
   and sign-out action.
-- `SESSION_ACTIVE` renders the authenticated shell foundation with the public
-  user summary, role label, lock action, and sign-out action.
+- `SESSION_ACTIVE` mounts the HSD-024 application shell with the public user
+  display name, role label, role-visible renderer navigation, dashboard,
+  planned-module routes, lock action, and sign-out action.
 
-The authenticated shell is intentionally limited to account status and session
-controls. It does not add clinical navigation, screening workflows, routing
-trees, synchronization, or network behavior.
+The active application shell is still renderer-only. It does not add IPC,
+preload methods, patient records, screening workflows, synchronization,
+database reads, browser routing, or browser persistence. Menu visibility is a
+usability aid only; HSD-021 main-process authorization remains authoritative for
+future protected operations.
 
 ## Credential Handling
 

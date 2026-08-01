@@ -65,7 +65,7 @@ describe('renderer authentication DOM integration', () => {
       username: ' Admin.User ',
       password: '  ValidPassword1!  '
     })
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
     expect(text(mounted)).toContain('Admin User')
 
     await mounted.unmount()
@@ -99,7 +99,7 @@ describe('renderer authentication DOM integration', () => {
       confirmNewPassword: 'ReplacementPassword1!'
     })
     expect(resetSpy).toHaveBeenCalled()
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
 
     await mounted.unmount()
   })
@@ -112,7 +112,7 @@ describe('renderer authentication DOM integration', () => {
     )
     const mounted = await mountApp(harness.api)
 
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
 
     await clickButton(mounted, 'Lock')
 
@@ -124,7 +124,7 @@ describe('renderer authentication DOM integration', () => {
 
     expect(harness.api.auth.unlock).toHaveBeenCalledWith({ password: 'ValidPassword1!' })
     expect(resetSpy).toHaveBeenCalled()
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
 
     await mounted.unmount()
   })
@@ -184,7 +184,7 @@ describe('renderer authentication DOM integration', () => {
     await beginLogin(mounted, 'Admin.User', 'ValidPassword1!')
     await emitSession(harness, activeSession(5, userWithName('Event User')))
 
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Event User')
     expect(text(mounted)).toContain('Event User')
 
     pendingLogin.resolve(
@@ -216,7 +216,7 @@ describe('renderer authentication DOM integration', () => {
     })
     const mounted = await mountApp(harness.api)
 
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
 
     await act(async () => {
       vi.advanceTimersByTime(1_000)
@@ -224,7 +224,7 @@ describe('renderer authentication DOM integration', () => {
     })
 
     expect(harness.api.auth.getSession).toHaveBeenCalledTimes(2)
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
 
     pendingReconcile.resolve(createIpcSuccess(lockedSession(2)) as AuthGetSessionResult)
     await flushReact()
@@ -257,7 +257,7 @@ describe('renderer authentication DOM integration', () => {
       await flushPromises()
     })
 
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
 
     pendingReconcile.resolve(createIpcSuccess(signedOutSession(2)) as AuthGetSessionResult)
     await flushReact()
@@ -368,14 +368,14 @@ describe('renderer authentication DOM integration', () => {
 
     await emitSession(harness, activeSession(5))
 
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
     expect(text(mounted)).toContain(baseUser.displayName)
 
     pendingLoad.resolve(createAuthenticationFailure('IPC_FORBIDDEN') as AuthGetSessionResult)
     await flushReact()
 
     expectForbiddenUnavailable(mounted)
-    expect(text(mounted)).not.toContain('Authenticated workspace.')
+    expect(text(mounted)).not.toContain('Welcome,')
 
     await emitSession(harness, activeSession(6, userWithName('Late Event User')))
 
@@ -427,7 +427,7 @@ describe('renderer authentication DOM integration', () => {
     pendingLoad.resolve(createAuthenticationFailure('IPC_UNAVAILABLE') as AuthGetSessionResult)
     await flushReact()
 
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
     expect(text(mounted)).toContain(baseUser.displayName)
     expect(text(mounted)).not.toContain('Authentication is unavailable.')
 
@@ -511,7 +511,7 @@ describe('renderer authentication DOM integration', () => {
           idleExpiresAt: '2026-08-01T00:00:01.000Z' as UtcTimestamp,
           absoluteExpiresAt: '2026-08-01T12:00:00.000Z' as UtcTimestamp
         }),
-        visibleText: 'Authenticated workspace.'
+        visibleText: 'Welcome, Admin User'
       },
       {
         initialSession: lockedSession(2, baseUser, {
@@ -565,14 +565,14 @@ describe('renderer authentication DOM integration', () => {
     )
     const mounted = await mountApp(harness.api)
 
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
     expect(text(mounted)).toContain(baseUser.displayName)
 
     await dispatchWindowEvent('pointerdown')
 
     expect(harness.api.auth.recordActivity).toHaveBeenCalledOnce()
     expectForbiddenUnavailable(mounted)
-    expect(text(mounted)).not.toContain('Authenticated workspace.')
+    expect(text(mounted)).not.toContain('Welcome,')
 
     await mounted.unmount()
   })
@@ -625,7 +625,7 @@ describe('renderer authentication DOM integration', () => {
     await flushReact()
 
     expect(harness.api.auth.getSession).toHaveBeenCalledTimes(2)
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
     expect(text(mounted)).toContain(baseUser.displayName)
     expect(text(mounted)).not.toContain('Authentication is unavailable.')
 
@@ -677,7 +677,7 @@ describe('renderer authentication DOM integration', () => {
     await clickButton(mounted, 'Lock')
 
     expect(harness.api.auth.getSession).toHaveBeenCalledTimes(2)
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
     expect(text(mounted)).toContain('The desktop authentication service is unavailable.')
 
     await mounted.unmount()

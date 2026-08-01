@@ -13,11 +13,13 @@ import {
 import { LockedSessionScreen } from './LockedSessionScreen'
 import { LoginScreen } from './LoginScreen'
 import { RequiredPasswordChangeScreen } from './RequiredPasswordChangeScreen'
+import type { ApplicationShellContext } from '../shell'
 
 interface AuthenticationExperienceProps {
   readonly api: HealthScreeningApi
   readonly route: RendererAuthenticationRoute
   readonly controller: RendererAuthenticationRouteController
+  readonly shellContext: ApplicationShellContext
   onExit(): void
 }
 
@@ -25,6 +27,7 @@ export function AuthenticationExperience({
   api,
   route,
   controller,
+  shellContext,
   onExit
 }: AuthenticationExperienceProps): React.JSX.Element {
   useEffect(() => {
@@ -69,6 +72,13 @@ export function AuthenticationExperience({
     case 'SESSION_LOCKED':
       return <LockedSessionScreen api={api} route={route} controller={controller} />
     case 'SESSION_ACTIVE':
-      return <AuthenticatedShell api={api} route={route} controller={controller} />
+      return (
+        <AuthenticatedShell
+          api={api}
+          route={route}
+          controller={controller}
+          shellContext={shellContext}
+        />
+      )
   }
 }
