@@ -46,12 +46,12 @@ export function createRendererAuthenticationRouteController({
   let generation = 0
   let disposed = false
   let unsubscribe = noop
-  let latestRevision = -1
+  let latestRevision: number | undefined
 
   async function load(): Promise<void> {
     const activeGeneration = generation + 1
     generation = activeGeneration
-    latestRevision = -1
+    latestRevision = undefined
     unsubscribe()
     unsubscribe = noop
     onRoute({ status: 'AUTH_LOADING' })
@@ -65,9 +65,7 @@ export function createRendererAuthenticationRouteController({
         applySessionRoute(session)
       })
     } catch {
-      if (!disposed && activeGeneration === generation) {
-        onRoute(createUnavailableRoute())
-      }
+      applyUnavailableRouteIfNoSession(activeGeneration)
 
       return
     }
@@ -80,25 +78,29 @@ export function createRendererAuthenticationRouteController({
       }
 
       if (!result.ok) {
-        onRoute(createUnavailableRoute(result.error.code === 'IPC_FORBIDDEN'))
+        applyUnavailableRouteIfNoSession(activeGeneration, result.error.code === 'IPC_FORBIDDEN')
         return
       }
 
       applySessionRoute(result.data)
     } catch {
-      if (!disposed && activeGeneration === generation) {
-        onRoute(createUnavailableRoute())
-      }
+      applyUnavailableRouteIfNoSession(activeGeneration)
     }
   }
 
   function applySessionRoute(session: PublicAuthenticationSession): void {
-    if (session.revision < latestRevision) {
+    if (latestRevision !== undefined && session.revision < latestRevision) {
       return
     }
 
     latestRevision = session.revision
     onRoute(mapPublicAuthenticationSessionToRoute(session))
+  }
+
+  function applyUnavailableRouteIfNoSession(activeGeneration: number, forbidden = false): void {
+    if (!disposed && activeGeneration === generation && latestRevision === undefined) {
+      onRoute(createUnavailableRoute(forbidden))
+    }
   }
 
   return {

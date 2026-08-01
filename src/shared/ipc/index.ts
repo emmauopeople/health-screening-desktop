@@ -52,6 +52,7 @@ export {
   authChangeRequiredPasswordSuccessDataSchema,
   authenticationErrorCodeSchema,
   authenticationFailureSchema,
+  authenticationPasswordTransportSchema,
   authenticationSafeErrorMessages,
   authForcedPasswordChangeRejectionReasonSchema,
   authGetSessionRequestSchema,

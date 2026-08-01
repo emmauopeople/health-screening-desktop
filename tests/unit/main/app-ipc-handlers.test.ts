@@ -255,7 +255,7 @@ function createDependencies(): ApplicationIpcHandlerDependencies {
       navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
       authenticationSessionService: createAuthenticationSessionService(),
       sessionPublisher: {
-        publish: vi.fn(),
+        publish: vi.fn(() => true),
         dispose: vi.fn()
       },
       logger: createLogger()

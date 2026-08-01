@@ -31,7 +31,7 @@ describe('authentication session publisher', () => {
       getWebContents: () => target
     })
 
-    publisher.publish(activeSession)
+    expect(publisher.publish(activeSession)).toBe(true)
 
     expect(target.send).toHaveBeenCalledWith(ipcChannels.auth.sessionChanged, activeSession)
   })
@@ -46,10 +46,74 @@ describe('authentication session publisher', () => {
         getWebContents: () => target
       })
 
-      publisher.publish(activeSession)
+      expect(publisher.publish(activeSession)).toBe(false)
       expect(destroyedTarget.send).not.toHaveBeenCalled()
       expect(unauthorizedTarget.send).not.toHaveBeenCalled()
     }
+  })
+
+  it('contains target lookup, property access, and send failures as failed delivery', () => {
+    const policy = createDevelopmentNavigationPolicy('http://localhost:5173/')
+    const throwingMainFrameTarget = {
+      get mainFrame() {
+        throw new Error('C:\\secret\\mainFrame')
+      },
+      isDestroyed: () => false,
+      send: vi.fn<(channel: string, payload: unknown) => void>()
+    } as unknown as AuthenticationSessionPublishTarget & { send: ReturnType<typeof vi.fn> }
+    const throwingUrlTarget = {
+      mainFrame: {
+        get url() {
+          throw new Error('C:\\secret\\url')
+        }
+      },
+      isDestroyed: () => false,
+      send: vi.fn<(channel: string, payload: unknown) => void>()
+    } as unknown as AuthenticationSessionPublishTarget & { send: ReturnType<typeof vi.fn> }
+    const throwingIsDestroyedTarget = {
+      mainFrame: { url: 'http://localhost:5173/' },
+      get isDestroyed() {
+        throw new Error('C:\\secret\\destroyed')
+      },
+      send: vi.fn<(channel: string, payload: unknown) => void>()
+    } as unknown as AuthenticationSessionPublishTarget & { send: ReturnType<typeof vi.fn> }
+    const throwingSendTarget = createTarget('http://localhost:5173/')
+    throwingSendTarget.send.mockImplementationOnce(() => {
+      throw new Error('C:\\secret\\send')
+    })
+
+    expect(
+      createAuthenticationSessionPublisher({
+        navigationPolicy: policy,
+        getWebContents: () => {
+          throw new Error('C:\\secret\\webContents')
+        }
+      }).publish(activeSession)
+    ).toBe(false)
+    expect(
+      createAuthenticationSessionPublisher({
+        navigationPolicy: policy,
+        getWebContents: () => throwingMainFrameTarget
+      }).publish(activeSession)
+    ).toBe(false)
+    expect(
+      createAuthenticationSessionPublisher({
+        navigationPolicy: policy,
+        getWebContents: () => throwingUrlTarget
+      }).publish(activeSession)
+    ).toBe(false)
+    expect(
+      createAuthenticationSessionPublisher({
+        navigationPolicy: policy,
+        getWebContents: () => throwingIsDestroyedTarget
+      }).publish(activeSession)
+    ).toBe(false)
+    expect(
+      createAuthenticationSessionPublisher({
+        navigationPolicy: policy,
+        getWebContents: () => throwingSendTarget
+      }).publish(activeSession)
+    ).toBe(false)
   })
 
   it('drops malformed payloads and stops after disposal', () => {
@@ -59,15 +123,17 @@ describe('authentication session publisher', () => {
       getWebContents: () => target
     })
 
-    publisher.publish({
-      ...activeSession,
-      user: {
-        ...activeSession.user,
-        id: '22222222-2222-4222-8222-222222222222'
-      }
-    } as unknown as PublicAuthenticationSession)
+    expect(
+      publisher.publish({
+        ...activeSession,
+        user: {
+          ...activeSession.user,
+          id: '22222222-2222-4222-8222-222222222222'
+        }
+      } as unknown as PublicAuthenticationSession)
+    ).toBe(false)
     publisher.dispose()
-    publisher.publish(activeSession)
+    expect(publisher.publish(activeSession)).toBe(false)
 
     expect(target.send).not.toHaveBeenCalled()
   })

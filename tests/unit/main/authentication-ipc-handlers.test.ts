@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createDevelopmentNavigationPolicy } from '@main/app/navigation-policy'
 import {
+  createLocalAuthenticationSessionService,
   LocalSessionAuthenticationError,
   LocalSessionConcurrencyError,
   LocalSessionLockedError,
@@ -10,10 +11,13 @@ import {
   LocalSessionStateIntegrityError,
   LocalSessionUnauthenticatedError,
   LocalSessionValidationError,
+  type LocalForcedPasswordChangeService,
   type LocalAuthenticationSessionService,
+  type LocalLoginAuthenticationService,
   type LocalSessionSnapshot
 } from '@main/application'
 import {
+  createAuthenticationSessionPublisher,
   createAuthenticationIpcHandlers,
   type AuthenticationIpcHandlers,
   type AuthenticationIpcOperationalLogger,
@@ -36,8 +40,9 @@ const loginRequest: AuthLoginRequest = {
 describe('authentication IPC handlers', () => {
   it('returns minimized public sessions and publishes only changed public state', async () => {
     const activeSnapshot = createActiveSnapshot(3)
+    let snapshot: LocalSessionSnapshot = activeSnapshot
     const service = createService({
-      getSnapshot: vi.fn(() => activeSnapshot),
+      getSnapshot: vi.fn(() => snapshot),
       login: vi.fn(async () => ({ status: 'ACTIVE' as const, session: activeSnapshot }))
     })
     const publisher = createPublisher()
@@ -60,12 +65,15 @@ describe('authentication IPC handlers', () => {
       })
     )
     expect(loginResult).toEqual(getSessionResult)
-    expect(service.getSnapshot).toHaveBeenCalledOnce()
     expect(service.login).toHaveBeenCalledWith(loginRequest)
     expect(publisher.publish).not.toHaveBeenCalled()
 
     const changedSnapshot = createActiveSnapshot(4)
-    service.recordActivity = vi.fn(() => changedSnapshot)
+    service.recordActivity = vi.fn(() => {
+      snapshot = changedSnapshot
+
+      return changedSnapshot
+    })
 
     await expect(handlers.recordActivity(createAllowedEvent(), {})).resolves.toEqual(
       createIpcSuccess({
@@ -137,6 +145,278 @@ describe('authentication IPC handlers', () => {
     expect(publisher.publish).not.toHaveBeenCalled()
   })
 
+  it('publishes signed out when password-change rejections clear provisional state', async () => {
+    for (const reason of ['ACCOUNT_INACTIVE', 'PASSWORD_CHANGE_NOT_REQUIRED'] as const) {
+      let snapshot: LocalSessionSnapshot = createPasswordChangeRequiredSnapshot(1)
+      const service = createService({
+        getSnapshot: vi.fn(() => snapshot),
+        changeRequiredPassword: vi.fn(async () => {
+          snapshot = { status: 'SIGNED_OUT', revision: 2 }
+
+          return {
+            status: 'REJECTED' as const,
+            reason,
+            retryAt: null
+          }
+        })
+      })
+      const publisher = createPublisher()
+      const handlers = createHandlers({ service, publisher })
+
+      await expect(
+        handlers.changeRequiredPassword(createAllowedEvent(), {
+          currentPassword: 'CurrentPassw0rd!',
+          newPassword: 'ReplacementPassw0rd!',
+          confirmNewPassword: 'ReplacementPassw0rd!'
+        })
+      ).resolves.toEqual(
+        createIpcSuccess({
+          status: 'REJECTED',
+          reason,
+          retryAt: null
+        })
+      )
+      expect(publisher.publish).toHaveBeenCalledWith({ status: 'SIGNED_OUT', revision: 2 })
+    }
+  })
+
+  it('publishes signed out when password-change concurrency or integrity failures clear state', async () => {
+    const cases = [
+      [new LocalSessionConcurrencyError(), 'AUTH_CONCURRENCY'],
+      [new LocalSessionStateIntegrityError(), 'AUTH_STATE_INTEGRITY']
+    ] as const
+
+    for (const [error, code] of cases) {
+      let snapshot: LocalSessionSnapshot = createPasswordChangeRequiredSnapshot(1)
+      const service = createService({
+        getSnapshot: vi.fn(() => snapshot),
+        changeRequiredPassword: vi.fn(async () => {
+          snapshot = { status: 'SIGNED_OUT', revision: 2 }
+          throw error
+        })
+      })
+      const publisher = createPublisher()
+      const handlers = createHandlers({ service, publisher })
+
+      await expect(
+        handlers.changeRequiredPassword(createAllowedEvent(), {
+          currentPassword: 'CurrentPassw0rd!',
+          newPassword: 'ReplacementPassw0rd!',
+          confirmNewPassword: 'ReplacementPassw0rd!'
+        })
+      ).resolves.toEqual(createAuthenticationFailure(code))
+      expect(publisher.publish).toHaveBeenCalledWith({ status: 'SIGNED_OUT', revision: 2 })
+    }
+  })
+
+  it('publishes signed out when wrong-user unlock clears a locked session', async () => {
+    let snapshot: LocalSessionSnapshot = createLockedSnapshot(2)
+    const service = createService({
+      getSnapshot: vi.fn(() => snapshot),
+      unlock: vi.fn(async () => {
+        snapshot = { status: 'SIGNED_OUT', revision: 3 }
+        throw new LocalSessionConcurrencyError()
+      })
+    })
+    const publisher = createPublisher()
+    const handlers = createHandlers({ service, publisher })
+
+    await expect(
+      handlers.unlock(createAllowedEvent(), { password: 'CurrentPassw0rd!' })
+    ).resolves.toEqual(createAuthenticationFailure('AUTH_CONCURRENCY'))
+    expect(publisher.publish).toHaveBeenCalledWith({ status: 'SIGNED_OUT', revision: 3 })
+  })
+
+  it('publishes signed out when unlock concurrency or integrity failures clear state', async () => {
+    const cases = [
+      [new LocalSessionConcurrencyError(), 'AUTH_CONCURRENCY'],
+      [new LocalSessionStateIntegrityError(), 'AUTH_STATE_INTEGRITY']
+    ] as const
+
+    for (const [error, code] of cases) {
+      let snapshot: LocalSessionSnapshot = createLockedSnapshot(2)
+      const service = createService({
+        getSnapshot: vi.fn(() => snapshot),
+        unlock: vi.fn(async () => {
+          snapshot = { status: 'SIGNED_OUT', revision: 3 }
+          throw error
+        })
+      })
+      const publisher = createPublisher()
+      const handlers = createHandlers({ service, publisher })
+
+      await expect(
+        handlers.unlock(createAllowedEvent(), { password: 'CurrentPassw0rd!' })
+      ).resolves.toEqual(createAuthenticationFailure(code))
+      expect(publisher.publish).toHaveBeenCalledWith({ status: 'SIGNED_OUT', revision: 3 })
+    }
+  })
+
+  it('publishes lock invalidations for pending login and password change before throwing', async () => {
+    const pendingLogin =
+      createDeferred<Awaited<ReturnType<LocalLoginAuthenticationService['authenticate']>>>()
+    const loginHarness = createActualSessionService()
+    loginHarness.loginService.authenticate.mockReturnValueOnce(pendingLogin.promise)
+
+    const loginAttempt = loginHarness.service.login(loginRequest)
+    const loginPublisher = createPublisher()
+    const loginHandlers = createHandlers({
+      service: loginHarness.service,
+      publisher: loginPublisher
+    })
+
+    await expect(loginHandlers.lock(createAllowedEvent(), {})).resolves.toEqual(
+      createAuthenticationFailure('AUTH_UNAUTHENTICATED')
+    )
+    expect(loginPublisher.publish).toHaveBeenCalledWith({ status: 'SIGNED_OUT', revision: 1 })
+
+    pendingLogin.resolve({ status: 'AUTHENTICATED', user: createUser() })
+    await expect(loginAttempt).rejects.toBeInstanceOf(LocalSessionConcurrencyError)
+
+    const pendingPasswordChange =
+      createDeferred<Awaited<ReturnType<LocalForcedPasswordChangeService['changePassword']>>>()
+    const passwordChangeHarness = createActualSessionService({
+      loginResult: {
+        status: 'AUTHENTICATED',
+        user: createUser({ mustChangePassword: true })
+      }
+    })
+    await passwordChangeHarness.service.login(loginRequest)
+    passwordChangeHarness.forcedPasswordChangeService.changePassword.mockReturnValueOnce(
+      pendingPasswordChange.promise
+    )
+
+    const passwordChangeAttempt = passwordChangeHarness.service.changeRequiredPassword({
+      currentPassword: 'CurrentPassw0rd!',
+      newPassword: 'ReplacementPassw0rd!',
+      confirmNewPassword: 'ReplacementPassw0rd!'
+    })
+    const passwordChangePublisher = createPublisher()
+    const passwordChangeHandlers = createHandlers({
+      service: passwordChangeHarness.service,
+      publisher: passwordChangePublisher
+    })
+
+    await expect(passwordChangeHandlers.lock(createAllowedEvent(), {})).resolves.toEqual(
+      createAuthenticationFailure('AUTH_PASSWORD_CHANGE_REQUIRED')
+    )
+    expect(passwordChangePublisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'PASSWORD_CHANGE_REQUIRED', revision: 2 })
+    )
+
+    pendingPasswordChange.resolve({
+      status: 'PASSWORD_CHANGED',
+      user: createUser({ mustChangePassword: false })
+    })
+    await expect(passwordChangeAttempt).rejects.toBeInstanceOf(LocalSessionConcurrencyError)
+  })
+
+  it('does not publish ordinary invalid credentials when revision stays unchanged', async () => {
+    const service = createService({
+      getSnapshot: vi.fn(() => ({ status: 'SIGNED_OUT' as const, revision: 0 })),
+      login: vi.fn(async () => ({
+        status: 'REJECTED' as const,
+        reason: 'INVALID_CREDENTIALS' as const,
+        retryAt: null
+      }))
+    })
+    const publisher = createPublisher()
+    const handlers = createHandlers({ service, publisher })
+
+    await expect(handlers.login(createAllowedEvent(), loginRequest)).resolves.toEqual(
+      createIpcSuccess({
+        status: 'REJECTED',
+        reason: 'INVALID_CREDENTIALS',
+        retryAt: null
+      })
+    )
+    expect(publisher.publish).not.toHaveBeenCalled()
+  })
+
+  it('keeps the controlled result when post-operation session observation fails', async () => {
+    const service = createService({
+      getSnapshot: vi
+        .fn()
+        .mockReturnValueOnce({ status: 'SIGNED_OUT', revision: 0 })
+        .mockImplementationOnce(() => {
+          throw new LocalSessionStateIntegrityError()
+        }),
+      login: vi.fn(async () => {
+        throw new LocalSessionConcurrencyError()
+      })
+    })
+    const publisher = createPublisher()
+    const handlers = createHandlers({ service, publisher })
+
+    await expect(handlers.login(createAllowedEvent(), loginRequest)).resolves.toEqual(
+      createAuthenticationFailure('AUTH_CONCURRENCY')
+    )
+    expect(publisher.publish).not.toHaveBeenCalled()
+  })
+
+  it('keeps successful login authoritative when session event delivery fails and retries later', async () => {
+    let snapshot: LocalSessionSnapshot = { status: 'SIGNED_OUT', revision: 0 }
+    const activeSnapshot = createActiveSnapshot(1)
+    const service = createService({
+      getSnapshot: vi.fn(() => snapshot),
+      login: vi.fn(async () => {
+        snapshot = activeSnapshot
+
+        return { status: 'ACTIVE' as const, session: activeSnapshot }
+      })
+    })
+    const logger = createLogger()
+    let sendCount = 0
+    const target = {
+      mainFrame: { url: 'http://localhost:5173/' },
+      isDestroyed: vi.fn(() => false),
+      send: vi.fn(() => {
+        sendCount += 1
+
+        if (sendCount === 1) {
+          throw new Error('C:\\secret\\renderer-send CurrentPassw0rd!')
+        }
+      })
+    }
+    const handlers = createHandlers({
+      service,
+      logger,
+      publisher: createAuthenticationSessionPublisher({
+        navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
+        getWebContents: () => target
+      })
+    })
+
+    const loginResult = await handlers.login(createAllowedEvent(), loginRequest)
+
+    expect(loginResult).toEqual(
+      createIpcSuccess({
+        status: 'ACTIVE',
+        user: {
+          username: 'Admin.User',
+          displayName: 'Admin User',
+          role: 'LOCAL_ADMIN'
+        },
+        idleExpiresAt: '2026-07-31T12:15:00.000Z',
+        absoluteExpiresAt: '2026-08-01T00:00:00.000Z',
+        revision: 1
+      })
+    )
+    expect(target.send).toHaveBeenCalledTimes(1)
+
+    await expect(handlers.getSession(createAllowedEvent(), {})).resolves.toEqual(loginResult)
+    expect(target.send).toHaveBeenCalledTimes(2)
+
+    const rawText = JSON.stringify(loginResult)
+    const logs = [...logger.warn.mock.calls, ...logger.error.mock.calls].flat().join('\n')
+
+    expect(rawText).not.toContain('renderer-send')
+    expect(rawText).not.toContain('CurrentPassw0rd')
+    expect(logs).not.toContain('renderer-send')
+    expect(logs).not.toContain('CurrentPassw0rd')
+    expect(logs).not.toContain('C:\\secret')
+  })
+
   it('rejects forbidden senders before request parsing or service access', async () => {
     const service = createService()
     const handlers = createHandlers({ service })
@@ -180,9 +460,23 @@ describe('authentication IPC handlers', () => {
         password: 'CurrentPassw0rd!'
       })
     ).resolves.toEqual(createAuthenticationFailure('VALIDATION_FAILED'))
+    await expect(
+      handlers.login(createAllowedEvent(), { ...loginRequest, password: 'short' })
+    ).resolves.toEqual(createAuthenticationFailure('VALIDATION_FAILED'))
+    await expect(
+      handlers.changeRequiredPassword(createAllowedEvent(), {
+        currentPassword: 'CurrentPassw0rd!',
+        newPassword: 'ReplacementPassw0rd!\u2028',
+        confirmNewPassword: 'ReplacementPassw0rd!'
+      })
+    ).resolves.toEqual(createAuthenticationFailure('VALIDATION_FAILED'))
+    await expect(handlers.unlock(createAllowedEvent(), { password: 'short' })).resolves.toEqual(
+      createAuthenticationFailure('VALIDATION_FAILED')
+    )
     expect(service.login).not.toHaveBeenCalled()
     expect(service.changeRequiredPassword).not.toHaveBeenCalled()
     expect(service.unlock).not.toHaveBeenCalled()
+    expect(service.getSnapshot).not.toHaveBeenCalled()
   })
 
   it('maps controlled HSD-021 errors to reviewed safe IPC codes', async () => {
@@ -240,7 +534,7 @@ describe('authentication IPC handlers', () => {
 
 interface HandlerOptions {
   service?: LocalAuthenticationSessionService
-  publisher?: TestPublisher
+  publisher?: AuthenticationSessionPublisher
   logger?: TestLogger
 }
 
@@ -320,7 +614,71 @@ function createLockedSnapshot(
   } as Extract<LocalSessionSnapshot, { status: 'LOCKED' }>
 }
 
-function createUser(): LocalUserRecord {
+function createPasswordChangeRequiredSnapshot(
+  revision: number
+): Extract<LocalSessionSnapshot, { status: 'PASSWORD_CHANGE_REQUIRED' }> {
+  return {
+    status: 'PASSWORD_CHANGE_REQUIRED',
+    user: createUser({ mustChangePassword: true }),
+    establishedAt: '2026-07-31T12:00:00.000Z',
+    expiresAt: '2026-07-31T12:15:00.000Z',
+    revision
+  } as Extract<LocalSessionSnapshot, { status: 'PASSWORD_CHANGE_REQUIRED' }>
+}
+
+interface ActualSessionHarness {
+  readonly service: LocalAuthenticationSessionService
+  readonly loginService: MockLoginService
+  readonly forcedPasswordChangeService: MockForcedPasswordChangeService
+}
+
+interface ActualSessionHarnessOptions {
+  readonly loginResult?: Awaited<ReturnType<LocalLoginAuthenticationService['authenticate']>>
+  readonly forcedPasswordChangeResult?: Awaited<
+    ReturnType<LocalForcedPasswordChangeService['changePassword']>
+  >
+}
+
+type MockLoginService = LocalLoginAuthenticationService & {
+  readonly authenticate: ReturnType<typeof vi.fn<LocalLoginAuthenticationService['authenticate']>>
+}
+
+type MockForcedPasswordChangeService = LocalForcedPasswordChangeService & {
+  readonly changePassword: ReturnType<
+    typeof vi.fn<LocalForcedPasswordChangeService['changePassword']>
+  >
+}
+
+function createActualSessionService({
+  loginResult = {
+    status: 'AUTHENTICATED' as const,
+    user: createUser()
+  },
+  forcedPasswordChangeResult = {
+    status: 'PASSWORD_CHANGED' as const,
+    user: createUser({ updatedAt: '2026-07-31T12:05:00.000Z' as never })
+  }
+}: ActualSessionHarnessOptions = {}): ActualSessionHarness {
+  const loginService = {
+    authenticate: vi.fn(async () => loginResult)
+  } as MockLoginService
+  const forcedPasswordChangeService = {
+    changePassword: vi.fn(async () => forcedPasswordChangeResult)
+  } as MockForcedPasswordChangeService
+  const service = createLocalAuthenticationSessionService({
+    loginService,
+    forcedPasswordChangeService,
+    clock: { now: () => '2026-07-31T12:00:00.000Z' as never }
+  })
+
+  return {
+    service,
+    loginService,
+    forcedPasswordChangeService
+  }
+}
+
+function createUser(override: Partial<LocalUserRecord> = {}): LocalUserRecord {
   return {
     id: '22222222-2222-4222-8222-222222222222',
     username: 'Admin.User',
@@ -332,13 +690,14 @@ function createUser(): LocalUserRecord {
     lockedUntil: null,
     lastLoginAt: '2026-07-31T12:00:00.000Z',
     createdAt: '2026-07-29T12:00:00.000Z',
-    updatedAt: '2026-07-31T12:00:00.000Z'
+    updatedAt: '2026-07-31T12:00:00.000Z',
+    ...override
   } as LocalUserRecord
 }
 
 function createPublisher(): TestPublisher {
   return {
-    publish: vi.fn(),
+    publish: vi.fn(() => true),
     dispose: vi.fn()
   } as TestPublisher
 }
@@ -364,5 +723,20 @@ function createEvent(url: string): IpcSenderValidationEvent {
   return {
     sender: { mainFrame },
     senderFrame: mainFrame
+  }
+}
+
+function createDeferred<T>(): {
+  readonly promise: Promise<T>
+  resolve(value: T): void
+} {
+  let resolveDeferred: (value: T) => void = () => undefined
+  const promise = new Promise<T>((resolve) => {
+    resolveDeferred = resolve
+  })
+
+  return {
+    promise,
+    resolve: resolveDeferred
   }
 }

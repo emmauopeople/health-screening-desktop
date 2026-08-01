@@ -196,6 +196,8 @@ function createPublisher(published: PublicAuthenticationSession[]): Authenticati
   return {
     publish: vi.fn((session: PublicAuthenticationSession) => {
       published.push(session)
+
+      return true
     }),
     dispose: vi.fn()
   }

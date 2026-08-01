@@ -14,7 +14,7 @@ export interface AuthenticationSessionPublishTarget {
 }
 
 export interface AuthenticationSessionPublisher {
-  publish(session: PublicAuthenticationSession): void
+  publish(session: PublicAuthenticationSession): boolean
   dispose(): void
 }
 
@@ -30,28 +30,66 @@ export function createAuthenticationSessionPublisher({
   let disposed = false
 
   return Object.freeze({
-    publish(session: PublicAuthenticationSession): void {
+    publish(session: PublicAuthenticationSession): boolean {
       if (disposed) {
-        return
+        return false
       }
 
-      const target = getWebContents()
+      let target: AuthenticationSessionPublishTarget | null | undefined
 
-      if (!target || target.isDestroyed()) {
-        return
+      try {
+        target = getWebContents()
+      } catch {
+        return false
       }
 
-      if (!isNavigationAllowed(target.mainFrame.url, navigationPolicy)) {
-        return
+      if (!target) {
+        return false
       }
 
-      const payloadResult = publicAuthenticationSessionSchema.safeParse(session)
+      try {
+        if (target.isDestroyed()) {
+          return false
+        }
+      } catch {
+        return false
+      }
+
+      let targetUrl: string
+
+      try {
+        targetUrl = target.mainFrame.url
+      } catch {
+        return false
+      }
+
+      try {
+        if (!isNavigationAllowed(targetUrl, navigationPolicy)) {
+          return false
+        }
+      } catch {
+        return false
+      }
+
+      let payloadResult: ReturnType<typeof publicAuthenticationSessionSchema.safeParse>
+
+      try {
+        payloadResult = publicAuthenticationSessionSchema.safeParse(session)
+      } catch {
+        return false
+      }
 
       if (!payloadResult.success) {
-        return
+        return false
       }
 
-      target.send(ipcChannels.auth.sessionChanged, payloadResult.data)
+      try {
+        target.send(ipcChannels.auth.sessionChanged, payloadResult.data)
+      } catch {
+        return false
+      }
+
+      return true
     },
     dispose(): void {
       disposed = true

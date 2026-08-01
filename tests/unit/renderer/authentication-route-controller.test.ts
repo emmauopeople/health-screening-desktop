@@ -31,6 +31,14 @@ const activeSession: PublicActiveAuthenticationSession = {
   revision: 4
 }
 
+const lockedSession: PublicAuthenticationSession = {
+  status: 'LOCKED',
+  user: activeSession.user,
+  reason: 'MANUAL',
+  absoluteExpiresAt: activeSession.absoluteExpiresAt,
+  revision: 5
+}
+
 describe('renderer authentication route controller', () => {
   it('maps each public session state to the reviewed route state', () => {
     expect(mapPublicAuthenticationSessionToRoute(signedOutSession)).toEqual({
@@ -100,6 +108,93 @@ describe('renderer authentication route controller', () => {
         status: 'AUTH_UNAVAILABLE',
         message: 'Authentication is unavailable from the current window.',
         retryable: false
+      }
+    ])
+  })
+
+  it('preserves an active event when getSession later returns a failure envelope', async () => {
+    const result = deferred<AuthGetSessionResult>()
+    const states: RendererAuthenticationRoute[] = []
+    let listener: ((session: PublicAuthenticationSession) => void) | undefined
+    const api = createApi({
+      getSessionResult: () => result.promise,
+      onSessionChanged: (sessionListener) => {
+        listener = sessionListener
+
+        return vi.fn()
+      }
+    })
+    const controller = createRendererAuthenticationRouteController({
+      api,
+      onRoute: (state) => states.push(state)
+    })
+
+    const load = controller.load()
+    listener?.(activeSession)
+    result.resolve(createAuthenticationFailure('IPC_UNAVAILABLE') as AuthGetSessionResult)
+    await load
+
+    expect(states).toEqual([
+      { status: 'AUTH_LOADING' },
+      {
+        status: 'SESSION_ACTIVE',
+        user: activeSession.user,
+        idleExpiresAt: activeSession.idleExpiresAt,
+        absoluteExpiresAt: activeSession.absoluteExpiresAt,
+        revision: activeSession.revision
+      }
+    ])
+  })
+
+  it('preserves a locked event when getSession later throws', async () => {
+    const states: RendererAuthenticationRoute[] = []
+    const api = createApi({
+      getSessionResult: () => {
+        throw new Error('IPC unavailable')
+      },
+      onSessionChanged: (listener) => {
+        listener(lockedSession)
+
+        return vi.fn()
+      }
+    })
+    const controller = createRendererAuthenticationRouteController({
+      api,
+      onRoute: (state) => states.push(state)
+    })
+
+    await controller.load()
+
+    expect(states).toEqual([
+      { status: 'AUTH_LOADING' },
+      {
+        status: 'SESSION_LOCKED',
+        user: lockedSession.user,
+        reason: 'MANUAL',
+        absoluteExpiresAt: lockedSession.absoluteExpiresAt,
+        revision: lockedSession.revision
+      }
+    ])
+  })
+
+  it('emits unavailable when getSession fails before any valid session event', async () => {
+    const states: RendererAuthenticationRoute[] = []
+    const api = createApi({
+      getSessionResult: createAuthenticationFailure('IPC_UNAVAILABLE') as AuthGetSessionResult
+    })
+    const controller = createRendererAuthenticationRouteController({
+      api,
+      onRoute: (state) => states.push(state)
+    })
+
+    await controller.load()
+
+    expect(states).toEqual([
+      { status: 'AUTH_LOADING' },
+      {
+        status: 'AUTH_UNAVAILABLE',
+        message: 'The desktop service could not provide local session status.',
+        retryable: true
       }
     ])
   })

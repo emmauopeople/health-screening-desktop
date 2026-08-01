@@ -5,7 +5,9 @@ import {
   createAuthenticationFailure,
   createIpcSuccess,
   ipcChannels,
+  type AuthChangeRequiredPasswordRequest,
   type AuthLoginRequest,
+  type AuthUnlockRequest,
   type PublicActiveAuthenticationSession
 } from '@shared/ipc'
 
@@ -62,6 +64,7 @@ describe('preload authentication API', () => {
   it('rejects invalid local auth requests before invoking main', async () => {
     const invoke = vi.fn()
     const api = createHealthScreeningApi(invoke)
+    const invalidPassword = 'short'
     const descriptorTrapRequest = new Proxy(
       { ...loginRequest },
       {
@@ -77,6 +80,19 @@ describe('preload authentication API', () => {
     await expect(api.auth.login(descriptorTrapRequest as AuthLoginRequest)).resolves.toEqual(
       createAuthenticationFailure('VALIDATION_FAILED')
     )
+    await expect(
+      api.auth.login({ ...loginRequest, password: invalidPassword } as AuthLoginRequest)
+    ).resolves.toEqual(createAuthenticationFailure('VALIDATION_FAILED'))
+    await expect(
+      api.auth.changeRequiredPassword({
+        currentPassword: 'CurrentPassw0rd!',
+        newPassword: invalidPassword,
+        confirmNewPassword: 'ReplacementPassw0rd!'
+      } as AuthChangeRequiredPasswordRequest)
+    ).resolves.toEqual(createAuthenticationFailure('VALIDATION_FAILED'))
+    await expect(
+      api.auth.unlock({ password: 'ValidPassw0rd!\u2028' } as AuthUnlockRequest)
+    ).resolves.toEqual(createAuthenticationFailure('VALIDATION_FAILED'))
     expect(invoke).not.toHaveBeenCalled()
   })
 

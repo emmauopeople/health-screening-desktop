@@ -76,20 +76,11 @@ export function createAuthenticationIpcHandlers({
   sessionPublisher,
   logger = console
 }: AuthenticationIpcHandlerDependencies): AuthenticationIpcHandlers {
-  let lastObservedRevision: number | undefined
+  let undeliveredRevision: number | undefined
 
-  function observeSession(
-    session: PublicAuthenticationSession,
-    publishWhenUnobserved: boolean
-  ): void {
-    const previousRevision = lastObservedRevision
-    lastObservedRevision = session.revision
-
-    if (
-      (previousRevision === undefined && publishWhenUnobserved) ||
-      (previousRevision !== undefined && previousRevision !== session.revision)
-    ) {
-      sessionPublisher.publish(session)
+  function retryUndeliveredSession(session: PublicAuthenticationSession): void {
+    if (undeliveredRevision === session.revision) {
+      publishSession(session)
     }
   }
 
@@ -115,7 +106,7 @@ export function createAuthenticationIpcHandlers({
         const publicSession = toPublicAuthenticationSession(
           authenticationSessionService.getSnapshot()
         )
-        observeSession(publicSession, false)
+        retryUndeliveredSession(publicSession)
 
         return createValidatedSuccessResult({
           channel,
@@ -142,22 +133,34 @@ export function createAuthenticationIpcHandlers({
         return createAuthenticationIpcFailure('VALIDATION_FAILED') as AuthLoginResult
       }
 
+      const before = captureCurrentPublicSessionRevision(channel)
+
+      if (!before.success) {
+        return before.failure as AuthLoginResult
+      }
+
       try {
         const result = await authenticationSessionService.login(requestResult.data)
         const data = toAuthenticationLoginData(result)
 
-        if (data.status !== 'REJECTED') {
-          observeSession(data, true)
-        }
-
-        return createValidatedSuccessResult({
+        const response = createValidatedSuccessResult({
           channel,
           data,
           resultSchema: authLoginResultSchema,
           logger
         }) as AuthLoginResult
+
+        publishSessionIfRevisionChanged(before.revision)
+
+        return response
       } catch (error) {
-        return createFailureFromError(channel, logger, error) as AuthLoginResult
+        const failure = createFailureFromError(channel, logger, error)
+
+        if (isControlledAuthenticationFailure(failure)) {
+          publishSessionIfRevisionChanged(before.revision)
+        }
+
+        return failure as AuthLoginResult
       }
     },
 
@@ -180,22 +183,34 @@ export function createAuthenticationIpcHandlers({
         ) as AuthChangeRequiredPasswordResult
       }
 
+      const before = captureCurrentPublicSessionRevision(channel)
+
+      if (!before.success) {
+        return before.failure as AuthChangeRequiredPasswordResult
+      }
+
       try {
         const result = await authenticationSessionService.changeRequiredPassword(requestResult.data)
         const data = toAuthenticationPasswordChangeData(result)
 
-        if (data.status !== 'REJECTED') {
-          observeSession(data, true)
-        }
-
-        return createValidatedSuccessResult({
+        const response = createValidatedSuccessResult({
           channel,
           data,
           resultSchema: authChangeRequiredPasswordResultSchema,
           logger
         }) as AuthChangeRequiredPasswordResult
+
+        publishSessionIfRevisionChanged(before.revision)
+
+        return response
       } catch (error) {
-        return createFailureFromError(channel, logger, error) as AuthChangeRequiredPasswordResult
+        const failure = createFailureFromError(channel, logger, error)
+
+        if (isControlledAuthenticationFailure(failure)) {
+          publishSessionIfRevisionChanged(before.revision)
+        }
+
+        return failure as AuthChangeRequiredPasswordResult
       }
     },
 
@@ -213,22 +228,34 @@ export function createAuthenticationIpcHandlers({
         return createAuthenticationIpcFailure('VALIDATION_FAILED') as AuthUnlockResult
       }
 
+      const before = captureCurrentPublicSessionRevision(channel)
+
+      if (!before.success) {
+        return before.failure as AuthUnlockResult
+      }
+
       try {
         const result = await authenticationSessionService.unlock(requestResult.data)
         const data = toAuthenticationUnlockData(result)
 
-        if (data.status !== 'REJECTED') {
-          observeSession(data, true)
-        }
-
-        return createValidatedSuccessResult({
+        const response = createValidatedSuccessResult({
           channel,
           data,
           resultSchema: authUnlockResultSchema,
           logger
         }) as AuthUnlockResult
+
+        publishSessionIfRevisionChanged(before.revision)
+
+        return response
       } catch (error) {
-        return createFailureFromError(channel, logger, error) as AuthUnlockResult
+        const failure = createFailureFromError(channel, logger, error)
+
+        if (isControlledAuthenticationFailure(failure)) {
+          publishSessionIfRevisionChanged(before.revision)
+        }
+
+        return failure as AuthUnlockResult
       }
     },
 
@@ -246,18 +273,33 @@ export function createAuthenticationIpcHandlers({
         return createAuthenticationIpcFailure('VALIDATION_FAILED') as AuthLockResult
       }
 
+      const before = captureCurrentPublicSessionRevision(channel)
+
+      if (!before.success) {
+        return before.failure as AuthLockResult
+      }
+
       try {
         const publicSession = toPublicAuthenticationSession(authenticationSessionService.lock())
-        observeSession(publicSession, true)
 
-        return createValidatedSuccessResult({
+        const response = createValidatedSuccessResult({
           channel,
           data: publicSession,
           resultSchema: authLockResultSchema,
           logger
         }) as AuthLockResult
+
+        publishSessionIfRevisionChanged(before.revision)
+
+        return response
       } catch (error) {
-        return createFailureFromError(channel, logger, error) as AuthLockResult
+        const failure = createFailureFromError(channel, logger, error)
+
+        if (isControlledAuthenticationFailure(failure)) {
+          publishSessionIfRevisionChanged(before.revision)
+        }
+
+        return failure as AuthLockResult
       }
     },
 
@@ -275,20 +317,35 @@ export function createAuthenticationIpcHandlers({
         return createAuthenticationIpcFailure('VALIDATION_FAILED') as AuthLogoutResult
       }
 
+      const before = captureCurrentPublicSessionRevision(channel)
+
+      if (!before.success) {
+        return before.failure as AuthLogoutResult
+      }
+
       try {
         const publicSession = toPublicSignedOutAuthenticationSession(
           authenticationSessionService.logout()
         )
-        observeSession(publicSession, true)
 
-        return createValidatedSuccessResult({
+        const response = createValidatedSuccessResult({
           channel,
           data: publicSession,
           resultSchema: authLogoutResultSchema,
           logger
         }) as AuthLogoutResult
+
+        publishSessionIfRevisionChanged(before.revision)
+
+        return response
       } catch (error) {
-        return createFailureFromError(channel, logger, error) as AuthLogoutResult
+        const failure = createFailureFromError(channel, logger, error)
+
+        if (isControlledAuthenticationFailure(failure)) {
+          publishSessionIfRevisionChanged(before.revision)
+        }
+
+        return failure as AuthLogoutResult
       }
     },
 
@@ -309,23 +366,87 @@ export function createAuthenticationIpcHandlers({
         return createAuthenticationIpcFailure('VALIDATION_FAILED') as AuthRecordActivityResult
       }
 
+      const before = captureCurrentPublicSessionRevision(channel)
+
+      if (!before.success) {
+        return before.failure as AuthRecordActivityResult
+      }
+
       try {
         const publicSession = toPublicActiveAuthenticationSession(
           authenticationSessionService.recordActivity()
         )
-        observeSession(publicSession, true)
 
-        return createValidatedSuccessResult({
+        const response = createValidatedSuccessResult({
           channel,
           data: publicSession,
           resultSchema: authRecordActivityResultSchema,
           logger
         }) as AuthRecordActivityResult
+
+        publishSessionIfRevisionChanged(before.revision)
+
+        return response
       } catch (error) {
-        return createFailureFromError(channel, logger, error) as AuthRecordActivityResult
+        const failure = createFailureFromError(channel, logger, error)
+
+        if (isControlledAuthenticationFailure(failure)) {
+          publishSessionIfRevisionChanged(before.revision)
+        }
+
+        return failure as AuthRecordActivityResult
       }
     }
   })
+
+  function captureCurrentPublicSessionRevision(channel: AuthenticationIpcChannel):
+    | { readonly success: true; readonly revision: number }
+    | {
+        readonly success: false
+        readonly failure: ReturnType<typeof createAuthenticationIpcFailure>
+      } {
+    try {
+      const session = toPublicAuthenticationSession(authenticationSessionService.getSnapshot())
+
+      return { success: true, revision: session.revision }
+    } catch (error) {
+      return { success: false, failure: createFailureFromError(channel, logger, error) }
+    }
+  }
+
+  function publishSessionIfRevisionChanged(beforeRevision: number): void {
+    let session: PublicAuthenticationSession
+
+    try {
+      session = toPublicAuthenticationSession(authenticationSessionService.getSnapshot())
+    } catch {
+      return
+    }
+
+    if (session.revision !== beforeRevision) {
+      publishSession(session)
+    }
+  }
+
+  function publishSession(session: PublicAuthenticationSession): void {
+    let delivered = false
+
+    try {
+      delivered = sessionPublisher.publish(session)
+    } catch {
+      delivered = false
+    }
+
+    if (delivered) {
+      if (undeliveredRevision === session.revision) {
+        undeliveredRevision = undefined
+      }
+
+      return
+    }
+
+    undeliveredRevision = session.revision
+  }
 }
 
 function isAuthenticationSenderAllowed(
@@ -351,6 +472,12 @@ function createFailureFromError(
   logAuthenticationIpcFailure(logger, channel, code, error)
 
   return createAuthenticationIpcFailure(code)
+}
+
+function isControlledAuthenticationFailure(
+  failure: ReturnType<typeof createAuthenticationIpcFailure>
+): boolean {
+  return failure.error.code !== 'INTERNAL_ERROR'
 }
 
 function createValidatedSuccessResult<TResult>({

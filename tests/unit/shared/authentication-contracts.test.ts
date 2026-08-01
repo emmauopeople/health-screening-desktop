@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   authChangeRequiredPasswordRequestSchema,
   authenticationSafeErrorMessages,
+  authenticationPasswordTransportSchema,
   authGetSessionRequestSchema,
   authGetSessionResultSchema,
   authLockRequestSchema,
@@ -76,6 +77,65 @@ describe('shared authentication IPC contracts', () => {
     expect(authUnlockRequestSchema.parse({ password: 'CurrentPassw0rd!' })).toEqual({
       password: 'CurrentPassw0rd!'
     })
+  })
+
+  it('enforces HSD-010 password transport without changing exact strings', () => {
+    const minimum = 'A'.repeat(12)
+    const maximum = 'A'.repeat(128)
+    const maximumUtf8 = '\u{1f600}'.repeat(128)
+    const padded = '  ExactPassw0rd!  '
+    const composed = 'ExactPassw0rd\u00e9'
+    const decomposed = 'ExactPassw0rde\u0301'
+
+    for (const password of [minimum, maximum, maximumUtf8, padded, composed, decomposed]) {
+      expect(authenticationPasswordTransportSchema.parse(password)).toBe(password)
+    }
+
+    expect(authenticationPasswordTransportSchema.parse(composed)).not.toBe(
+      authenticationPasswordTransportSchema.parse(decomposed)
+    )
+    expect(authenticationPasswordTransportSchema.parse(padded)).not.toBe('ExactPassw0rd!')
+
+    const malformedPasswords = [
+      'A'.repeat(11),
+      'A'.repeat(129),
+      '\u{1f600}'.repeat(129),
+      'ValidPassw0rd!\ud800',
+      'ValidPassw0rd!\udc00',
+      'ValidPassw0rd!\u0000',
+      'ValidPassw0rd!\u0085',
+      'ValidPassw0rd!\u2028',
+      'ValidPassw0rd!\u2029'
+    ]
+
+    for (const password of malformedPasswords) {
+      expect(authenticationPasswordTransportSchema.safeParse(password).success).toBe(false)
+      expect(authLoginRequestSchema.safeParse({ ...validLoginRequest, password }).success).toBe(
+        false
+      )
+      expect(
+        authChangeRequiredPasswordRequestSchema.safeParse({
+          currentPassword: password,
+          newPassword: 'ReplacementPassw0rd!',
+          confirmNewPassword: 'ReplacementPassw0rd!'
+        }).success
+      ).toBe(false)
+      expect(
+        authChangeRequiredPasswordRequestSchema.safeParse({
+          currentPassword: 'CurrentPassw0rd!',
+          newPassword: password,
+          confirmNewPassword: 'ReplacementPassw0rd!'
+        }).success
+      ).toBe(false)
+      expect(
+        authChangeRequiredPasswordRequestSchema.safeParse({
+          currentPassword: 'CurrentPassw0rd!',
+          newPassword: 'ReplacementPassw0rd!',
+          confirmNewPassword: password
+        }).success
+      ).toBe(false)
+      expect(authUnlockRequestSchema.safeParse({ password }).success).toBe(false)
+    }
   })
 
   it('rejects extra authority-bearing or malformed authentication requests', () => {

@@ -4,6 +4,9 @@ import { createIpcSuccessResultSchema } from './result'
 
 const unsafeTransportValue = Symbol('UnsafeAuthenticationIpcTransportValue')
 const utcTimestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u
+const authenticationPasswordMinimumCodePoints = 12
+const authenticationPasswordMaximumCodePoints = 128
+const authenticationPasswordMaximumUtf8Bytes = 512
 
 export type UtcTimestamp = string & { readonly __brand: 'UtcTimestamp' }
 
@@ -11,6 +14,9 @@ export const localUserRoleSchema = z.enum(['LOCAL_ADMIN', 'NURSE', 'TRAINED_SCRE
 export type LocalUserRole = z.infer<typeof localUserRoleSchema>
 
 export const utcTimestampSchema = z.string().refine(isUtcTimestamp) as z.ZodType<UtcTimestamp>
+export const authenticationPasswordTransportSchema = z
+  .string()
+  .refine(isAuthenticationPasswordTransport)
 
 export const authGetSessionRequestSchema = exactObject({})
 export const authLockRequestSchema = exactObject({})
@@ -19,17 +25,17 @@ export const authRecordActivityRequestSchema = exactObject({})
 
 export const authLoginRequestSchema = exactObject({
   username: z.string().max(128),
-  password: z.string().max(256)
+  password: authenticationPasswordTransportSchema
 })
 
 export const authChangeRequiredPasswordRequestSchema = exactObject({
-  currentPassword: z.string().max(256),
-  newPassword: z.string().max(256),
-  confirmNewPassword: z.string().max(256)
+  currentPassword: authenticationPasswordTransportSchema,
+  newPassword: authenticationPasswordTransportSchema,
+  confirmNewPassword: authenticationPasswordTransportSchema
 })
 
 export const authUnlockRequestSchema = exactObject({
-  password: z.string().max(256)
+  password: authenticationPasswordTransportSchema
 })
 
 export type AuthGetSessionRequest = z.infer<typeof authGetSessionRequestSchema>
@@ -418,4 +424,78 @@ function isUtcTimestamp(value: string): value is UtcTimestamp {
   const parsed = new Date(value)
 
   return Number.isFinite(parsed.getTime()) && parsed.toISOString() === value
+}
+
+function isAuthenticationPasswordTransport(value: string): boolean {
+  if (hasUnpairedSurrogate(value) || hasUnsafeAuthenticationPasswordCharacter(value)) {
+    return false
+  }
+
+  const codePointLength = Array.from(value).length
+
+  return (
+    codePointLength >= authenticationPasswordMinimumCodePoints &&
+    codePointLength <= authenticationPasswordMaximumCodePoints &&
+    getUtf8ByteLength(value) <= authenticationPasswordMaximumUtf8Bytes
+  )
+}
+
+function hasUnpairedSurrogate(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index)
+
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const nextCodeUnit = value.charCodeAt(index + 1)
+
+      if (Number.isNaN(nextCodeUnit) || nextCodeUnit < 0xdc00 || nextCodeUnit > 0xdfff) {
+        return true
+      }
+
+      index += 1
+      continue
+    }
+
+    if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function hasUnsafeAuthenticationPasswordCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0)!
+
+    if (
+      codePoint <= 0x1f ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x2028 ||
+      codePoint === 0x2029
+    ) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function getUtf8ByteLength(value: string): number {
+  let byteLength = 0
+
+  for (const character of value) {
+    const codePoint = character.codePointAt(0)!
+
+    if (codePoint <= 0x7f) {
+      byteLength += 1
+    } else if (codePoint <= 0x7ff) {
+      byteLength += 2
+    } else if (codePoint <= 0xffff) {
+      byteLength += 3
+    } else {
+      byteLength += 4
+    }
+  }
+
+  return byteLength
 }
