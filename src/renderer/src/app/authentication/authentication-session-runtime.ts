@@ -145,6 +145,11 @@ export function createAuthenticationActivityReporter({
         return
       }
 
+      if (result.error.code === 'IPC_FORBIDDEN') {
+        controller.showUnavailable(true)
+        return
+      }
+
       if (shouldReconcileAfterAuthenticationFailure(result.error.code)) {
         await settleReconcile(controller)
       }

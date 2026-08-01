@@ -172,6 +172,30 @@ describe('authentication session runtime', () => {
     expect(controller.acceptSession).not.toHaveBeenCalled()
   })
 
+  it('fails closed on forbidden activity without retrying or reconciling', async () => {
+    const target = new FakeEventTarget()
+    const controller = createController()
+    const api = createApi({
+      recordActivity: vi.fn(() =>
+        Promise.resolve(createAuthenticationFailure('IPC_FORBIDDEN') as AuthRecordActivityResult)
+      )
+    })
+
+    createAuthenticationActivityReporter({
+      api,
+      controller,
+      eventTarget: target
+    })
+
+    target.dispatch('pointerdown')
+    await flushPromises()
+
+    expect(api.auth.recordActivity).toHaveBeenCalledOnce()
+    expect(controller.showUnavailable).toHaveBeenCalledWith(true)
+    expect(controller.reconcile).not.toHaveBeenCalled()
+    expect(controller.acceptSession).not.toHaveBeenCalled()
+  })
+
   it('selects the reviewed deadline and reconciles with one timeout plus focus visibility hooks', () => {
     const now = Date.parse('2026-07-31T12:00:00.000Z')
     const scheduler = createScheduler()
@@ -274,6 +298,9 @@ function createApi({
 function createController(): RendererAuthenticationRouteController & {
   reconcile: ReturnType<typeof vi.fn<RendererAuthenticationRouteController['reconcile']>>
   acceptSession: ReturnType<typeof vi.fn<RendererAuthenticationRouteController['acceptSession']>>
+  showUnavailable: ReturnType<
+    typeof vi.fn<RendererAuthenticationRouteController['showUnavailable']>
+  >
 } {
   return {
     load: vi.fn(),

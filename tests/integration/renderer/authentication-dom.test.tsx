@@ -423,6 +423,139 @@ describe('renderer authentication DOM integration', () => {
     }
   })
 
+  it('fails closed when deadline reconciliation returns IPC_FORBIDDEN', async () => {
+    vi.useFakeTimers({ now: new Date('2026-08-01T00:00:00.000Z') })
+
+    const cases: Array<{
+      readonly initialSession: PublicAuthenticationSession
+      readonly visibleText: string
+    }> = [
+      {
+        initialSession: activeSession(1, baseUser, {
+          idleExpiresAt: '2026-08-01T00:00:01.000Z' as UtcTimestamp,
+          absoluteExpiresAt: '2026-08-01T12:00:00.000Z' as UtcTimestamp
+        }),
+        visibleText: 'Authenticated workspace.'
+      },
+      {
+        initialSession: lockedSession(2, baseUser, {
+          absoluteExpiresAt: '2026-08-01T00:00:01.000Z' as UtcTimestamp
+        }),
+        visibleText: 'Session locked.'
+      },
+      {
+        initialSession: passwordChangeSession(3, baseUser, {
+          expiresAt: '2026-08-01T00:00:01.000Z' as UtcTimestamp
+        }),
+        visibleText: 'Change required password.'
+      }
+    ]
+
+    for (const testCase of cases) {
+      vi.setSystemTime(new Date('2026-08-01T00:00:00.000Z'))
+
+      let getSessionCalls = 0
+      const harness = createAppApi(testCase.initialSession)
+      harness.setGetSession(() => {
+        getSessionCalls += 1
+
+        return Promise.resolve(
+          getSessionCalls === 1
+            ? (createIpcSuccess(testCase.initialSession) as AuthGetSessionResult)
+            : (createAuthenticationFailure('IPC_FORBIDDEN') as AuthGetSessionResult)
+        )
+      })
+      const mounted = await mountApp(harness.api)
+
+      expect(text(mounted)).toContain(testCase.visibleText)
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_000)
+        await flushPromises()
+      })
+      await flushReact()
+
+      expect(harness.api.auth.getSession).toHaveBeenCalledTimes(2)
+      expectForbiddenUnavailable(mounted)
+
+      await mounted.unmount()
+    }
+  })
+
+  it('fails closed when recordActivity returns IPC_FORBIDDEN', async () => {
+    const harness = createAppApi(activeSession(1))
+    harness.api.auth.recordActivity.mockResolvedValue(
+      createAuthenticationFailure('IPC_FORBIDDEN') as AuthRecordActivityResult
+    )
+    const mounted = await mountApp(harness.api)
+
+    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain(baseUser.displayName)
+
+    await dispatchWindowEvent('pointerdown')
+
+    expect(harness.api.auth.recordActivity).toHaveBeenCalledOnce()
+    expectForbiddenUnavailable(mounted)
+    expect(text(mounted)).not.toContain('Authenticated workspace.')
+
+    await mounted.unmount()
+  })
+
+  it('does not let stale pending reconciliation or session events restore forbidden unavailable', async () => {
+    const harness = createAppApi(activeSession(1))
+    const mounted = await mountApp(harness.api)
+    const pendingReconcile = deferred<AuthGetSessionResult>()
+
+    harness.setGetSession(() => pendingReconcile.promise)
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+      await flushPromises()
+    })
+
+    harness.api.auth.recordActivity.mockResolvedValue(
+      createAuthenticationFailure('IPC_FORBIDDEN') as AuthRecordActivityResult
+    )
+
+    await dispatchWindowEvent('pointerdown')
+
+    expectForbiddenUnavailable(mounted)
+
+    pendingReconcile.resolve(
+      createIpcSuccess(activeSession(9, userWithName('Restored User'))) as AuthGetSessionResult
+    )
+    await flushReact()
+    await emitSession(harness, activeSession(10, userWithName('Event User')))
+
+    expectForbiddenUnavailable(mounted)
+    expect(text(mounted)).not.toContain('Restored User')
+    expect(text(mounted)).not.toContain('Event User')
+
+    await mounted.unmount()
+  })
+
+  it('preserves the latest valid route when background reconciliation returns IPC_UNAVAILABLE', async () => {
+    const harness = createAppApi(activeSession(1))
+    const mounted = await mountApp(harness.api)
+
+    harness.setGetSession(() =>
+      Promise.resolve(createAuthenticationFailure('IPC_UNAVAILABLE') as AuthGetSessionResult)
+    )
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+      await flushPromises()
+    })
+    await flushReact()
+
+    expect(harness.api.auth.getSession).toHaveBeenCalledTimes(2)
+    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain(baseUser.displayName)
+    expect(text(mounted)).not.toContain('Authentication is unavailable.')
+
+    await mounted.unmount()
+  })
+
   it('reconciles once when lock succeeds in main but its response is unavailable', async () => {
     const harness = createAppApi(activeSession(1))
     harness.api.auth.lock.mockImplementation(() => {
@@ -736,6 +869,13 @@ function text(mounted: MountedApp): string {
   return mounted.container.textContent ?? ''
 }
 
+function expectForbiddenUnavailable(mounted: MountedApp): void {
+  expect(text(mounted)).toContain('Authentication is unavailable.')
+  expect(text(mounted)).toContain('Authentication is unavailable from the current window.')
+  expect(findButton(mounted, 'Retry')).toBeNull()
+  expect(text(mounted)).not.toContain(baseUser.displayName)
+}
+
 async function flushReact(): Promise<void> {
   for (let index = 0; index < 4; index += 1) {
     await act(async () => {
@@ -786,13 +926,15 @@ function signedOutSession(revision: number): PublicSignedOutAuthenticationSessio
 
 function passwordChangeSession(
   revision: number,
-  user: PublicAuthenticatedUser = baseUser
+  user: PublicAuthenticatedUser = baseUser,
+  overrides: Partial<PublicPasswordChangeRequiredAuthenticationSession> = {}
 ): PublicPasswordChangeRequiredAuthenticationSession {
   return {
     status: 'PASSWORD_CHANGE_REQUIRED',
     user,
     expiresAt: futureTimestamp(15 * 60_000),
-    revision
+    revision,
+    ...overrides
   }
 }
 
@@ -813,14 +955,16 @@ function activeSession(
 
 function lockedSession(
   revision: number,
-  user: PublicAuthenticatedUser = baseUser
+  user: PublicAuthenticatedUser = baseUser,
+  overrides: Partial<PublicLockedAuthenticationSession> = {}
 ): PublicLockedAuthenticationSession {
   return {
     status: 'LOCKED',
     user,
     reason: 'MANUAL',
     absoluteExpiresAt: futureTimestamp(12 * 60 * 60_000),
-    revision
+    revision,
+    ...overrides
   }
 }
 

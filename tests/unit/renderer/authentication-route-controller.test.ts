@@ -39,6 +39,13 @@ const lockedSession: PublicAuthenticationSession = {
   revision: 5
 }
 
+const passwordChangeSession: PublicAuthenticationSession = {
+  status: 'PASSWORD_CHANGE_REQUIRED',
+  user: activeSession.user,
+  expiresAt: '2026-07-31T12:15:00.000Z' as never,
+  revision: 6
+}
+
 describe('renderer authentication route controller', () => {
   it('maps each public session state to the reviewed route state', () => {
     expect(mapPublicAuthenticationSessionToRoute(signedOutSession)).toEqual({
@@ -270,6 +277,33 @@ describe('renderer authentication route controller', () => {
     ])
   })
 
+  it.each([
+    ['ACTIVE', activeSession],
+    ['LOCKED', lockedSession],
+    ['PASSWORD_CHANGE_REQUIRED', passwordChangeSession]
+  ])('fails closed when %s reconciliation returns IPC_FORBIDDEN', async (_label, session) => {
+    const states: RendererAuthenticationRoute[] = []
+    const api = createApi({
+      getSessionResult: createAuthenticationFailure('IPC_FORBIDDEN') as AuthGetSessionResult
+    })
+    const controller = createRendererAuthenticationRouteController({
+      api,
+      onRoute: (state) => states.push(state)
+    })
+
+    controller.acceptSession(session)
+    await controller.reconcile()
+
+    expect(states).toEqual([
+      mapPublicAuthenticationSessionToRoute(session),
+      {
+        status: 'AUTH_UNAVAILABLE',
+        message: 'Authentication is unavailable from the current window.',
+        retryable: false
+      }
+    ])
+  })
+
   it('can move a previously valid route to forbidden unavailable without a retry action', () => {
     const states: RendererAuthenticationRoute[] = []
     const controller = createRendererAuthenticationRouteController({
@@ -340,6 +374,64 @@ describe('renderer authentication route controller', () => {
     listeners[1]?.({ status: 'SIGNED_OUT', revision: 7 })
     expect(states[states.length - 1]).toMatchObject({ status: 'SESSION_ACTIVE', revision: 6 })
     expect(unsubscribes[1]).toHaveBeenCalledOnce()
+  })
+
+  it('does not let stale pending loads, reconciliations, or events restore forbidden unavailable', async () => {
+    const pendingLoad = deferred<AuthGetSessionResult>()
+    const pendingReconcile = deferred<AuthGetSessionResult>()
+    const listeners: Array<(session: PublicAuthenticationSession) => void> = []
+    const unsubscribes = [vi.fn()]
+    const states: RendererAuthenticationRoute[] = []
+    const api = createApi({
+      getSessionResult: () => {
+        if (api.auth.getSession.mock.calls.length === 1) {
+          return pendingLoad.promise
+        }
+
+        return pendingReconcile.promise
+      },
+      onSessionChanged: (listener) => {
+        listeners.push(listener)
+        return unsubscribes[listeners.length - 1] ?? vi.fn()
+      }
+    })
+    const controller = createRendererAuthenticationRouteController({
+      api,
+      onRoute: (state) => states.push(state)
+    })
+
+    const load = controller.load()
+    controller.showUnavailable(true)
+    listeners[0]?.({ ...activeSession, revision: 7 })
+    pendingLoad.resolve(createIpcSuccess({ ...activeSession, revision: 8 }) as AuthGetSessionResult)
+    await load
+
+    expect(states[states.length - 1]).toEqual({
+      status: 'AUTH_UNAVAILABLE',
+      message: 'Authentication is unavailable from the current window.',
+      retryable: false
+    })
+    expect(unsubscribes[0]).toHaveBeenCalledOnce()
+
+    controller.acceptSession(activeSession)
+
+    const reconcile = controller.reconcile()
+    controller.showUnavailable(true)
+    pendingReconcile.resolve(
+      createIpcSuccess({ ...activeSession, revision: 9 }) as AuthGetSessionResult
+    )
+    await reconcile
+    listeners[0]?.({ ...activeSession, revision: 10 })
+
+    expect(states[states.length - 1]).toEqual({
+      status: 'AUTH_UNAVAILABLE',
+      message: 'Authentication is unavailable from the current window.',
+      retryable: false
+    })
+    expect(states).not.toContainEqual(expect.objectContaining({ revision: 7 }))
+    expect(states).not.toContainEqual(expect.objectContaining({ revision: 8 }))
+    expect(states).not.toContainEqual(expect.objectContaining({ revision: 9 }))
+    expect(states).not.toContainEqual(expect.objectContaining({ revision: 10 }))
   })
 })
 
