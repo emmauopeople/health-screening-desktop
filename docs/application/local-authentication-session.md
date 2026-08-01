@@ -152,5 +152,6 @@ change, lock, unlock, activity, logout, deadlines, stale-result cancellation,
 and role authorization. IPC, preload, and renderer code must not reproduce that
 policy.
 
-HSD-023 is the next bounded task for the complete login, required password
-change, unlock, and authenticated shell UI.
+HSD-023 adds the complete renderer-visible login, required password-change,
+unlock, and authenticated shell UI on top of this service without changing the
+main-process session model or persisting sessions.

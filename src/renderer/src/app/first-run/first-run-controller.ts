@@ -23,7 +23,7 @@ import type { RendererStartupState, SetupSubmissionState } from './first-run-typ
 export const firstRunScreenCopy = {
   loadingStatus: 'Loading local application status.',
   setupCompleteHeading: 'Local setup is complete.',
-  setupCompleteStatement: 'Sign-in and password change are not implemented in this task.',
+  setupCompleteStatement: 'Authentication is ready for local users.',
   inconsistentHeading: 'Local setup cannot continue.',
   inconsistentStatement:
     'Required local records are incomplete, and reinitialization is blocked to protect local data.',

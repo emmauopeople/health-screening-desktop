@@ -39,6 +39,13 @@ const lockedSession: PublicAuthenticationSession = {
   revision: 5
 }
 
+const passwordChangeSession: PublicAuthenticationSession = {
+  status: 'PASSWORD_CHANGE_REQUIRED',
+  user: activeSession.user,
+  expiresAt: '2026-07-31T12:15:00.000Z' as never,
+  revision: 6
+}
+
 describe('renderer authentication route controller', () => {
   it('maps each public session state to the reviewed route state', () => {
     expect(mapPublicAuthenticationSessionToRoute(signedOutSession)).toEqual({
@@ -112,7 +119,7 @@ describe('renderer authentication route controller', () => {
     ])
   })
 
-  it('preserves an active event when getSession later returns a failure envelope', async () => {
+  it('preserves an active event when getSession later returns IPC_UNAVAILABLE', async () => {
     const result = deferred<AuthGetSessionResult>()
     const states: RendererAuthenticationRoute[] = []
     let listener: ((session: PublicAuthenticationSession) => void) | undefined
@@ -145,6 +152,83 @@ describe('renderer authentication route controller', () => {
       }
     ])
   })
+
+  it('fails closed when an ACTIVE event arrives during a forbidden initial load', async () => {
+    const result = deferred<AuthGetSessionResult>()
+    const unsubscribe = vi.fn()
+    const states: RendererAuthenticationRoute[] = []
+    let listener: ((session: PublicAuthenticationSession) => void) | undefined
+    const api = createApi({
+      getSessionResult: () => result.promise,
+      onSessionChanged: (sessionListener) => {
+        listener = sessionListener
+
+        return unsubscribe
+      }
+    })
+    const controller = createRendererAuthenticationRouteController({
+      api,
+      onRoute: (state) => states.push(state)
+    })
+
+    const load = controller.load()
+    listener?.(activeSession)
+    result.resolve(createAuthenticationFailure('IPC_FORBIDDEN') as AuthGetSessionResult)
+    await load
+    listener?.({ ...activeSession, revision: 7 })
+
+    expect(states).toEqual([
+      { status: 'AUTH_LOADING' },
+      mapPublicAuthenticationSessionToRoute(activeSession),
+      {
+        status: 'AUTH_UNAVAILABLE',
+        message: 'Authentication is unavailable from the current window.',
+        retryable: false
+      }
+    ])
+    expect(states[states.length - 1]).not.toHaveProperty('user')
+    expect(unsubscribe).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    ['LOCKED', lockedSession],
+    ['PASSWORD_CHANGE_REQUIRED', passwordChangeSession]
+  ])(
+    'fails closed when a %s event arrives during a forbidden initial load',
+    async (_label, session) => {
+      const result = deferred<AuthGetSessionResult>()
+      const states: RendererAuthenticationRoute[] = []
+      let listener: ((nextSession: PublicAuthenticationSession) => void) | undefined
+      const api = createApi({
+        getSessionResult: () => result.promise,
+        onSessionChanged: (sessionListener) => {
+          listener = sessionListener
+
+          return vi.fn()
+        }
+      })
+      const controller = createRendererAuthenticationRouteController({
+        api,
+        onRoute: (state) => states.push(state)
+      })
+
+      const load = controller.load()
+      listener?.(session)
+      result.resolve(createAuthenticationFailure('IPC_FORBIDDEN') as AuthGetSessionResult)
+      await load
+
+      expect(states).toEqual([
+        { status: 'AUTH_LOADING' },
+        mapPublicAuthenticationSessionToRoute(session),
+        {
+          status: 'AUTH_UNAVAILABLE',
+          message: 'Authentication is unavailable from the current window.',
+          retryable: false
+        }
+      ])
+      expect(states[states.length - 1]).not.toHaveProperty('user')
+    }
+  )
 
   it('preserves a locked event when getSession later throws', async () => {
     const states: RendererAuthenticationRoute[] = []
@@ -199,6 +283,130 @@ describe('renderer authentication route controller', () => {
     ])
   })
 
+  it('accepts direct session observations and reconciles without duplicate loading states', async () => {
+    let session: PublicAuthenticationSession = signedOutSession
+    const states: RendererAuthenticationRoute[] = []
+    const api = createApi({
+      getSessionResult: () => Promise.resolve(createIpcSuccess(session) as AuthGetSessionResult)
+    })
+    const controller = createRendererAuthenticationRouteController({
+      api,
+      onRoute: (state) => states.push(state)
+    })
+
+    controller.acceptSession(signedOutSession)
+    controller.acceptSession(signedOutSession)
+    controller.acceptSession({ ...activeSession, revision: 4 })
+
+    session = { ...activeSession, revision: 4 }
+    await controller.reconcile()
+
+    session = lockedSession
+    await controller.reconcile()
+
+    expect(states).toEqual([
+      { status: 'LOGIN_REQUIRED', revision: 1 },
+      {
+        status: 'SESSION_ACTIVE',
+        user: activeSession.user,
+        idleExpiresAt: activeSession.idleExpiresAt,
+        absoluteExpiresAt: activeSession.absoluteExpiresAt,
+        revision: 4
+      },
+      {
+        status: 'SESSION_LOCKED',
+        user: lockedSession.user,
+        reason: 'MANUAL',
+        absoluteExpiresAt: lockedSession.absoluteExpiresAt,
+        revision: 5
+      }
+    ])
+  })
+
+  it('keeps the latest valid route when reconcile later fails or throws', async () => {
+    const states: RendererAuthenticationRoute[] = []
+    const api = createApi({
+      getSessionResult: () =>
+        Promise.resolve(createAuthenticationFailure('IPC_UNAVAILABLE') as AuthGetSessionResult)
+    })
+    const controller = createRendererAuthenticationRouteController({
+      api,
+      onRoute: (state) => states.push(state)
+    })
+
+    controller.acceptSession(activeSession)
+    await controller.reconcile()
+
+    api.auth.getSession.mockImplementationOnce(() => {
+      throw new Error('unavailable')
+    })
+
+    await controller.reconcile()
+
+    expect(states).toEqual([
+      {
+        status: 'SESSION_ACTIVE',
+        user: activeSession.user,
+        idleExpiresAt: activeSession.idleExpiresAt,
+        absoluteExpiresAt: activeSession.absoluteExpiresAt,
+        revision: activeSession.revision
+      }
+    ])
+  })
+
+  it.each([
+    ['ACTIVE', activeSession],
+    ['LOCKED', lockedSession],
+    ['PASSWORD_CHANGE_REQUIRED', passwordChangeSession]
+  ])('fails closed when %s reconciliation returns IPC_FORBIDDEN', async (_label, session) => {
+    const states: RendererAuthenticationRoute[] = []
+    const api = createApi({
+      getSessionResult: createAuthenticationFailure('IPC_FORBIDDEN') as AuthGetSessionResult
+    })
+    const controller = createRendererAuthenticationRouteController({
+      api,
+      onRoute: (state) => states.push(state)
+    })
+
+    controller.acceptSession(session)
+    await controller.reconcile()
+
+    expect(states).toEqual([
+      mapPublicAuthenticationSessionToRoute(session),
+      {
+        status: 'AUTH_UNAVAILABLE',
+        message: 'Authentication is unavailable from the current window.',
+        retryable: false
+      }
+    ])
+  })
+
+  it('can move a previously valid route to forbidden unavailable without a retry action', () => {
+    const states: RendererAuthenticationRoute[] = []
+    const controller = createRendererAuthenticationRouteController({
+      api: createApi(),
+      onRoute: (state) => states.push(state)
+    })
+
+    controller.acceptSession(activeSession)
+    controller.showUnavailable(true)
+
+    expect(states).toEqual([
+      {
+        status: 'SESSION_ACTIVE',
+        user: activeSession.user,
+        idleExpiresAt: activeSession.idleExpiresAt,
+        absoluteExpiresAt: activeSession.absoluteExpiresAt,
+        revision: activeSession.revision
+      },
+      {
+        status: 'AUTH_UNAVAILABLE',
+        message: 'Authentication is unavailable from the current window.',
+        retryable: false
+      }
+    ])
+  })
+
   it('ignores stale load results, stale events, and disposed callbacks', async () => {
     const first = deferred<AuthGetSessionResult>()
     const second = deferred<AuthGetSessionResult>()
@@ -243,6 +451,64 @@ describe('renderer authentication route controller', () => {
     listeners[1]?.({ status: 'SIGNED_OUT', revision: 7 })
     expect(states[states.length - 1]).toMatchObject({ status: 'SESSION_ACTIVE', revision: 6 })
     expect(unsubscribes[1]).toHaveBeenCalledOnce()
+  })
+
+  it('does not let stale pending loads, reconciliations, or events restore forbidden unavailable', async () => {
+    const pendingLoad = deferred<AuthGetSessionResult>()
+    const pendingReconcile = deferred<AuthGetSessionResult>()
+    const listeners: Array<(session: PublicAuthenticationSession) => void> = []
+    const unsubscribes = [vi.fn()]
+    const states: RendererAuthenticationRoute[] = []
+    const api = createApi({
+      getSessionResult: () => {
+        if (api.auth.getSession.mock.calls.length === 1) {
+          return pendingLoad.promise
+        }
+
+        return pendingReconcile.promise
+      },
+      onSessionChanged: (listener) => {
+        listeners.push(listener)
+        return unsubscribes[listeners.length - 1] ?? vi.fn()
+      }
+    })
+    const controller = createRendererAuthenticationRouteController({
+      api,
+      onRoute: (state) => states.push(state)
+    })
+
+    const load = controller.load()
+    controller.showUnavailable(true)
+    listeners[0]?.({ ...activeSession, revision: 7 })
+    pendingLoad.resolve(createIpcSuccess({ ...activeSession, revision: 8 }) as AuthGetSessionResult)
+    await load
+
+    expect(states[states.length - 1]).toEqual({
+      status: 'AUTH_UNAVAILABLE',
+      message: 'Authentication is unavailable from the current window.',
+      retryable: false
+    })
+    expect(unsubscribes[0]).toHaveBeenCalledOnce()
+
+    controller.acceptSession(activeSession)
+
+    const reconcile = controller.reconcile()
+    controller.showUnavailable(true)
+    pendingReconcile.resolve(
+      createIpcSuccess({ ...activeSession, revision: 9 }) as AuthGetSessionResult
+    )
+    await reconcile
+    listeners[0]?.({ ...activeSession, revision: 10 })
+
+    expect(states[states.length - 1]).toEqual({
+      status: 'AUTH_UNAVAILABLE',
+      message: 'Authentication is unavailable from the current window.',
+      retryable: false
+    })
+    expect(states).not.toContainEqual(expect.objectContaining({ revision: 7 }))
+    expect(states).not.toContainEqual(expect.objectContaining({ revision: 8 }))
+    expect(states).not.toContainEqual(expect.objectContaining({ revision: 9 }))
+    expect(states).not.toContainEqual(expect.objectContaining({ revision: 10 }))
   })
 })
 
