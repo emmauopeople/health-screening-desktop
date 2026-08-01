@@ -19,6 +19,10 @@ export function hasMainWindow(): boolean {
   return mainWindow !== null && !mainWindow.isDestroyed()
 }
 
+export function getMainWindowWebContents(): BrowserWindow['webContents'] | null {
+  return hasMainWindow() && mainWindow ? mainWindow.webContents : null
+}
+
 export async function createOrFocusMainWindow(
   configuration: MainWindowConfiguration
 ): Promise<BrowserWindow> {

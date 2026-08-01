@@ -5,12 +5,16 @@ import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { createElectronApplicationInfoProvider } from '@main/app/application-info'
 import {
   createOrFocusMainWindow,
+  getMainWindowWebContents,
   hasMainWindow,
   type MainWindowConfiguration
 } from '@main/app/main-window'
 import { createRendererNavigationPolicy } from '@main/app/navigation-policy'
 import { registerApplicationShutdown } from '@main/app/shutdown'
-import { createProductionFirstRunBootstrapService } from '@main/application'
+import {
+  createProductionFirstRunBootstrapService,
+  createProductionLocalAuthenticationSessionService
+} from '@main/application'
 import {
   createDatabaseHealthProvider,
   createDatabaseRuntime,
@@ -18,6 +22,7 @@ import {
   getDatabasePath,
   type DatabaseRuntime
 } from '@main/database'
+import { createAuthenticationSessionPublisher } from '@main/ipc/authentication'
 import { registerApplicationIpcHandlers } from '@main/ipc/register-handlers'
 import { configureSessionSecurity } from '@main/security/session-security'
 import icon from '../../../resources/icon.png?asset'
@@ -68,6 +73,14 @@ export function startApplicationLifecycle(): void {
         connection: databaseRuntime.getConnection(),
         logger: console
       })
+      const authenticationSessionService = await createProductionLocalAuthenticationSessionService({
+        connection: databaseRuntime.getConnection(),
+        logger: console
+      })
+      const authenticationSessionPublisher = createAuthenticationSessionPublisher({
+        navigationPolicy,
+        getWebContents: getMainWindowWebContents
+      })
       const disposeIpcHandlers = registerApplicationIpcHandlers(ipcMain, {
         navigationPolicy,
         applicationInfoProvider,
@@ -75,6 +88,12 @@ export function startApplicationLifecycle(): void {
         firstRun: {
           navigationPolicy,
           firstRunBootstrapService,
+          logger: console
+        },
+        auth: {
+          navigationPolicy,
+          authenticationSessionService,
+          sessionPublisher: authenticationSessionPublisher,
           logger: console
         },
         logger: console

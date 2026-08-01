@@ -11,6 +11,9 @@ preload methods only, maps safe result envelopes into renderer startup states,
 and submits the reviewed initialize command without adding channels or changing
 the preload surface.
 
+HSD-022 adds a separate `auth` preload group after setup completion. It does not
+change the first-run request or response contracts.
+
 ## Channels
 
 The channel catalog lives in `src/shared/ipc/channels.ts`.
@@ -87,6 +90,8 @@ window.healthScreening.app.getInfo()
 window.healthScreening.app.getHealth()
 window.healthScreening.firstRun.getState()
 window.healthScreening.firstRun.initialize(command)
+window.healthScreening.auth.getSession()
+window.healthScreening.auth.onSessionChanged(listener)
 ```
 
 The root bridge object and nested groups are frozen. Preload does not expose

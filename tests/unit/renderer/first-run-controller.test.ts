@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  createAuthenticationFailure,
   createFirstRunFailure,
   createIpcFailure,
   createIpcSuccess,
@@ -507,6 +508,51 @@ function createApi({
 
         return Promise.resolve(initializeResult)
       })
+    },
+    auth: {
+      getSession: vi.fn(
+        async () =>
+          createIpcSuccess({ status: 'SIGNED_OUT', revision: 0 }) as Awaited<
+            ReturnType<HealthScreeningApi['auth']['getSession']>
+          >
+      ),
+      login: vi.fn(
+        async () =>
+          createAuthenticationFailure('IPC_UNAVAILABLE') as Awaited<
+            ReturnType<HealthScreeningApi['auth']['login']>
+          >
+      ),
+      changeRequiredPassword: vi.fn(
+        async () =>
+          createAuthenticationFailure('IPC_UNAVAILABLE') as Awaited<
+            ReturnType<HealthScreeningApi['auth']['changeRequiredPassword']>
+          >
+      ),
+      unlock: vi.fn(
+        async () =>
+          createAuthenticationFailure('IPC_UNAVAILABLE') as Awaited<
+            ReturnType<HealthScreeningApi['auth']['unlock']>
+          >
+      ),
+      lock: vi.fn(
+        async () =>
+          createAuthenticationFailure('IPC_UNAVAILABLE') as Awaited<
+            ReturnType<HealthScreeningApi['auth']['lock']>
+          >
+      ),
+      logout: vi.fn(
+        async () =>
+          createAuthenticationFailure('IPC_UNAVAILABLE') as Awaited<
+            ReturnType<HealthScreeningApi['auth']['logout']>
+          >
+      ),
+      recordActivity: vi.fn(
+        async () =>
+          createAuthenticationFailure('IPC_UNAVAILABLE') as Awaited<
+            ReturnType<HealthScreeningApi['auth']['recordActivity']>
+          >
+      ),
+      onSessionChanged: vi.fn(() => () => undefined)
     }
   }
 }

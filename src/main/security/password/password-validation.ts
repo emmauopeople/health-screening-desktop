@@ -35,7 +35,7 @@ function hasUnpairedSurrogate(value: string): boolean {
     if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
       const nextCodeUnit = value.charCodeAt(index + 1)
 
-      if (nextCodeUnit < 0xdc00 || nextCodeUnit > 0xdfff) {
+      if (Number.isNaN(nextCodeUnit) || nextCodeUnit < 0xdc00 || nextCodeUnit > 0xdfff) {
         return true
       }
 

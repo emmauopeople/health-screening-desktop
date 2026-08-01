@@ -1,9 +1,22 @@
 import { z } from 'zod'
 
 import type {
-  FirstRunGetStateResult,
-  FirstRunInitializeRequest,
-  FirstRunInitializeResult
+  AuthChangeRequiredPasswordRequest,
+  AuthChangeRequiredPasswordResult,
+  AuthGetSessionResult,
+  AuthLockResult,
+  AuthLoginRequest,
+  AuthLoginResult,
+  AuthLogoutResult,
+  AuthRecordActivityResult,
+  AuthenticationSessionChangedListener,
+  AuthUnlockRequest,
+  AuthUnlockResult
+} from './authentication-contracts'
+import type {
+  FirstRunGetStateResult as SharedFirstRunGetStateResult,
+  FirstRunInitializeRequest as SharedFirstRunInitializeRequest,
+  FirstRunInitializeResult as SharedFirstRunInitializeResult
 } from './first-run-contracts'
 import { createIpcResultSchema } from './result'
 
@@ -48,7 +61,19 @@ export interface HealthScreeningApi {
     getHealth(): Promise<AppGetHealthResult>
   }
   firstRun: {
-    getState(): Promise<FirstRunGetStateResult>
-    initialize(request: FirstRunInitializeRequest): Promise<FirstRunInitializeResult>
+    getState(): Promise<SharedFirstRunGetStateResult>
+    initialize(request: SharedFirstRunInitializeRequest): Promise<SharedFirstRunInitializeResult>
+  }
+  auth: {
+    getSession(): Promise<AuthGetSessionResult>
+    login(request: AuthLoginRequest): Promise<AuthLoginResult>
+    changeRequiredPassword(
+      request: AuthChangeRequiredPasswordRequest
+    ): Promise<AuthChangeRequiredPasswordResult>
+    unlock(request: AuthUnlockRequest): Promise<AuthUnlockResult>
+    lock(): Promise<AuthLockResult>
+    logout(): Promise<AuthLogoutResult>
+    recordActivity(): Promise<AuthRecordActivityResult>
+    onSessionChanged(listener: AuthenticationSessionChangedListener): () => void
   }
 }

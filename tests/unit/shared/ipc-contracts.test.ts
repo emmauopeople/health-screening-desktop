@@ -68,11 +68,25 @@ describe('shared IPC contracts', () => {
       firstRun: {
         getState: 'health-screening:first-run:get-state',
         initialize: 'health-screening:first-run:initialize'
+      },
+      auth: {
+        getSession: 'health-screening:auth:get-session',
+        login: 'health-screening:auth:login',
+        changeRequiredPassword: 'health-screening:auth:change-required-password',
+        unlock: 'health-screening:auth:unlock',
+        lock: 'health-screening:auth:lock',
+        logout: 'health-screening:auth:logout',
+        recordActivity: 'health-screening:auth:record-activity',
+        sessionChanged: 'health-screening:auth:session-changed'
       }
     })
     expect(
-      new Set([...Object.values(ipcChannels.app), ...Object.values(ipcChannels.firstRun)]).size
-    ).toBe(4)
+      new Set([
+        ...Object.values(ipcChannels.app),
+        ...Object.values(ipcChannels.firstRun),
+        ...Object.values(ipcChannels.auth)
+      ]).size
+    ).toBe(12)
   })
 
   it('uses strict empty request objects for app operations', () => {

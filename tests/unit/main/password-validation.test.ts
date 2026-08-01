@@ -43,6 +43,7 @@ describe('password validation', () => {
       'SecretPassw\u2028rd!',
       'SecretPassw\u2029rd!',
       'SecretPassw\uD800rd!',
+      'SecretPassw0rd!\uD800',
       null
     ]
 

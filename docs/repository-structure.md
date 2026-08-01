@@ -32,6 +32,9 @@ session management, or authorization. HSD-021 adds
 that coordinates local login and forced password change, enforces idle lock,
 same-user unlock, logout, stale-result cancellation, and role authorization
 without adding IPC, preload, renderer code, migrations, or persistent sessions.
+HSD-022 exposes that service through `src/main/ipc/authentication`, which owns
+authenticated handler mapping, safe auth IPC errors, a scoped session publisher,
+and the main-only authorization adapter for future protected business handlers.
 
 `src/main/foundation` owns main-process-only primitives for local data writes,
 including validated UUID v4 entity IDs and UTC timestamps. These providers are
@@ -86,9 +89,10 @@ The renderer must not import from `src/main`.
 
 `src/preload` exposes a narrow typed bridge through `contextBridge`. HSD-005
 exposes fixed asynchronous application metadata and shell-health methods.
-HSD-015 adds fixed first-run state and initialization methods. It does not
-expose raw `ipcRenderer`, generic send/execute APIs, filesystem access, shell
-access, or dynamic channel dispatch.
+HSD-015 adds fixed first-run state and initialization methods. HSD-022 adds a
+fixed `auth` method group and validated session-change subscription. Preload
+does not expose raw `ipcRenderer`, generic send/execute APIs, Electron event
+objects, filesystem access, shell access, or dynamic channel dispatch.
 
 ## Renderer
 
@@ -102,6 +106,12 @@ repository access, login, sessions, protocol activation, or clinical
 workflows.
 
 Renderer code should treat preload APIs as the only trusted bridge to desktop capabilities.
+
+`src/renderer/src/app/authentication` owns the HSD-022 post-setup
+authentication route controller and noninteractive placeholders. It consumes
+only shared IPC types and the typed preload API; it does not own credentials,
+storage, Electron access, database access, or the complete HSD-023
+authentication UI.
 
 ## Shared Contracts
 
@@ -120,6 +130,8 @@ Shared files must not depend on Electron, Node-only APIs, browser globals, or pr
 ## Documentation
 
 `docs` stores architecture notes and implementation documentation. Architecture decision records belong in `docs/adr`. Application-service documentation belongs under `docs/application`. Database runtime, migration, schema, transaction, and repository-boundary documentation belongs under `docs/database`. Security implementation notes belong under `docs/security`.
+IPC documentation belongs under `docs/ipc`, and renderer route-state
+documentation belongs under `docs/renderer`.
 
 ## Tests
 
