@@ -47,6 +47,13 @@ authentication route controller. It does not add complete login,
 password-change, unlock, or clinical shell UI, and it must not add persistent
 sessions, tokens, cookies, browser storage, migrations, background timers, or
 generic IPC.
+HSD-023 completes the renderer-visible login, required password-change, locked
+session, and authenticated shell experience on top of the HSD-022 preload API.
+It keeps credentials in uncontrolled form controls only, uses exact typed
+preload requests, observes public deadlines and user activity only as advisory
+session prompts, and adds no IPC, preload, main-process services, database
+writes, migrations, session persistence, network behavior, synchronization, or
+clinical workflows.
 
 ## TypeScript
 
@@ -115,6 +122,13 @@ role authorization. HSD-022 may expose only minimized public session data
 through authenticated IPC and preload. Authentication services and IPC handlers
 must not persist sessions or trust renderer-supplied user IDs, roles, session
 tokens, revisions, or timestamps.
+
+Renderer authentication code may render login, required password-change, unlock,
+lock, sign-out, and active-shell controls only through the reviewed preload
+`auth` methods. It must not store credentials in React state, contexts, reducers,
+browser persistence, logs, URLs, or snapshots. Renderer activity and deadline
+helpers must ask HSD-021 to observe the session; they must not recreate expiry,
+authorization, login, unlock, or password-change policy in the renderer.
 
 ## Database Migrations
 
@@ -311,9 +325,12 @@ ESLint enforces TypeScript, React hook, React refresh, and renderer-boundary rul
 
 ## Tests
 
-Unit tests live under `tests/unit` and use Vitest in a deterministic Node environment. Test files use the `*.test.ts` naming pattern.
+Unit tests live under `tests/unit` and use Vitest in a deterministic Node
+environment. Test files use the `*.test.ts` or `*.test.tsx` naming pattern.
 
-Current unit tests cover shared IPC contracts, main-process sender policy, application IPC handlers, preload wrappers, and security regressions without launching Electron.
+Current unit tests cover shared IPC contracts, main-process sender policy,
+application IPC handlers, preload wrappers, renderer authentication helpers, and
+security regressions without launching Electron.
 
 ## Verification
 

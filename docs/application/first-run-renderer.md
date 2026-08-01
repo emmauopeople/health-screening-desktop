@@ -19,8 +19,8 @@ state:
 - `LOADING`: local application status is still loading.
 - `SETUP_REQUIRED`: shell info, shell health, and first-run state all loaded,
   the database is ready, and first-run state is `REQUIRED`.
-- `SETUP_COMPLETE`: first-run state is `INITIALIZED`; the renderer displays
-  only canonical `deploymentName` and `timeZone` plus safe shell status.
+- `SETUP_COMPLETE`: first-run state is `INITIALIZED`; HSD-023 hands off to the
+  renderer authentication experience instead of showing setup controls.
 - `INCONSISTENT`: first-run state is `INCONSISTENT`; setup is blocked and the
   reviewed inconsistency code is shown only as a support reference.
 - `UNAVAILABLE`: app info, health, first-run state, or database readiness is
@@ -93,7 +93,8 @@ single-column on narrow viewports and avoids horizontal scrolling at 320 px.
 
 ## Deferred Work
 
-HSD-016 deliberately stops at first-run setup and safe placeholders. Login,
-password change, sessions, authorization, user administration, active-location
-selection, protocol activation, clinical workflows, synchronization, backup,
-restore, printing, and reporting remain deferred to later reviewed tasks.
+HSD-023 now owns the renderer-visible login, required password-change, locked
+session, and authenticated shell foundation. User administration,
+active-location selection, protocol activation, clinical workflows,
+synchronization, backup, restore, printing, and reporting remain deferred to
+later reviewed tasks.

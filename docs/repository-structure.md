@@ -108,10 +108,13 @@ workflows.
 Renderer code should treat preload APIs as the only trusted bridge to desktop capabilities.
 
 `src/renderer/src/app/authentication` owns the HSD-022 post-setup
-authentication route controller and noninteractive placeholders. It consumes
-only shared IPC types and the typed preload API; it does not own credentials,
-storage, Electron access, database access, or the complete HSD-023
-authentication UI.
+authentication route controller and the HSD-023 renderer authentication
+experience. It contains route mapping, uncontrolled login/password-change/unlock
+forms, safe message mapping, public role labels, advisory deadline/activity
+runtime helpers, and the authenticated shell foundation. It consumes only shared
+IPC types and the typed preload API; it does not own persistence, dynamic IPC,
+Electron access, database access, password modules, network behavior,
+synchronization, or clinical workflows.
 
 ## Shared Contracts
 
@@ -130,8 +133,8 @@ Shared files must not depend on Electron, Node-only APIs, browser globals, or pr
 ## Documentation
 
 `docs` stores architecture notes and implementation documentation. Architecture decision records belong in `docs/adr`. Application-service documentation belongs under `docs/application`. Database runtime, migration, schema, transaction, and repository-boundary documentation belongs under `docs/database`. Security implementation notes belong under `docs/security`.
-IPC documentation belongs under `docs/ipc`, and renderer route-state
-documentation belongs under `docs/renderer`.
+IPC documentation belongs under `docs/ipc`, and renderer route-state and
+authentication-experience documentation belongs under `docs/renderer`.
 
 ## Tests
 

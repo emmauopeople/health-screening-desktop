@@ -7,23 +7,27 @@ import type {
 import type { RendererAuthenticationRoute } from './authentication-route-types'
 
 export const authenticationRouteCopy = {
+  loadingHeading: 'Checking local session.',
   loading: 'Loading local session.',
   loginRequiredHeading: 'Sign in required.',
-  loginRequiredStatement: 'The complete sign-in experience will be available in the next task.',
+  loginRequiredStatement: 'Use a local account for this screening installation.',
   passwordChangeHeading: 'Password change required.',
   passwordChangeStatement:
-    'This account must change its temporary password before clinical workflows open.',
+    'This account must change its temporary password before work can continue.',
   lockedHeading: 'Session locked.',
-  lockedStatement: 'The complete unlock experience will be available in the next task.',
+  lockedStatement: 'Unlock this local session to continue.',
   activeHeading: 'Session active.',
-  activeStatement: 'Clinical workflows are not implemented in this task.',
+  activeStatement: 'The local account is active on this computer.',
   unavailableHeading: 'Authentication is unavailable.',
   unavailableStatement: 'The desktop service could not provide local session status.',
-  forbiddenStatement: 'Authentication is unavailable from the current window.'
+  forbiddenStatement: 'Authentication is unavailable from the current window.',
+  retryLabel: 'Retry'
 } as const
 
 export interface RendererAuthenticationRouteController {
   load(): Promise<void>
+  reconcile(): Promise<void>
+  acceptSession(session: PublicAuthenticationSession): void
   dispose(): void
 }
 
@@ -49,6 +53,10 @@ export function createRendererAuthenticationRouteController({
   let latestRevision: number | undefined
 
   async function load(): Promise<void> {
+    if (disposed) {
+      return
+    }
+
     const activeGeneration = generation + 1
     generation = activeGeneration
     latestRevision = undefined
@@ -88,8 +96,41 @@ export function createRendererAuthenticationRouteController({
     }
   }
 
+  async function reconcile(): Promise<void> {
+    if (disposed) {
+      return
+    }
+
+    const activeGeneration = generation
+
+    try {
+      const result = await loadSession(api)
+
+      if (disposed || activeGeneration !== generation) {
+        return
+      }
+
+      if (!result.ok) {
+        applyUnavailableRouteIfNoSession(activeGeneration, result.error.code === 'IPC_FORBIDDEN')
+        return
+      }
+
+      applySessionRoute(result.data)
+    } catch {
+      applyUnavailableRouteIfNoSession(activeGeneration)
+    }
+  }
+
+  function acceptSession(session: PublicAuthenticationSession): void {
+    if (disposed) {
+      return
+    }
+
+    applySessionRoute(session)
+  }
+
   function applySessionRoute(session: PublicAuthenticationSession): void {
-    if (latestRevision !== undefined && session.revision < latestRevision) {
+    if (latestRevision !== undefined && session.revision <= latestRevision) {
       return
     }
 
@@ -105,6 +146,8 @@ export function createRendererAuthenticationRouteController({
 
   return {
     load,
+    reconcile,
+    acceptSession,
     dispose() {
       disposed = true
       generation += 1

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { HealthScreeningApi } from '@shared/ipc'
 
 import {
-  AuthenticationRoutePlaceholder,
+  AuthenticationExperience,
   createRendererAuthenticationRouteController,
+  type RendererAuthenticationRouteController,
   type RendererAuthenticationRoute
 } from './authentication'
 import { FirstRunSetupScreen } from './first-run/FirstRunSetupScreen'
@@ -39,7 +40,9 @@ function App({ api = window.healthScreening }: AppProps): React.JSX.Element {
           onExit={handleExit}
         />
       ) : null}
-      {startupState.status === 'SETUP_COMPLETE' ? <AuthenticationBoundary api={api} /> : null}
+      {startupState.status === 'SETUP_COMPLETE' ? (
+        <AuthenticationBoundary api={api} onExit={handleExit} />
+      ) : null}
       {startupState.status === 'INCONSISTENT' ? (
         <InconsistentStateScreen state={startupState} onExit={handleExit} />
       ) : null}
@@ -50,23 +53,34 @@ function App({ api = window.healthScreening }: AppProps): React.JSX.Element {
   )
 }
 
-function AuthenticationBoundary({ api }: { api: HealthScreeningApi }): React.JSX.Element {
+function AuthenticationBoundary({
+  api,
+  onExit
+}: {
+  api: HealthScreeningApi
+  onExit(): void
+}): React.JSX.Element {
   const [route, setRoute] = useState<RendererAuthenticationRoute>({ status: 'AUTH_LOADING' })
+  const controller = useMemo<RendererAuthenticationRouteController>(
+    () =>
+      createRendererAuthenticationRouteController({
+        api,
+        onRoute: setRoute
+      }),
+    [api]
+  )
 
   useEffect(() => {
-    const controller = createRendererAuthenticationRouteController({
-      api,
-      onRoute: setRoute
-    })
-
     void controller.load()
 
     return () => {
       controller.dispose()
     }
-  }, [api])
+  }, [controller])
 
-  return <AuthenticationRoutePlaceholder route={route} />
+  return (
+    <AuthenticationExperience api={api} route={route} controller={controller} onExit={onExit} />
+  )
 }
 
 function useStartupState(api: HealthScreeningApi): {

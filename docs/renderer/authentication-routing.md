@@ -1,8 +1,10 @@
 # Authentication Routing
 
 HSD-022 adds a renderer-side route-state boundary after first-run setup is
-complete. It consumes only `window.healthScreening.auth` and maps public session
-snapshots into safe renderer route states.
+complete. HSD-023 keeps that boundary and renders the complete local
+authentication experience from it. The renderer consumes only
+`window.healthScreening.auth` and maps public session snapshots into safe route
+states.
 
 ## Route States
 
@@ -25,6 +27,8 @@ tokens, cookies, or internal session snapshots.
 `createRendererAuthenticationRouteController` calls `auth.getSession()` once per
 route-load generation and subscribes to `auth.onSessionChanged()`. It disposes
 the subscription when the generation is replaced or the component unmounts.
+HSD-023 also exposes `acceptSession(session)` for successful operation results
+and `reconcile()` for deadline, focus, visibility, and wrong-state observations.
 
 The controller uses a generation guard so stale load results and stale callbacks
 cannot mutate the current route. Within one generation, lower-revision events
@@ -32,20 +36,22 @@ are ignored. Revision is not sent back to main and is never treated as a bearer
 token.
 
 Load failures map to `AUTH_UNAVAILABLE` with fixed local text. `IPC_FORBIDDEN`
-is non-retryable; other failures are retryable metadata for the later UI.
+is non-retryable; other failures are retryable metadata for the UI. Reconcile
+failures preserve the latest valid route when a valid session was already
+observed.
 
 ## App Integration
 
 When first-run state is not `SETUP_COMPLETE`, the HSD-016 behavior is unchanged.
 After setup completes, `App.tsx` mounts the authentication route controller and
-renders `AuthenticationRoutePlaceholder`.
+renders `AuthenticationExperience`.
 
-The placeholders are intentionally noninteractive. They provide accessible
-status for signed-out, password-change-required, locked, active, loading, and
-unavailable states. They do not include credential fields, login buttons,
-unlock buttons, password-change forms, clinical navigation, or shell workflows.
-
-HSD-023 will replace these placeholders with the complete authentication UI.
+`AuthenticationExperience` selects one concrete screen for loading,
+unavailable, login, required password change, locked session, or active session.
+Login, password-change, and unlock screens use uncontrolled credential fields
+and submit exact typed requests through preload. The active route renders only
+the authenticated shell foundation with lock and sign-out controls; it does not
+add clinical navigation.
 
 ## Renderer Boundary
 
@@ -53,6 +59,11 @@ Authentication renderer files may import only renderer modules and shared IPC
 types. They must not import Electron, Node built-ins, `@main`, `@preload`,
 database modules, password modules, or repositories.
 
-The route controller must not use `localStorage`, `sessionStorage`, IndexedDB,
-cookies, URL state, files, network APIs, dynamic IPC channels, or direct
-Electron access.
+The route controller and HSD-023 renderer screens must not use `localStorage`,
+`sessionStorage`, IndexedDB, cookies, URL state, files, network APIs, dynamic
+IPC channels, or direct Electron access.
+
+Renderer deadline and activity helpers are advisory. They observe public
+deadlines, focus, visibility, and approved user-activity events so they can ask
+HSD-021 to re-evaluate the session. They never decide authoritative expiry and
+use no background interval.

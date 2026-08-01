@@ -199,6 +199,77 @@ describe('renderer authentication route controller', () => {
     ])
   })
 
+  it('accepts direct session observations and reconciles without duplicate loading states', async () => {
+    let session: PublicAuthenticationSession = signedOutSession
+    const states: RendererAuthenticationRoute[] = []
+    const api = createApi({
+      getSessionResult: () => Promise.resolve(createIpcSuccess(session) as AuthGetSessionResult)
+    })
+    const controller = createRendererAuthenticationRouteController({
+      api,
+      onRoute: (state) => states.push(state)
+    })
+
+    controller.acceptSession(signedOutSession)
+    controller.acceptSession(signedOutSession)
+    controller.acceptSession({ ...activeSession, revision: 4 })
+
+    session = { ...activeSession, revision: 4 }
+    await controller.reconcile()
+
+    session = lockedSession
+    await controller.reconcile()
+
+    expect(states).toEqual([
+      { status: 'LOGIN_REQUIRED', revision: 1 },
+      {
+        status: 'SESSION_ACTIVE',
+        user: activeSession.user,
+        idleExpiresAt: activeSession.idleExpiresAt,
+        absoluteExpiresAt: activeSession.absoluteExpiresAt,
+        revision: 4
+      },
+      {
+        status: 'SESSION_LOCKED',
+        user: lockedSession.user,
+        reason: 'MANUAL',
+        absoluteExpiresAt: lockedSession.absoluteExpiresAt,
+        revision: 5
+      }
+    ])
+  })
+
+  it('keeps the latest valid route when reconcile later fails or throws', async () => {
+    const states: RendererAuthenticationRoute[] = []
+    const api = createApi({
+      getSessionResult: () =>
+        Promise.resolve(createAuthenticationFailure('IPC_UNAVAILABLE') as AuthGetSessionResult)
+    })
+    const controller = createRendererAuthenticationRouteController({
+      api,
+      onRoute: (state) => states.push(state)
+    })
+
+    controller.acceptSession(activeSession)
+    await controller.reconcile()
+
+    api.auth.getSession.mockImplementationOnce(() => {
+      throw new Error('unavailable')
+    })
+
+    await controller.reconcile()
+
+    expect(states).toEqual([
+      {
+        status: 'SESSION_ACTIVE',
+        user: activeSession.user,
+        idleExpiresAt: activeSession.idleExpiresAt,
+        absoluteExpiresAt: activeSession.absoluteExpiresAt,
+        revision: activeSession.revision
+      }
+    ])
+  })
+
   it('ignores stale load results, stale events, and disposed callbacks', async () => {
     const first = deferred<AuthGetSessionResult>()
     const second = deferred<AuthGetSessionResult>()

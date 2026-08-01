@@ -83,7 +83,7 @@ describe('first-run renderer view model and source boundaries', () => {
 
     expect(viewModel).toEqual({
       heading: 'Local setup is complete.',
-      statement: 'Sign-in and password change are not implemented in this task.',
+      statement: 'Authentication is ready for local users.',
       deploymentName: 'Canonical Deployment',
       timeZone: 'Africa/Douala'
     })
