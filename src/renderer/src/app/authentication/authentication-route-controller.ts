@@ -87,7 +87,12 @@ export function createRendererAuthenticationRouteController({
       }
 
       if (!result.ok) {
-        applyUnavailableRouteIfNoSession(activeGeneration, result.error.code === 'IPC_FORBIDDEN')
+        if (result.error.code === 'IPC_FORBIDDEN') {
+          showUnavailable(true)
+          return
+        }
+
+        applyUnavailableRouteIfNoSession(activeGeneration)
         return
       }
 

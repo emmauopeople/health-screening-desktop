@@ -358,6 +358,82 @@ describe('renderer authentication DOM integration', () => {
     await mounted.unmount()
   })
 
+  it('fails closed when an ACTIVE event wins during pending initial load before IPC_FORBIDDEN', async () => {
+    const pendingLoad = deferred<AuthGetSessionResult>()
+    const harness = createAppApi(signedOutSession(0))
+    harness.setGetSession(() => pendingLoad.promise)
+    const mounted = await mountApp(harness.api)
+
+    expect(text(mounted)).toContain('Checking local session.')
+
+    await emitSession(harness, activeSession(5))
+
+    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain(baseUser.displayName)
+
+    pendingLoad.resolve(createAuthenticationFailure('IPC_FORBIDDEN') as AuthGetSessionResult)
+    await flushReact()
+
+    expectForbiddenUnavailable(mounted)
+    expect(text(mounted)).not.toContain('Authenticated workspace.')
+
+    await emitSession(harness, activeSession(6, userWithName('Late Event User')))
+
+    expectForbiddenUnavailable(mounted)
+    expect(text(mounted)).not.toContain('Late Event User')
+
+    await mounted.unmount()
+  })
+
+  it.each([
+    {
+      session: lockedSession(5),
+      visibleText: 'Session locked.'
+    },
+    {
+      session: passwordChangeSession(6),
+      visibleText: 'Change required password.'
+    }
+  ])(
+    'fails closed when a $session.status event wins during pending initial load before IPC_FORBIDDEN',
+    async ({ session, visibleText }) => {
+      const pendingLoad = deferred<AuthGetSessionResult>()
+      const harness = createAppApi(signedOutSession(0))
+      harness.setGetSession(() => pendingLoad.promise)
+      const mounted = await mountApp(harness.api)
+
+      await emitSession(harness, session)
+
+      expect(text(mounted)).toContain(visibleText)
+      expect(text(mounted)).toContain(baseUser.displayName)
+
+      pendingLoad.resolve(createAuthenticationFailure('IPC_FORBIDDEN') as AuthGetSessionResult)
+      await flushReact()
+
+      expectForbiddenUnavailable(mounted)
+
+      await mounted.unmount()
+    }
+  )
+
+  it('preserves an ACTIVE initial-load event when getSession returns IPC_UNAVAILABLE', async () => {
+    const pendingLoad = deferred<AuthGetSessionResult>()
+    const harness = createAppApi(signedOutSession(0))
+    harness.setGetSession(() => pendingLoad.promise)
+    const mounted = await mountApp(harness.api)
+
+    await emitSession(harness, activeSession(5))
+
+    pendingLoad.resolve(createAuthenticationFailure('IPC_UNAVAILABLE') as AuthGetSessionResult)
+    await flushReact()
+
+    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain(baseUser.displayName)
+    expect(text(mounted)).not.toContain('Authentication is unavailable.')
+
+    await mounted.unmount()
+  })
+
   it('routes IPC_FORBIDDEN from every interactive screen to nonretryable unavailable', async () => {
     const cases: Array<{
       readonly initialSession: PublicAuthenticationSession

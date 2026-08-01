@@ -119,7 +119,7 @@ describe('renderer authentication route controller', () => {
     ])
   })
 
-  it('preserves an active event when getSession later returns a failure envelope', async () => {
+  it('preserves an active event when getSession later returns IPC_UNAVAILABLE', async () => {
     const result = deferred<AuthGetSessionResult>()
     const states: RendererAuthenticationRoute[] = []
     let listener: ((session: PublicAuthenticationSession) => void) | undefined
@@ -152,6 +152,83 @@ describe('renderer authentication route controller', () => {
       }
     ])
   })
+
+  it('fails closed when an ACTIVE event arrives during a forbidden initial load', async () => {
+    const result = deferred<AuthGetSessionResult>()
+    const unsubscribe = vi.fn()
+    const states: RendererAuthenticationRoute[] = []
+    let listener: ((session: PublicAuthenticationSession) => void) | undefined
+    const api = createApi({
+      getSessionResult: () => result.promise,
+      onSessionChanged: (sessionListener) => {
+        listener = sessionListener
+
+        return unsubscribe
+      }
+    })
+    const controller = createRendererAuthenticationRouteController({
+      api,
+      onRoute: (state) => states.push(state)
+    })
+
+    const load = controller.load()
+    listener?.(activeSession)
+    result.resolve(createAuthenticationFailure('IPC_FORBIDDEN') as AuthGetSessionResult)
+    await load
+    listener?.({ ...activeSession, revision: 7 })
+
+    expect(states).toEqual([
+      { status: 'AUTH_LOADING' },
+      mapPublicAuthenticationSessionToRoute(activeSession),
+      {
+        status: 'AUTH_UNAVAILABLE',
+        message: 'Authentication is unavailable from the current window.',
+        retryable: false
+      }
+    ])
+    expect(states[states.length - 1]).not.toHaveProperty('user')
+    expect(unsubscribe).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    ['LOCKED', lockedSession],
+    ['PASSWORD_CHANGE_REQUIRED', passwordChangeSession]
+  ])(
+    'fails closed when a %s event arrives during a forbidden initial load',
+    async (_label, session) => {
+      const result = deferred<AuthGetSessionResult>()
+      const states: RendererAuthenticationRoute[] = []
+      let listener: ((nextSession: PublicAuthenticationSession) => void) | undefined
+      const api = createApi({
+        getSessionResult: () => result.promise,
+        onSessionChanged: (sessionListener) => {
+          listener = sessionListener
+
+          return vi.fn()
+        }
+      })
+      const controller = createRendererAuthenticationRouteController({
+        api,
+        onRoute: (state) => states.push(state)
+      })
+
+      const load = controller.load()
+      listener?.(session)
+      result.resolve(createAuthenticationFailure('IPC_FORBIDDEN') as AuthGetSessionResult)
+      await load
+
+      expect(states).toEqual([
+        { status: 'AUTH_LOADING' },
+        mapPublicAuthenticationSessionToRoute(session),
+        {
+          status: 'AUTH_UNAVAILABLE',
+          message: 'Authentication is unavailable from the current window.',
+          retryable: false
+        }
+      ])
+      expect(states[states.length - 1]).not.toHaveProperty('user')
+    }
+  )
 
   it('preserves a locked event when getSession later throws', async () => {
     const states: RendererAuthenticationRoute[] = []
