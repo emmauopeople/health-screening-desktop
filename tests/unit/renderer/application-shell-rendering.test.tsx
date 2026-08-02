@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
@@ -61,6 +63,21 @@ describe('application shell rendering', () => {
     expect(
       getVisibleDashboardQuickActions('TRAINED_SCREENER').map((action) => action.label)
     ).toEqual(['Find or open patient', 'Start new screening'])
+  })
+
+  it('defines viewport-constrained shell grid slots with a collapsed patient-tab row', () => {
+    const css = readFileSync(join(__dirname, '../../../src/renderer/src/styles/main.css'), 'utf8')
+
+    expect(css).toMatch(/\.application-root\s*\{[\s\S]*height: 100vh;[\s\S]*overflow: hidden;/)
+    expect(css).toMatch(
+      /\.application-shell\s*\{[\s\S]*grid-template-areas:[\s\S]*'top-bar'[\s\S]*'operation-alert'[\s\S]*'contextual-panel'[\s\S]*'patient-tabs'[\s\S]*'workspace'[\s\S]*max-height: 100vh;[\s\S]*overflow: hidden;/
+    )
+    expect(css).toMatch(
+      /\.application-patient-tabs-anchor\s*\{[\s\S]*grid-area: patient-tabs;[\s\S]*height: 0;[\s\S]*min-height: 0;[\s\S]*overflow: hidden;/
+    )
+    expect(css).toMatch(
+      /\.application-workspace\s*\{[\s\S]*grid-area: workspace;[\s\S]*min-height: 0;[\s\S]*overflow: auto;/
+    )
   })
 })
 

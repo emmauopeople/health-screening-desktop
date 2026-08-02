@@ -24,7 +24,8 @@ export interface ApplicationShellFocusable {
 
 export interface ApplicationShellFocusZoneDefinition {
   readonly id: ApplicationShellFocusZone
-  getElement(): ApplicationShellFocusable | null
+  getContainer(): ApplicationShellFocusable | null
+  getFocusTarget(): ApplicationShellFocusable | null
 }
 
 export interface ApplicationShellFocusCycler {
@@ -112,7 +113,9 @@ export function createApplicationShellFocusCycler({
   keyboardTarget?.addEventListener('keydown', listener)
 
   function cycleFocus(reverse: boolean): void {
-    const zones = getZones().filter((zone) => zone.getElement() !== null)
+    const zones = getZones().filter(
+      (zone) => zone.getContainer() !== null && zone.getFocusTarget() !== null
+    )
 
     if (zones.length === 0) {
       return
@@ -120,14 +123,14 @@ export function createApplicationShellFocusCycler({
 
     const activeElement = documentTarget?.activeElement ?? null
     const currentIndex = zones.findIndex((zone) => {
-      const element = zone.getElement()
+      const element = zone.getContainer()
 
       return element !== null && focusableContains(element, activeElement)
     })
     const nextIndex = getNextFocusZoneIndex(currentIndex, zones.length, reverse)
     const nextZone = zones[nextIndex]
 
-    nextZone?.getElement()?.focus({ preventScroll: true })
+    nextZone?.getFocusTarget()?.focus({ preventScroll: true })
   }
 
   return Object.freeze({

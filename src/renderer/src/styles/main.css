@@ -579,18 +579,30 @@ h1 {
 }
 
 .application-root {
+  height: 100vh;
   min-height: 100vh;
+  overflow: hidden;
   background: #eef3f7;
 }
 
 .application-shell {
   display: grid;
-  grid-template-rows: auto auto 0 minmax(0, 1fr);
-  min-height: 100vh;
+  grid-template-areas:
+    'top-bar'
+    'operation-alert'
+    'contextual-panel'
+    'patient-tabs'
+    'workspace';
+  grid-template-rows: auto auto auto 0 minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  max-height: 100vh;
+  overflow: hidden;
   color: var(--color-ink);
 }
 
 .application-top-bar {
+  grid-area: top-bar;
   z-index: 2;
   display: grid;
   grid-template-columns:
@@ -719,6 +731,16 @@ h1 {
   margin: 12px 16px 0;
 }
 
+.application-shell-alert-slot {
+  grid-area: operation-alert;
+  min-height: 0;
+}
+
+.application-command-panel-slot {
+  grid-area: contextual-panel;
+  min-height: 0;
+}
+
 .application-command-panel {
   z-index: 1;
   display: grid;
@@ -786,12 +808,16 @@ h1 {
 }
 
 .application-patient-tabs-anchor {
+  grid-area: patient-tabs;
   height: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
 .application-workspace {
+  grid-area: workspace;
   min-width: 0;
+  min-height: 0;
   overflow: auto;
   padding: 22px 24px 28px;
 }

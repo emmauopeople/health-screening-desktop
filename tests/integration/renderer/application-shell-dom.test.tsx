@@ -23,11 +23,27 @@ import {
   type UtcTimestamp
 } from '@shared/ipc'
 import App from '../../../src/renderer/src/app/App'
+import {
+  ApplicationShell,
+  type ApplicationShellContext,
+  type ApplicationShellUser
+} from '../../../src/renderer/src/app/shell'
 
 const baseUser: PublicAuthenticatedUser = {
   username: 'Admin.User',
   displayName: 'Admin User',
   role: 'LOCAL_ADMIN'
+}
+const shellContext: ApplicationShellContext = {
+  applicationName: 'Health Screening Offline Desktop',
+  applicationVersion: '1.0.0',
+  deploymentName: 'Local Deployment',
+  timeZone: 'Africa/Douala'
+}
+const shellUser: ApplicationShellUser = {
+  username: baseUser.username,
+  displayName: baseUser.displayName,
+  role: baseUser.role
 }
 
 describe('application shell DOM integration', () => {
@@ -66,6 +82,50 @@ describe('application shell DOM integration', () => {
 
     await mounted.unmount()
   })
+
+  it.each([
+    {
+      name: 'no alert and no panel',
+      operationError: null,
+      openPanel: false,
+      hasAlert: false,
+      hasPanel: false
+    },
+    {
+      name: 'panel only',
+      operationError: null,
+      openPanel: true,
+      hasAlert: false,
+      hasPanel: true
+    },
+    {
+      name: 'alert only',
+      operationError: 'The desktop authentication service is unavailable.',
+      openPanel: false,
+      hasAlert: true,
+      hasPanel: false
+    },
+    {
+      name: 'alert plus panel',
+      operationError: 'The desktop authentication service is unavailable.',
+      openPanel: true,
+      hasAlert: true,
+      hasPanel: true
+    }
+  ])(
+    'keeps deterministic application-shell slots for $name',
+    async ({ operationError, openPanel, hasAlert, hasPanel }) => {
+      const mounted = await mountShell({ operationError })
+
+      if (openPanel) {
+        await clickButton(mounted, 'Patients')
+      }
+
+      expectShellSlots(mounted, { hasAlert, hasPanel })
+
+      await mounted.unmount()
+    }
+  )
 
   it('filters primary menus by active role', async () => {
     const nurseMounted = await mountApp(createAppApi(activeSession(1, userWithRole('NURSE'))).api)
@@ -144,6 +204,47 @@ describe('application shell DOM integration', () => {
     await mounted.unmount()
   })
 
+  it('cycles F6 from session controls, all contextual commands, and a closed panel', async () => {
+    const mounted = await mountApp(createAppApi(activeSession(1)).api)
+
+    await clickButton(mounted, 'Patients')
+
+    const commands = commandButtons(mounted)
+    const firstCommand = commands[0]
+    const laterCommand = commands[1]
+
+    if (firstCommand === undefined || laterCommand === undefined) {
+      throw new Error('Expected at least two contextual commands to be rendered.')
+    }
+
+    for (const startingElement of [
+      menuButton(mounted, 'Patients'),
+      buttonByText(mounted, 'Lock'),
+      buttonByText(mounted, 'Sign out')
+    ]) {
+      startingElement.focus()
+      await dispatchWindowKeyboard('F6')
+      expect(document.activeElement).toBe(firstCommand)
+    }
+
+    for (const startingCommand of [firstCommand, laterCommand]) {
+      startingCommand.focus()
+      await dispatchWindowKeyboard('F6')
+      expect(document.activeElement).toBe(workspaceHeading(mounted))
+    }
+
+    workspaceHeading(mounted).focus()
+    await dispatchWindowKeyboard('F6', true)
+    expect(document.activeElement).toBe(firstCommand)
+
+    await dispatchKeyboard(commandPanel(mounted)!, 'Escape')
+    buttonByText(mounted, 'Lock').focus()
+    await dispatchWindowKeyboard('F6')
+    expect(document.activeElement).toBe(workspaceHeading(mounted))
+
+    await mounted.unmount()
+  })
+
   it('routes planned commands and quick actions to transparent planned workspaces', async () => {
     const mounted = await mountApp(createAppApi(activeSession(1)).api)
 
@@ -191,6 +292,24 @@ describe('application shell DOM integration', () => {
     expect(menuButton(mounted, 'Home').getAttribute('aria-current')).toBe('page')
 
     await mounted.unmount()
+  })
+
+  it('preserves one active-shell F6 listener across ACTIVE revisions and removes it on unmount', async () => {
+    const addEventListenerSpy = vi.spyOn(window, 'addEventListener')
+    const removeEventListenerSpy = vi.spyOn(window, 'removeEventListener')
+    const harness = createAppApi(activeSession(1))
+    const mounted = await mountApp(harness.api)
+    const keydownListenerCount = countWindowListenerCalls(addEventListenerSpy, 'keydown')
+
+    expect(keydownListenerCount).toBeGreaterThan(0)
+
+    await emitSession(harness, activeSession(2, { ...baseUser, displayName: 'Updated User' }))
+
+    expect(countWindowListenerCalls(addEventListenerSpy, 'keydown')).toBe(keydownListenerCount)
+
+    await mounted.unmount()
+
+    expect(countWindowListenerCalls(removeEventListenerSpy, 'keydown')).toBe(keydownListenerCount)
   })
 
   it('does not use browser persistence, URL routing, network APIs, or extra preload calls during shell navigation', async () => {
@@ -354,6 +473,43 @@ async function mountApp(api: HealthScreeningApi): Promise<MountedApp> {
   }
 }
 
+async function mountShell({
+  operationError
+}: {
+  readonly operationError: string | null
+}): Promise<MountedApp> {
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+
+  await act(async () => {
+    root.render(
+      createElement(ApplicationShell, {
+        context: shellContext,
+        user: shellUser,
+        busy: false,
+        operationError,
+        alertRef: { current: null },
+        onLock: vi.fn(),
+        onLogout: vi.fn()
+      })
+    )
+    await flushPromises()
+  })
+  await flushReact()
+
+  return {
+    container,
+    async unmount(): Promise<void> {
+      await act(async () => {
+        root.unmount()
+        await flushPromises()
+      })
+      container.remove()
+    }
+  }
+}
+
 async function clickButton(mounted: MountedApp, label: string): Promise<void> {
   const button = Array.from(mounted.container.querySelectorAll('button')).find((candidate) =>
     candidate.textContent?.includes(label)
@@ -421,6 +577,67 @@ function menuButton(mounted: MountedApp, label: string): HTMLButtonElement {
 
 function commandPanel(mounted: MountedApp): HTMLElement | null {
   return mounted.container.querySelector('#application-command-panel')
+}
+
+function commandButtons(mounted: MountedApp): HTMLButtonElement[] {
+  return Array.from(commandPanel(mounted)?.querySelectorAll<HTMLButtonElement>('button') ?? [])
+}
+
+function buttonByText(mounted: MountedApp, label: string): HTMLButtonElement {
+  const button = Array.from(mounted.container.querySelectorAll<HTMLButtonElement>('button')).find(
+    (candidate) => candidate.textContent?.trim() === label
+  )
+
+  if (button === undefined) {
+    throw new Error(`Expected button ${label} to be rendered.`)
+  }
+
+  return button
+}
+
+function workspaceHeading(mounted: MountedApp): HTMLHeadingElement {
+  const heading = mounted.container.querySelector<HTMLHeadingElement>(
+    '#application-workspace-heading'
+  )
+
+  if (heading === null) {
+    throw new Error('Expected application workspace heading to be rendered.')
+  }
+
+  return heading
+}
+
+function expectShellSlots(
+  mounted: MountedApp,
+  expected: { readonly hasAlert: boolean; readonly hasPanel: boolean }
+): void {
+  const shell = mounted.container.querySelector<HTMLElement>('.application-shell')
+
+  if (shell === null) {
+    throw new Error('Expected application shell to be rendered.')
+  }
+
+  expect(
+    Array.from(shell.children).map((child) => (child as HTMLElement).dataset.shellSlot)
+  ).toEqual(['top-bar', 'operation-alert', 'contextual-panel', 'patient-tabs', 'workspace'])
+
+  const alertSlot = shell.querySelector<HTMLElement>('[data-shell-slot="operation-alert"]')
+  const panelSlot = shell.querySelector<HTMLElement>('[data-shell-slot="contextual-panel"]')
+  const patientTabSlot = shell.querySelector<HTMLElement>('[data-shell-slot="patient-tabs"]')
+  const workspace = shell.querySelector<HTMLElement>('[data-shell-slot="workspace"]')
+
+  expect(alertSlot?.querySelector('[role="alert"]') !== null).toBe(expected.hasAlert)
+  expect(panelSlot?.querySelector('#application-command-panel') !== null).toBe(expected.hasPanel)
+  expect(patientTabSlot?.childElementCount).toBe(0)
+  expect(patientTabSlot?.textContent).toBe('')
+  expect(workspace?.parentElement).toBe(shell)
+}
+
+function countWindowListenerCalls(
+  spy: { readonly mock: { readonly calls: readonly (readonly unknown[])[] } },
+  type: string
+): number {
+  return spy.mock.calls.filter(([eventType]) => eventType === type).length
 }
 
 function text(mounted: MountedApp): string {

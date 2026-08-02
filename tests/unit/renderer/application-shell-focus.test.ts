@@ -31,15 +31,43 @@ describe('application shell focus helpers', () => {
 
   it('cycles F6 through available focus zones and removes listeners on dispose', () => {
     const keyboardTarget = new FakeKeyboardTarget()
-    const topBar = new FakeFocusable()
-    const commandPanel = new FakeFocusable()
-    const workspace = new FakeFocusable()
-    const documentTarget = { activeElement: topBar as unknown }
+    const focusState: { activeElement: FakeFocusable | null } = { activeElement: null }
+    const topBar = new FakeFocusable(focusState)
+    const primaryMenu = topBar.addChild(new FakeFocusable(focusState))
+    const lock = topBar.addChild(new FakeFocusable(focusState))
+    const signOut = topBar.addChild(new FakeFocusable(focusState))
+    const commandPanel = new FakeFocusable(focusState)
+    const firstCommand = commandPanel.addChild(new FakeFocusable(focusState))
+    const laterCommand = commandPanel.addChild(new FakeFocusable(focusState))
+    const workspace = new FakeFocusable(focusState)
+    const workspaceHeading = workspace.addChild(new FakeFocusable(focusState))
+    const documentTarget = {
+      get activeElement(): FakeFocusable | null {
+        return focusState.activeElement
+      }
+    }
+    let panelOpen = true
     const zones: readonly ApplicationShellFocusZoneDefinition[] = [
-      { id: 'TOP_BAR', getElement: () => topBar },
-      { id: 'COMMAND_PANEL', getElement: () => commandPanel },
-      { id: 'PATIENT_TABS', getElement: () => null },
-      { id: 'WORKSPACE', getElement: () => workspace }
+      {
+        id: 'TOP_BAR',
+        getContainer: () => topBar,
+        getFocusTarget: () => primaryMenu
+      },
+      {
+        id: 'COMMAND_PANEL',
+        getContainer: () => (panelOpen ? commandPanel : null),
+        getFocusTarget: () => (panelOpen ? firstCommand : null)
+      },
+      {
+        id: 'PATIENT_TABS',
+        getContainer: () => null,
+        getFocusTarget: () => null
+      },
+      {
+        id: 'WORKSPACE',
+        getContainer: () => workspace,
+        getFocusTarget: () => workspaceHeading
+      }
     ]
     const cycler = createApplicationShellFocusCycler({
       keyboardTarget,
@@ -47,37 +75,66 @@ describe('application shell focus helpers', () => {
       getZones: () => zones
     })
 
-    keyboardTarget.dispatch('F6')
-    expect(commandPanel.focusCount).toBe(1)
-    documentTarget.activeElement = commandPanel
+    for (const topBarFocus of [primaryMenu, lock, signOut]) {
+      focusState.activeElement = topBarFocus
+      keyboardTarget.dispatch('F6')
+      expect(focusState.activeElement).toBe(firstCommand)
+    }
 
+    for (const commandPanelFocus of [firstCommand, laterCommand]) {
+      focusState.activeElement = commandPanelFocus
+      keyboardTarget.dispatch('F6')
+      expect(focusState.activeElement).toBe(workspaceHeading)
+    }
+
+    focusState.activeElement = workspaceHeading
     keyboardTarget.dispatch('F6')
-    expect(workspace.focusCount).toBe(1)
-    documentTarget.activeElement = workspace
+    expect(focusState.activeElement).toBe(primaryMenu)
+
+    panelOpen = false
+    focusState.activeElement = lock
+    keyboardTarget.dispatch('F6')
+    expect(focusState.activeElement).toBe(workspaceHeading)
+
+    panelOpen = true
+    focusState.activeElement = primaryMenu
+    keyboardTarget.dispatch('F6', true)
+    expect(focusState.activeElement).toBe(workspaceHeading)
 
     keyboardTarget.dispatch('F6', true)
-    expect(commandPanel.focusCount).toBe(2)
+    expect(focusState.activeElement).toBe(firstCommand)
 
     expect(getNextFocusZoneIndex(-1, 3, false)).toBe(0)
     expect(getNextFocusZoneIndex(0, 3, true)).toBe(2)
 
     cycler.dispose()
+    focusState.activeElement = primaryMenu
     keyboardTarget.dispatch('F6')
 
     expect(keyboardTarget.removedTypes).toEqual(['keydown'])
-    expect(workspace.focusCount).toBe(1)
+    expect(focusState.activeElement).toBe(primaryMenu)
   })
 })
 
 class FakeFocusable {
+  private readonly children = new Set<unknown>()
   focusCount = 0
+
+  constructor(private readonly focusState: { activeElement: FakeFocusable | null }) {}
 
   focus(): void {
     this.focusCount += 1
+    this.focusState.activeElement = this
+  }
+
+  addChild<T extends FakeFocusable>(child: T): T {
+    this.children.add(child)
+
+    return child
   }
 
   contains(candidate: unknown): boolean {
-    return candidate === this
+    return candidate === this || this.children.has(candidate)
   }
 }
 

@@ -1,4 +1,5 @@
 import type { LocalUserRole } from '@shared/ipc'
+import type { RefObject } from 'react'
 
 import { formatAuthenticationRole } from '../authentication/authentication-role-labels'
 import type { ApplicationMenuNavigationDefinition } from './application-navigation-catalog'
@@ -15,6 +16,7 @@ interface ApplicationTopBarProps {
   readonly focusedMenu: PrimaryApplicationMenu
   readonly busy: boolean
   readonly commandPanelId: string
+  readonly topBarRef: RefObject<HTMLElement | null>
   onMenuClick(menu: PrimaryApplicationMenu): void
   onMenuFocus(menu: PrimaryApplicationMenu): void
   onMenuKeyDown(menu: PrimaryApplicationMenu, event: React.KeyboardEvent<HTMLButtonElement>): void
@@ -33,6 +35,7 @@ export function ApplicationTopBar({
   focusedMenu,
   busy,
   commandPanelId,
+  topBarRef,
   onMenuClick,
   onMenuFocus,
   onMenuKeyDown,
@@ -41,7 +44,12 @@ export function ApplicationTopBar({
   registerMenuButton
 }: ApplicationTopBarProps): React.JSX.Element {
   return (
-    <header className="application-top-bar" data-shell-focus-zone="TOP_BAR">
+    <header
+      ref={topBarRef}
+      className="application-top-bar"
+      data-shell-slot="top-bar"
+      data-shell-focus-zone="TOP_BAR"
+    >
       <div className="application-brand" title={context.applicationName}>
         <strong>{context.applicationName}</strong>
         <span>Version {context.applicationVersion}</span>

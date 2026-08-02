@@ -29,24 +29,25 @@ function App({ api = window.healthScreening }: AppProps): React.JSX.Element {
   const handleExit = useCallback(() => {
     window.close()
   }, [])
-  const rootClassName =
-    startupState.status === 'SETUP_COMPLETE' ? 'application-root' : 'foundation-shell setup-shell'
+
+  if (startupState.status === 'SETUP_COMPLETE') {
+    return (
+      <AuthenticationBoundary
+        api={api}
+        shellContext={createApplicationShellContext(startupState)}
+        onExit={handleExit}
+      />
+    )
+  }
 
   return (
-    <div className={rootClassName}>
+    <div className="foundation-shell setup-shell">
       {startupState.status === 'LOADING' ? <LoadingScreen /> : null}
       {startupState.status === 'SETUP_REQUIRED' ? (
         <FirstRunSetupScreen
           api={api}
           state={startupState}
           onStartupState={setStartupState}
-          onExit={handleExit}
-        />
-      ) : null}
-      {startupState.status === 'SETUP_COMPLETE' ? (
-        <AuthenticationBoundary
-          api={api}
-          shellContext={createApplicationShellContext(startupState)}
           onExit={handleExit}
         />
       ) : null}
@@ -87,14 +88,19 @@ function AuthenticationBoundary({
     }
   }, [controller])
 
+  const rootClassName =
+    route.status === 'SESSION_ACTIVE' ? 'application-root' : 'foundation-shell setup-shell'
+
   return (
-    <AuthenticationExperience
-      api={api}
-      route={route}
-      controller={controller}
-      shellContext={shellContext}
-      onExit={onExit}
-    />
+    <div className={rootClassName}>
+      <AuthenticationExperience
+        api={api}
+        route={route}
+        controller={controller}
+        shellContext={shellContext}
+        onExit={onExit}
+      />
+    </div>
   )
 }
 

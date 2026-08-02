@@ -50,11 +50,13 @@ export function ApplicationShell({
   )
   const [state, setState] = useState<ApplicationShellState>(() => controller.getSnapshot())
   const [focusedMenu, setFocusedMenu] = useState<PrimaryApplicationMenu>(state.activeMenu)
+  const topBarRef = useRef<HTMLElement | null>(null)
   const menuButtonRefs = useRef(new Map<PrimaryApplicationMenu, HTMLButtonElement>())
   const commandPanelRef = useRef<HTMLElement | null>(null)
   const workspaceRef = useRef<HTMLElement | null>(null)
   const workspaceHeadingRef = useRef<HTMLHeadingElement | null>(null)
   const stateRef = useRef<ApplicationShellState>(state)
+  const focusedMenuRef = useRef<PrimaryApplicationMenu>(focusedMenu)
   const menus = useMemo(() => getVisibleApplicationMenus(user.role), [user.role])
   const visibleMenuIds = useMemo(() => menus.map((menu) => menu.id), [menus])
   const visibleCommands = state.commandPanelMenu
@@ -76,6 +78,10 @@ export function ApplicationShell({
   }, [state])
 
   useEffect(() => {
+    focusedMenuRef.current = focusedMenu
+  }, [focusedMenu])
+
+  useEffect(() => {
     workspaceHeadingRef.current?.focus({ preventScroll: true })
   }, [state.route.commandId])
 
@@ -84,24 +90,42 @@ export function ApplicationShell({
       getZones: (): readonly ApplicationShellFocusZoneDefinition[] => [
         {
           id: 'TOP_BAR',
-          getElement: () =>
-            menuButtonRefs.current.get(focusedMenu) ??
+          getContainer: () => topBarRef.current,
+          getFocusTarget: () =>
+            menuButtonRefs.current.get(focusedMenuRef.current) ??
             menuButtonRefs.current.get(stateRef.current.activeMenu) ??
+            topBarRef.current?.querySelector<HTMLButtonElement>('button') ??
             null
         },
         {
           id: 'COMMAND_PANEL',
-          getElement: () => {
+          getContainer: () => {
             if (stateRef.current.commandPanelMenu === null) {
               return null
             }
 
-            return commandPanelRef.current?.querySelector('button') ?? commandPanelRef.current
+            return commandPanelRef.current
+          },
+          getFocusTarget: () => {
+            if (stateRef.current.commandPanelMenu === null) {
+              return null
+            }
+
+            return (
+              commandPanelRef.current?.querySelector<HTMLButtonElement>('button') ??
+              commandPanelRef.current
+            )
           }
         },
         {
+          id: 'PATIENT_TABS',
+          getContainer: () => null,
+          getFocusTarget: () => null
+        },
+        {
           id: 'WORKSPACE',
-          getElement: () => workspaceHeadingRef.current ?? workspaceRef.current
+          getContainer: () => workspaceRef.current,
+          getFocusTarget: () => workspaceHeadingRef.current ?? workspaceRef.current
         }
       ]
     })
@@ -109,7 +133,7 @@ export function ApplicationShell({
     return () => {
       cycler.dispose()
     }
-  }, [focusedMenu])
+  }, [])
 
   const focusMenuButton = useCallback((menu: PrimaryApplicationMenu) => {
     menuButtonRefs.current.get(menu)?.focus({ preventScroll: true })
@@ -189,6 +213,7 @@ export function ApplicationShell({
         focusedMenu={focusedMenu}
         busy={busy}
         commandPanelId={commandPanelId}
+        topBarRef={topBarRef}
         onMenuClick={(menu) => {
           setFocusedMenu(menu)
           controller.toggleMenu(menu)
@@ -206,27 +231,35 @@ export function ApplicationShell({
           menuButtonRefs.current.set(menu, element)
         }}
       />
-      {operationError !== null ? (
-        <div
-          ref={alertRef}
-          className="auth-alert application-shell-alert"
-          role="alert"
-          tabIndex={-1}
-        >
-          {operationError}
-        </div>
-      ) : null}
-      {state.commandPanelMenu !== null ? (
-        <ContextCommandPanel
-          id={commandPanelId}
-          panelRef={commandPanelRef}
-          menu={state.commandPanelMenu}
-          commands={visibleCommands}
-          currentCommandId={state.route.commandId}
-          onCommand={selectCommand}
-        />
-      ) : null}
-      <div className="application-patient-tabs-anchor" aria-hidden="true" />
+      <div className="application-shell-alert-slot" data-shell-slot="operation-alert">
+        {operationError !== null ? (
+          <div
+            ref={alertRef}
+            className="auth-alert application-shell-alert"
+            role="alert"
+            tabIndex={-1}
+          >
+            {operationError}
+          </div>
+        ) : null}
+      </div>
+      <div className="application-command-panel-slot" data-shell-slot="contextual-panel">
+        {state.commandPanelMenu !== null ? (
+          <ContextCommandPanel
+            id={commandPanelId}
+            panelRef={commandPanelRef}
+            menu={state.commandPanelMenu}
+            commands={visibleCommands}
+            currentCommandId={state.route.commandId}
+            onCommand={selectCommand}
+          />
+        ) : null}
+      </div>
+      <div
+        className="application-patient-tabs-anchor"
+        data-shell-slot="patient-tabs"
+        aria-hidden="true"
+      />
       <ApplicationWorkspace
         context={context}
         user={user}

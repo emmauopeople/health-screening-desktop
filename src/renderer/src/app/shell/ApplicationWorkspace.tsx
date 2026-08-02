@@ -33,6 +33,7 @@ export function ApplicationWorkspace({
       ref={workspaceRef}
       className="application-workspace"
       aria-labelledby={workspaceHeadingId}
+      data-shell-slot="workspace"
       data-shell-focus-zone="WORKSPACE"
     >
       {route.status === 'DASHBOARD' ? (

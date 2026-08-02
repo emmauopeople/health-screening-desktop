@@ -71,6 +71,93 @@ describe('renderer authentication DOM integration', () => {
     await mounted.unmount()
   })
 
+  it('uses route-aware root wrappers for authentication screens and the active shell', async () => {
+    const pendingSession = deferred<AuthGetSessionResult>()
+    const cases: Array<{
+      readonly name: string
+      readonly initialSession: PublicAuthenticationSession
+      readonly expectedClassName: string
+      readonly visibleText: string
+      readonly hasRetry: boolean
+      configure?(harness: AppApiHarness): void
+    }> = [
+      {
+        name: 'AUTH_LOADING',
+        initialSession: signedOutSession(1),
+        expectedClassName: 'foundation-shell setup-shell',
+        visibleText: 'Checking local session.',
+        hasRetry: false,
+        configure(harness) {
+          harness.setGetSession(() => pendingSession.promise)
+        }
+      },
+      {
+        name: 'LOGIN_REQUIRED',
+        initialSession: signedOutSession(2),
+        expectedClassName: 'foundation-shell setup-shell',
+        visibleText: 'Sign in to Health Screening.',
+        hasRetry: false
+      },
+      {
+        name: 'PASSWORD_CHANGE_REQUIRED',
+        initialSession: passwordChangeSession(3),
+        expectedClassName: 'foundation-shell setup-shell',
+        visibleText: 'Change required password.',
+        hasRetry: false
+      },
+      {
+        name: 'SESSION_LOCKED',
+        initialSession: lockedSession(4),
+        expectedClassName: 'foundation-shell setup-shell',
+        visibleText: 'Session locked.',
+        hasRetry: false
+      },
+      {
+        name: 'retryable AUTH_UNAVAILABLE',
+        initialSession: signedOutSession(5),
+        expectedClassName: 'foundation-shell setup-shell',
+        visibleText: 'Authentication is unavailable.',
+        hasRetry: true,
+        configure(harness) {
+          harness.setGetSession(() =>
+            Promise.resolve(createAuthenticationFailure('IPC_UNAVAILABLE') as AuthGetSessionResult)
+          )
+        }
+      },
+      {
+        name: 'forbidden AUTH_UNAVAILABLE',
+        initialSession: signedOutSession(6),
+        expectedClassName: 'foundation-shell setup-shell',
+        visibleText: 'Authentication is unavailable from the current window.',
+        hasRetry: false,
+        configure(harness) {
+          harness.setGetSession(() =>
+            Promise.resolve(createAuthenticationFailure('IPC_FORBIDDEN') as AuthGetSessionResult)
+          )
+        }
+      },
+      {
+        name: 'SESSION_ACTIVE',
+        initialSession: activeSession(7),
+        expectedClassName: 'application-root',
+        visibleText: 'Welcome, Admin User',
+        hasRetry: false
+      }
+    ]
+
+    for (const testCase of cases) {
+      const harness = createAppApi(testCase.initialSession)
+      testCase.configure?.(harness)
+      const mounted = await mountApp(harness.api)
+
+      expect(rootClassName(mounted), testCase.name).toBe(testCase.expectedClassName)
+      expect(text(mounted), testCase.name).toContain(testCase.visibleText)
+      expect(findButton(mounted, 'Retry') !== null, testCase.name).toBe(testCase.hasRetry)
+
+      await mounted.unmount()
+    }
+  })
+
   it('moves from temporary-password login through required password change to ACTIVE', async () => {
     const harness = createAppApi(signedOutSession(1))
     harness.api.auth.login.mockResolvedValue(
@@ -943,6 +1030,16 @@ function findButton(mounted: MountedApp, label: string): HTMLButtonElement | nul
 
 function text(mounted: MountedApp): string {
   return mounted.container.textContent ?? ''
+}
+
+function rootClassName(mounted: MountedApp): string {
+  const root = mounted.container.firstElementChild
+
+  if (!(root instanceof HTMLElement)) {
+    throw new Error('Expected mounted app root element to be rendered.')
+  }
+
+  return root.className
 }
 
 function expectForbiddenUnavailable(mounted: MountedApp): void {
