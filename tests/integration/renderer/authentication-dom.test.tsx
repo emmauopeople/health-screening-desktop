@@ -65,10 +65,97 @@ describe('renderer authentication DOM integration', () => {
       username: ' Admin.User ',
       password: '  ValidPassword1!  '
     })
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
     expect(text(mounted)).toContain('Admin User')
 
     await mounted.unmount()
+  })
+
+  it('uses route-aware root wrappers for authentication screens and the active shell', async () => {
+    const pendingSession = deferred<AuthGetSessionResult>()
+    const cases: Array<{
+      readonly name: string
+      readonly initialSession: PublicAuthenticationSession
+      readonly expectedClassName: string
+      readonly visibleText: string
+      readonly hasRetry: boolean
+      configure?(harness: AppApiHarness): void
+    }> = [
+      {
+        name: 'AUTH_LOADING',
+        initialSession: signedOutSession(1),
+        expectedClassName: 'foundation-shell setup-shell',
+        visibleText: 'Checking local session.',
+        hasRetry: false,
+        configure(harness) {
+          harness.setGetSession(() => pendingSession.promise)
+        }
+      },
+      {
+        name: 'LOGIN_REQUIRED',
+        initialSession: signedOutSession(2),
+        expectedClassName: 'foundation-shell setup-shell',
+        visibleText: 'Sign in to Health Screening.',
+        hasRetry: false
+      },
+      {
+        name: 'PASSWORD_CHANGE_REQUIRED',
+        initialSession: passwordChangeSession(3),
+        expectedClassName: 'foundation-shell setup-shell',
+        visibleText: 'Change required password.',
+        hasRetry: false
+      },
+      {
+        name: 'SESSION_LOCKED',
+        initialSession: lockedSession(4),
+        expectedClassName: 'foundation-shell setup-shell',
+        visibleText: 'Session locked.',
+        hasRetry: false
+      },
+      {
+        name: 'retryable AUTH_UNAVAILABLE',
+        initialSession: signedOutSession(5),
+        expectedClassName: 'foundation-shell setup-shell',
+        visibleText: 'Authentication is unavailable.',
+        hasRetry: true,
+        configure(harness) {
+          harness.setGetSession(() =>
+            Promise.resolve(createAuthenticationFailure('IPC_UNAVAILABLE') as AuthGetSessionResult)
+          )
+        }
+      },
+      {
+        name: 'forbidden AUTH_UNAVAILABLE',
+        initialSession: signedOutSession(6),
+        expectedClassName: 'foundation-shell setup-shell',
+        visibleText: 'Authentication is unavailable from the current window.',
+        hasRetry: false,
+        configure(harness) {
+          harness.setGetSession(() =>
+            Promise.resolve(createAuthenticationFailure('IPC_FORBIDDEN') as AuthGetSessionResult)
+          )
+        }
+      },
+      {
+        name: 'SESSION_ACTIVE',
+        initialSession: activeSession(7),
+        expectedClassName: 'application-root',
+        visibleText: 'Welcome, Admin User',
+        hasRetry: false
+      }
+    ]
+
+    for (const testCase of cases) {
+      const harness = createAppApi(testCase.initialSession)
+      testCase.configure?.(harness)
+      const mounted = await mountApp(harness.api)
+
+      expect(rootClassName(mounted), testCase.name).toBe(testCase.expectedClassName)
+      expect(text(mounted), testCase.name).toContain(testCase.visibleText)
+      expect(findButton(mounted, 'Retry') !== null, testCase.name).toBe(testCase.hasRetry)
+
+      await mounted.unmount()
+    }
   })
 
   it('moves from temporary-password login through required password change to ACTIVE', async () => {
@@ -99,7 +186,7 @@ describe('renderer authentication DOM integration', () => {
       confirmNewPassword: 'ReplacementPassword1!'
     })
     expect(resetSpy).toHaveBeenCalled()
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
 
     await mounted.unmount()
   })
@@ -112,7 +199,7 @@ describe('renderer authentication DOM integration', () => {
     )
     const mounted = await mountApp(harness.api)
 
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
 
     await clickButton(mounted, 'Lock')
 
@@ -124,7 +211,7 @@ describe('renderer authentication DOM integration', () => {
 
     expect(harness.api.auth.unlock).toHaveBeenCalledWith({ password: 'ValidPassword1!' })
     expect(resetSpy).toHaveBeenCalled()
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
 
     await mounted.unmount()
   })
@@ -184,7 +271,7 @@ describe('renderer authentication DOM integration', () => {
     await beginLogin(mounted, 'Admin.User', 'ValidPassword1!')
     await emitSession(harness, activeSession(5, userWithName('Event User')))
 
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Event User')
     expect(text(mounted)).toContain('Event User')
 
     pendingLogin.resolve(
@@ -216,7 +303,7 @@ describe('renderer authentication DOM integration', () => {
     })
     const mounted = await mountApp(harness.api)
 
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
 
     await act(async () => {
       vi.advanceTimersByTime(1_000)
@@ -224,7 +311,7 @@ describe('renderer authentication DOM integration', () => {
     })
 
     expect(harness.api.auth.getSession).toHaveBeenCalledTimes(2)
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
 
     pendingReconcile.resolve(createIpcSuccess(lockedSession(2)) as AuthGetSessionResult)
     await flushReact()
@@ -257,7 +344,7 @@ describe('renderer authentication DOM integration', () => {
       await flushPromises()
     })
 
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
 
     pendingReconcile.resolve(createIpcSuccess(signedOutSession(2)) as AuthGetSessionResult)
     await flushReact()
@@ -368,14 +455,14 @@ describe('renderer authentication DOM integration', () => {
 
     await emitSession(harness, activeSession(5))
 
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
     expect(text(mounted)).toContain(baseUser.displayName)
 
     pendingLoad.resolve(createAuthenticationFailure('IPC_FORBIDDEN') as AuthGetSessionResult)
     await flushReact()
 
     expectForbiddenUnavailable(mounted)
-    expect(text(mounted)).not.toContain('Authenticated workspace.')
+    expect(text(mounted)).not.toContain('Welcome,')
 
     await emitSession(harness, activeSession(6, userWithName('Late Event User')))
 
@@ -427,7 +514,7 @@ describe('renderer authentication DOM integration', () => {
     pendingLoad.resolve(createAuthenticationFailure('IPC_UNAVAILABLE') as AuthGetSessionResult)
     await flushReact()
 
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
     expect(text(mounted)).toContain(baseUser.displayName)
     expect(text(mounted)).not.toContain('Authentication is unavailable.')
 
@@ -511,7 +598,7 @@ describe('renderer authentication DOM integration', () => {
           idleExpiresAt: '2026-08-01T00:00:01.000Z' as UtcTimestamp,
           absoluteExpiresAt: '2026-08-01T12:00:00.000Z' as UtcTimestamp
         }),
-        visibleText: 'Authenticated workspace.'
+        visibleText: 'Welcome, Admin User'
       },
       {
         initialSession: lockedSession(2, baseUser, {
@@ -565,14 +652,14 @@ describe('renderer authentication DOM integration', () => {
     )
     const mounted = await mountApp(harness.api)
 
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
     expect(text(mounted)).toContain(baseUser.displayName)
 
     await dispatchWindowEvent('pointerdown')
 
     expect(harness.api.auth.recordActivity).toHaveBeenCalledOnce()
     expectForbiddenUnavailable(mounted)
-    expect(text(mounted)).not.toContain('Authenticated workspace.')
+    expect(text(mounted)).not.toContain('Welcome,')
 
     await mounted.unmount()
   })
@@ -625,7 +712,7 @@ describe('renderer authentication DOM integration', () => {
     await flushReact()
 
     expect(harness.api.auth.getSession).toHaveBeenCalledTimes(2)
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
     expect(text(mounted)).toContain(baseUser.displayName)
     expect(text(mounted)).not.toContain('Authentication is unavailable.')
 
@@ -677,7 +764,7 @@ describe('renderer authentication DOM integration', () => {
     await clickButton(mounted, 'Lock')
 
     expect(harness.api.auth.getSession).toHaveBeenCalledTimes(2)
-    expect(text(mounted)).toContain('Authenticated workspace.')
+    expect(text(mounted)).toContain('Welcome, Admin User')
     expect(text(mounted)).toContain('The desktop authentication service is unavailable.')
 
     await mounted.unmount()
@@ -943,6 +1030,16 @@ function findButton(mounted: MountedApp, label: string): HTMLButtonElement | nul
 
 function text(mounted: MountedApp): string {
   return mounted.container.textContent ?? ''
+}
+
+function rootClassName(mounted: MountedApp): string {
+  const root = mounted.container.firstElementChild
+
+  if (!(root instanceof HTMLElement)) {
+    throw new Error('Expected mounted app root element to be rendered.')
+  }
+
+  return root.className
 }
 
 function expectForbiddenUnavailable(mounted: MountedApp): void {

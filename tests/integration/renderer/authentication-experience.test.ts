@@ -13,12 +13,19 @@ import {
   createRendererAuthenticationRouteController,
   type RendererAuthenticationRoute
 } from '../../../src/renderer/src/app/authentication'
+import type { ApplicationShellContext } from '../../../src/renderer/src/app/shell'
 
 const user = {
   username: 'Admin.User',
   displayName: 'Admin User',
   role: 'LOCAL_ADMIN'
 } as const
+const shellContext: ApplicationShellContext = {
+  applicationName: 'Health Screening Offline Desktop',
+  applicationVersion: '1.0.0',
+  deploymentName: 'Local Deployment',
+  timeZone: 'Africa/Douala'
+}
 
 describe('renderer authentication experience integration', () => {
   it('renders the current controller route after loading and accepting session observations', async () => {
@@ -51,7 +58,7 @@ describe('renderer authentication experience integration', () => {
       absoluteExpiresAt: '2026-08-01T00:00:00.000Z' as never,
       revision: 3
     })
-    expect(render(route, api, controller)).toContain('Authenticated workspace.')
+    expect(render(route, api, controller)).toContain('Welcome, Admin User')
 
     session = {
       status: 'LOCKED',
@@ -76,6 +83,7 @@ function render(
       api,
       controller,
       route,
+      shellContext,
       onExit: vi.fn()
     })
   )

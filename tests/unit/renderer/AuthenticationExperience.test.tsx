@@ -13,6 +13,7 @@ import {
 } from '../../../src/renderer/src/app/authentication'
 import type { RendererAuthenticationRouteController } from '../../../src/renderer/src/app/authentication/authentication-route-controller'
 import type { RendererAuthenticationRoute } from '../../../src/renderer/src/app/authentication/authentication-route-types'
+import type { ApplicationShellContext } from '../../../src/renderer/src/app/shell'
 import type { HealthScreeningApi, PublicAuthenticatedUser, UtcTimestamp } from '@shared/ipc'
 
 const user: PublicAuthenticatedUser = {
@@ -43,6 +44,12 @@ const activeRoute: Extract<RendererAuthenticationRoute, { status: 'SESSION_ACTIV
   idleExpiresAt: '2026-07-31T12:15:00.000Z' as UtcTimestamp,
   absoluteExpiresAt: '2026-08-01T00:00:00.000Z' as UtcTimestamp,
   revision: 9
+}
+const shellContext: ApplicationShellContext = {
+  applicationName: 'Health Screening Offline Desktop',
+  applicationVersion: '1.0.0',
+  deploymentName: 'Local Deployment',
+  timeZone: 'Africa/Douala'
 }
 
 describe('authentication renderer experience', () => {
@@ -110,23 +117,30 @@ describe('authentication renderer experience', () => {
     assertNoInternalAuthenticationFragments(markup)
   })
 
-  it('renders the authenticated shell without clinical navigation', () => {
+  it('renders the authenticated application shell with safe public context', () => {
     const markup = renderToStaticMarkup(
       createElement(AuthenticatedShell, {
         api: createApi(),
         controller: createController(),
-        route: activeRoute
+        route: activeRoute,
+        shellContext
       })
     )
 
-    expect(markup).toContain('Authenticated workspace.')
+    expect(markup).toContain('Welcome, Admin User')
     expect(markup).toContain('Health Screening Offline Desktop')
-    expect(markup).toContain('Local session only')
+    expect(markup).toContain('Local data ready')
+    expect(markup).toContain('Local Deployment')
+    expect(markup).toContain('Africa/Douala')
+    expect(markup).toContain('Home')
+    expect(markup).toContain('Patients')
+    expect(markup).toContain('Administration')
+    expect(markup).toContain('Screened today')
+    expect(markup).toContain('Patient worklist data is not available in HSD-024.')
     expect(markup).toContain('Lock')
     expect(markup).toContain('Sign out')
-    expect(markup).not.toContain('<nav')
-    expect(markup).not.toContain('Patients')
-    expect(markup).not.toContain('Encounters')
+    expect(markup).not.toContain('Admin.User')
+    expect(markup).not.toContain('session revision')
     assertNoInternalAuthenticationFragments(markup)
   })
 
@@ -163,6 +177,7 @@ describe('authentication renderer experience', () => {
           api: createApi(),
           controller: createController(),
           route,
+          shellContext,
           onExit: vi.fn()
         })
       )
@@ -174,7 +189,7 @@ describe('authentication renderer experience', () => {
     expect(markup[2]).toContain('Sign in to Health Screening.')
     expect(markup[3]).toContain('Change required password.')
     expect(markup[4]).toContain('Session locked.')
-    expect(markup[5]).toContain('Authenticated workspace.')
+    expect(markup[5]).toContain('Welcome, Admin User')
   })
 
   it('keeps authentication renderer code inside the preload and persistence boundary', () => {
@@ -193,7 +208,17 @@ describe('authentication renderer experience', () => {
       'src/renderer/src/app/authentication/authentication-role-labels.ts',
       'src/renderer/src/app/authentication/authentication-route-controller.ts',
       'src/renderer/src/app/authentication/authentication-route-types.ts',
-      'src/renderer/src/app/authentication/authentication-session-runtime.ts'
+      'src/renderer/src/app/authentication/authentication-session-runtime.ts',
+      'src/renderer/src/app/shell/ApplicationShell.tsx',
+      'src/renderer/src/app/shell/ApplicationTopBar.tsx',
+      'src/renderer/src/app/shell/ApplicationWorkspace.tsx',
+      'src/renderer/src/app/shell/ContextCommandPanel.tsx',
+      'src/renderer/src/app/shell/DashboardWorkspace.tsx',
+      'src/renderer/src/app/shell/PlannedModuleWorkspace.tsx',
+      'src/renderer/src/app/shell/application-navigation-catalog.ts',
+      'src/renderer/src/app/shell/application-shell-controller.ts',
+      'src/renderer/src/app/shell/application-shell-focus.ts',
+      'src/renderer/src/app/shell/application-shell-types.ts'
     ]
     const bannedFragments = [
       '@main',
@@ -232,7 +257,8 @@ describe('authentication renderer experience', () => {
     expect(css).toContain('min-height: 44px;')
     expect(css).toContain('width: min(560px, 100%);')
     expect(css).toContain('.auth-grid')
-    expect(css).toContain('.auth-shell-bar')
+    expect(css).toContain('.application-top-bar')
+    expect(css).toContain('.application-command-panel')
     expect(css).toContain('grid-template-columns: 1fr;')
     expect(css).toContain('width: 100%;')
   })
@@ -272,7 +298,7 @@ function createController(): RendererAuthenticationRouteController {
 }
 
 function assertNoInternalAuthenticationFragments(markup: string): void {
-  for (const fragment of ['userId', 'credential', 'hash', 'salt', 'failed_login', 'audit']) {
+  for (const fragment of ['userId', 'credential', 'hash', 'salt', 'failed_login']) {
     expect(markup).not.toContain(fragment)
   }
 }

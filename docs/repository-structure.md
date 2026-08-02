@@ -111,10 +111,20 @@ Renderer code should treat preload APIs as the only trusted bridge to desktop ca
 authentication route controller and the HSD-023 renderer authentication
 experience. It contains route mapping, uncontrolled login/password-change/unlock
 forms, safe message mapping, public role labels, advisory deadline/activity
-runtime helpers, and the authenticated shell foundation. It consumes only shared
-IPC types and the typed preload API; it does not own persistence, dynamic IPC,
-Electron access, database access, password modules, network behavior,
-synchronization, or clinical workflows.
+runtime helpers, and the thin authenticated-shell adapter that preserves lock
+and sign-out behavior. It consumes only shared IPC types and the typed preload
+API; it does not own persistence, dynamic IPC, Electron access, database access,
+password modules, network behavior, synchronization, or clinical workflows.
+
+`src/renderer/src/app/shell` owns the HSD-024 authenticated application shell.
+It contains the frozen role-visible navigation catalog, renderer-only shell
+controller, keyboard focus helpers, primary top bar, contextual command panel,
+dashboard workspace, and transparent planned-module workspace. It receives only
+safe startup metadata and public authenticated user data. It does not introduce
+IPC, preload methods, browser routing, browser persistence, clinical records,
+patient tabs, database access, network behavior, or authorization decisions.
+HSD-025 owns patient search, duplicate review, four-patient tabs, and
+unsaved-change guards.
 
 ## Shared Contracts
 

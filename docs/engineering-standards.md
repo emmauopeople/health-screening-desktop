@@ -54,6 +54,13 @@ preload requests, observes public deadlines and user activity only as advisory
 session prompts, and adds no IPC, preload, main-process services, database
 writes, migrations, session persistence, network behavior, synchronization, or
 clinical workflows.
+HSD-024 replaces the active-session foundation view with a renderer-only
+application shell. It may use already-loaded startup metadata and the public
+active-session user to render role-visible primary menus, contextual commands,
+an honest dashboard, and transparent planned-module routes. It adds no IPC,
+preload methods, main-process services, database reads, migrations, clinical
+records, patient tabs, synchronization, backup, network behavior, browser
+routing, or browser persistence.
 
 ## TypeScript
 
@@ -129,6 +136,17 @@ lock, sign-out, and active-shell controls only through the reviewed preload
 browser persistence, logs, URLs, or snapshots. Renderer activity and deadline
 helpers must ask HSD-021 to observe the session; they must not recreate expiry,
 authorization, login, unlock, or password-change policy in the renderer.
+
+Renderer application navigation must keep menu and command identifiers as
+closed TypeScript unions backed by a frozen catalog. Role-visible menu filtering
+is display logic only and must never be sent to main as authorization input.
+Dashboard cards must show unavailable values rather than invented counts, dates,
+site names, session names, sync totals, or backup timestamps. Planned modules
+must route to an explicit unavailable-in-this-build workspace and must not
+render forms, tables with sample rows, enabled clinical actions, or fake
+results. Shell route state must remain volatile React/controller state only; do
+not store it in URLs, browser history, `localStorage`, `sessionStorage`,
+IndexedDB, cookies, Cache API, files, or window names.
 
 ## Database Migrations
 
