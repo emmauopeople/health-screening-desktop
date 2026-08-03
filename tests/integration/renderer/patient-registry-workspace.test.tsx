@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 /// <reference lib="dom" />
 
+import { readFileSync } from 'node:fs'
+
 import { act, createElement, type RefObject } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -309,6 +311,18 @@ describe('patient registry workspace mounted regressions', () => {
       commandId: 'PATIENTS_REGISTER_NEW_PATIENT'
     })
 
+    expect(registrationWorkspace(mounted).classList.contains('patient-registration-centered')).toBe(
+      true
+    )
+    expect(
+      registrationWorkspace(mounted).classList.contains('patient-registration-review-layout')
+    ).toBe(false)
+    expect(
+      registrationFormPanel(mounted).classList.contains('patient-registration-form-panel')
+    ).toBe(true)
+    expect(duplicateReviewPanel(mounted)).toBeNull()
+    expect(mounted.container.querySelector('[data-shell-slot="patient-tabs"]')).toBeNull()
+
     await clickButton(mounted, 'Create patient')
 
     expect(api.patient.create).toHaveBeenCalledOnce()
@@ -341,9 +355,27 @@ describe('patient registry workspace mounted regressions', () => {
 
     await clickButton(mounted, 'Create patient')
 
-    expect(text(mounted)).toContain('Possible duplicates')
+    expect(
+      registrationWorkspace(mounted).classList.contains('patient-registration-review-layout')
+    ).toBe(true)
+    expect(registrationWorkspace(mounted).classList.contains('patient-registration-centered')).toBe(
+      false
+    )
+    expect(duplicateReviewPanel(mounted)?.querySelector('h2')?.textContent).toBe(
+      'Possible Duplicate Patients'
+    )
+    expect(text(mounted)).toContain('Possible Duplicate Patients')
     expect(text(mounted)).toContain('Match reasons: name, date of birth')
+    expect(buttonByText(mounted, 'Open existing patient')).toBeInstanceOf(HTMLButtonElement)
+    expect(buttonByText(mounted, 'Return to edit')).toBeInstanceOf(HTMLButtonElement)
+    expect(buttonByText(mounted, 'Continue registration despite possible matches')).toBeInstanceOf(
+      HTMLButtonElement
+    )
     expect(buttonByText(mounted, 'Create patient').disabled).toBe(true)
+    expect(mounted.container.querySelector('[data-shell-slot="patient-tabs"]')).toBeNull()
+    expect(stylesheet()).toMatch(
+      /@media\s*\(max-width:\s*860px\)\s*{[\s\S]*\.patient-registration-review-layout,[\s\S]*grid-template-columns:\s*1fr;/
+    )
 
     await clickButton(mounted, 'Continue registration despite possible matches')
 
@@ -400,7 +432,8 @@ describe('patient registry workspace mounted regressions', () => {
     await clickButton(mounted, 'Create patient')
     await clickButton(mounted, 'Return to edit')
 
-    expect(text(mounted)).not.toContain('Possible duplicates')
+    expect(text(mounted)).not.toContain('Possible Duplicate Patients')
+    expect(duplicateReviewPanel(mounted)).toBeNull()
 
     await clickButton(mounted, 'Create patient')
     await clickButton(mounted, 'Open existing patient')
@@ -854,6 +887,30 @@ function searchLabel(mounted: MountedWorkspace): HTMLLabelElement {
   return label
 }
 
+function registrationWorkspace(mounted: MountedWorkspace): HTMLElement {
+  const workspace = mounted.container.querySelector<HTMLElement>('.patient-registration')
+
+  if (workspace === null) {
+    throw new Error('Expected patient registration workspace to be rendered.')
+  }
+
+  return workspace
+}
+
+function registrationFormPanel(mounted: MountedWorkspace): HTMLElement {
+  const panel = mounted.container.querySelector<HTMLElement>('.patient-registration-form-panel')
+
+  if (panel === null) {
+    throw new Error('Expected patient registration form panel to be rendered.')
+  }
+
+  return panel
+}
+
+function duplicateReviewPanel(mounted: MountedWorkspace): HTMLElement | null {
+  return mounted.container.querySelector<HTMLElement>('.patient-duplicate-review')
+}
+
 function fieldInput(mounted: MountedWorkspace, label: string): HTMLInputElement {
   const field = fieldControl<HTMLInputElement>(mounted, label, 'input')
 
@@ -961,6 +1018,10 @@ function normalizedText(element: Element): string {
 
 function text(mounted: MountedWorkspace): string {
   return mounted.container.textContent ?? ''
+}
+
+function stylesheet(): string {
+  return readFileSync('src/renderer/src/styles/main.css', 'utf8')
 }
 
 function createDeferred<TValue>(): DeferredPromise<TValue> {

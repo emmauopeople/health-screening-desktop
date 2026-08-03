@@ -1099,12 +1099,52 @@ function PatientRegistrationWorkspace({
     }
   }
 
+  const hasDuplicateCandidates = candidates.length > 0
+
   return (
-    <section className="patient-registration">
-      <PatientFieldsForm draft={draft} disabled={anyPending} onDraftChange={updateDraft} />
-      {candidates.length > 0 ? (
-        <div className="patient-duplicate-review">
-          <h2>Possible duplicates</h2>
+    <section
+      className={
+        hasDuplicateCandidates
+          ? 'patient-registration patient-registration-review-layout'
+          : 'patient-registration patient-registration-centered'
+      }
+    >
+      <div className="patient-registration-form-panel">
+        <PatientFieldsForm draft={draft} disabled={anyPending} onDraftChange={updateDraft} />
+        <div className="patient-detail-actions patient-registration-actions">
+          <button
+            type="button"
+            className="button button-secondary"
+            disabled={anyPending}
+            onClick={() => void checkDuplicates()}
+          >
+            Check duplicates
+          </button>
+          <button
+            type="button"
+            className="button button-primary"
+            disabled={anyPending || duplicateReviewToken !== null}
+            onClick={() => void createPatient(null)}
+          >
+            Create patient
+          </button>
+          <button
+            type="button"
+            className="button button-secondary"
+            disabled={anyPending}
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+
+      {hasDuplicateCandidates ? (
+        <aside
+          className="patient-duplicate-review"
+          aria-labelledby="patient-duplicate-review-heading"
+        >
+          <h2 id="patient-duplicate-review-heading">Possible Duplicate Patients</h2>
           <p className="patient-duplicate-review-copy">
             Review the fixed match reasons before continuing registration.
           </p>
@@ -1124,7 +1164,7 @@ function PatientRegistrationWorkspace({
               </button>
             </DuplicatePatientCard>
           ))}
-          <div className="patient-detail-actions">
+          <div className="patient-detail-actions patient-duplicate-review-actions">
             <button
               type="button"
               className="button button-secondary"
@@ -1147,34 +1187,8 @@ function PatientRegistrationWorkspace({
               Continue registration despite possible matches
             </button>
           </div>
-        </div>
+        </aside>
       ) : null}
-      <div className="patient-detail-actions">
-        <button
-          type="button"
-          className="button button-secondary"
-          disabled={anyPending}
-          onClick={() => void checkDuplicates()}
-        >
-          Check duplicates
-        </button>
-        <button
-          type="button"
-          className="button button-primary"
-          disabled={anyPending || duplicateReviewToken !== null}
-          onClick={() => void createPatient(null)}
-        >
-          Create patient
-        </button>
-        <button
-          type="button"
-          className="button button-secondary"
-          disabled={anyPending}
-          onClick={onCancel}
-        >
-          Cancel
-        </button>
-      </div>
 
       {confirmContinue && duplicateReviewToken !== null ? (
         <PatientModalDialog
