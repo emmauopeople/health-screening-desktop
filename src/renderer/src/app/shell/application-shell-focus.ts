@@ -1,6 +1,6 @@
 import type { PrimaryApplicationMenu } from './application-shell-types'
 
-export type ApplicationShellFocusZone = 'TOP_BAR' | 'COMMAND_PANEL' | 'PATIENT_TABS' | 'WORKSPACE'
+export type ApplicationShellFocusZone = 'TOP_BAR' | 'COMMAND_PANEL' | 'WORKSPACE'
 
 export type PrimaryMenuKeyResult =
   | { readonly kind: 'NONE' }

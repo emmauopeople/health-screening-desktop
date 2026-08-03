@@ -7,38 +7,42 @@ import { describe, expect, it, vi } from 'vitest'
 import { createProductionDatabaseMigrationRunner } from '@main/database'
 import {
   createSchemaMigrationsTableSql,
-  schemaVersion1NamedIndexes,
-  schemaVersion1TableContracts,
-  schemaVersion1TableNames,
   type SchemaVersion1ColumnContract
 } from '@main/database/migrations/schema-v1-contract'
+import {
+  schemaVersion2NamedIndexes,
+  schemaVersion2TableContracts,
+  schemaVersion2TableNames
+} from '@main/database/migrations'
 
 const now = '2026-07-29T00:00:00Z'
 
-describe('schema version 1', () => {
+describe('schema version 2', () => {
   it('creates exactly the required empty strict tables and named indexes', async () => {
     await withMigratedDatabase((connection) => {
-      expect(readUserVersion(connection)).toBe(1)
-      expect(readTableNames(connection)).toEqual([...schemaVersion1TableNames])
-      expect(readNamedIndexNames(connection)).toEqual([...schemaVersion1NamedIndexes])
+      expect(readUserVersion(connection)).toBe(2)
+      expect(readTableNames(connection)).toEqual([...schemaVersion2TableNames])
+      expect(readNamedIndexNames(connection)).toEqual([...schemaVersion2NamedIndexes])
 
       const strictByTable = readStrictByTable(connection)
 
-      for (const tableName of schemaVersion1TableNames) {
+      for (const tableName of schemaVersion2TableNames) {
         expect(strictByTable.get(tableName)).toBe(1)
       }
 
-      for (const tableName of schemaVersion1TableNames) {
+      for (const tableName of schemaVersion2TableNames) {
         const rowCount = readTableCount(connection, tableName)
 
-        expect(rowCount).toBe(tableName === 'schema_migrations' ? 1 : 0)
+        expect(rowCount).toBe(
+          tableName === 'schema_migrations' ? 2 : tableName === 'patient_local_sequence' ? 1 : 0
+        )
       }
     })
   })
 
   it('matches exact ordered table_xinfo metadata for every required table', async () => {
     await withMigratedDatabase((connection) => {
-      for (const tableContract of schemaVersion1TableContracts) {
+      for (const tableContract of schemaVersion2TableContracts) {
         expect(readTableXInfo(connection, tableContract.name)).toEqual(tableContract.columns)
       }
     })

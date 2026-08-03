@@ -73,8 +73,8 @@ describe('first-run bootstrap service', () => {
         patients: 0,
         sync_outbox: 0
       })
-      expect(readUserVersion(connection)).toBe(1)
-      expect(readTableCount(connection, 'schema_migrations')).toBe(1)
+      expect(readUserVersion(connection)).toBe(2)
+      expect(readTableCount(connection, 'schema_migrations')).toBe(2)
       expect(readSource('src/main/app/lifecycle.ts')).not.toContain('first-run')
       expect(readSource('src/main/app/lifecycle.ts')).not.toContain(
         'createFirstRunBootstrapService'

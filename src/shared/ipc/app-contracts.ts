@@ -18,6 +18,22 @@ import type {
   FirstRunInitializeRequest as SharedFirstRunInitializeRequest,
   FirstRunInitializeResult as SharedFirstRunInitializeResult
 } from './first-run-contracts'
+import type {
+  PatientCreateRequest,
+  PatientCreateResult,
+  PatientFindDuplicatesRequest,
+  PatientFindDuplicatesResult,
+  PatientGetRequest,
+  PatientGetResult,
+  PatientListRecentRequest,
+  PatientListRecentResult,
+  PatientMarkNotDuplicateRequest,
+  PatientMarkNotDuplicateResult,
+  PatientSearchRequest,
+  PatientSearchResult,
+  PatientUpdateRequest,
+  PatientUpdateResult
+} from './patient-contracts'
 import { createIpcResultSchema } from './result'
 
 export const appGetInfoRequestSchema = z.object({}).strict()
@@ -75,5 +91,16 @@ export interface HealthScreeningApi {
     logout(): Promise<AuthLogoutResult>
     recordActivity(): Promise<AuthRecordActivityResult>
     onSessionChanged(listener: AuthenticationSessionChangedListener): () => void
+  }
+  patient: {
+    search(request: PatientSearchRequest): Promise<PatientSearchResult>
+    get(request: PatientGetRequest): Promise<PatientGetResult>
+    create(request: PatientCreateRequest): Promise<PatientCreateResult>
+    update(request: PatientUpdateRequest): Promise<PatientUpdateResult>
+    listRecent(request: PatientListRecentRequest): Promise<PatientListRecentResult>
+    findDuplicates(request: PatientFindDuplicatesRequest): Promise<PatientFindDuplicatesResult>
+    markNotDuplicate(
+      request: PatientMarkNotDuplicateRequest
+    ): Promise<PatientMarkNotDuplicateResult>
   }
 }

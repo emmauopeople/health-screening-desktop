@@ -1,8 +1,9 @@
 import { computeMigrationChecksum } from './migration-checksum'
 import type { DatabaseMigration, ResolvedDatabaseMigration } from './migration-types'
 import initialSchemaSql from './sql/0001-initial-schema.sql?raw'
+import patientRegistryManagementSql from './sql/0002-patient-registry-management.sql?raw'
 
-export const targetSchemaVersion = 1
+export const targetSchemaVersion = 2
 
 const initialSchemaMigration = Object.freeze({
   version: 1,
@@ -10,7 +11,16 @@ const initialSchemaMigration = Object.freeze({
   sql: initialSchemaSql
 } satisfies DatabaseMigration)
 
-export const databaseMigrations = Object.freeze([initialSchemaMigration] as const)
+const patientRegistryManagementMigration = Object.freeze({
+  version: 2,
+  name: 'patient-registry-management',
+  sql: patientRegistryManagementSql
+} satisfies DatabaseMigration)
+
+export const databaseMigrations = Object.freeze([
+  initialSchemaMigration,
+  patientRegistryManagementMigration
+] as const)
 
 export function resolveDatabaseMigrations(
   migrations: readonly DatabaseMigration[]

@@ -4,6 +4,7 @@ import { createHealthScreeningApi } from '@preload/api'
 import {
   createFirstRunFailure,
   createIpcSuccess,
+  createPatientFailure,
   ipcChannels,
   type AppHealth,
   type AppInfo,
@@ -47,7 +48,7 @@ describe('preload API factory', () => {
   it('exposes only the fixed app and first-run methods as frozen groups', () => {
     const api = createHealthScreeningApi(vi.fn())
 
-    expect(Object.keys(api)).toEqual(['app', 'firstRun', 'auth'])
+    expect(Object.keys(api)).toEqual(['app', 'firstRun', 'auth', 'patient'])
     expect(Object.keys(api.app)).toEqual(['getInfo', 'getHealth'])
     expect(Object.keys(api.firstRun)).toEqual(['getState', 'initialize'])
     expect(Object.keys(api.auth)).toEqual([
@@ -60,10 +61,20 @@ describe('preload API factory', () => {
       'recordActivity',
       'onSessionChanged'
     ])
+    expect(Object.keys(api.patient)).toEqual([
+      'search',
+      'get',
+      'create',
+      'update',
+      'listRecent',
+      'findDuplicates',
+      'markNotDuplicate'
+    ])
     expect(Object.isFrozen(api)).toBe(true)
     expect(Object.isFrozen(api.app)).toBe(true)
     expect(Object.isFrozen(api.firstRun)).toBe(true)
     expect(Object.isFrozen(api.auth)).toBe(true)
+    expect(Object.isFrozen(api.patient)).toBe(true)
     expect('invoke' in api).toBe(false)
     expect('send' in api).toBe(false)
     expect('on' in api).toBe(false)
@@ -72,6 +83,37 @@ describe('preload API factory', () => {
     expect('ipcRenderer' in api).toBe(false)
     expect('channel' in api.firstRun).toBe(false)
     expect('channel' in api.auth).toBe(false)
+    expect('channel' in api.patient).toBe(false)
+  })
+
+  it('invokes patient.search over the exact fixed channel with a parsed request', async () => {
+    const searchResult = {
+      items: [],
+      page: 1,
+      pageSize: 25 as const,
+      total: 0
+    }
+    const invoke = vi.fn().mockResolvedValue(createIpcSuccess(searchResult))
+    const api = createHealthScreeningApi(invoke)
+
+    await expect(api.patient.search({ query: 'Ada', page: 1, pageSize: 25 })).resolves.toEqual(
+      createIpcSuccess(searchResult)
+    )
+    expect(invoke).toHaveBeenCalledWith(ipcChannels.patient.search, {
+      query: 'Ada',
+      page: 1,
+      pageSize: 25
+    })
+  })
+
+  it('returns VALIDATION_FAILED for invalid local patient input without invoking IPC', async () => {
+    const invoke = vi.fn()
+    const api = createHealthScreeningApi(invoke)
+
+    await expect(api.patient.search({ query: 'Ada', page: 0, pageSize: 25 })).resolves.toEqual(
+      createPatientFailure('VALIDATION_FAILED')
+    )
+    expect(invoke).not.toHaveBeenCalled()
   })
 
   it('invokes app.getInfo over the exact fixed channel with an empty request', async () => {

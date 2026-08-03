@@ -47,6 +47,14 @@ export interface ApplicationCommandDefinition {
 export type ApplicationWorkspaceRoute =
   | { readonly status: 'DASHBOARD'; readonly commandId: 'HOME_DASHBOARD' }
   | {
+      readonly status: 'PATIENTS'
+      readonly commandId:
+        | 'PATIENTS_PATIENT_SEARCH'
+        | 'PATIENTS_REGISTER_NEW_PATIENT'
+        | 'PATIENTS_RECENT_PATIENTS'
+        | 'PATIENTS_POSSIBLE_DUPLICATES'
+    }
+  | {
       readonly status: 'PLANNED_MODULE'
       readonly commandId: ApplicationCommandId
       readonly heading: string

@@ -19,6 +19,7 @@ import {
 } from '@shared/ipc'
 
 import { createAuthenticationApi, type IpcInvoke, type IpcSubscribe } from './authentication-api'
+import { createPatientApi } from './patient-api'
 
 export type { IpcInvoke, IpcSubscribe }
 
@@ -72,7 +73,8 @@ export function createHealthScreeningApi(
         })
       }
     }),
-    auth: createAuthenticationApi({ invoke, subscribe })
+    auth: createAuthenticationApi({ invoke, subscribe }),
+    patient: createPatientApi(invoke)
   })
 }
 

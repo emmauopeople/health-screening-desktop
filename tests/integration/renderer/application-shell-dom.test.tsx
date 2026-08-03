@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   createIpcSuccess,
+  createPatientFailure,
   type AuthGetSessionResult,
   type AuthLockResult,
   type AuthLogoutResult,
@@ -331,19 +332,20 @@ describe('application shell DOM integration', () => {
     await mounted.unmount()
   })
 
-  it('routes planned commands and quick actions to transparent planned workspaces', async () => {
-    const mounted = await mountApp(createAppApi(activeSession(1)).api)
+  it('routes patient commands and quick actions to the patient registry workspace', async () => {
+    const harness = createAppApi(activeSession(1))
+    const mounted = await mountApp(harness.api)
 
     await clickButton(mounted, 'Patients')
     await clickButton(mounted, 'Patient Search')
 
-    expect(text(mounted)).toContain('Patient Search')
-    expect(text(mounted)).toContain('Not available in this build.')
-    expect(text(mounted)).toContain('HSD-025 patient search and tabs')
-    expect(mounted.container.querySelector('form')).toBeNull()
-    expect(text(mounted)).not.toContain('Create patient and open tab')
+    expect(text(mounted)).toContain('Patient Search and Management')
+    expect(text(mounted)).toContain('Select a patient to view or update details.')
+    expect(text(mounted)).not.toContain('Not available in this build.')
+    expect(harness.api.patient.search).toHaveBeenCalled()
 
-    await clickButton(mounted, 'Back to dashboard')
+    await clickButton(mounted, 'Home')
+    await clickButton(mounted, 'Dashboard')
 
     expect(text(mounted)).toContain('Welcome, Admin User')
     expect(menuButton(mounted, 'Home').getAttribute('aria-current')).toBe('page')
@@ -351,8 +353,7 @@ describe('application shell DOM integration', () => {
 
     await clickButton(mounted, 'Find or open patient')
 
-    expect(text(mounted)).toContain('Patient Search')
-    expect(text(mounted)).toContain('Not available in this build.')
+    expect(text(mounted)).toContain('Patient Search and Management')
     expect(commandPanel(mounted)?.textContent).toContain('Patient Search')
 
     await mounted.unmount()
@@ -422,7 +423,8 @@ describe('application shell DOM integration', () => {
 
     await clickButton(mounted, 'Patients')
     await clickButton(mounted, 'Patient Search')
-    await clickButton(mounted, 'Back to dashboard')
+    await clickButton(mounted, 'Home')
+    await clickButton(mounted, 'Dashboard')
 
     expect(getItemSpy).not.toHaveBeenCalled()
     expect(setItemSpy).not.toHaveBeenCalled()
@@ -436,6 +438,7 @@ describe('application shell DOM integration', () => {
     expect(harness.api.app.getInfo).toHaveBeenCalledOnce()
     expect(harness.api.app.getHealth).toHaveBeenCalledOnce()
     expect(harness.api.firstRun.getState).toHaveBeenCalledOnce()
+    expect(harness.api.patient.search).toHaveBeenCalled()
 
     await mounted.unmount()
   })
@@ -450,6 +453,9 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
     getState: ReturnType<typeof vi.fn<HealthScreeningApi['firstRun']['getState']>>
     initialize: ReturnType<typeof vi.fn<HealthScreeningApi['firstRun']['initialize']>>
   }
+  patient: {
+    search: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['search']>>
+  } & HealthScreeningApi['patient']
 }
 
 interface AppApiHarness {
@@ -523,6 +529,24 @@ function createAppApi(initialSession: PublicAuthenticationSession): AppApiHarnes
           listeners.delete(listener)
         }
       })
+    },
+    patient: {
+      search: vi.fn(() =>
+        Promise.resolve(
+          createIpcSuccess({
+            items: [],
+            page: 1,
+            pageSize: 25,
+            total: 0
+          })
+        )
+      ),
+      get: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE'))),
+      create: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE'))),
+      update: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE'))),
+      listRecent: vi.fn(() => Promise.resolve(createIpcSuccess([]))),
+      findDuplicates: vi.fn(() => Promise.resolve(createIpcSuccess({ candidates: [], pairs: [] }))),
+      markNotDuplicate: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE')))
     }
   } as unknown as MockedHealthScreeningApi
 
@@ -573,6 +597,7 @@ async function mountShell({
   await act(async () => {
     root.render(
       createElement(ApplicationShell, {
+        api: createAppApi(activeSession(1)).api,
         context: shellContext,
         user: shellUser,
         busy: false,
@@ -743,25 +768,16 @@ function expectShellSlots(
 
   expect(
     Array.from(shell.children).map((child) => (child as HTMLElement).dataset.shellSlot)
-  ).toEqual([
-    'top-bar',
-    'operation-alert',
-    'contextual-panel',
-    'patient-tabs',
-    'workspace',
-    'footer'
-  ])
+  ).toEqual(['top-bar', 'operation-alert', 'contextual-panel', 'workspace', 'footer'])
 
   const alertSlot = shell.querySelector<HTMLElement>('[data-shell-slot="operation-alert"]')
   const panelSlot = shell.querySelector<HTMLElement>('[data-shell-slot="contextual-panel"]')
-  const patientTabSlot = shell.querySelector<HTMLElement>('[data-shell-slot="patient-tabs"]')
   const workspace = shell.querySelector<HTMLElement>('[data-shell-slot="workspace"]')
   const footer = shell.querySelector<HTMLElement>('[data-shell-slot="footer"]')
 
   expect(alertSlot?.querySelector('[role="alert"]') !== null).toBe(expected.hasAlert)
   expect(panelSlot?.querySelector('#application-command-panel') !== null).toBe(expected.hasPanel)
-  expect(patientTabSlot?.childElementCount).toBe(0)
-  expect(patientTabSlot?.textContent).toBe('')
+  expect(shell.querySelector('[data-shell-slot="patient-tabs"]')).toBeNull()
   expect(workspace?.parentElement).toBe(shell)
   expect(footer?.parentElement).toBe(shell)
 }

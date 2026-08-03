@@ -70,14 +70,17 @@ describe('application navigation catalog', () => {
     ])
     expect(labelsForRole('TRAINED_SCREENER')).toEqual([
       ['Home', ['Dashboard', 'Today\u2019s Session', 'Quick Patient Search']],
-      ['Patients', ['Patient Search', 'Register New Patient', 'Recent Patients']],
+      [
+        'Patients',
+        ['Patient Search', 'Register New Patient', 'Recent Patients', 'Possible Duplicates']
+      ],
       ['Screening', ['Today\u2019s Session', 'New Screening', 'Draft Encounters']],
       ['Referrals', ['Referral Worklist']]
     ])
     expect(getVisibleApplicationMenus('UNKNOWN')).toEqual([])
   })
 
-  it('freezes returned catalogs and keeps dashboard as the only available command', () => {
+  it('freezes returned catalogs and exposes patient registry commands as available', () => {
     const adminMenus = getVisibleApplicationMenus('LOCAL_ADMIN')
 
     expect(Object.isFrozen(applicationCommandDefinitions)).toBe(true)
@@ -88,7 +91,14 @@ describe('application navigation catalog', () => {
       applicationCommandDefinitions
         .filter((definition) => definition.availability === 'AVAILABLE')
         .map((definition) => definition.id)
-    ).toEqual(['HOME_DASHBOARD'])
+    ).toEqual([
+      'HOME_DASHBOARD',
+      'HOME_QUICK_PATIENT_SEARCH',
+      'PATIENTS_PATIENT_SEARCH',
+      'PATIENTS_REGISTER_NEW_PATIENT',
+      'PATIENTS_RECENT_PATIENTS',
+      'PATIENTS_POSSIBLE_DUPLICATES'
+    ])
   })
 })
 

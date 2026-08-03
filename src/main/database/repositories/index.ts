@@ -85,3 +85,33 @@ export {
   type LocationType,
   type NormalizedLocationName
 } from './location'
+export {
+  createPatientRepository,
+  formatPatientCode,
+  normalizeDuplicateReasonCodes,
+  normalizePatientEditableFields,
+  parsePatientCode,
+  parsePatientEntityId,
+  parsePatientRowVersion,
+  parsePatientSearchText,
+  parsePatientUtcTimestamp,
+  type CreatePatientRepositoryInput,
+  type InsertPatientAuditOutboxInput,
+  type MarkNotDuplicateInput,
+  type NormalizedPatientFields,
+  type PatientCode,
+  type PatientDetailRecord,
+  type PatientDisplayName,
+  type PatientDuplicateCandidateRecord,
+  type PatientDuplicatePairRecord,
+  type PatientEditableInput,
+  type PatientNormalizationOptions,
+  type PatientNormalizedName,
+  type PatientPhoneDigits,
+  type PatientRepository,
+  type PatientSearchInput,
+  type PatientSearchResultRecord,
+  type PatientSummaryRecord,
+  type PatientUpdateResultRecord,
+  type UpdatePatientRepositoryInput
+} from './patient'

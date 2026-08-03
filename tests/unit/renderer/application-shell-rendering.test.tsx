@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
+import type { HealthScreeningApi } from '@shared/ipc'
 
 import {
   ApplicationShell,
@@ -23,6 +24,7 @@ describe('application shell rendering', () => {
   it('renders the dashboard hierarchy without operational sample data', () => {
     const markup = renderToStaticMarkup(
       createElement(ApplicationShell, {
+        api: createShellApi(),
         context: shellContext,
         user: user('LOCAL_ADMIN'),
         busy: false,
@@ -84,16 +86,15 @@ describe('application shell rendering', () => {
     ).toEqual(['Find or open patient', 'Start new screening'])
   })
 
-  it('defines viewport-constrained shell grid slots with a collapsed patient-tab row', () => {
+  it('defines viewport-constrained shell grid slots without a patient-tab row', () => {
     const css = readFileSync(join(__dirname, '../../../src/renderer/src/styles/main.css'), 'utf8')
 
     expect(css).toMatch(/\.application-root\s*\{[\s\S]*height: 100vh;[\s\S]*overflow: hidden;/)
     expect(css).toMatch(
-      /\.application-shell\s*\{[\s\S]*grid-template-areas:[\s\S]*'top-bar'[\s\S]*'operation-alert'[\s\S]*'contextual-panel'[\s\S]*'patient-tabs'[\s\S]*'workspace'[\s\S]*'footer'[\s\S]*max-height: 100vh;[\s\S]*overflow: hidden;/
+      /\.application-shell\s*\{[\s\S]*grid-template-areas:[\s\S]*'top-bar'[\s\S]*'operation-alert'[\s\S]*'contextual-panel'[\s\S]*'workspace'[\s\S]*'footer'[\s\S]*max-height: 100vh;[\s\S]*overflow: hidden;/
     )
-    expect(css).toMatch(
-      /\.application-patient-tabs-anchor\s*\{[\s\S]*grid-area: patient-tabs;[\s\S]*height: 0;[\s\S]*min-height: 0;[\s\S]*overflow: hidden;/
-    )
+    expect(css).not.toContain('application-patient-tabs-anchor')
+    expect(css).not.toContain("'patient-tabs'")
     expect(css).toMatch(
       /\.application-workspace\s*\{[\s\S]*grid-area: workspace;[\s\S]*min-height: 0;[\s\S]*overflow: auto;/
     )
@@ -138,4 +139,8 @@ function user(role: ApplicationShellUser['role']): ApplicationShellUser {
     displayName: 'Admin User',
     role
   }
+}
+
+function createShellApi(): HealthScreeningApi {
+  return {} as HealthScreeningApi
 }

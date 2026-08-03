@@ -1,5 +1,8 @@
 import type { RefObject } from 'react'
+import { useState } from 'react'
+import type { HealthScreeningApi, PublicPatientDetail } from '@shared/ipc'
 
+import { PatientRegistryWorkspace } from '../patients/PatientRegistryWorkspace'
 import { DashboardWorkspace } from './DashboardWorkspace'
 import { PlannedModuleWorkspace } from './PlannedModuleWorkspace'
 import type {
@@ -10,6 +13,7 @@ import type {
 } from './application-shell-types'
 
 interface ApplicationWorkspaceProps {
+  readonly api: HealthScreeningApi
   readonly context: ApplicationShellContext
   readonly user: ApplicationShellUser
   readonly route: ApplicationWorkspaceRoute
@@ -21,6 +25,7 @@ interface ApplicationWorkspaceProps {
 const workspaceHeadingId = 'application-workspace-heading'
 
 export function ApplicationWorkspace({
+  api,
   context,
   user,
   route,
@@ -28,6 +33,8 @@ export function ApplicationWorkspace({
   headingRef,
   onSelectCommand
 }: ApplicationWorkspaceProps): React.JSX.Element {
+  const [selectedPatient, setSelectedPatient] = useState<PublicPatientDetail | null>(null)
+
   return (
     <main
       ref={workspaceRef}
@@ -43,6 +50,16 @@ export function ApplicationWorkspace({
           headingId={workspaceHeadingId}
           headingRef={headingRef}
           onQuickAction={onSelectCommand}
+        />
+      ) : route.status === 'PATIENTS' ? (
+        <PatientRegistryWorkspace
+          api={api}
+          commandId={route.commandId}
+          headingId={workspaceHeadingId}
+          headingRef={headingRef}
+          selectedPatient={selectedPatient}
+          onSelectedPatientChange={setSelectedPatient}
+          onSelectCommand={onSelectCommand}
         />
       ) : (
         <PlannedModuleWorkspace

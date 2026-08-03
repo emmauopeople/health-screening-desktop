@@ -32,7 +32,7 @@ describe('application shell controller', () => {
     ])
   })
 
-  it('routes dashboard and planned commands while keeping the selected menu panel open', () => {
+  it('routes dashboard and patient commands while keeping the selected menu panel open', () => {
     const controller = createApplicationShellController({ role: 'LOCAL_ADMIN' })
 
     controller.openMenu('PATIENTS')
@@ -42,11 +42,8 @@ describe('application shell controller', () => {
       activeMenu: 'PATIENTS',
       commandPanelMenu: 'PATIENTS',
       route: {
-        status: 'PLANNED_MODULE',
-        commandId: 'PATIENTS_PATIENT_SEARCH',
-        heading: 'Patient Search',
-        statement: 'Not available in this build.',
-        plannedOwner: 'HSD-025 patient search and tabs'
+        status: 'PATIENTS',
+        commandId: 'PATIENTS_PATIENT_SEARCH'
       }
     })
 

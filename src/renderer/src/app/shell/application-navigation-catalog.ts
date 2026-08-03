@@ -34,7 +34,7 @@ export const primaryApplicationMenuLabels: Readonly<Record<PrimaryApplicationMen
   })
 
 const plannedOwners = Object.freeze({
-  hsd025: 'HSD-025 patient search and tabs',
+  hsd025: 'HSD-025 patient registry management',
   session: 'Future session workspace',
   screening: 'Future screening workflow package',
   referrals: 'Future referral workflow package',
@@ -58,7 +58,7 @@ const commandDefinitions = [
     'HOME',
     'Quick Patient Search',
     allRoles,
-    'PLANNED',
+    'AVAILABLE',
     plannedOwners.hsd025
   ),
   command(
@@ -75,7 +75,7 @@ const commandDefinitions = [
     'PATIENTS',
     'Patient Search',
     allRoles,
-    'PLANNED',
+    'AVAILABLE',
     plannedOwners.hsd025
   ),
   command(
@@ -83,7 +83,7 @@ const commandDefinitions = [
     'PATIENTS',
     'Register New Patient',
     allRoles,
-    'PLANNED',
+    'AVAILABLE',
     plannedOwners.hsd025
   ),
   command(
@@ -91,15 +91,15 @@ const commandDefinitions = [
     'PATIENTS',
     'Recent Patients',
     allRoles,
-    'PLANNED',
+    'AVAILABLE',
     plannedOwners.hsd025
   ),
   command(
     'PATIENTS_POSSIBLE_DUPLICATES',
     'PATIENTS',
     'Possible Duplicates',
-    nurseAndAdminRoles,
-    'PLANNED',
+    allRoles,
+    'AVAILABLE',
     plannedOwners.hsd025
   ),
   command(

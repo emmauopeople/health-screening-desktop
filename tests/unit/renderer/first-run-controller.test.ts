@@ -5,6 +5,7 @@ import {
   createFirstRunFailure,
   createIpcFailure,
   createIpcSuccess,
+  createPatientFailure,
   type AppGetHealthResult,
   type AppGetInfoResult,
   type AppHealth,
@@ -553,6 +554,15 @@ function createApi({
           >
       ),
       onSessionChanged: vi.fn(() => () => undefined)
+    },
+    patient: {
+      search: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
+      get: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
+      create: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
+      update: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
+      listRecent: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
+      findDuplicates: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
+      markNotDuplicate: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE'))
     }
   }
 }

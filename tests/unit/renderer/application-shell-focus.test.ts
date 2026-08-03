@@ -59,11 +59,6 @@ describe('application shell focus helpers', () => {
         getFocusTarget: () => (panelOpen ? firstCommand : null)
       },
       {
-        id: 'PATIENT_TABS',
-        getContainer: () => null,
-        getFocusTarget: () => null
-      },
-      {
         id: 'WORKSPACE',
         getContainer: () => workspace,
         getFocusTarget: () => workspaceHeading

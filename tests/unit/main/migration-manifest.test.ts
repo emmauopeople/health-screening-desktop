@@ -21,7 +21,7 @@ const validMigration: DatabaseMigration = {
 }
 
 describe('migration manifest', () => {
-  it('defines the exact immutable HSD-007 production catalog', () => {
+  it('defines the exact immutable production catalog through HSD-025', () => {
     const resolved = validateMigrationManifest(databaseMigrations, {
       expectedHighestVersion: targetSchemaVersion
     })
@@ -34,8 +34,11 @@ describe('migration manifest', () => {
         name: migration.name,
         checksumLength: migration.checksum.length
       }))
-    ).toEqual([{ version: 1, name: 'initial-schema', checksumLength: 64 }])
-    expect(targetSchemaVersion).toBe(1)
+    ).toEqual([
+      { version: 1, name: 'initial-schema', checksumLength: 64 },
+      { version: 2, name: 'patient-registry-management', checksumLength: 64 }
+    ])
+    expect(targetSchemaVersion).toBe(2)
   })
 
   it('rejects malformed manifests deterministically', () => {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { HealthScreeningApi } from '@shared/ipc'
 
 import {
   getApplicationCommandDefinition,
@@ -24,6 +25,7 @@ import { ApplicationWorkspace } from './ApplicationWorkspace'
 import { ContextCommandPanel } from './ContextCommandPanel'
 
 interface ApplicationShellProps {
+  readonly api: HealthScreeningApi
   readonly context: ApplicationShellContext
   readonly user: ApplicationShellUser
   readonly busy: boolean
@@ -36,6 +38,7 @@ interface ApplicationShellProps {
 const commandPanelId = 'application-command-panel'
 
 export function ApplicationShell({
+  api,
   context,
   user,
   busy,
@@ -116,11 +119,6 @@ export function ApplicationShell({
               commandPanelRef.current
             )
           }
-        },
-        {
-          id: 'PATIENT_TABS',
-          getContainer: () => null,
-          getFocusTarget: () => null
         },
         {
           id: 'WORKSPACE',
@@ -255,12 +253,8 @@ export function ApplicationShell({
           />
         ) : null}
       </div>
-      <div
-        className="application-patient-tabs-anchor"
-        data-shell-slot="patient-tabs"
-        aria-hidden="true"
-      />
       <ApplicationWorkspace
+        api={api}
         context={context}
         user={user}
         route={state.route}
@@ -269,7 +263,7 @@ export function ApplicationShell({
         onSelectCommand={selectCommand}
       />
       <footer className="application-shell-footer" data-shell-slot="footer">
-        <span>Local data ready. Future workflow data is not shown in HSD-024.</span>
+        <span>Local data ready. Patient registry management is available.</span>
         <span>Version {context.applicationVersion} &bull; Offline-first desktop</span>
       </footer>
     </div>

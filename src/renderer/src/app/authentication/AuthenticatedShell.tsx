@@ -102,6 +102,7 @@ export function AuthenticatedShell({
   return (
     <ApplicationShell
       key={route.user.role}
+      api={api}
       context={shellContext}
       user={route.user}
       busy={isSubmitting}

@@ -13,7 +13,8 @@ import { createRendererNavigationPolicy } from '@main/app/navigation-policy'
 import { registerApplicationShutdown } from '@main/app/shutdown'
 import {
   createProductionFirstRunBootstrapService,
-  createProductionLocalAuthenticationSessionService
+  createProductionLocalAuthenticationSessionService,
+  createProductionPatientRegistryService
 } from '@main/application'
 import {
   createDatabaseHealthProvider,
@@ -77,6 +78,10 @@ export function startApplicationLifecycle(): void {
         connection: databaseRuntime.getConnection(),
         logger: console
       })
+      const patientRegistryService = createProductionPatientRegistryService({
+        connection: databaseRuntime.getConnection(),
+        logger: console
+      })
       const authenticationSessionPublisher = createAuthenticationSessionPublisher({
         navigationPolicy,
         getWebContents: getMainWindowWebContents
@@ -94,6 +99,12 @@ export function startApplicationLifecycle(): void {
           navigationPolicy,
           authenticationSessionService,
           sessionPublisher: authenticationSessionPublisher,
+          logger: console
+        },
+        patient: {
+          navigationPolicy,
+          authenticationSessionService,
+          patientRegistryService,
           logger: console
         },
         logger: console

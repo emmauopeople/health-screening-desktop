@@ -1,9 +1,13 @@
 import { databaseMigrations, targetSchemaVersion } from './migration-manifest'
 import { runDatabaseMigrations } from './migration-runner'
 import { validateSchemaVersion1 } from './schema-v1-contract'
+import { validateSchemaVersion2 } from './schema-v2-contract'
 import type { DatabaseMigrationContext, DatabaseMigrationRunner } from './migration-types'
 
-const productionSchemaValidators = new Map([[targetSchemaVersion, validateSchemaVersion1]])
+const productionSchemaValidators = new Map([
+  [1, validateSchemaVersion1],
+  [2, validateSchemaVersion2]
+])
 
 export {
   MigrationCompatibilityError,
@@ -14,6 +18,12 @@ export {
 } from './migration-types'
 
 export { targetSchemaVersion }
+export {
+  schemaVersion2NamedIndexes,
+  schemaVersion2TableContracts,
+  schemaVersion2TableNames,
+  validateSchemaVersion2
+} from './schema-v2-contract'
 
 export function createProductionDatabaseMigrationRunner({
   applicationVersion,

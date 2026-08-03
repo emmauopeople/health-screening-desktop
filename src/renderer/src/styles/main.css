@@ -603,10 +603,9 @@ h1 {
     'top-bar'
     'operation-alert'
     'contextual-panel'
-    'patient-tabs'
     'workspace'
     'footer';
-  grid-template-rows: auto auto auto 0 minmax(0, 1fr) 30px;
+  grid-template-rows: auto auto auto minmax(0, 1fr) 30px;
   height: 100%;
   min-height: 0;
   max-height: 100vh;
@@ -814,13 +813,6 @@ h1 {
   color: var(--shell-teal);
   background: #ffffff;
   font-weight: 700;
-}
-
-.application-patient-tabs-anchor {
-  grid-area: patient-tabs;
-  height: 0;
-  min-height: 0;
-  overflow: hidden;
 }
 
 .application-workspace {
@@ -1142,6 +1134,298 @@ h1 {
   margin-top: 18px;
 }
 
+.patient-workspace-heading {
+  margin-bottom: 14px;
+}
+
+.patient-alert {
+  margin: 0 0 12px;
+  border: 1px solid #9fc8cf;
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: #084b56;
+  background: #edf8fa;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.patient-management-layout {
+  display: grid;
+  grid-template-columns: minmax(520px, 3fr) minmax(340px, 2fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.patient-list-pane,
+.patient-detail-pane,
+.patient-registration,
+.patient-duplicate-review {
+  min-width: 0;
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.patient-list-pane,
+.patient-detail-pane,
+.patient-registration {
+  padding: 16px;
+}
+
+.patient-search-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 110px 145px 82px;
+  gap: 10px;
+  align-items: center;
+}
+
+.patient-search-toolbar input,
+.patient-search-toolbar select,
+.patient-fields-grid input,
+.patient-fields-grid select,
+.patient-fields-grid textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  padding: 9px 10px;
+  color: var(--shell-text);
+  background: #ffffff;
+  line-height: 1.3;
+}
+
+.patient-search-toolbar .button,
+.patient-pagination .button,
+.patient-detail-actions .button,
+.patient-dialog-actions .button {
+  min-width: 0;
+  min-height: 40px;
+  border-radius: 6px;
+  padding: 8px 11px;
+  font-size: 14px;
+}
+
+.patient-table-scroll {
+  margin-top: 14px;
+  overflow-x: auto;
+}
+
+.patient-table {
+  width: 100%;
+  min-width: 880px;
+  border-collapse: collapse;
+}
+
+.patient-table th,
+.patient-table td {
+  border: 1px solid var(--shell-border);
+  padding: 8px 9px;
+  text-align: left;
+  vertical-align: middle;
+  line-height: 1.3;
+}
+
+.patient-table th {
+  color: #ffffff;
+  background: var(--shell-navy);
+  font-size: 13px;
+}
+
+.patient-table td {
+  color: var(--shell-text);
+  font-size: 13px;
+}
+
+.patient-table tr[data-selected='true'] td {
+  background: #e6f3f5;
+}
+
+.patient-row-action {
+  width: 100%;
+}
+
+.patient-pagination,
+.patient-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.patient-pagination span {
+  color: var(--shell-secondary-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.patient-empty {
+  margin: 0;
+  color: var(--shell-secondary-text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.patient-detail-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.patient-detail-header h2 {
+  overflow-wrap: anywhere;
+}
+
+.patient-detail-header span {
+  color: var(--shell-secondary-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.patient-detail-list,
+.patient-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.patient-detail-list {
+  margin: 0;
+}
+
+.patient-detail-list div {
+  min-width: 0;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--shell-background);
+}
+
+.patient-detail-list dt,
+.patient-fields-grid span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--shell-secondary-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.patient-detail-list dd {
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--shell-text);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.patient-fields-grid label {
+  min-width: 0;
+}
+
+.patient-field-wide {
+  grid-column: 1 / -1;
+}
+
+.patient-fields-grid textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.patient-registration {
+  max-width: 980px;
+}
+
+.patient-duplicate-review {
+  margin-top: 14px;
+  padding: 14px;
+}
+
+.patient-duplicate-review h2 {
+  margin-bottom: 10px;
+}
+
+.patient-duplicates-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(320px, 1.2fr);
+  gap: 14px;
+}
+
+.patient-duplicate-pairs {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.patient-duplicate-pair,
+.patient-duplicate-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  padding: 10px;
+  color: var(--shell-text);
+  background: #ffffff;
+  text-align: left;
+}
+
+.patient-duplicate-pair[aria-pressed='true'] {
+  border-color: var(--shell-teal);
+  background: #e6f3f5;
+}
+
+.patient-duplicate-card {
+  grid-template-columns: minmax(80px, auto) minmax(0, 1fr);
+  margin-bottom: 8px;
+}
+
+.patient-duplicate-card span,
+.patient-duplicate-pair span {
+  overflow-wrap: anywhere;
+  color: var(--shell-secondary-text);
+  font-size: 13px;
+}
+
+.patient-duplicate-comparison {
+  min-width: 0;
+}
+
+.patient-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: rgba(17, 24, 39, 0.42);
+}
+
+.patient-dialog {
+  width: min(520px, calc(100% - 32px));
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+  padding: 18px;
+  background: #ffffff;
+  box-shadow: var(--shadow-panel);
+}
+
+.patient-dialog h2 {
+  margin-bottom: 14px;
+}
+
+.patient-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .setup-reference code {
   overflow-wrap: anywhere;
   color: #6f2a20;
@@ -1261,6 +1545,17 @@ h1 {
     grid-template-columns: 1fr;
   }
 
+  .patient-management-layout,
+  .patient-duplicates-layout,
+  .patient-detail-list,
+  .patient-fields-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .patient-search-toolbar {
+    grid-template-columns: 1fr;
+  }
+
   .application-shell-footer {
     gap: 8px;
     padding: 0 16px;
@@ -1269,7 +1564,7 @@ h1 {
 
 @media (max-width: 520px) {
   .application-shell {
-    grid-template-rows: auto auto auto 0 minmax(0, 1fr) minmax(46px, auto);
+    grid-template-rows: auto auto auto minmax(0, 1fr) minmax(46px, auto);
   }
 
   .application-brand strong {
