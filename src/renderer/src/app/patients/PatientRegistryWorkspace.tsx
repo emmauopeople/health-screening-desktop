@@ -42,9 +42,14 @@ interface PatientRegistryWorkspaceProps {
 type LoadState = 'IDLE' | 'LOADING' | 'READY' | 'EMPTY' | 'ERROR'
 type PatientStateInvalidator = () => void
 type RegisterPatientStateInvalidator = (invalidator: PatientStateInvalidator) => () => void
+type PatientSearchPageSize = 25 | 50 | 100
 type RegistrationValidationField = 'name' | 'dateOfBirth' | 'approximateAgeYears' | 'ageAsOfDate'
 type RegistrationValidationErrors = Partial<Record<RegistrationValidationField, string>>
 type RegistrationFocusField = 'givenName' | 'dateOfBirth' | 'approximateAgeYears' | 'ageAsOfDate'
+
+interface PreferredPatientReveal {
+  readonly patient: PublicPatientSummary
+}
 
 const transportFailureMessage = 'The desktop service is unavailable.'
 const localDatePattern = /^\d{4}-\d{2}-\d{2}$/u
@@ -88,6 +93,8 @@ export function PatientRegistryWorkspace({
   const [message, setMessage] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [showDirtyGuard, setShowDirtyGuard] = useState(false)
+  const [preferredPatientReveal, setPreferredPatientReveal] =
+    useState<PreferredPatientReveal | null>(null)
   const pendingDirtyAction = useRef<(() => void) | null>(null)
   const pendingDirtyActionNeedsNavigationBypassRef = useRef(false)
   const allowResolvedDirtyNavigationRef = useRef(false)
@@ -120,6 +127,7 @@ export function PatientRegistryWorkspace({
     setEditDirty(false)
     setConflictPatient(null)
     setSaving(false)
+    setPreferredPatientReveal(null)
     pendingDirtyAction.current = null
     pendingDirtyActionNeedsNavigationBypassRef.current = false
     allowResolvedDirtyNavigationRef.current = false
@@ -264,6 +272,16 @@ export function PatientRegistryWorkspace({
     [beginDirtyGuard, loadAndSelectPatient]
   )
 
+  const clearSelectedPatient = useCallback((): void => {
+    patientLoadRequestRef.current += 1
+    onSelectedPatientChange(null)
+    setDraft(emptyEditableFields)
+    setEditMode(false)
+    setEditDirty(false)
+    setConflictPatient(null)
+    setSaving(false)
+  }, [onSelectedPatientChange])
+
   const saveDraft = useCallback(async (): Promise<boolean> => {
     if (selectedPatient === null || saving) {
       return false
@@ -390,12 +408,14 @@ export function PatientRegistryWorkspace({
             setEditMode(false)
             setEditDirty(false)
             setConflictPatient(null)
+            setPreferredPatientReveal({ patient })
             setMessage('Patient created.')
             onSelectCommand('PATIENTS_PATIENT_SEARCH')
           }}
-          onOpenPatient={(patientId) => {
+          onOpenPatient={(patient) => {
+            setPreferredPatientReveal({ patient })
             onSelectCommand('PATIENTS_PATIENT_SEARCH')
-            void loadAndSelectPatient(patientId)
+            void loadAndSelectPatient(patient.id)
           }}
           onMessage={setMessage}
           onCancel={() => onSelectCommand('PATIENTS_PATIENT_SEARCH')}
@@ -409,9 +429,16 @@ export function PatientRegistryWorkspace({
                 securityEpochRef={securityEpochRef}
                 registerStateInvalidator={registerPatientStateInvalidator}
                 selectedPatientId={selectedPatient?.id ?? null}
+                preferredPatientReveal={preferredPatientReveal}
                 searchInputRef={searchInputRef}
                 onPatientFailure={handlePatientFailure}
                 onSelectPatient={selectPatient}
+                onClearSelection={clearSelectedPatient}
+                onPreferredPatientRevealConsumed={(patientId) => {
+                  setPreferredPatientReveal((currentReveal) =>
+                    currentReveal?.patient.id === patientId ? null : currentReveal
+                  )
+                }}
                 onRegister={() => onSelectCommand('PATIENTS_REGISTER_NEW_PATIENT')}
               />
             ) : null}
@@ -560,29 +587,39 @@ function PatientSearchPane({
   securityEpochRef,
   registerStateInvalidator,
   selectedPatientId,
+  preferredPatientReveal,
   searchInputRef,
   onPatientFailure,
   onSelectPatient,
+  onClearSelection,
+  onPreferredPatientRevealConsumed,
   onRegister
 }: {
   readonly api: HealthScreeningApi
   readonly securityEpochRef: MutableRefObject<number>
   registerStateInvalidator: RegisterPatientStateInvalidator
   readonly selectedPatientId: string | null
+  readonly preferredPatientReveal: PreferredPatientReveal | null
   readonly searchInputRef: RefObject<HTMLInputElement | null>
   onPatientFailure(code: PatientErrorCode, message: string): boolean
   onSelectPatient(patientId: string): void
+  onClearSelection(): void
+  onPreferredPatientRevealConsumed(patientId: string): void
   onRegister(): void
 }): React.JSX.Element {
   const mountedRef = useMountedRef()
   const requestRef = useRef(0)
+  const initialLoadStartedRef = useRef(false)
   const [query, setQuery] = useState('')
-  const [pageSize, setPageSize] = useState<25 | 50 | 100>(25)
+  const [pageSize, setPageSize] = useState<PatientSearchPageSize>(25)
   const [page, setPage] = useState(1)
   const [items, setItems] = useState<readonly PublicPatientSummary[]>([])
   const [total, setTotal] = useState(0)
   const [state, setState] = useState<LoadState>('IDLE')
   const [failureMessage, setFailureMessage] = useState<string | null>(null)
+  const selectedPatientIdRef = useLatestRef(selectedPatientId)
+  const preferredPatientRevealRef = useLatestRef(preferredPatientReveal)
+  const pageSizeRef = useLatestRef(pageSize)
 
   const invalidateLocalState = useCallback((): void => {
     requestRef.current += 1
@@ -599,8 +636,16 @@ function PatientSearchPane({
     [invalidateLocalState, registerStateInvalidator]
   )
 
-  const runSearch = useCallback(
-    async (nextPage: number): Promise<void> => {
+  const executeSearch = useCallback(
+    async ({
+      queryText,
+      pageNumber,
+      pageSizeValue
+    }: {
+      readonly queryText: string
+      readonly pageNumber: number
+      readonly pageSizeValue: PatientSearchPageSize
+    }): Promise<void> => {
       const requestId = requestRef.current + 1
       requestRef.current = requestId
       const startedSecurityEpoch = securityEpochRef.current
@@ -609,9 +654,9 @@ function PatientSearchPane({
 
       try {
         const result = await api.patient.search({
-          query,
-          page: nextPage,
-          pageSize
+          query: queryText,
+          page: pageNumber,
+          pageSize: pageSizeValue
         })
 
         if (
@@ -623,7 +668,10 @@ function PatientSearchPane({
         }
 
         if (!result.ok) {
-          onPatientFailure(result.error.code, result.error.message)
+          if (onPatientFailure(result.error.code, result.error.message)) {
+            return
+          }
+
           setItems([])
           setTotal(0)
           setState('ERROR')
@@ -631,10 +679,48 @@ function PatientSearchPane({
           return
         }
 
-        setItems(result.data.items)
-        setTotal(result.data.total)
+        const preferredReveal = preferredPatientRevealRef.current
+        const preferredPatient = preferredReveal?.patient ?? null
+        const visibleItems =
+          preferredPatient === null
+            ? result.data.items
+            : revealPatientInSearchItems(result.data.items, preferredPatient, pageSizeValue)
+        const visibleTotal =
+          preferredPatient === null || visibleItems === result.data.items
+            ? result.data.total
+            : Math.max(result.data.total, visibleItems.length)
+
+        setItems(visibleItems)
+        setTotal(visibleTotal)
         setPage(result.data.page)
-        setState(result.data.items.length === 0 ? 'EMPTY' : 'READY')
+        setState(visibleItems.length === 0 ? 'EMPTY' : 'READY')
+
+        if (preferredReveal !== null) {
+          onPreferredPatientRevealConsumed(preferredReveal.patient.id)
+        }
+
+        const currentPatientId = selectedPatientIdRef.current
+        const currentPatientIsVisible =
+          currentPatientId !== null &&
+          visibleItems.some((patient) => patient.id === currentPatientId)
+
+        if (
+          preferredPatient !== null &&
+          visibleItems.some((patient) => patient.id === preferredPatient.id)
+        ) {
+          return
+        }
+
+        if (visibleItems.length === 0) {
+          onClearSelection()
+          return
+        }
+
+        const firstPatient = visibleItems[0]
+
+        if (!currentPatientIsVisible && firstPatient !== undefined) {
+          onSelectPatient(firstPatient.id)
+        }
       } catch {
         if (
           mountedRef.current &&
@@ -648,10 +734,34 @@ function PatientSearchPane({
         }
       }
     },
-    [api, mountedRef, onPatientFailure, pageSize, query, securityEpochRef]
+    [
+      api,
+      mountedRef,
+      onClearSelection,
+      onPatientFailure,
+      onPreferredPatientRevealConsumed,
+      onSelectPatient,
+      preferredPatientRevealRef,
+      securityEpochRef,
+      selectedPatientIdRef
+    ]
   )
 
-  const emptyText = getPatientSearchEmptyText(state, failureMessage)
+  useEffect(() => {
+    if (initialLoadStartedRef.current) {
+      return
+    }
+
+    initialLoadStartedRef.current = true
+    void executeSearch({
+      queryText: '',
+      pageNumber: 1,
+      pageSizeValue: pageSizeRef.current
+    })
+  }, [executeSearch, pageSizeRef])
+
+  const emptyText = getPatientSearchEmptyText(state, failureMessage, query)
+  const statusText = getPatientSearchStatusText(state, failureMessage, total, page, pageSize, query)
 
   return (
     <>
@@ -668,7 +778,7 @@ function PatientSearchPane({
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
-              void runSearch(1)
+              void executeSearch({ queryText: query, pageNumber: 1, pageSizeValue: pageSize })
             }
           }}
         />
@@ -676,7 +786,9 @@ function PatientSearchPane({
           type="button"
           className="button button-primary"
           disabled={state === 'LOADING'}
-          onClick={() => void runSearch(1)}
+          onClick={() =>
+            void executeSearch({ queryText: query, pageNumber: 1, pageSizeValue: pageSize })
+          }
         >
           Search
         </button>
@@ -689,7 +801,9 @@ function PatientSearchPane({
           disabled={state === 'LOADING'}
           onChange={(event) => {
             const value = Number(event.target.value)
-            setPageSize(value === 50 || value === 100 ? value : 25)
+            const nextPageSize = coercePatientSearchPageSize(value)
+            setPageSize(nextPageSize)
+            void executeSearch({ queryText: query, pageNumber: 1, pageSizeValue: nextPageSize })
           }}
         >
           <option value={25}>25</option>
@@ -697,6 +811,9 @@ function PatientSearchPane({
           <option value={100}>100</option>
         </select>
       </div>
+      <p className="patient-search-status" role="status" aria-live="polite">
+        {statusText}
+      </p>
       <PatientSummaryTable
         items={items}
         selectedPatientId={selectedPatientId}
@@ -711,7 +828,9 @@ function PatientSearchPane({
           type="button"
           className="button button-secondary"
           disabled={state === 'LOADING' || page <= 1}
-          onClick={() => void runSearch(page - 1)}
+          onClick={() =>
+            void executeSearch({ queryText: query, pageNumber: page - 1, pageSizeValue: pageSize })
+          }
         >
           Previous
         </button>
@@ -719,7 +838,9 @@ function PatientSearchPane({
           type="button"
           className="button button-secondary"
           disabled={state === 'LOADING' || page * pageSize >= total}
-          onClick={() => void runSearch(page + 1)}
+          onClick={() =>
+            void executeSearch({ queryText: query, pageNumber: page + 1, pageSizeValue: pageSize })
+          }
         >
           Next
         </button>
@@ -1053,7 +1174,7 @@ function PatientRegistrationWorkspace({
   readonly securityEpochRef: MutableRefObject<number>
   registerStateInvalidator: RegisterPatientStateInvalidator
   onPatientCreated(patient: PublicPatientDetail): void
-  onOpenPatient(patientId: string): void
+  onOpenPatient(patient: PublicPatientSummary): void
   onPatientFailure(code: PatientErrorCode, message: string): boolean
   onMessage(message: string | null): void
   onCancel(): void
@@ -1332,7 +1453,7 @@ function PatientRegistrationWorkspace({
                 type="button"
                 className="button button-secondary"
                 disabled={anyPending}
-                onClick={() => onOpenPatient(candidate.patient.id)}
+                onClick={() => onOpenPatient(candidate.patient)}
               >
                 Open existing patient
               </button>
@@ -1431,6 +1552,7 @@ function PatientSummaryTable({
             items.map((patient) => (
               <tr
                 key={patient.id}
+                aria-selected={patient.id === selectedPatientId ? 'true' : 'false'}
                 data-selected={patient.id === selectedPatientId ? 'true' : 'false'}
               >
                 <td>{patient.patientCode}</td>
@@ -2288,19 +2410,68 @@ function validateRegistrationDraft(draft: PatientEditableFields): {
   return { errors, focusField }
 }
 
-function getPatientSearchEmptyText(state: LoadState, failureMessage: string | null): string {
+function getPatientSearchEmptyText(
+  state: LoadState,
+  failureMessage: string | null,
+  query: string
+): string {
   switch (state) {
     case 'IDLE':
-      return 'Enter search terms, then press Search.'
+      return 'Loading patients.'
     case 'LOADING':
       return 'Searching patients.'
     case 'ERROR':
       return failureMessage ?? 'Patient search failed.'
     case 'EMPTY':
-      return 'No matching patients.'
+      return query.trim().length === 0
+        ? 'No registered patients. Register New is available.'
+        : 'No matching patients.'
     case 'READY':
       return 'No matching patients.'
   }
+}
+
+function getPatientSearchStatusText(
+  state: LoadState,
+  failureMessage: string | null,
+  total: number,
+  page: number,
+  pageSize: PatientSearchPageSize,
+  query: string
+): string {
+  switch (state) {
+    case 'IDLE':
+    case 'LOADING':
+      return 'Loading patients.'
+    case 'ERROR':
+      return failureMessage ?? 'Patient search failed.'
+    case 'EMPTY':
+      return query.trim().length === 0
+        ? 'No registered patients. Register New is available.'
+        : 'No matching patients.'
+    case 'READY': {
+      const start = Math.min((page - 1) * pageSize + 1, total)
+      const end = Math.min(page * pageSize, total)
+
+      return `Showing ${start}-${end} of ${total} patients.`
+    }
+  }
+}
+
+function coercePatientSearchPageSize(value: number): PatientSearchPageSize {
+  return value === 50 || value === 100 ? value : 25
+}
+
+function revealPatientInSearchItems(
+  items: readonly PublicPatientSummary[],
+  patient: PublicPatientSummary,
+  pageSize: PatientSearchPageSize
+): readonly PublicPatientSummary[] {
+  if (items.some((item) => item.id === patient.id || item.patientCode === patient.patientCode)) {
+    return items
+  }
+
+  return [patient, ...items.filter((item) => item.id !== patient.id)].slice(0, pageSize)
 }
 
 function getRecentEmptyText(state: LoadState, failureMessage: string | null): string {
@@ -2427,6 +2598,16 @@ function useMountedRef(): MutableRefObject<boolean> {
   }, [])
 
   return mountedRef
+}
+
+function useLatestRef<TValue>(value: TValue): MutableRefObject<TValue> {
+  const ref = useRef(value)
+
+  useEffect(() => {
+    ref.current = value
+  }, [value])
+
+  return ref
 }
 
 function trapDialogFocus(

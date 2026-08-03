@@ -592,7 +592,7 @@ describe('application shell DOM integration', () => {
     expect(text(mounted)).toContain('Patient Search and Management')
     expect(text(mounted)).toContain('Select a patient to view or update details.')
     expect(text(mounted)).not.toContain('Not available in this build.')
-    expect(harness.api.patient.search).not.toHaveBeenCalled()
+    expect(harness.api.patient.search).toHaveBeenCalledWith({ query: '', page: 1, pageSize: 25 })
 
     await clickButton(mounted, 'Home')
     await clickButton(mounted, 'Dashboard')
@@ -615,8 +615,6 @@ describe('application shell DOM integration', () => {
     const mounted = await mountApp(harness.api)
 
     await clickButton(mounted, 'Patients')
-    await clickButton(mounted, 'Patient Search')
-    await clickButtonExact(mounted, 'Search')
 
     expect(text(mounted)).toContain('Authentication is unavailable.')
     expect(text(mounted)).toContain('Authentication is unavailable from the current window.')
@@ -648,8 +646,6 @@ describe('application shell DOM integration', () => {
     harness.setSessionSilently(testCase.session)
 
     await clickButton(mounted, 'Patients')
-    await clickButton(mounted, 'Patient Search')
-    await clickButtonExact(mounted, 'Search')
 
     expect(harness.api.auth.getSession).toHaveBeenCalledTimes(2)
     expect(text(mounted)).toContain(testCase.expectedText)
@@ -667,9 +663,6 @@ describe('application shell DOM integration', () => {
     const lockedMounted = await mountApp(lockHarness.api)
 
     await clickButton(lockedMounted, 'Patients')
-    await clickButton(lockedMounted, 'Patient Search')
-    await clickButtonExact(lockedMounted, 'Search')
-    await clickButton(lockedMounted, 'Select')
 
     expect(text(lockedMounted)).toContain('Protected Patient')
 
@@ -688,9 +681,6 @@ describe('application shell DOM integration', () => {
     const logoutMounted = await mountApp(logoutHarness.api)
 
     await clickButton(logoutMounted, 'Patients')
-    await clickButton(logoutMounted, 'Patient Search')
-    await clickButtonExact(logoutMounted, 'Search')
-    await clickButton(logoutMounted, 'Select')
 
     expect(text(logoutMounted)).toContain('Protected Patient')
 
@@ -808,8 +798,6 @@ describe('application shell DOM integration', () => {
     const mounted = await mountApp(harness.api)
 
     await clickButton(mounted, 'Patients')
-    await clickButtonExact(mounted, 'Search')
-    await clickButton(mounted, 'Select')
 
     expect(text(mounted)).toContain('Protected Patient')
 
@@ -827,9 +815,11 @@ describe('application shell DOM integration', () => {
 
   it('preserves patient search query and results across ACTIVE revisions', async () => {
     const harness = createAppApi(activeSession(1))
-    harness.api.patient.search.mockResolvedValueOnce(
-      createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
-    )
+    harness.api.patient.search
+      .mockResolvedValueOnce(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+      .mockResolvedValueOnce(
+        createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
+      )
     const mounted = await mountApp(harness.api)
 
     await clickButton(mounted, 'Patients')
@@ -842,7 +832,7 @@ describe('application shell DOM integration', () => {
 
     expect(registrySearchInput(mounted).value).toBe('Protected')
     expect(text(mounted)).toContain('Protected Patient')
-    expect(harness.api.patient.search).toHaveBeenCalledOnce()
+    expect(harness.api.patient.search).toHaveBeenCalledTimes(2)
 
     await mounted.unmount()
   })
@@ -942,8 +932,6 @@ describe('application shell DOM integration', () => {
     const mounted = await mountApp(harness.api)
 
     await clickButton(mounted, 'Patients')
-    await clickButtonExact(mounted, 'Search')
-    await clickButton(mounted, 'Select')
     await clickButton(mounted, 'Edit')
     await changeInput(patientFieldInput(mounted, 'Village'), 'Attempted Village')
     await clickButton(mounted, 'Save changes')
@@ -985,8 +973,6 @@ describe('application shell DOM integration', () => {
     const mounted = await mountApp(harness.api)
 
     await clickButton(mounted, 'Patients')
-    await clickButtonExact(mounted, 'Search')
-    await clickButton(mounted, 'Select')
     await clickButton(mounted, 'Register New Patient')
     await changeInput(patientFieldInput(mounted, 'Given name'), 'Volatile Draft')
 
@@ -1009,8 +995,6 @@ describe('application shell DOM integration', () => {
     const mounted = await mountApp(harness.api)
 
     await clickButton(mounted, 'Patients')
-    await clickButtonExact(mounted, 'Search')
-    await clickButton(mounted, 'Select')
 
     expect(text(mounted)).toContain('Protected Patient')
 
@@ -1040,8 +1024,6 @@ describe('application shell DOM integration', () => {
     const mounted = await mountApp(harness.api)
 
     await clickButton(mounted, 'Patients')
-    await clickButtonExact(mounted, 'Search')
-    await clickButton(mounted, 'Select')
     await clickButton(mounted, 'Register New Patient')
     await changeInput(patientFieldInput(mounted, 'Given name'), 'Forbidden Draft')
     await changeInput(patientFieldInput(mounted, 'Date of birth'), '1990-01-02')
@@ -1110,7 +1092,7 @@ describe('application shell DOM integration', () => {
     expect(harness.api.app.getInfo).toHaveBeenCalledOnce()
     expect(harness.api.app.getHealth).toHaveBeenCalledOnce()
     expect(harness.api.firstRun.getState).toHaveBeenCalledOnce()
-    expect(harness.api.patient.search).not.toHaveBeenCalled()
+    expect(harness.api.patient.search).toHaveBeenCalledWith({ query: '', page: 1, pageSize: 25 })
 
     await mounted.unmount()
   })
@@ -1390,8 +1372,6 @@ async function mountDirtyPatientWorkspace(
   const mounted = await mountApp(harness.api)
 
   await clickButton(mounted, 'Patients')
-  await clickButtonExact(mounted, 'Search')
-  await clickButton(mounted, 'Select')
   await clickButton(mounted, 'Edit')
   await changeInput(patientFieldInput(mounted, 'Given name'), 'Protected Changed')
 

@@ -78,9 +78,10 @@ describe('patient registry workspace mounted regressions', () => {
     document.body.innerHTML = ''
   })
 
-  it('runs patient search only on explicit Search or Enter and paginates results', async () => {
+  it('loads the default patient page, selects the first patient, and preserves explicit search controls', async () => {
     const api = createApi()
-    const firstPage = patientSummary({ id: patientIdOne, displayName: 'Ada Ngono' })
+    const firstPage = createPatientSummaryPage(25)
+    const firstPatient = firstPage[0]
     const secondPage = patientSummary({
       id: patientIdTwo,
       patientCode: 'PT-000002',
@@ -90,31 +91,61 @@ describe('patient registry workspace mounted regressions', () => {
     })
     api.patient.search
       .mockResolvedValueOnce(
-        createIpcSuccess({ items: [firstPage], page: 1, pageSize: 25, total: 30 })
+        createIpcSuccess({ items: firstPage, page: 1, pageSize: 25, total: 30 })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: firstPatient === undefined ? [] : [firstPatient],
+          page: 1,
+          pageSize: 25,
+          total: 30
+        })
       )
       .mockResolvedValueOnce(
         createIpcSuccess({ items: [secondPage], page: 2, pageSize: 25, total: 30 })
       )
+    api.patient.get.mockImplementation(({ patientId }) =>
+      Promise.resolve(
+        createIpcSuccess(
+          patientId === patientIdTwo
+            ? patientDetail({
+                id: patientIdTwo,
+                patientCode: 'PT-000002',
+                displayName: 'Brice Muna',
+                givenName: 'Brice',
+                familyName: 'Muna'
+              })
+            : patientDetail()
+        )
+      )
+    )
 
     const mounted = await mountWorkspace({ api })
 
-    expect(api.patient.search).not.toHaveBeenCalled()
+    expect(api.patient.search).toHaveBeenCalledWith({ query: '', page: 1, pageSize: 25 })
     expect(searchLabel(mounted).textContent).toBe('Patient search')
+    expect(text(mounted)).toContain('Patient 25')
+    expect(text(mounted)).toContain('Showing 1-25 of 30 patients.')
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
+    expect(text(mounted)).toContain('PT-000001')
+    expect(api.patient.get).toHaveBeenCalledWith({ patientId: patientIdOne })
 
     await changeInput(searchInput(mounted), 'Ada')
 
-    expect(api.patient.search).not.toHaveBeenCalled()
+    expect(api.patient.search).toHaveBeenCalledOnce()
 
     await clickButton(mounted, 'Search')
 
     expect(api.patient.search).toHaveBeenCalledWith({ query: 'Ada', page: 1, pageSize: 25 })
     expect(text(mounted)).toContain('Ada Ngono')
+    expect(api.patient.get).toHaveBeenCalledTimes(1)
 
     await clickButton(mounted, 'Next')
 
     expect(api.patient.search).toHaveBeenLastCalledWith({ query: 'Ada', page: 2, pageSize: 25 })
     expect(text(mounted)).toContain('Brice Muna')
     expect(text(mounted)).not.toContain('Ada Ngono')
+    expect(api.patient.get).toHaveBeenCalledTimes(2)
     expect(mounted.container.querySelector('[data-shell-slot="patient-tabs"]')).toBeNull()
 
     await mounted.unmount()
@@ -127,6 +158,7 @@ describe('patient registry workspace mounted regressions', () => {
     const currentSearch =
       createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
     api.patient.search
+      .mockResolvedValueOnce(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
       .mockReturnValueOnce(staleSearch.promise)
       .mockReturnValueOnce(currentSearch.promise)
       .mockRejectedValueOnce(new Error('transport down'))
@@ -177,6 +209,218 @@ describe('patient registry workspace mounted regressions', () => {
     await mounted.unmount()
   })
 
+  it('clears the detail pane when the default registry load is empty', async () => {
+    const api = createApi()
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 })
+    )
+
+    const mounted = await mountWorkspace({
+      api,
+      selectedPatient: patientDetail({ displayName: 'Prior Protected Patient' })
+    })
+
+    expect(api.patient.search).toHaveBeenCalledWith({ query: '', page: 1, pageSize: 25 })
+    expect(text(mounted)).toContain('No registered patients. Register New is available.')
+    expect(text(mounted)).not.toContain('Prior Protected Patient')
+    expect(mounted.getSelectedPatient()).toBeNull()
+
+    await mounted.unmount()
+  })
+
+  it('clears the prior patient when an explicit search returns no results', async () => {
+    const api = createApi()
+    api.patient.search
+      .mockResolvedValueOnce(
+        createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+      )
+      .mockResolvedValueOnce(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+    api.patient.get.mockResolvedValueOnce(createIpcSuccess(patientDetail()))
+
+    const mounted = await mountWorkspace({ api })
+
+    expect(text(mounted)).toContain('PT-000001')
+
+    await changeInput(searchInput(mounted), 'No matches')
+    await clickButton(mounted, 'Search')
+
+    expect(api.patient.search).toHaveBeenLastCalledWith({
+      query: 'No matches',
+      page: 1,
+      pageSize: 25
+    })
+    expect(text(mounted)).toContain('No matching patients.')
+    expect(text(mounted)).not.toContain('Ada Ngono')
+    expect(mounted.getSelectedPatient()).toBeNull()
+
+    await mounted.unmount()
+  })
+
+  it('selects the first row on next and previous pages when the prior selection is absent', async () => {
+    const api = createApi()
+    const pageOne = patientSummary()
+    const pageTwo = patientSummary({
+      id: patientIdTwo,
+      patientCode: 'PT-000002',
+      displayName: 'Brice Muna',
+      givenName: 'Brice',
+      familyName: 'Muna'
+    })
+    api.patient.search
+      .mockResolvedValueOnce(
+        createIpcSuccess({ items: [pageOne], page: 1, pageSize: 25, total: 50 })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({ items: [pageTwo], page: 2, pageSize: 25, total: 50 })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({ items: [pageOne], page: 1, pageSize: 25, total: 50 })
+      )
+    api.patient.get.mockImplementation(({ patientId }) =>
+      Promise.resolve(
+        createIpcSuccess(
+          patientId === patientIdTwo
+            ? patientDetail({
+                id: patientIdTwo,
+                patientCode: 'PT-000002',
+                displayName: 'Brice Muna',
+                givenName: 'Brice',
+                familyName: 'Muna'
+              })
+            : patientDetail()
+        )
+      )
+    )
+
+    const mounted = await mountWorkspace({ api })
+
+    await clickButton(mounted, 'Next')
+
+    expect(api.patient.search).toHaveBeenLastCalledWith({ query: '', page: 2, pageSize: 25 })
+    expect(patientRowByCode(mounted, 'PT-000002').getAttribute('aria-selected')).toBe('true')
+    expect(text(mounted)).toContain('Brice Muna')
+
+    await clickButton(mounted, 'Previous')
+
+    expect(api.patient.search).toHaveBeenLastCalledWith({ query: '', page: 1, pageSize: 25 })
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
+    expect(text(mounted)).toContain('Ada Ngono')
+
+    await mounted.unmount()
+  })
+
+  it('reloads page one immediately when page size changes', async () => {
+    const api = createApi()
+    api.patient.search
+      .mockResolvedValueOnce(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+      .mockResolvedValueOnce(createIpcSuccess({ items: [], page: 1, pageSize: 50, total: 75 }))
+
+    const mounted = await mountWorkspace({ api })
+
+    await changeSelect(pageSizeSelect(mounted), '50')
+
+    expect(api.patient.search).toHaveBeenLastCalledWith({ query: '', page: 1, pageSize: 50 })
+    expect(text(mounted)).toContain('Page 1 / 2')
+
+    await mounted.unmount()
+  })
+
+  it('reveals and selects a newly created patient without a manual search', async () => {
+    const api = createApi()
+    const createdPatient = patientDetail({
+      id: patientIdThree,
+      patientCode: 'PT-000003',
+      displayName: 'Created Patient',
+      givenName: 'Created',
+      familyName: 'Patient'
+    })
+    api.patient.create.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'CREATED', patient: createdPatient })
+    )
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({
+        items: [patientSummary(createdPatient)],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    const mounted = await mountWorkspace({
+      api,
+      commandId: 'PATIENTS_REGISTER_NEW_PATIENT'
+    })
+
+    await fillExactDobRegistration(mounted)
+    await clickButton(mounted, 'Create patient')
+
+    expect(api.patient.search).toHaveBeenCalledWith({ query: '', page: 1, pageSize: 25 })
+    expect(searchInput(mounted).value).toBe('')
+    expect(patientRowByCode(mounted, 'PT-000003').getAttribute('aria-selected')).toBe('true')
+    expect(mounted.getSelectedPatient()?.id).toBe(patientIdThree)
+    expect(text(mounted)).toContain('PT-000003')
+    expect(text(mounted)).toContain('Created Patient')
+    expect(mounted.onSelectCommand).toHaveBeenCalledWith('PATIENTS_PATIENT_SEARCH')
+
+    await mounted.unmount()
+  })
+
+  it('suppresses stale patient-detail responses after a newer selection', async () => {
+    const api = createApi()
+    const staleDetail = createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['get']>>>()
+    const currentDetail =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['get']>>>()
+    api.patient.search
+      .mockResolvedValueOnce(
+        createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [
+            patientSummary({
+              id: patientIdTwo,
+              patientCode: 'PT-000002',
+              displayName: 'Current Patient',
+              givenName: 'Current',
+              familyName: 'Patient'
+            })
+          ],
+          page: 1,
+          pageSize: 25,
+          total: 1
+        })
+      )
+    api.patient.get
+      .mockReturnValueOnce(staleDetail.promise)
+      .mockReturnValueOnce(currentDetail.promise)
+
+    const mounted = await mountWorkspace({ api })
+
+    await changeInput(searchInput(mounted), 'Current')
+    await clickButton(mounted, 'Search')
+
+    currentDetail.resolve(
+      createIpcSuccess(
+        patientDetail({
+          id: patientIdTwo,
+          patientCode: 'PT-000002',
+          displayName: 'Current Patient',
+          givenName: 'Current',
+          familyName: 'Patient'
+        })
+      )
+    )
+    await flushReact()
+
+    staleDetail.resolve(createIpcSuccess(patientDetail({ displayName: 'Stale Patient' })))
+    await flushReact()
+
+    expect(text(mounted)).toContain('Current Patient')
+    expect(text(mounted)).not.toContain('Stale Patient')
+    expect(mounted.getSelectedPatient()?.id).toBe(patientIdTwo)
+
+    await mounted.unmount()
+  })
+
   it('loads a selected patient and saves edited patient details', async () => {
     const api = createApi()
     const summary = patientSummary()
@@ -196,10 +440,8 @@ describe('patient registry workspace mounted regressions', () => {
 
     const mounted = await mountWorkspace({ api })
 
-    await clickButton(mounted, 'Search')
-    await clickButton(mounted, 'Select')
-
     expect(api.patient.get).toHaveBeenCalledWith({ patientId: patientIdOne })
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
     expect(text(mounted)).toContain('PT-000001')
 
     await clickButton(mounted, 'Edit')
@@ -230,6 +472,9 @@ describe('patient registry workspace mounted regressions', () => {
     api.patient.update.mockResolvedValueOnce(
       createIpcSuccess({ status: 'PATIENT_VERSION_CONFLICT', patient: latest })
     )
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary(original)], page: 1, pageSize: 25, total: 1 })
+    )
 
     const mounted = await mountWorkspace({ api, selectedPatient: original })
 
@@ -258,6 +503,14 @@ describe('patient registry workspace mounted regressions', () => {
     api.patient.update
       .mockReturnValueOnce(failedSave.promise)
       .mockResolvedValueOnce(createIpcSuccess({ status: 'UPDATED', patient: savedPatient }))
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({
+        items: [patientSummary({ village: 'Original Village' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
 
     const mounted = await mountWorkspace({
       api,
@@ -707,8 +960,8 @@ describe('patient registry workspace mounted regressions', () => {
         configure: (api) => {
           api.patient.search.mockResolvedValueOnce(createPatientFailure('IPC_FORBIDDEN'))
         },
-        run: async (mounted) => {
-          await clickButton(mounted, 'Search')
+        run: async () => {
+          await flushReact()
         }
       },
       {
@@ -725,9 +978,8 @@ describe('patient registry workspace mounted regressions', () => {
           )
           api.patient.get.mockResolvedValueOnce(createPatientFailure('IPC_FORBIDDEN'))
         },
-        run: async (mounted) => {
-          await clickButton(mounted, 'Search')
-          await clickButton(mounted, 'Select')
+        run: async () => {
+          await flushReact()
         }
       },
       {
@@ -745,6 +997,14 @@ describe('patient registry workspace mounted regressions', () => {
         name: 'update',
         commandId: 'PATIENTS_PATIENT_SEARCH',
         configure: (api) => {
+          api.patient.search.mockResolvedValueOnce(
+            createIpcSuccess({
+              items: [patientSummary({ patientCode: 'PT-000099', displayName: 'Protected Name' })],
+              page: 1,
+              pageSize: 25,
+              total: 1
+            })
+          )
           api.patient.update.mockResolvedValueOnce(createPatientFailure('IPC_FORBIDDEN'))
         },
         run: async (mounted) => {
@@ -832,7 +1092,6 @@ describe('patient registry workspace mounted regressions', () => {
     await clickButton(mounted, 'Search')
     await clickButton(mounted, 'Search')
     await clickButton(mounted, 'Search')
-    await clickButton(mounted, 'Search')
 
     expect(mounted.onAuthenticationFailure).toHaveBeenNthCalledWith(1, 'AUTH_LOCKED')
     expect(mounted.onAuthenticationFailure).toHaveBeenNthCalledWith(2, 'AUTH_UNAUTHENTICATED')
@@ -844,7 +1103,6 @@ describe('patient registry workspace mounted regressions', () => {
     expect(text(mounted)).not.toContain('Protected Name')
 
     await clickButton(mounted, 'Search')
-    await clickButton(mounted, 'Select')
     api.patient.search.mockResolvedValueOnce(createPatientFailure('AUTH_LOCKED'))
     await clickButton(mounted, 'Search')
 
@@ -1001,6 +1259,20 @@ function patientSummary(overrides: Partial<PublicPatientSummary> = {}): PublicPa
   }
 }
 
+function createPatientSummaryPage(count: number): PublicPatientSummary[] {
+  return Array.from({ length: count }, (_, index) => {
+    const ordinal = index + 1
+
+    return patientSummary({
+      id: ordinal === 1 ? patientIdOne : `patient-summary-${String(ordinal).padStart(2, '0')}`,
+      patientCode: `PT-${String(ordinal).padStart(6, '0')}`,
+      displayName: ordinal === 1 ? 'Ada Ngono' : `Patient ${ordinal}`,
+      givenName: ordinal === 1 ? 'Ada' : 'Patient',
+      familyName: ordinal === 1 ? 'Ngono' : String(ordinal)
+    })
+  })
+}
+
 function patientDetail(overrides: Partial<PublicPatientDetail> = {}): PublicPatientDetail {
   const acknowledgment = overrides.acknowledgment ?? {
     status: 'NOT_REQUESTED',
@@ -1069,6 +1341,18 @@ function searchLabel(mounted: MountedWorkspace): HTMLLabelElement {
   return label
 }
 
+function pageSizeSelect(mounted: MountedWorkspace): HTMLSelectElement {
+  const select = mounted.container.querySelector<HTMLSelectElement>(
+    'select[aria-label="Page size"]'
+  )
+
+  if (select === null) {
+    throw new Error('Expected patient search page-size select to be rendered.')
+  }
+
+  return select
+}
+
 function registrationWorkspace(mounted: MountedWorkspace): HTMLElement {
   const workspace = mounted.container.querySelector<HTMLElement>('.patient-registration')
 
@@ -1091,6 +1375,18 @@ function registrationFormPanel(mounted: MountedWorkspace): HTMLElement {
 
 function duplicateReviewPanel(mounted: MountedWorkspace): HTMLElement | null {
   return mounted.container.querySelector<HTMLElement>('.patient-duplicate-review')
+}
+
+function patientRowByCode(mounted: MountedWorkspace, patientCode: string): HTMLTableRowElement {
+  const row = Array.from(mounted.container.querySelectorAll<HTMLTableRowElement>('tbody tr')).find(
+    (candidate) => candidate.textContent?.includes(patientCode)
+  )
+
+  if (row === undefined) {
+    throw new Error(`Expected patient row ${patientCode} to be rendered.`)
+  }
+
+  return row
 }
 
 function fieldInput(mounted: MountedWorkspace, label: string): HTMLInputElement {
@@ -1203,6 +1499,16 @@ async function changeInput(input: HTMLInputElement, value: string): Promise<void
     const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
     valueSetter?.call(input, value)
     input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }))
+    await flushPromises()
+  })
+  await flushReact()
+}
+
+async function changeSelect(select: HTMLSelectElement, value: string): Promise<void> {
+  await act(async () => {
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+    valueSetter?.call(select, value)
+    select.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }))
     await flushPromises()
   })
   await flushReact()

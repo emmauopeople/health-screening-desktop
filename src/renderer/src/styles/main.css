@@ -1232,6 +1232,14 @@ h1 {
   overflow-x: auto;
 }
 
+.patient-search-status {
+  margin: 10px 0 0;
+  color: var(--shell-secondary-text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .patient-table {
   width: 100%;
   min-width: 880px;
