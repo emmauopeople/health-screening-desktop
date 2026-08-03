@@ -80,6 +80,7 @@ export interface ApplicationShellUser {
 export interface ApplicationShellState {
   readonly activeMenu: PrimaryApplicationMenu
   readonly commandPanelMenu: PrimaryApplicationMenu | null
+  readonly selectedCommandId: ApplicationCommandId
   readonly route: ApplicationWorkspaceRoute
 }
 

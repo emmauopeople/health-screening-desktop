@@ -33,6 +33,17 @@ export const primaryApplicationMenuLabels: Readonly<Record<PrimaryApplicationMen
     ADMINISTRATION: 'Administration'
   })
 
+export const defaultApplicationCommands: Readonly<
+  Record<PrimaryApplicationMenu, ApplicationCommandId>
+> = Object.freeze({
+  HOME: 'HOME_DASHBOARD',
+  PATIENTS: 'PATIENTS_PATIENT_SEARCH',
+  SCREENING: 'SCREENING_TODAYS_SESSION',
+  REFERRALS: 'REFERRALS_REFERRAL_WORKLIST',
+  REPORTS: 'REPORTS_PATIENT_REPORTS',
+  ADMINISTRATION: 'ADMINISTRATION_USERS'
+})
+
 const plannedOwners = Object.freeze({
   hsd025: 'HSD-025 patient registry management',
   session: 'Future session workspace',
@@ -311,6 +322,28 @@ export function getApplicationCommandDefinition(
   commandId: ApplicationCommandId
 ): ApplicationCommandDefinition | null {
   return applicationCommandDefinitions.find((definition) => definition.id === commandId) ?? null
+}
+
+export function getDefaultApplicationCommand(
+  menu: PrimaryApplicationMenu,
+  role: unknown
+): ApplicationCommandId | null {
+  if (!isLocalUserRole(role)) {
+    return null
+  }
+
+  const commandId = defaultApplicationCommands[menu]
+  const definition = getApplicationCommandDefinition(commandId)
+
+  if (
+    definition === null ||
+    definition.menu !== menu ||
+    !isCommandVisibleToRole(definition, role)
+  ) {
+    return null
+  }
+
+  return commandId
 }
 
 export function isApplicationCommandId(value: unknown): value is ApplicationCommandId {

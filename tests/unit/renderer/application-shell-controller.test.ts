@@ -10,26 +10,34 @@ describe('application shell controller', () => {
     expect(controller.getSnapshot()).toEqual({
       activeMenu: 'HOME',
       commandPanelMenu: 'HOME',
+      selectedCommandId: 'HOME_DASHBOARD',
       route: { status: 'DASHBOARD', commandId: 'HOME_DASHBOARD' }
     })
   })
 
-  it('toggles menus and replaces the open command panel', () => {
+  it('opens primary menus by navigating to their explicit default command', () => {
     const states: ApplicationShellState[] = []
     const controller = createApplicationShellController({
       role: 'LOCAL_ADMIN',
       onState: (state) => states.push(state)
     })
 
-    controller.toggleMenu('HOME')
-    controller.toggleMenu('HOME')
     controller.openMenu('PATIENTS')
+    controller.openMenu('SCREENING')
+    controller.openMenu('REFERRALS')
+    controller.openMenu('REPORTS')
+    controller.openMenu('ADMINISTRATION')
+    controller.openMenu('HOME')
 
-    expect(states.map((state) => [state.activeMenu, state.commandPanelMenu])).toEqual([
-      ['HOME', null],
-      ['HOME', 'HOME'],
-      ['PATIENTS', 'PATIENTS']
+    expect(states.map((state) => state.selectedCommandId)).toEqual([
+      'PATIENTS_PATIENT_SEARCH',
+      'SCREENING_TODAYS_SESSION',
+      'REFERRALS_REFERRAL_WORKLIST',
+      'REPORTS_PATIENT_REPORTS',
+      'ADMINISTRATION_USERS',
+      'HOME_DASHBOARD'
     ])
+    expect(states.every((state) => state.activeMenu === state.commandPanelMenu)).toBe(true)
   })
 
   it('routes dashboard and patient commands while keeping the selected menu panel open', () => {
@@ -41,6 +49,7 @@ describe('application shell controller', () => {
     expect(controller.getSnapshot()).toEqual({
       activeMenu: 'PATIENTS',
       commandPanelMenu: 'PATIENTS',
+      selectedCommandId: 'PATIENTS_PATIENT_SEARCH',
       route: {
         status: 'PATIENTS',
         commandId: 'PATIENTS_PATIENT_SEARCH'
@@ -52,6 +61,7 @@ describe('application shell controller', () => {
     expect(controller.getSnapshot()).toEqual({
       activeMenu: 'HOME',
       commandPanelMenu: 'HOME',
+      selectedCommandId: 'HOME_DASHBOARD',
       route: { status: 'DASHBOARD', commandId: 'HOME_DASHBOARD' }
     })
   })
@@ -64,6 +74,7 @@ describe('application shell controller', () => {
     expect(controller.getSnapshot()).toEqual({
       activeMenu: 'HOME',
       commandPanelMenu: 'HOME',
+      selectedCommandId: 'HOME_TODAYS_SESSION',
       route: {
         status: 'PLANNED_MODULE',
         commandId: 'HOME_TODAYS_SESSION',
@@ -74,12 +85,30 @@ describe('application shell controller', () => {
     })
   })
 
+  it('keeps Home Quick Patient Search selected while routing to patient search', () => {
+    const controller = createApplicationShellController({ role: 'LOCAL_ADMIN' })
+
+    controller.selectCommand('HOME_QUICK_PATIENT_SEARCH')
+
+    expect(controller.getSnapshot()).toEqual({
+      activeMenu: 'HOME',
+      commandPanelMenu: 'HOME',
+      selectedCommandId: 'HOME_QUICK_PATIENT_SEARCH',
+      route: {
+        status: 'PATIENTS',
+        commandId: 'PATIENTS_PATIENT_SEARCH'
+      }
+    })
+  })
+
   it('ignores commands hidden from the fixed role', () => {
     const controller = createApplicationShellController({ role: 'TRAINED_SCREENER' })
     const before = controller.getSnapshot()
 
     controller.selectCommand('REPORTS_PATIENT_REPORTS')
     controller.selectCommand('REFERRALS_FOLLOW_UP_DUE')
+    controller.openMenu('REPORTS')
+    controller.openMenu('ADMINISTRATION')
 
     expect(controller.getSnapshot()).toBe(before)
   })

@@ -265,6 +265,252 @@ describe('application shell DOM integration', () => {
     await mounted.unmount()
   })
 
+  it('navigates primary menu clicks to default workspaces and keeps the default command current', async () => {
+    const mounted = await mountApp(createAppApi(activeSession(1)).api)
+
+    await clickButton(mounted, 'Patients')
+
+    expectWorkspaceHeading(mounted, 'Patient Search and Management')
+    expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Patients commands')
+    expect(commandButtonByText(mounted, 'Patient Search').getAttribute('aria-current')).toBe('page')
+    expect(commandPanel(mounted)).not.toBeNull()
+
+    await clickButton(mounted, 'Home')
+
+    expectWorkspaceHeading(mounted, 'Welcome, Admin User')
+    expect(text(mounted)).not.toContain('Patient Search and Management')
+    expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Home commands')
+    expect(commandButtonByText(mounted, 'Dashboard').getAttribute('aria-current')).toBe('page')
+
+    await clickButton(mounted, 'Patients')
+    expectWorkspaceHeading(mounted, 'Patient Search and Management')
+    expect(commandButtonByText(mounted, 'Patient Search').getAttribute('aria-current')).toBe('page')
+
+    await clickButton(mounted, 'Screening')
+    expectWorkspaceHeading(mounted, 'Today\u2019s Session')
+    expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Screening commands')
+    expect(commandButtonByText(mounted, 'Today\u2019s Session').getAttribute('aria-current')).toBe(
+      'page'
+    )
+
+    await clickButton(mounted, 'Referrals')
+    expectWorkspaceHeading(mounted, 'Referral Worklist')
+    expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Referrals commands')
+    expect(commandButtonByText(mounted, 'Referral Worklist').getAttribute('aria-current')).toBe(
+      'page'
+    )
+
+    await clickButton(mounted, 'Reports')
+    expectWorkspaceHeading(mounted, 'Patient Reports')
+    expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Reports commands')
+    expect(commandButtonByText(mounted, 'Patient Reports').getAttribute('aria-current')).toBe(
+      'page'
+    )
+
+    await clickButton(mounted, 'Administration')
+    expectWorkspaceHeading(mounted, 'Users')
+    expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Administration commands')
+    expect(commandButtonByText(mounted, 'Users').getAttribute('aria-current')).toBe('page')
+
+    await mounted.unmount()
+  })
+
+  it.each([
+    { role: 'NURSE' as const, displayName: 'Nurse User' },
+    { role: 'LOCAL_ADMIN' as const, displayName: 'Admin User' }
+  ])('navigates Referrals to Reports defaults for $role', async ({ role, displayName }) => {
+    const mounted = await mountApp(
+      createAppApi(activeSession(1, { ...baseUser, displayName, role })).api
+    )
+
+    await clickButton(mounted, 'Referrals')
+    expectWorkspaceHeading(mounted, 'Referral Worklist')
+
+    await clickButton(mounted, 'Reports')
+    expectWorkspaceHeading(mounted, 'Patient Reports')
+    expect(commandButtonByText(mounted, 'Patient Reports').getAttribute('aria-current')).toBe(
+      'page'
+    )
+
+    await mounted.unmount()
+  })
+
+  it.each([
+    ['Register New Patient', 'Register New Patient'],
+    ['Recent Patients', 'Recent Patients'],
+    ['Possible Duplicates', 'Possible Duplicates']
+  ])(
+    'clicking the active Patients menu returns %s to Patient Search',
+    async (commandLabel, expectedHeading) => {
+      const mounted = await mountApp(createAppApi(activeSession(1)).api)
+
+      await clickButton(mounted, 'Patients')
+      await clickButton(mounted, commandLabel)
+
+      expectWorkspaceHeading(mounted, expectedHeading)
+
+      await clickButton(mounted, 'Patients')
+
+      expectWorkspaceHeading(mounted, 'Patient Search and Management')
+      expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Patients commands')
+      expect(commandButtonByText(mounted, 'Patient Search').getAttribute('aria-current')).toBe(
+        'page'
+      )
+
+      await mounted.unmount()
+    }
+  )
+
+  it('moves primary-menu focus without navigating and activates defaults on Enter or Space', async () => {
+    const mounted = await mountApp(createAppApi(activeSession(1)).api)
+
+    await clickButton(mounted, 'Patients')
+    expectWorkspaceHeading(mounted, 'Patient Search and Management')
+
+    menuButton(mounted, 'Patients').focus()
+    await dispatchKeyboard(menuButton(mounted, 'Patients'), 'ArrowRight')
+
+    expect(document.activeElement).toBe(menuButton(mounted, 'Screening'))
+    expectWorkspaceHeading(mounted, 'Patient Search and Management')
+    expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Patients commands')
+
+    await dispatchKeyboard(menuButton(mounted, 'Screening'), 'Enter')
+
+    expectWorkspaceHeading(mounted, 'Today\u2019s Session')
+    expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Screening commands')
+
+    menuButton(mounted, 'Home').focus()
+    await dispatchKeyboard(menuButton(mounted, 'Home'), ' ')
+
+    expectWorkspaceHeading(mounted, 'Welcome, Admin User')
+    expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Home commands')
+
+    await mounted.unmount()
+  })
+
+  it('closes the contextual panel with Escape and reopens the primary menu at its default', async () => {
+    const mounted = await mountApp(createAppApi(activeSession(1)).api)
+
+    await clickButton(mounted, 'Patients')
+    await clickButton(mounted, 'Recent Patients')
+    expectWorkspaceHeading(mounted, 'Recent Patients')
+
+    await dispatchKeyboard(commandPanel(mounted)!, 'Escape')
+
+    expect(commandPanel(mounted)).toBeNull()
+    expect(document.activeElement).toBe(menuButton(mounted, 'Patients'))
+
+    await clickButton(mounted, 'Patients')
+
+    expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Patients commands')
+    expectWorkspaceHeading(mounted, 'Patient Search and Management')
+    expect(commandButtonByText(mounted, 'Patient Search').getAttribute('aria-current')).toBe('page')
+
+    await mounted.unmount()
+  })
+
+  it('keeps Home Quick Patient Search selected while displaying patient search', async () => {
+    const mounted = await mountApp(createAppApi(activeSession(1)).api)
+
+    await clickButton(mounted, 'Quick Patient Search')
+
+    expectWorkspaceHeading(mounted, 'Patient Search and Management')
+    expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Home commands')
+    expect(commandButtonByText(mounted, 'Quick Patient Search').getAttribute('aria-current')).toBe(
+      'page'
+    )
+    expect(() => commandButtonByText(mounted, 'Patient Search')).toThrow(
+      'Expected command button Patient Search'
+    )
+
+    await mounted.unmount()
+  })
+
+  it('does not render role-hidden menus or activate role-hidden defaults', async () => {
+    const screenerMounted = await mountApp(
+      createAppApi(activeSession(1, userWithRole('TRAINED_SCREENER'))).api
+    )
+
+    expect(primaryMenuLabels(screenerMounted)).toEqual([
+      'Home',
+      'Patients',
+      'Screening',
+      'Referrals'
+    ])
+    expect(() => menuButton(screenerMounted, 'Reports')).toThrow('Expected primary menu Reports')
+
+    await clickButton(screenerMounted, 'Referrals')
+    expectWorkspaceHeading(screenerMounted, 'Referral Worklist')
+
+    await screenerMounted.unmount()
+  })
+
+  it('guards dirty patient edits during primary-menu navigation', async () => {
+    const cancelCase = await mountDirtyPatientWorkspace(createPatientFailure('INTERNAL_ERROR'))
+
+    await clickButton(cancelCase.mounted, 'Home')
+    expect(text(cancelCase.mounted)).toContain('Save or discard your edits before leaving.')
+    await clickDialogButton(cancelCase.mounted, 'Cancel')
+
+    expectWorkspaceHeading(cancelCase.mounted, 'Patient Search and Management')
+    expect(text(cancelCase.mounted)).toContain('Unsaved edits')
+    expect(commandPanel(cancelCase.mounted)?.getAttribute('aria-label')).toBe('Patients commands')
+
+    await cancelCase.mounted.unmount()
+
+    const discardCase = await mountDirtyPatientWorkspace(createPatientFailure('INTERNAL_ERROR'))
+
+    await clickButton(discardCase.mounted, 'Home')
+    await clickDialogButton(discardCase.mounted, 'Discard edits')
+
+    expectWorkspaceHeading(discardCase.mounted, 'Welcome, Admin User')
+    expect(commandPanel(discardCase.mounted)?.getAttribute('aria-label')).toBe('Home commands')
+    expect(commandButtonByText(discardCase.mounted, 'Dashboard').getAttribute('aria-current')).toBe(
+      'page'
+    )
+
+    await discardCase.mounted.unmount()
+
+    const saveCase = await mountDirtyPatientWorkspace(
+      createIpcSuccess({
+        status: 'UPDATED',
+        patient: shellPatientDetail({
+          displayName: 'Protected Changed',
+          givenName: 'Protected Changed',
+          rowVersion: 2
+        })
+      })
+    )
+
+    await clickButton(saveCase.mounted, 'Screening')
+    await clickDialogButton(saveCase.mounted, 'Save changes')
+
+    expect(saveCase.harness.api.patient.update).toHaveBeenCalledOnce()
+    expectWorkspaceHeading(saveCase.mounted, 'Today\u2019s Session')
+    expect(commandPanel(saveCase.mounted)?.getAttribute('aria-label')).toBe('Screening commands')
+    expect(
+      commandButtonByText(saveCase.mounted, 'Today\u2019s Session').getAttribute('aria-current')
+    ).toBe('page')
+
+    await saveCase.mounted.unmount()
+
+    const failedSaveCase = await mountDirtyPatientWorkspace(createPatientFailure('INTERNAL_ERROR'))
+
+    await clickButton(failedSaveCase.mounted, 'Reports')
+    await clickDialogButton(failedSaveCase.mounted, 'Save changes')
+
+    expect(failedSaveCase.harness.api.patient.update).toHaveBeenCalledOnce()
+    expectWorkspaceHeading(failedSaveCase.mounted, 'Patient Search and Management')
+    expect(commandPanel(failedSaveCase.mounted)?.getAttribute('aria-label')).toBe(
+      'Patients commands'
+    )
+    expect(text(failedSaveCase.mounted)).toContain(
+      'The application could not complete the request.'
+    )
+
+    await failedSaveCase.mounted.unmount()
+  })
+
   it('supports roving primary menu keys and F6 focus-zone cycling', async () => {
     const mounted = await mountApp(createAppApi(activeSession(1)).api)
     const home = menuButton(mounted, 'Home')
@@ -463,7 +709,8 @@ describe('application shell DOM integration', () => {
 
     await emitSession(harness, activeSession(2, { ...baseUser, displayName: 'Updated User' }))
 
-    expect(text(mounted)).toContain('Welcome, Updated User')
+    expect(text(mounted)).toContain('Updated User')
+    expectWorkspaceHeading(mounted, 'Patient Search and Management')
     expect(commandPanel(mounted)?.textContent).toContain('Patient Search')
 
     await emitSession(harness, lockedSession(3))
@@ -554,6 +801,7 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
   patient: {
     search: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['search']>>
     get: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['get']>>
+    update: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['update']>>
   } & HealthScreeningApi['patient']
 }
 
@@ -787,6 +1035,26 @@ async function emitSession(
   await flushReact()
 }
 
+async function mountDirtyPatientWorkspace(
+  updateResult: Awaited<ReturnType<HealthScreeningApi['patient']['update']>>
+): Promise<{ readonly harness: AppApiHarness; readonly mounted: MountedApp }> {
+  const harness = createAppApi(activeSession(1))
+  harness.api.patient.search.mockResolvedValue(
+    createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
+  )
+  harness.api.patient.get.mockResolvedValue(createIpcSuccess(shellPatientDetail()))
+  harness.api.patient.update.mockResolvedValue(updateResult)
+  const mounted = await mountApp(harness.api)
+
+  await clickButton(mounted, 'Patients')
+  await clickButtonExact(mounted, 'Search')
+  await clickButton(mounted, 'Select')
+  await clickButton(mounted, 'Edit')
+  await changeInput(patientFieldInput(mounted, 'Given name'), 'Protected Changed')
+
+  return { harness, mounted }
+}
+
 function primaryMenuLabels(mounted: MountedApp): string[] {
   return Array.from(
     mounted.container.querySelectorAll<HTMLButtonElement>(
@@ -824,6 +1092,29 @@ function commandButtonByText(mounted: MountedApp, label: string): HTMLButtonElem
 
   if (button === undefined) {
     throw new Error(`Expected command button ${label} to be rendered.`)
+  }
+
+  return button
+}
+
+async function clickDialogButton(mounted: MountedApp, label: string): Promise<void> {
+  const button = dialogButtonByText(mounted, label)
+
+  await act(async () => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await flushPromises()
+  })
+  await flushReact()
+}
+
+function dialogButtonByText(mounted: MountedApp, label: string): HTMLButtonElement {
+  const dialog = mounted.container.querySelector<HTMLElement>('[role="dialog"]')
+  const button = Array.from(dialog?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(
+    (candidate) => candidate.textContent?.trim() === label
+  )
+
+  if (button === undefined) {
+    throw new Error(`Expected dialog button ${label} to be rendered.`)
   }
 
   return button
@@ -875,6 +1166,36 @@ function workspaceHeading(mounted: MountedApp): HTMLHeadingElement {
   }
 
   return heading
+}
+
+function expectWorkspaceHeading(mounted: MountedApp, expected: string): void {
+  expect(workspaceHeading(mounted).textContent?.trim()).toBe(expected)
+}
+
+function patientFieldInput(mounted: MountedApp, label: string): HTMLInputElement {
+  for (const candidate of Array.from(
+    mounted.container.querySelectorAll<HTMLLabelElement>('label')
+  )) {
+    if (candidate.querySelector('span')?.textContent?.trim() === label) {
+      const input = candidate.querySelector<HTMLInputElement>('input')
+
+      if (input !== null) {
+        return input
+      }
+    }
+  }
+
+  throw new Error(`Expected patient field ${label} to be rendered.`)
+}
+
+async function changeInput(input: HTMLInputElement, value: string): Promise<void> {
+  await act(async () => {
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    valueSetter?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }))
+    await flushPromises()
+  })
+  await flushReact()
 }
 
 function expectShellSlots(

@@ -84,6 +84,8 @@ export function PatientRegistryWorkspace({
   const [saving, setSaving] = useState(false)
   const [showDirtyGuard, setShowDirtyGuard] = useState(false)
   const pendingDirtyAction = useRef<(() => void) | null>(null)
+  const pendingDirtyActionNeedsNavigationBypassRef = useRef(false)
+  const allowResolvedDirtyNavigationRef = useRef(false)
   const patientLoadRequestRef = useRef(0)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -95,6 +97,8 @@ export function PatientRegistryWorkspace({
     setConflictPatient(null)
     setSaving(false)
     pendingDirtyAction.current = null
+    pendingDirtyActionNeedsNavigationBypassRef.current = false
+    allowResolvedDirtyNavigationRef.current = false
     setShowDirtyGuard(false)
   }, [onSelectedPatientChange])
 
@@ -127,6 +131,7 @@ export function PatientRegistryWorkspace({
       }
 
       pendingDirtyAction.current = action
+      pendingDirtyActionNeedsNavigationBypassRef.current = false
       setShowDirtyGuard(true)
       return false
     },
@@ -135,6 +140,11 @@ export function PatientRegistryWorkspace({
 
   useEffect(() => {
     const guard: PatientWorkspaceNavigationGuard = (nextCommandId) => {
+      if (allowResolvedDirtyNavigationRef.current) {
+        allowResolvedDirtyNavigationRef.current = false
+        return true
+      }
+
       if (isPatientCommand(nextCommandId) && nextCommandId === commandId) {
         return true
       }
@@ -144,6 +154,7 @@ export function PatientRegistryWorkspace({
       }
 
       pendingDirtyAction.current = () => onSelectCommand(nextCommandId)
+      pendingDirtyActionNeedsNavigationBypassRef.current = true
       setShowDirtyGuard(true)
       return false
     }
@@ -304,9 +315,17 @@ export function PatientRegistryWorkspace({
 
   const completePendingDirtyAction = useCallback((): void => {
     const action = pendingDirtyAction.current
+    const needsNavigationBypass = pendingDirtyActionNeedsNavigationBypassRef.current
     pendingDirtyAction.current = null
+    pendingDirtyActionNeedsNavigationBypassRef.current = false
     setShowDirtyGuard(false)
+
+    if (needsNavigationBypass) {
+      allowResolvedDirtyNavigationRef.current = true
+    }
+
     action?.()
+    allowResolvedDirtyNavigationRef.current = false
   }, [])
 
   const heading = useMemo(() => {
@@ -457,6 +476,8 @@ export function PatientRegistryWorkspace({
           pending={saving}
           onCancel={() => {
             pendingDirtyAction.current = null
+            pendingDirtyActionNeedsNavigationBypassRef.current = false
+            allowResolvedDirtyNavigationRef.current = false
             setShowDirtyGuard(false)
           }}
         >
@@ -493,6 +514,8 @@ export function PatientRegistryWorkspace({
               disabled={saving}
               onClick={() => {
                 pendingDirtyAction.current = null
+                pendingDirtyActionNeedsNavigationBypassRef.current = false
+                allowResolvedDirtyNavigationRef.current = false
                 setShowDirtyGuard(false)
               }}
             >

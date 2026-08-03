@@ -2,6 +2,7 @@ import type { LocalUserRole } from '@shared/ipc'
 
 import {
   getApplicationCommandDefinition,
+  getDefaultApplicationCommand,
   isCommandVisibleToRole
 } from './application-navigation-catalog'
 import type {
@@ -31,6 +32,7 @@ export function createApplicationShellController({
   let state = freezeState({
     activeMenu: 'HOME',
     commandPanelMenu: 'HOME',
+    selectedCommandId: 'HOME_DASHBOARD',
     route: dashboardRoute
   })
   const listeners = new Set<(state: ApplicationShellState) => void>()
@@ -56,10 +58,31 @@ export function createApplicationShellController({
       return
     }
 
+    const defaultCommandId = getDefaultApplicationCommand(menu, role)
+
+    if (defaultCommandId === null) {
+      return
+    }
+
+    selectCommand(defaultCommandId)
+  }
+
+  function selectCommand(commandId: ApplicationCommandId): void {
+    if (disposed) {
+      return
+    }
+
+    const definition = getApplicationCommandDefinition(commandId)
+
+    if (definition === null || !isCommandVisibleToRole(definition, role)) {
+      return
+    }
+
     setState({
-      ...state,
-      activeMenu: menu,
-      commandPanelMenu: menu
+      activeMenu: definition.menu,
+      commandPanelMenu: definition.menu,
+      selectedCommandId: definition.id,
+      route: createRouteForCommand(definition)
     })
   }
 
@@ -92,23 +115,7 @@ export function createApplicationShellController({
     },
     openMenu,
     closeCommandPanel,
-    selectCommand(commandId: ApplicationCommandId): void {
-      if (disposed) {
-        return
-      }
-
-      const definition = getApplicationCommandDefinition(commandId)
-
-      if (definition === null || !isCommandVisibleToRole(definition, role)) {
-        return
-      }
-
-      setState({
-        activeMenu: definition.menu,
-        commandPanelMenu: definition.menu,
-        route: createRouteForCommand(definition)
-      })
-    },
+    selectCommand,
     subscribe(listener: (state: ApplicationShellState) => void): () => void {
       if (disposed) {
         return noop
@@ -161,6 +168,7 @@ function freezeState(state: ApplicationShellState): ApplicationShellState {
   return Object.freeze({
     activeMenu: state.activeMenu,
     commandPanelMenu: state.commandPanelMenu,
+    selectedCommandId: state.selectedCommandId,
     route: state.route
   })
 }

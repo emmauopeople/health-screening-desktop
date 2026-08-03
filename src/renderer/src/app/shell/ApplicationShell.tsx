@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { HealthScreeningApi, PatientErrorCode } from '@shared/ipc'
 
 import {
+  getDefaultApplicationCommand,
   getApplicationCommandDefinition,
   getVisibleApplicationCommands,
-  getVisibleApplicationMenus
+  getVisibleApplicationMenus,
+  isCommandVisibleToRole
 } from './application-navigation-catalog'
 import { createApplicationShellController } from './application-shell-controller'
 import {
@@ -145,19 +147,31 @@ export function ApplicationShell({
 
   const selectCommand = useCallback(
     (commandId: ApplicationCommandId) => {
+      const definition = getApplicationCommandDefinition(commandId)
+
+      if (definition === null || !isCommandVisibleToRole(definition, user.role)) {
+        return
+      }
+
       if (workspaceNavigationGuardRef.current?.(commandId) === false) {
         return
       }
 
-      const definition = getApplicationCommandDefinition(commandId)
-
-      if (definition !== null) {
-        setFocusedMenu(definition.menu)
-      }
-
+      setFocusedMenu(definition.menu)
       controller.selectCommand(commandId)
     },
-    [controller]
+    [controller, user.role]
+  )
+
+  const activatePrimaryMenu = useCallback(
+    (menu: PrimaryApplicationMenu) => {
+      const defaultCommandId = getDefaultApplicationCommand(menu, user.role)
+
+      if (defaultCommandId !== null) {
+        selectCommand(defaultCommandId)
+      }
+    },
+    [selectCommand, user.role]
   )
 
   const closeCommandPanel = useCallback(() => {
@@ -188,13 +202,13 @@ export function ApplicationShell({
       }
 
       if (result.kind === 'TOGGLE') {
-        controller.toggleMenu(menu)
+        activatePrimaryMenu(menu)
         return
       }
 
       closeCommandPanel()
     },
-    [closeCommandPanel, controller, focusMenuButton, visibleMenuIds]
+    [activatePrimaryMenu, closeCommandPanel, focusMenuButton, visibleMenuIds]
   )
 
   const handleShellKeyDown = useCallback(
@@ -223,8 +237,7 @@ export function ApplicationShell({
         commandPanelId={commandPanelId}
         topBarRef={topBarRef}
         onMenuClick={(menu) => {
-          setFocusedMenu(menu)
-          controller.toggleMenu(menu)
+          activatePrimaryMenu(menu)
         }}
         onMenuFocus={setFocusedMenu}
         onMenuKeyDown={handleMenuKeyDown}
@@ -258,7 +271,7 @@ export function ApplicationShell({
             panelRef={commandPanelRef}
             menu={state.commandPanelMenu}
             commands={visibleCommands}
-            currentCommandId={state.route.commandId}
+            currentCommandId={state.selectedCommandId}
             onCommand={selectCommand}
           />
         ) : null}

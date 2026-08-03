@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   applicationCommandDefinitions,
+  defaultApplicationCommands,
+  getDefaultApplicationCommand,
+  getApplicationCommandDefinition,
   getVisibleApplicationMenus,
   primaryApplicationMenus
 } from '../../../src/renderer/src/app/shell/application-navigation-catalog'
@@ -84,6 +87,7 @@ describe('application navigation catalog', () => {
     const adminMenus = getVisibleApplicationMenus('LOCAL_ADMIN')
 
     expect(Object.isFrozen(applicationCommandDefinitions)).toBe(true)
+    expect(Object.isFrozen(defaultApplicationCommands)).toBe(true)
     expect(Object.isFrozen(applicationCommandDefinitions[0]?.roles)).toBe(true)
     expect(Object.isFrozen(adminMenus)).toBe(true)
     expect(Object.isFrozen(adminMenus[0]?.commands)).toBe(true)
@@ -99,6 +103,31 @@ describe('application navigation catalog', () => {
       'PATIENTS_RECENT_PATIENTS',
       'PATIENTS_POSSIBLE_DUPLICATES'
     ])
+  })
+
+  it('defines explicit default commands and validates them by role', () => {
+    expect(defaultApplicationCommands).toEqual({
+      HOME: 'HOME_DASHBOARD',
+      PATIENTS: 'PATIENTS_PATIENT_SEARCH',
+      SCREENING: 'SCREENING_TODAYS_SESSION',
+      REFERRALS: 'REFERRALS_REFERRAL_WORKLIST',
+      REPORTS: 'REPORTS_PATIENT_REPORTS',
+      ADMINISTRATION: 'ADMINISTRATION_USERS'
+    })
+
+    for (const menu of primaryApplicationMenus) {
+      const defaultCommandId = getDefaultApplicationCommand(menu, 'LOCAL_ADMIN')
+      const definition =
+        defaultCommandId === null ? null : getApplicationCommandDefinition(defaultCommandId)
+
+      expect(defaultCommandId).toBe(defaultApplicationCommands[menu])
+      expect(definition?.menu).toBe(menu)
+    }
+
+    expect(getDefaultApplicationCommand('REPORTS', 'NURSE')).toBe('REPORTS_PATIENT_REPORTS')
+    expect(getDefaultApplicationCommand('ADMINISTRATION', 'NURSE')).toBeNull()
+    expect(getDefaultApplicationCommand('REPORTS', 'TRAINED_SCREENER')).toBeNull()
+    expect(getDefaultApplicationCommand('HOME', 'UNKNOWN')).toBeNull()
   })
 })
 
