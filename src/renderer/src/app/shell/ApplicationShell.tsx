@@ -268,6 +268,10 @@ export function ApplicationShell({
         headingRef={workspaceHeadingRef}
         onSelectCommand={selectCommand}
       />
+      <footer className="application-shell-footer" data-shell-slot="footer">
+        <span>Local data ready. Future workflow data is not shown in HSD-024.</span>
+        <span>Version {context.applicationVersion} &bull; Offline-first desktop</span>
+      </footer>
     </div>
   )
 }

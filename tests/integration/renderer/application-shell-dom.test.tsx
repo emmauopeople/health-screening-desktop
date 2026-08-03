@@ -64,9 +64,13 @@ describe('application shell DOM integration', () => {
 
     expect(text(mounted)).toContain('Welcome, Admin User')
     expect(text(mounted)).toContain('Local Deployment')
-    expect(text(mounted)).toContain('Africa/Douala')
-    expect(text(mounted)).toContain('No active location selected')
     expect(text(mounted)).toContain('No screening session open')
+    expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Home commands')
+    expect(commandPanel(mounted)?.textContent).not.toContain('Home commands')
+    expect(commandPanel(mounted)?.textContent).not.toContain('Available')
+    expect(commandPanel(mounted)?.textContent).not.toContain('Planned')
+    expect(menuButton(mounted, 'Home').getAttribute('aria-expanded')).toBe('true')
+    expect(buttonByText(mounted, 'Dashboard').getAttribute('aria-current')).toBe('page')
     expect(primaryMenuLabels(mounted)).toEqual([
       'Home',
       'Patients',
@@ -76,9 +80,33 @@ describe('application shell DOM integration', () => {
       'Administration'
     ])
     expect(text(mounted)).toContain('Screened today')
+    expect(text(mounted)).toContain("Today's Patient Worklist")
+    expect(text(mounted)).not.toContain('Today' + '\\u2019s patient worklist')
+    expect(text(mounted)).not.toContain(`Today${String.fromCharCode(0x2019)}s patient worklist`)
     expect(text(mounted)).toContain('Patient code')
     expect(text(mounted)).toContain('Patient worklist data is not available in HSD-024.')
+    expect(text(mounted)).toContain(
+      'Patient search, registration, and worklist data are unavailable in HSD-024.'
+    )
     expect(text(mounted)).not.toContain('Admin.User')
+    expect(text(mounted)).not.toContain('No active location selected')
+    expect(text(mounted)).not.toContain('Grace')
+    expect(text(mounted)).not.toContain('BAB-')
+    expect(text(mounted)).not.toContain('Yesterday')
+
+    expect(summaryCards(mounted)).toHaveLength(5)
+    expect(mounted.container.querySelector('.dashboard-lower-grid')).not.toBeNull()
+    expect(mounted.container.querySelectorAll('.dashboard-lower-grid > section')).toHaveLength(2)
+    expect(
+      Array.from(mounted.container.querySelectorAll('.dashboard-quick-action-number')).map(
+        (node) => node.textContent
+      )
+    ).toEqual(['1', '2', '3', '4'])
+    expect(patientSearchInput(mounted).disabled).toBe(true)
+    expect(buttonByText(mounted, 'Search').disabled).toBe(true)
+    expect(buttonByText(mounted, 'Register patient').disabled).toBe(true)
+    expect(worklistRows(mounted)).toHaveLength(1)
+    expect(worklistRows(mounted)[0]?.querySelector('td')?.getAttribute('colspan')).toBe('6')
 
     await mounted.unmount()
   })
@@ -119,6 +147,8 @@ describe('application shell DOM integration', () => {
 
       if (openPanel) {
         await clickButton(mounted, 'Patients')
+      } else if (commandPanel(mounted) !== null) {
+        await dispatchKeyboard(commandPanel(mounted)!, 'Escape')
       }
 
       expectShellSlots(mounted, { hasAlert, hasPanel })
@@ -175,9 +205,68 @@ describe('application shell DOM integration', () => {
     await mounted.unmount()
   })
 
+  it('preserves contextual commands and current-page marks during workspace route changes', async () => {
+    const mounted = await mountApp(createAppApi(activeSession(1)).api)
+
+    await clickButton(mounted, 'Dashboard')
+
+    expectCommandPanelLabels(mounted, [
+      'Dashboard',
+      'Today\u2019s Session',
+      'Quick Patient Search',
+      'Open Referrals',
+      'Sync Center'
+    ])
+    expect(commandButtonByText(mounted, 'Dashboard').getAttribute('aria-current')).toBe('page')
+
+    await clickButton(mounted, 'Today\u2019s Session')
+
+    expectCommandPanelLabels(mounted, [
+      'Dashboard',
+      'Today\u2019s Session',
+      'Quick Patient Search',
+      'Open Referrals',
+      'Sync Center'
+    ])
+    expect(commandButtonByText(mounted, 'Today\u2019s Session').getAttribute('aria-current')).toBe(
+      'page'
+    )
+    expect(text(mounted)).toContain('Future session workspace')
+
+    await clickButton(mounted, 'Patients')
+    await clickButton(mounted, 'Patient Search')
+
+    expectCommandPanelLabels(mounted, [
+      'Patient Search',
+      'Register New Patient',
+      'Recent Patients',
+      'Possible Duplicates'
+    ])
+    expect(commandButtonByText(mounted, 'Patient Search').getAttribute('aria-current')).toBe('page')
+    expect(commandPanel(mounted)?.textContent).not.toContain('Dashboard')
+
+    await clickButton(mounted, 'Home')
+
+    expectCommandPanelLabels(mounted, [
+      'Dashboard',
+      'Today\u2019s Session',
+      'Quick Patient Search',
+      'Open Referrals',
+      'Sync Center'
+    ])
+
+    await dispatchKeyboard(commandPanel(mounted)!, 'Escape')
+
+    expect(commandPanel(mounted)).toBeNull()
+
+    await mounted.unmount()
+  })
+
   it('supports roving primary menu keys and F6 focus-zone cycling', async () => {
     const mounted = await mountApp(createAppApi(activeSession(1)).api)
     const home = menuButton(mounted, 'Home')
+
+    expect(commandPanel(mounted)?.textContent).toContain('Dashboard')
 
     home.focus()
     await dispatchKeyboard(home, 'ArrowRight')
@@ -188,9 +277,6 @@ describe('application shell DOM integration', () => {
 
     await dispatchKeyboard(menuButton(mounted, 'Administration'), 'Home')
     expect(document.activeElement).toBe(home)
-
-    await dispatchKeyboard(home, 'Enter')
-    expect(commandPanel(mounted)?.textContent).toContain('Dashboard')
 
     await dispatchWindowKeyboard('F6')
     expect(document.activeElement?.textContent).toContain('Dashboard')
@@ -261,11 +347,13 @@ describe('application shell DOM integration', () => {
 
     expect(text(mounted)).toContain('Welcome, Admin User')
     expect(menuButton(mounted, 'Home').getAttribute('aria-current')).toBe('page')
+    expect(commandPanel(mounted)?.textContent).toContain('Dashboard')
 
     await clickButton(mounted, 'Find or open patient')
 
     expect(text(mounted)).toContain('Patient Search')
     expect(text(mounted)).toContain('Not available in this build.')
+    expect(commandPanel(mounted)?.textContent).toContain('Patient Search')
 
     await mounted.unmount()
   })
@@ -288,7 +376,7 @@ describe('application shell DOM integration', () => {
     await emitSession(harness, activeSession(4))
 
     expect(text(mounted)).toContain('Welcome, Admin User')
-    expect(commandPanel(mounted)).toBeNull()
+    expect(commandPanel(mounted)?.textContent).toContain('Dashboard')
     expect(menuButton(mounted, 'Home').getAttribute('aria-current')).toBe('page')
 
     await mounted.unmount()
@@ -583,6 +671,42 @@ function commandButtons(mounted: MountedApp): HTMLButtonElement[] {
   return Array.from(commandPanel(mounted)?.querySelectorAll<HTMLButtonElement>('button') ?? [])
 }
 
+function commandButtonByText(mounted: MountedApp, label: string): HTMLButtonElement {
+  const button = commandButtons(mounted).find(
+    (candidate) => candidate.textContent?.trim() === label
+  )
+
+  if (button === undefined) {
+    throw new Error(`Expected command button ${label} to be rendered.`)
+  }
+
+  return button
+}
+
+function expectCommandPanelLabels(mounted: MountedApp, labels: string[]): void {
+  expect(commandButtons(mounted).map((button) => button.textContent?.trim() ?? '')).toEqual(labels)
+}
+
+function summaryCards(mounted: MountedApp): HTMLElement[] {
+  return Array.from(mounted.container.querySelectorAll<HTMLElement>('.dashboard-summary-card'))
+}
+
+function patientSearchInput(mounted: MountedApp): HTMLInputElement {
+  const input = mounted.container.querySelector<HTMLInputElement>('#dashboard-patient-search')
+
+  if (input === null) {
+    throw new Error('Expected disabled dashboard patient search input to be rendered.')
+  }
+
+  return input
+}
+
+function worklistRows(mounted: MountedApp): HTMLTableRowElement[] {
+  return Array.from(
+    mounted.container.querySelectorAll<HTMLTableRowElement>('.dashboard-worklist tbody tr')
+  )
+}
+
 function buttonByText(mounted: MountedApp, label: string): HTMLButtonElement {
   const button = Array.from(mounted.container.querySelectorAll<HTMLButtonElement>('button')).find(
     (candidate) => candidate.textContent?.trim() === label
@@ -619,18 +743,27 @@ function expectShellSlots(
 
   expect(
     Array.from(shell.children).map((child) => (child as HTMLElement).dataset.shellSlot)
-  ).toEqual(['top-bar', 'operation-alert', 'contextual-panel', 'patient-tabs', 'workspace'])
+  ).toEqual([
+    'top-bar',
+    'operation-alert',
+    'contextual-panel',
+    'patient-tabs',
+    'workspace',
+    'footer'
+  ])
 
   const alertSlot = shell.querySelector<HTMLElement>('[data-shell-slot="operation-alert"]')
   const panelSlot = shell.querySelector<HTMLElement>('[data-shell-slot="contextual-panel"]')
   const patientTabSlot = shell.querySelector<HTMLElement>('[data-shell-slot="patient-tabs"]')
   const workspace = shell.querySelector<HTMLElement>('[data-shell-slot="workspace"]')
+  const footer = shell.querySelector<HTMLElement>('[data-shell-slot="footer"]')
 
   expect(alertSlot?.querySelector('[role="alert"]') !== null).toBe(expected.hasAlert)
   expect(panelSlot?.querySelector('#application-command-panel') !== null).toBe(expected.hasPanel)
   expect(patientTabSlot?.childElementCount).toBe(0)
   expect(patientTabSlot?.textContent).toBe('')
   expect(workspace?.parentElement).toBe(shell)
+  expect(footer?.parentElement).toBe(shell)
 }
 
 function countWindowListenerCalls(

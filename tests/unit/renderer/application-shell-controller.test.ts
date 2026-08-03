@@ -4,12 +4,12 @@ import { createApplicationShellController } from '../../../src/renderer/src/app/
 import type { ApplicationShellState } from '../../../src/renderer/src/app/shell/application-shell-types'
 
 describe('application shell controller', () => {
-  it('starts at Home dashboard with the command panel closed', () => {
+  it('starts at Home dashboard with the Home command panel open', () => {
     const controller = createApplicationShellController({ role: 'LOCAL_ADMIN' })
 
     expect(controller.getSnapshot()).toEqual({
       activeMenu: 'HOME',
-      commandPanelMenu: null,
+      commandPanelMenu: 'HOME',
       route: { status: 'DASHBOARD', commandId: 'HOME_DASHBOARD' }
     })
   })
@@ -26,13 +26,13 @@ describe('application shell controller', () => {
     controller.openMenu('PATIENTS')
 
     expect(states.map((state) => [state.activeMenu, state.commandPanelMenu])).toEqual([
-      ['HOME', 'HOME'],
       ['HOME', null],
+      ['HOME', 'HOME'],
       ['PATIENTS', 'PATIENTS']
     ])
   })
 
-  it('routes dashboard and planned commands without leaving the command panel open', () => {
+  it('routes dashboard and planned commands while keeping the selected menu panel open', () => {
     const controller = createApplicationShellController({ role: 'LOCAL_ADMIN' })
 
     controller.openMenu('PATIENTS')
@@ -40,7 +40,7 @@ describe('application shell controller', () => {
 
     expect(controller.getSnapshot()).toEqual({
       activeMenu: 'PATIENTS',
-      commandPanelMenu: null,
+      commandPanelMenu: 'PATIENTS',
       route: {
         status: 'PLANNED_MODULE',
         commandId: 'PATIENTS_PATIENT_SEARCH',
@@ -54,8 +54,26 @@ describe('application shell controller', () => {
 
     expect(controller.getSnapshot()).toEqual({
       activeMenu: 'HOME',
-      commandPanelMenu: null,
+      commandPanelMenu: 'HOME',
       route: { status: 'DASHBOARD', commandId: 'HOME_DASHBOARD' }
+    })
+  })
+
+  it('changes only the route when selecting a command from the open Home panel', () => {
+    const controller = createApplicationShellController({ role: 'LOCAL_ADMIN' })
+
+    controller.selectCommand('HOME_TODAYS_SESSION')
+
+    expect(controller.getSnapshot()).toEqual({
+      activeMenu: 'HOME',
+      commandPanelMenu: 'HOME',
+      route: {
+        status: 'PLANNED_MODULE',
+        commandId: 'HOME_TODAYS_SESSION',
+        heading: 'Today\u2019s Session',
+        statement: 'Not available in this build.',
+        plannedOwner: 'Future session workspace'
+      }
     })
   })
 

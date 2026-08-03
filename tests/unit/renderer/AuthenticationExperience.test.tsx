@@ -131,7 +131,6 @@ describe('authentication renderer experience', () => {
     expect(markup).toContain('Health Screening Offline Desktop')
     expect(markup).toContain('Local data ready')
     expect(markup).toContain('Local Deployment')
-    expect(markup).toContain('Africa/Douala')
     expect(markup).toContain('Home')
     expect(markup).toContain('Patients')
     expect(markup).toContain('Administration')

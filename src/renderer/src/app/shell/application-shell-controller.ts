@@ -30,7 +30,7 @@ export function createApplicationShellController({
   let disposed = false
   let state = freezeState({
     activeMenu: 'HOME',
-    commandPanelMenu: null,
+    commandPanelMenu: 'HOME',
     route: dashboardRoute
   })
   const listeners = new Set<(state: ApplicationShellState) => void>()
@@ -105,7 +105,7 @@ export function createApplicationShellController({
 
       setState({
         activeMenu: definition.menu,
-        commandPanelMenu: null,
+        commandPanelMenu: definition.menu,
         route: createRouteForCommand(definition)
       })
     },
