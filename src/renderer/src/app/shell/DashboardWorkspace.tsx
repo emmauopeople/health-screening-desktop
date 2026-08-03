@@ -23,100 +23,131 @@ export function DashboardWorkspace({
   onQuickAction
 }: DashboardWorkspaceProps): React.JSX.Element {
   const quickActions = getVisibleDashboardQuickActions(user.role)
+  const summaryNoteId = 'dashboard-summary-note'
+  const worklistGuidanceId = 'dashboard-worklist-guidance'
 
   return (
     <>
-      <div className="application-workspace-heading">
-        <div>
-          <p className="application-workspace-kicker">Dashboard</p>
-          <h1 ref={headingRef} id={headingId} tabIndex={-1}>
-            Welcome, {user.displayName}
-          </h1>
-        </div>
-        <dl className="dashboard-context-list" aria-label="Current deployment context">
-          <div>
-            <dt>Deployment</dt>
-            <dd>{context.deploymentName}</dd>
-          </div>
-          <div>
-            <dt>Time zone</dt>
-            <dd>{context.timeZone}</dd>
-          </div>
-          <div>
-            <dt>Location</dt>
-            <dd>No active location selected</dd>
-          </div>
-          <div>
-            <dt>Session</dt>
-            <dd>No screening session open</dd>
-          </div>
-        </dl>
-      </div>
+      <header className="application-workspace-heading">
+        <h1 ref={headingRef} id={headingId} tabIndex={-1}>
+          Welcome, {user.displayName}
+        </h1>
+        <p>
+          {context.deploymentName}
+          {' \u2022 '}
+          No screening session open
+        </p>
+      </header>
 
-      <section className="dashboard-summary" aria-label="Operational summary">
+      <section
+        className="dashboard-summary"
+        aria-labelledby="dashboard-summary-title"
+        aria-describedby={summaryNoteId}
+      >
+        <h2 id="dashboard-summary-title" className="visually-hidden">
+          Operational summary
+        </h2>
         {dashboardSummaryCards.map((card) => (
-          <article key={card.label} className="dashboard-summary-card" aria-label={card.label}>
+          <article
+            key={card.label}
+            className="dashboard-summary-card"
+            aria-label={`${card.label}: data unavailable. ${card.support}`}
+            data-summary-accent={card.accent}
+            title={card.support}
+          >
             <div className="dashboard-summary-label">{card.label}</div>
             <div className="dashboard-summary-value">{card.value}</div>
-            <p>{card.support}</p>
           </article>
         ))}
       </section>
+      <p id={summaryNoteId} className="dashboard-data-note">
+        Dashboard counts are unavailable until their future local data sources are implemented.
+      </p>
 
-      <section className="dashboard-quick-actions" aria-labelledby="dashboard-quick-actions-title">
-        <h2 id="dashboard-quick-actions-title">Quick actions</h2>
-        <div className="dashboard-quick-action-list">
-          {quickActions.map((action) => (
-            <button
-              key={action.commandId}
-              className="dashboard-quick-action"
-              type="button"
-              onClick={() => onQuickAction(action.commandId)}
-            >
-              <span>{action.label}</span>
-              <span>Planned workspace</span>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="dashboard-worklist" aria-labelledby="dashboard-worklist-title">
-        <div className="dashboard-worklist-header">
-          <div>
-            <h2 id="dashboard-worklist-title">Today\u2019s patient worklist</h2>
-            <p>Patient worklist data is not available in HSD-024.</p>
+      <div className="dashboard-lower-grid">
+        <section
+          className="dashboard-quick-actions"
+          aria-labelledby="dashboard-quick-actions-title"
+        >
+          <h2 id="dashboard-quick-actions-title">Quick actions</h2>
+          <div className="dashboard-quick-action-list">
+            {quickActions.map((action, index) => (
+              <button
+                key={action.commandId}
+                className="dashboard-quick-action"
+                type="button"
+                onClick={() => onQuickAction(action.commandId)}
+              >
+                <span className="dashboard-quick-action-number" aria-hidden="true">
+                  {index + 1}
+                </span>
+                <span>
+                  <span className="dashboard-quick-action-title">{action.label}</span>
+                  <span className="dashboard-quick-action-support">{action.support}</span>
+                </span>
+              </button>
+            ))}
           </div>
-          <label className="dashboard-disabled-search">
-            <span>Patient search is available in HSD-025.</span>
+        </section>
+
+        <section className="dashboard-worklist" aria-labelledby="dashboard-worklist-title">
+          <div className="dashboard-worklist-title-row">
+            <h2 id="dashboard-worklist-title">{"Today's Patient Worklist"}</h2>
+          </div>
+          <div className="dashboard-worklist-search-row" aria-describedby={worklistGuidanceId}>
+            <label className="visually-hidden" htmlFor="dashboard-patient-search">
+              Patient search
+            </label>
             <input
+              id="dashboard-patient-search"
               type="search"
               value=""
               disabled
               readOnly
-              aria-label="Patient search is available in HSD-025."
+              placeholder="Search by patient code, name, phone, village..."
+              aria-describedby={worklistGuidanceId}
             />
-          </label>
-        </div>
-        <div className="dashboard-table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Patient code</th>
-                <th scope="col">Name</th>
-                <th scope="col">Age / sex</th>
-                <th scope="col">Last screening</th>
-                <th scope="col">Current status</th>
-                <th scope="col">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td colSpan={6}>Patient worklist data is not available in HSD-024.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+            <button
+              type="button"
+              className="button button-primary"
+              disabled
+              aria-describedby={worklistGuidanceId}
+            >
+              Search
+            </button>
+            <button
+              type="button"
+              className="button button-secondary"
+              disabled
+              aria-describedby={worklistGuidanceId}
+            >
+              Register patient
+            </button>
+          </div>
+          <p id={worklistGuidanceId} className="dashboard-data-note">
+            Patient search, registration, and worklist data are unavailable in HSD-024.
+          </p>
+          <div className="dashboard-table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Patient code</th>
+                  <th scope="col">Name</th>
+                  <th scope="col">Age / sex</th>
+                  <th scope="col">Last screening</th>
+                  <th scope="col">Current status</th>
+                  <th scope="col">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colSpan={6}>Patient worklist data is not available in HSD-024.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </>
   )
 }

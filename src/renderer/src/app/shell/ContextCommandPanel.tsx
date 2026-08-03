@@ -1,7 +1,6 @@
 import type { RefObject } from 'react'
 
 import { primaryApplicationMenuLabels } from './application-navigation-catalog'
-import { getPrimaryMenuButtonId } from './application-shell-dom-ids'
 import type {
   ApplicationCommandDefinition,
   ApplicationCommandId,
@@ -33,21 +32,22 @@ export function ContextCommandPanel({
       id={id}
       className="application-command-panel"
       aria-label={`${menuLabel} commands`}
-      aria-labelledby={getPrimaryMenuButtonId(menu)}
       data-shell-focus-zone="COMMAND_PANEL"
     >
-      <div className="application-command-panel-heading">{menuLabel} commands</div>
       <div className="application-command-list">
         {commands.map((command) => (
           <button
             key={command.id}
             className="application-command-button"
             type="button"
+            aria-label={`${command.label}${
+              command.availability === 'PLANNED' ? ' planned workspace' : ''
+            }`}
             aria-current={currentCommandId === command.id ? 'page' : undefined}
+            data-command-availability={command.availability.toLowerCase()}
             onClick={() => onCommand(command.id)}
           >
-            <span>{command.label}</span>
-            <span>{command.availability === 'AVAILABLE' ? 'Available' : 'Planned'}</span>
+            {command.label}
           </button>
         ))}
       </div>
