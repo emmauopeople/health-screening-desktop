@@ -15,7 +15,11 @@ import {
 } from '@main/ipc/register-handlers'
 import type { IpcSenderValidationEvent } from '@main/ipc/sender-policy'
 import { ipcChannels, type AppHealth, type AppInfo } from '@shared/ipc'
-import type { FirstRunBootstrapService, LocalAuthenticationSessionService } from '@main/application'
+import type {
+  FirstRunBootstrapService,
+  LocalAuthenticationSessionService,
+  PatientRegistryService
+} from '@main/application'
 
 const validInfo: AppInfo = {
   applicationName: 'Health Screening Offline Desktop',
@@ -145,7 +149,7 @@ describe('application IPC handler registration', () => {
 
     const dispose = registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(11)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(15)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
@@ -158,6 +162,10 @@ describe('application IPC handler registration', () => {
       'health-screening:auth:unlock',
       'health-screening:first-run:get-state',
       'health-screening:first-run:initialize',
+      'health-screening:patient:create',
+      'health-screening:patient:find-duplicates',
+      'health-screening:patient:get-summary',
+      'health-screening:patient:search',
       'unrelated:channel'
     ])
 
@@ -173,7 +181,7 @@ describe('application IPC handler registration', () => {
     registerApplicationIpcHandlers(ipcMain, createDependencies())
     registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(22)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(30)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getHealth)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
@@ -190,6 +198,10 @@ describe('application IPC handler registration', () => {
       'health-screening:auth:unlock',
       'health-screening:first-run:get-state',
       'health-screening:first-run:initialize',
+      'health-screening:patient:create',
+      'health-screening:patient:find-duplicates',
+      'health-screening:patient:get-summary',
+      'health-screening:patient:search',
       'unrelated:channel'
     ])
   })
@@ -208,6 +220,10 @@ describe('application IPC handler registration', () => {
     ipcMain.handlers.set(ipcChannels.auth.lock, vi.fn())
     ipcMain.handlers.set(ipcChannels.auth.logout, vi.fn())
     ipcMain.handlers.set(ipcChannels.auth.recordActivity, vi.fn())
+    ipcMain.handlers.set(ipcChannels.patient.search, vi.fn())
+    ipcMain.handlers.set(ipcChannels.patient.getSummary, vi.fn())
+    ipcMain.handlers.set(ipcChannels.patient.findDuplicates, vi.fn())
+    ipcMain.handlers.set(ipcChannels.patient.create, vi.fn())
 
     disposeApplicationIpcHandlers(ipcMain)
 
@@ -260,6 +276,11 @@ function createDependencies(): ApplicationIpcHandlerDependencies {
       },
       logger: createLogger()
     },
+    patient: {
+      navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
+      patientRegistryService: createPatientRegistryService(),
+      logger: createLogger()
+    },
     logger: createLogger()
   }
 }
@@ -283,6 +304,15 @@ function createAuthenticationSessionService(): LocalAuthenticationSessionService
     requireActiveSession: vi.fn(),
     requireAnyRole: vi.fn()
   } as unknown as LocalAuthenticationSessionService
+}
+
+function createPatientRegistryService(): PatientRegistryService {
+  return {
+    search: vi.fn(),
+    getSummary: vi.fn(),
+    findDuplicates: vi.fn(),
+    create: vi.fn()
+  } as unknown as PatientRegistryService
 }
 
 function createApplicationInfoProvider(): ApplicationInfoProvider {

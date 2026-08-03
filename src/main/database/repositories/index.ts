@@ -4,6 +4,7 @@ export {
   LocalUserAuthenticationStateConflictError,
   LocalUserCredentialStateConflictError,
   LocationAlreadyExistsError,
+  PatientAlreadyExistsError,
   RepositoryDataIntegrityError,
   LocalUserAlreadyExistsError,
   LocalUserNotFoundError,
@@ -85,3 +86,18 @@ export {
   type LocationType,
   type NormalizedLocationName
 } from './location'
+export {
+  createPatientRepository,
+  formatPatientCode,
+  normalizeResidenceValue,
+  parsePatientNameIdentity,
+  parsePatientPhone,
+  type CreatePatientInput,
+  type PatientDuplicateCandidateRecord,
+  type PatientPageSize,
+  type PatientRecord,
+  type PatientRegistrationIdentityInput,
+  type PatientRepository,
+  type PatientSearchInput,
+  type PatientSearchResult
+} from './patient'

@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  createAuthenticationFailure,
   createIpcSuccess,
   type AuthGetSessionResult,
   type AuthLockResult,
@@ -84,9 +85,9 @@ describe('application shell DOM integration', () => {
     expect(text(mounted)).not.toContain('Today' + '\\u2019s patient worklist')
     expect(text(mounted)).not.toContain(`Today${String.fromCharCode(0x2019)}s patient worklist`)
     expect(text(mounted)).toContain('Patient code')
-    expect(text(mounted)).toContain('Patient worklist data is not available in HSD-024.')
+    expect(text(mounted)).toContain('Patient worklist data is not available in HSD-025.')
     expect(text(mounted)).toContain(
-      'Patient search, registration, and worklist data are unavailable in HSD-024.'
+      'Patient search and registration use the local offline registry.'
     )
     expect(text(mounted)).not.toContain('Admin.User')
     expect(text(mounted)).not.toContain('No active location selected')
@@ -102,9 +103,9 @@ describe('application shell DOM integration', () => {
         (node) => node.textContent
       )
     ).toEqual(['1', '2', '3', '4'])
-    expect(patientSearchInput(mounted).disabled).toBe(true)
-    expect(buttonByText(mounted, 'Search').disabled).toBe(true)
-    expect(buttonByText(mounted, 'Register patient').disabled).toBe(true)
+    expect(patientSearchInput(mounted).disabled).toBe(false)
+    expect(buttonByText(mounted, 'Search').disabled).toBe(false)
+    expect(buttonByText(mounted, 'Register patient').disabled).toBe(false)
     expect(worklistRows(mounted)).toHaveLength(1)
     expect(worklistRows(mounted)[0]?.querySelector('td')?.getAttribute('colspan')).toBe('6')
 
@@ -331,19 +332,20 @@ describe('application shell DOM integration', () => {
     await mounted.unmount()
   })
 
-  it('routes planned commands and quick actions to transparent planned workspaces', async () => {
+  it('routes patient commands and quick actions to the registry search workspace', async () => {
     const mounted = await mountApp(createAppApi(activeSession(1)).api)
 
     await clickButton(mounted, 'Patients')
     await clickButton(mounted, 'Patient Search')
 
     expect(text(mounted)).toContain('Patient Search')
-    expect(text(mounted)).toContain('Not available in this build.')
-    expect(text(mounted)).toContain('HSD-025 patient search and tabs')
-    expect(mounted.container.querySelector('form')).toBeNull()
-    expect(text(mounted)).not.toContain('Create patient and open tab')
+    expect(text(mounted)).toContain('Results are local only and paginated.')
+    expect(text(mounted)).not.toContain('Not available in this build.')
+    expect(mounted.container.querySelector('form')).not.toBeNull()
+    expect(text(mounted)).toContain('Register patient')
 
-    await clickButton(mounted, 'Back to dashboard')
+    await clickButton(mounted, 'Home')
+    await clickButton(mounted, 'Dashboard')
 
     expect(text(mounted)).toContain('Welcome, Admin User')
     expect(menuButton(mounted, 'Home').getAttribute('aria-current')).toBe('page')
@@ -352,7 +354,7 @@ describe('application shell DOM integration', () => {
     await clickButton(mounted, 'Find or open patient')
 
     expect(text(mounted)).toContain('Patient Search')
-    expect(text(mounted)).toContain('Not available in this build.')
+    expect(text(mounted)).toContain('Results are local only and paginated.')
     expect(commandPanel(mounted)?.textContent).toContain('Patient Search')
 
     await mounted.unmount()
@@ -422,7 +424,8 @@ describe('application shell DOM integration', () => {
 
     await clickButton(mounted, 'Patients')
     await clickButton(mounted, 'Patient Search')
-    await clickButton(mounted, 'Back to dashboard')
+    await clickButton(mounted, 'Home')
+    await clickButton(mounted, 'Dashboard')
 
     expect(getItemSpy).not.toHaveBeenCalled()
     expect(setItemSpy).not.toHaveBeenCalled()
@@ -523,6 +526,12 @@ function createAppApi(initialSession: PublicAuthenticationSession): AppApiHarnes
           listeners.delete(listener)
         }
       })
+    },
+    patient: {
+      search: vi.fn(() => Promise.resolve(createAuthenticationFailure('IPC_UNAVAILABLE'))),
+      getSummary: vi.fn(() => Promise.resolve(createAuthenticationFailure('IPC_UNAVAILABLE'))),
+      findDuplicates: vi.fn(() => Promise.resolve(createAuthenticationFailure('IPC_UNAVAILABLE'))),
+      create: vi.fn(() => Promise.resolve(createAuthenticationFailure('IPC_UNAVAILABLE')))
     }
   } as unknown as MockedHealthScreeningApi
 
@@ -578,8 +587,10 @@ async function mountShell({
         busy: false,
         operationError,
         alertRef: { current: null },
+        api: createAppApi(activeSession(1)).api,
         onLock: vi.fn(),
-        onLogout: vi.fn()
+        onLogout: vi.fn(),
+        onAuthenticationFailure: vi.fn()
       })
     )
     await flushPromises()
@@ -695,7 +706,7 @@ function patientSearchInput(mounted: MountedApp): HTMLInputElement {
   const input = mounted.container.querySelector<HTMLInputElement>('#dashboard-patient-search')
 
   if (input === null) {
-    throw new Error('Expected disabled dashboard patient search input to be rendered.')
+    throw new Error('Expected dashboard patient search input to be rendered.')
   }
 
   return input

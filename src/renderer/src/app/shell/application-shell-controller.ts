@@ -134,6 +134,23 @@ function createRouteForCommand(
     return dashboardRoute
   }
 
+  if (
+    definition.id === 'HOME_QUICK_PATIENT_SEARCH' ||
+    definition.id === 'PATIENTS_PATIENT_SEARCH'
+  ) {
+    return Object.freeze({
+      status: 'PATIENT_SEARCH' as const,
+      commandId: definition.id
+    })
+  }
+
+  if (definition.id === 'PATIENTS_REGISTER_NEW_PATIENT') {
+    return Object.freeze({
+      status: 'PATIENT_REGISTRATION' as const,
+      commandId: definition.id
+    })
+  }
+
   return Object.freeze({
     status: 'PLANNED_MODULE',
     commandId: definition.id,

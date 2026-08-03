@@ -27,10 +27,9 @@ const fixedClock = {
 }
 
 describe('migration runner integration', () => {
-  it('upgrades a fresh HSD-006 database to schema version 1 and is idempotent', async () => {
+  it('upgrades a fresh HSD-006 database to schema version 2 and is idempotent', async () => {
     await withDatabase((connection) => {
       const logger = createLogger()
-      const productionMigration = databaseMigrations[0]!
       const migrate = createProductionDatabaseMigrationRunner({
         applicationVersion: '1.0.0',
         logger,
@@ -43,30 +42,30 @@ describe('migration runner integration', () => {
 
       expect(firstSummary).toEqual({
         previousVersion: 0,
-        currentVersion: 1,
-        appliedVersions: [1]
+        currentVersion: 2,
+        appliedVersions: [1, 2]
       })
-      expect(readUserVersion(connection)).toBe(1)
-      expect(readLedgerRows(connection)).toEqual([
-        {
-          version: 1,
-          name: 'initial-schema',
-          checksum: computeMigrationChecksum(productionMigration.sql),
+      expect(readUserVersion(connection)).toBe(2)
+      expect(readLedgerRows(connection)).toEqual(
+        databaseMigrations.map((migration) => ({
+          version: migration.version,
+          name: migration.name,
+          checksum: computeMigrationChecksum(migration.sql),
           applied_at: fixedClock.now(),
           application_version: '1.0.0'
-        }
-      ])
+        }))
+      )
 
       const secondSummary = migrate(connection)
 
       expect(secondSummary).toEqual({
-        previousVersion: 1,
-        currentVersion: 1,
+        previousVersion: 2,
+        currentVersion: 2,
         appliedVersions: []
       })
-      expect(readLedgerRows(connection)).toHaveLength(1)
+      expect(readLedgerRows(connection)).toHaveLength(2)
       expect(logger.info.mock.calls.flat()).toContain(
-        'Database migrations current; schemaVersion=1'
+        'Database migrations current; schemaVersion=2'
       )
     })
   })
@@ -91,17 +90,18 @@ describe('migration runner integration', () => {
       const secondSummary = secondRunner(connection)
 
       expect(secondSummary).toEqual({
-        previousVersion: 1,
-        currentVersion: 1,
+        previousVersion: 2,
+        currentVersion: 2,
         appliedVersions: []
       })
       expect(readLedgerRows(connection)).toEqual(originalLedger)
       expect(readLedgerRows(connection)[0]?.application_version).toBe('1.0.0')
+      expect(readLedgerRows(connection)[1]?.application_version).toBe('1.0.0')
       expect(countAppliedMigrationLogs(logger)).toBe(appliedLogCount)
     })
   })
 
-  it('runs multiple injected migrations in order without adding a second production migration', async () => {
+  it('runs multiple injected migrations in order', async () => {
     await withDatabase((connection) => {
       const logger = createLogger()
       const migrations: readonly DatabaseMigration[] = [
@@ -389,7 +389,7 @@ describe('migration runner integration', () => {
       connection.exec('DROP TABLE app_settings')
 
       expect(() => migrate(connection)).toThrow(MigrationCompatibilityError)
-      expect(readUserVersion(connection)).toBe(1)
+      expect(readUserVersion(connection)).toBe(2)
       expect(readLedgerRows(connection)).toEqual(originalLedger)
     })
   })
@@ -407,14 +407,14 @@ describe('migration runner integration', () => {
       connection.exec('DROP INDEX ix_locations_name_normalized')
 
       expect(() => migrate(connection)).toThrow(MigrationCompatibilityError)
-      expect(readUserVersion(connection)).toBe(1)
+      expect(readUserVersion(connection)).toBe(2)
       expect(readLedgerRows(connection)).toEqual(originalLedger)
     })
   })
 
   it('refuses newer and inconsistent migration metadata without repair', async () => {
     await withDatabase((connection) => {
-      connection.exec('PRAGMA user_version = 2')
+      connection.exec('PRAGMA user_version = 3')
 
       expect(() =>
         runDatabaseMigrations({
@@ -423,11 +423,11 @@ describe('migration runner integration', () => {
           applicationVersion: '1.0.0',
           logger: createLogger(),
           clock: fixedClock,
-          expectedHighestVersion: 1
+          expectedHighestVersion: 2
         })
       ).toThrow(MigrationCompatibilityError)
 
-      expect(readUserVersion(connection)).toBe(2)
+      expect(readUserVersion(connection)).toBe(3)
       expect(hasTable(connection, 'schema_migrations')).toBe(false)
     })
 
@@ -470,7 +470,7 @@ describe('migration runner integration', () => {
             application_version
           ) VALUES (?, ?, ?, ?, ?)`
         )
-        .run(2, 'extra', 'a'.repeat(64), fixedClock.now(), '1.0.0')
+        .run(3, 'extra', 'a'.repeat(64), fixedClock.now(), '1.0.0')
 
       expectProductionMigrationCompatibilityFailure(connection)
     })
@@ -507,7 +507,7 @@ function expectProductionMigrationCompatibilityFailure(connection: Database.Data
       applicationVersion: '1.0.0',
       logger: createLogger(),
       clock: fixedClock,
-      expectedHighestVersion: 1
+      expectedHighestVersion: 2
     })
   ).toThrow(MigrationCompatibilityError)
 }
@@ -566,8 +566,7 @@ function createLogger(): TestLogger {
 function countAppliedMigrationLogs(logger: TestLogger): number {
   return logger.info.mock.calls
     .flat()
-    .filter((message) => message === 'Database migration applied; version=1; name=initial-schema')
-    .length
+    .filter((message) => message.startsWith('Database migration applied; version=')).length
 }
 
 function expectLogsAreHistoryMismatchSafe(logger: TestLogger, checksum: string): void {

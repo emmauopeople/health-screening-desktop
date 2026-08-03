@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AuthLockResult, AuthLogoutResult, HealthScreeningApi } from '@shared/ipc'
+import type {
+  AuthenticationErrorCode,
+  AuthLockResult,
+  AuthLogoutResult,
+  HealthScreeningApi
+} from '@shared/ipc'
 
 import {
   createAuthenticationFormController,
@@ -99,9 +104,18 @@ export function AuthenticatedShell({
     }
   }
 
+  async function handlePatientAuthenticationFailure(code: AuthenticationErrorCode): Promise<void> {
+    const action = classifyAuthenticationFailureAction('PATIENT', code)
+
+    if (action.kind !== 'MESSAGE_ONLY') {
+      await applyAuthenticationFailureRouteAction(controller, action)
+    }
+  }
+
   return (
     <ApplicationShell
       key={route.user.role}
+      api={api}
       context={shellContext}
       user={route.user}
       busy={isSubmitting}
@@ -112,6 +126,9 @@ export function AuthenticatedShell({
       }}
       onLogout={() => {
         void handleLogout()
+      }}
+      onAuthenticationFailure={(code) => {
+        void handlePatientAuthenticationFailure(code)
       }}
     />
   )

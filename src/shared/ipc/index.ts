@@ -2,7 +2,8 @@ export {
   ipcChannels,
   type AppIpcChannel,
   type AuthenticationIpcChannel,
-  type FirstRunIpcChannel
+  type FirstRunIpcChannel,
+  type PatientIpcChannel
 } from './channels'
 export {
   createIpcFailure,
@@ -114,6 +115,50 @@ export {
   type PublicSignedOutAuthenticationSession,
   type UtcTimestamp
 } from './authentication-contracts'
+export {
+  createPatientFailure,
+  normalizePatientPhone,
+  normalizePatientSearchText,
+  patientAcknowledgmentStatusSchema,
+  patientCreateRequestSchema,
+  patientCreateResultSchema,
+  patientCreateSuccessDataSchema,
+  patientDuplicateCandidateSchema,
+  patientDuplicateReasonCodeSchema,
+  patientDuplicateReasonLabels,
+  patientDuplicateReviewDataSchema,
+  patientFindDuplicatesRequestSchema,
+  patientFindDuplicatesResultSchema,
+  patientGetSummaryRequestSchema,
+  patientGetSummaryResultSchema,
+  patientRegistrationDraftSchema,
+  patientSearchFiltersSchema,
+  patientSearchRequestSchema,
+  patientSearchResultSchema,
+  patientSearchSuccessDataSchema,
+  patientSexSchema,
+  patientStatusSchema,
+  publicPatientSummarySchema,
+  type PatientAcknowledgmentStatus,
+  type PatientCreateRequest,
+  type PatientCreateResult,
+  type PatientCreateSuccessData,
+  type PatientDuplicateCandidate,
+  type PatientDuplicateReasonCode,
+  type PatientDuplicateReviewData,
+  type PatientFindDuplicatesRequest,
+  type PatientFindDuplicatesResult,
+  type PatientGetSummaryRequest,
+  type PatientGetSummaryResult,
+  type PatientRegistrationDraft,
+  type PatientSearchFilters,
+  type PatientSearchRequest,
+  type PatientSearchResult,
+  type PatientSearchSuccessData,
+  type PatientSex,
+  type PatientStatus,
+  type PublicPatientSummary
+} from './patient-contracts'
 export {
   appGetHealthRequestSchema,
   appGetHealthResultSchema,

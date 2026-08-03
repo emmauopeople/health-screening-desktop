@@ -2,8 +2,9 @@
 
 HSD-005 establishes the first renderer-to-main IPC boundary. HSD-015 adds the
 trusted first-run setup IPC boundary. HSD-022 adds the authenticated session IPC
-and event boundary. These are security foundations only: no patient workflows,
-sync, settings, files, shell integration, or clinical operations are exposed.
+and event boundary. HSD-025 adds the authenticated patient registry IPC
+boundary for local search, duplicate review, registration, and patient summary
+tabs. Sync, settings, files, and clinical operations are not exposed.
 
 ## Channel Catalog
 
@@ -23,6 +24,10 @@ The shared channel catalog is defined in `src/shared/ipc/channels.ts`.
 | `auth.logout()`                        | `health-screening:auth:logout`                   | `{}` strict empty object       | Public signed-out session                                                                                        |
 | `auth.recordActivity()`                | `health-screening:auth:record-activity`          | `{}` strict empty object       | Public active session                                                                                            |
 | `auth.onSessionChanged(listener)`      | `health-screening:auth:session-changed`          | Main-to-renderer event only    | Minimized public session                                                                                         |
+| `patient.search(request)`              | `health-screening:patient:search`                | Strict search request          | Page of public patient summaries                                                                                 |
+| `patient.getSummary(request)`          | `health-screening:patient:get-summary`           | Strict patient ID request      | Public patient summary                                                                                           |
+| `patient.findDuplicates(request)`      | `health-screening:patient:find-duplicates`       | Strict registration draft      | Duplicate candidates and review token                                                                            |
+| `patient.create(request)`              | `health-screening:patient:create`                | Strict create request          | Created patient summary, or duplicate-review-required result                                                     |
 
 The renderer never receives a channel string argument, a generic invoke method,
 or any dynamic dispatch surface.
@@ -99,14 +104,18 @@ window.healthScreening.auth.lock()
 window.healthScreening.auth.logout()
 window.healthScreening.auth.recordActivity()
 window.healthScreening.auth.onSessionChanged(listener)
+window.healthScreening.patient.search(request)
+window.healthScreening.patient.getSummary(request)
+window.healthScreening.patient.findDuplicates(request)
+window.healthScreening.patient.create(request)
 ```
 
 Each method calls `ipcRenderer.invoke` with one compile-time channel constant.
-The preload validates first-run and authentication input before invoking main
-and validates returned envelopes before passing them to the renderer. Invoke
-rejection or malformed responses map to `IPC_UNAVAILABLE`. Authentication event
-payloads are validated before listener delivery, and Electron event objects are
-not exposed.
+The preload validates first-run, authentication, and patient input before
+invoking main and validates returned envelopes before passing them to the
+renderer. Invoke rejection or malformed responses map to `IPC_UNAVAILABLE`.
+Authentication event payloads are validated before listener delivery, and
+Electron event objects are not exposed.
 
 The bridge must not expose `ipcRenderer`, `contextBridge`, `invoke`, `send`,
 `sendSync`, `on`, `once`, `off`, `postMessage`, Electron events, Node globals,
@@ -124,6 +133,11 @@ Adding a future IPC operation requires:
 6. One explicit preload wrapper method; no generic dispatch.
 7. Documentation updates and deterministic unit tests.
 8. Role/authorization review when authentication exists.
+
+HSD-025 patient handlers require an active authenticated session with one of
+`LOCAL_ADMIN`, `NURSE`, or `TRAINED_SCREENER`. The renderer never sends user
+IDs, roles, timestamps, patient IDs for creation, local patient codes, or audit
+metadata as trusted values.
 
 ## PHI And Logging
 

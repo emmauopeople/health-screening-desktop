@@ -1,4 +1,5 @@
 import type { LocalUserRole } from '@shared/ipc'
+import type { PublicPatientSummary } from '@shared/ipc'
 
 export type PrimaryApplicationMenu =
   'HOME' | 'PATIENTS' | 'SCREENING' | 'REFERRALS' | 'REPORTS' | 'ADMINISTRATION'
@@ -46,6 +47,19 @@ export interface ApplicationCommandDefinition {
 
 export type ApplicationWorkspaceRoute =
   | { readonly status: 'DASHBOARD'; readonly commandId: 'HOME_DASHBOARD' }
+  | {
+      readonly status: 'PATIENT_SEARCH'
+      readonly commandId: 'HOME_QUICK_PATIENT_SEARCH' | 'PATIENTS_PATIENT_SEARCH'
+    }
+  | {
+      readonly status: 'PATIENT_REGISTRATION'
+      readonly commandId: 'PATIENTS_REGISTER_NEW_PATIENT'
+    }
+  | {
+      readonly status: 'PATIENT_OVERVIEW'
+      readonly commandId: ApplicationCommandId
+      readonly patient: PublicPatientSummary
+    }
   | {
       readonly status: 'PLANNED_MODULE'
       readonly commandId: ApplicationCommandId

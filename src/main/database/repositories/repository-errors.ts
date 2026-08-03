@@ -11,6 +11,7 @@ export type RepositoryErrorCode =
   | 'LOCAL_USER_AUTHENTICATION_STATE_CONFLICT'
   | 'LOCAL_USER_CREDENTIAL_STATE_CONFLICT'
   | 'LOCATION_ALREADY_EXISTS'
+  | 'PATIENT_ALREADY_EXISTS'
   | 'AUDIT_EVENT_ALREADY_EXISTS'
 
 type RepositoryErrorName =
@@ -24,6 +25,7 @@ type RepositoryErrorName =
   | 'LocalUserAuthenticationStateConflictError'
   | 'LocalUserCredentialStateConflictError'
   | 'LocationAlreadyExistsError'
+  | 'PatientAlreadyExistsError'
   | 'AuditEventAlreadyExistsError'
 
 class ControlledRepositoryError extends Error {
@@ -149,6 +151,17 @@ export class LocationAlreadyExistsError extends ControlledRepositoryError {
   }
 }
 
+export class PatientAlreadyExistsError extends ControlledRepositoryError {
+  constructor(errorType?: string) {
+    super(
+      'PatientAlreadyExistsError',
+      'PATIENT_ALREADY_EXISTS',
+      'Patient already exists.',
+      errorType
+    )
+  }
+}
+
 export class AuditEventAlreadyExistsError extends ControlledRepositoryError {
   constructor(errorType?: string) {
     super(
@@ -171,6 +184,7 @@ export type RepositoryError =
   | LocalUserAuthenticationStateConflictError
   | LocalUserCredentialStateConflictError
   | LocationAlreadyExistsError
+  | PatientAlreadyExistsError
   | AuditEventAlreadyExistsError
 
 export function isRepositoryError(error: unknown): error is RepositoryError {
@@ -185,6 +199,7 @@ export function isRepositoryError(error: unknown): error is RepositoryError {
     error instanceof LocalUserAuthenticationStateConflictError ||
     error instanceof LocalUserCredentialStateConflictError ||
     error instanceof LocationAlreadyExistsError ||
+    error instanceof PatientAlreadyExistsError ||
     error instanceof AuditEventAlreadyExistsError
   )
 }
@@ -228,6 +243,10 @@ export function rebuildRepositoryError(error: RepositoryError): RepositoryError 
 
   if (error instanceof LocationAlreadyExistsError) {
     return new LocationAlreadyExistsError(error.errorType)
+  }
+
+  if (error instanceof PatientAlreadyExistsError) {
+    return new PatientAlreadyExistsError(error.errorType)
   }
 
   return new AuditEventAlreadyExistsError(error.errorType)

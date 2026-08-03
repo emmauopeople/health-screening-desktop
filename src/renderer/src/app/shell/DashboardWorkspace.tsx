@@ -1,4 +1,4 @@
-import type { RefObject } from 'react'
+import { useState, type RefObject } from 'react'
 
 import { dashboardSummaryCards, getVisibleDashboardQuickActions } from './dashboard-workspace-model'
 import type {
@@ -13,6 +13,7 @@ interface DashboardWorkspaceProps {
   readonly headingId: string
   readonly headingRef: RefObject<HTMLHeadingElement | null>
   onQuickAction(commandId: ApplicationCommandId): void
+  onPatientSearch(query: string): void
 }
 
 export function DashboardWorkspace({
@@ -20,8 +21,10 @@ export function DashboardWorkspace({
   user,
   headingId,
   headingRef,
-  onQuickAction
+  onQuickAction,
+  onPatientSearch
 }: DashboardWorkspaceProps): React.JSX.Element {
+  const [patientSearch, setPatientSearch] = useState('')
   const quickActions = getVisibleDashboardQuickActions(user.role)
   const summaryNoteId = 'dashboard-summary-note'
   const worklistGuidanceId = 'dashboard-worklist-guidance'
@@ -95,37 +98,34 @@ export function DashboardWorkspace({
             <h2 id="dashboard-worklist-title">{"Today's Patient Worklist"}</h2>
           </div>
           <div className="dashboard-worklist-search-row" aria-describedby={worklistGuidanceId}>
-            <label className="visually-hidden" htmlFor="dashboard-patient-search">
-              Patient search
-            </label>
+            <label htmlFor="dashboard-patient-search">Patient search</label>
             <input
               id="dashboard-patient-search"
               type="search"
-              value=""
-              disabled
-              readOnly
+              value={patientSearch}
               placeholder="Search by patient code, name, phone, village..."
               aria-describedby={worklistGuidanceId}
+              onChange={(event) => setPatientSearch(event.target.value)}
             />
             <button
               type="button"
               className="button button-primary"
-              disabled
               aria-describedby={worklistGuidanceId}
+              onClick={() => onPatientSearch(patientSearch)}
             >
               Search
             </button>
             <button
               type="button"
               className="button button-secondary"
-              disabled
               aria-describedby={worklistGuidanceId}
+              onClick={() => onQuickAction('PATIENTS_REGISTER_NEW_PATIENT')}
             >
               Register patient
             </button>
           </div>
           <p id={worklistGuidanceId} className="dashboard-data-note">
-            Patient search, registration, and worklist data are unavailable in HSD-024.
+            Patient search and registration use the local offline registry.
           </p>
           <div className="dashboard-table-scroll">
             <table>
@@ -141,7 +141,7 @@ export function DashboardWorkspace({
               </thead>
               <tbody>
                 <tr>
-                  <td colSpan={6}>Patient worklist data is not available in HSD-024.</td>
+                  <td colSpan={6}>Patient worklist data is not available in HSD-025.</td>
                 </tr>
               </tbody>
             </table>

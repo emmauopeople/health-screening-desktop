@@ -4,13 +4,15 @@ import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import { describe, expect, it, vi } from 'vitest'
 
-import { createProductionDatabaseMigrationRunner } from '@main/database'
+import { databaseMigrations } from '@main/database/migrations/migration-manifest'
+import { runDatabaseMigrations } from '@main/database/migrations/migration-runner'
 import {
   createSchemaMigrationsTableSql,
   schemaVersion1NamedIndexes,
   schemaVersion1TableContracts,
   schemaVersion1TableNames,
-  type SchemaVersion1ColumnContract
+  type SchemaVersion1ColumnContract,
+  validateSchemaVersion1
 } from '@main/database/migrations/schema-v1-contract'
 
 const now = '2026-07-29T00:00:00Z'
@@ -278,14 +280,18 @@ async function withMigratedDatabase(test: (connection: Database.Database) => voi
 
   try {
     configureHsd006Pragmas(connection)
-    createProductionDatabaseMigrationRunner({
+    runDatabaseMigrations({
+      connection,
+      migrations: [databaseMigrations[0]!],
       applicationVersion: '1.0.0',
       logger: {
         info: vi.fn<(message: string) => void>(),
         error: vi.fn<(message: string) => void>()
       },
-      clock: { now: () => '2026-07-29T00:00:00.000Z' }
-    })(connection)
+      clock: { now: () => '2026-07-29T00:00:00.000Z' },
+      expectedHighestVersion: 1,
+      schemaValidators: new Map([[1, validateSchemaVersion1]])
+    })
     test(connection)
   } finally {
     connection.close()

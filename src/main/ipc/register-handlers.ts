@@ -6,6 +6,9 @@ import type { AppIpcHandlerDependencies } from '@main/ipc/handlers/app-handlers'
 import { createAppIpcHandlers } from '@main/ipc/handlers/app-handlers'
 import type { FirstRunIpcHandlerDependencies } from '@main/ipc/handlers/first-run-handlers'
 import { createFirstRunIpcHandlers } from '@main/ipc/handlers/first-run-handlers'
+import type { PatientIpcHandlerDependencies } from '@main/ipc/handlers/patient-handlers'
+import { createPatientIpcHandlers } from '@main/ipc/handlers/patient-handlers'
+import { createAuthenticatedHandlerAuthorization } from '@main/ipc/authentication'
 import { ipcChannels } from '@shared/ipc'
 
 export type ApplicationIpcMain = Pick<IpcMain, 'handle' | 'removeHandler'>
@@ -13,6 +16,7 @@ export type ApplicationIpcDisposer = () => void
 export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependencies {
   readonly firstRun: FirstRunIpcHandlerDependencies
   readonly auth: AuthenticationIpcHandlerDependencies
+  readonly patient: Omit<PatientIpcHandlerDependencies, 'authorization'>
 }
 
 export function registerApplicationIpcHandlers(
@@ -24,6 +28,15 @@ export function registerApplicationIpcHandlers(
   const appHandlers = createAppIpcHandlers(dependencies)
   const firstRunHandlers = createFirstRunIpcHandlers(dependencies.firstRun)
   const authenticationHandlers = createAuthenticationIpcHandlers(dependencies.auth)
+  const authenticatedAuthorization = createAuthenticatedHandlerAuthorization({
+    navigationPolicy: dependencies.patient.navigationPolicy,
+    authenticationSessionService: dependencies.auth.authenticationSessionService,
+    logger: dependencies.patient.logger
+  })
+  const patientHandlers = createPatientIpcHandlers({
+    ...dependencies.patient,
+    authorization: authenticatedAuthorization
+  })
 
   applicationIpcMain.handle(ipcChannels.app.getInfo, appHandlers.getInfo)
   applicationIpcMain.handle(ipcChannels.app.getHealth, appHandlers.getHealth)
@@ -39,6 +52,10 @@ export function registerApplicationIpcHandlers(
   applicationIpcMain.handle(ipcChannels.auth.lock, authenticationHandlers.lock)
   applicationIpcMain.handle(ipcChannels.auth.logout, authenticationHandlers.logout)
   applicationIpcMain.handle(ipcChannels.auth.recordActivity, authenticationHandlers.recordActivity)
+  applicationIpcMain.handle(ipcChannels.patient.search, patientHandlers.search)
+  applicationIpcMain.handle(ipcChannels.patient.getSummary, patientHandlers.getSummary)
+  applicationIpcMain.handle(ipcChannels.patient.findDuplicates, patientHandlers.findDuplicates)
+  applicationIpcMain.handle(ipcChannels.patient.create, patientHandlers.create)
 
   return () => {
     disposeApplicationIpcHandlers(applicationIpcMain)
@@ -58,4 +75,8 @@ export function disposeApplicationIpcHandlers(applicationIpcMain: ApplicationIpc
   applicationIpcMain.removeHandler(ipcChannels.auth.lock)
   applicationIpcMain.removeHandler(ipcChannels.auth.logout)
   applicationIpcMain.removeHandler(ipcChannels.auth.recordActivity)
+  applicationIpcMain.removeHandler(ipcChannels.patient.search)
+  applicationIpcMain.removeHandler(ipcChannels.patient.getSummary)
+  applicationIpcMain.removeHandler(ipcChannels.patient.findDuplicates)
+  applicationIpcMain.removeHandler(ipcChannels.patient.create)
 }

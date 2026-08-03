@@ -553,6 +553,32 @@ function createApi({
           >
       ),
       onSessionChanged: vi.fn(() => () => undefined)
+    },
+    patient: {
+      search: vi.fn(
+        async () =>
+          createAuthenticationFailure('IPC_UNAVAILABLE') as Awaited<
+            ReturnType<HealthScreeningApi['patient']['search']>
+          >
+      ),
+      getSummary: vi.fn(
+        async () =>
+          createAuthenticationFailure('IPC_UNAVAILABLE') as Awaited<
+            ReturnType<HealthScreeningApi['patient']['getSummary']>
+          >
+      ),
+      findDuplicates: vi.fn(
+        async () =>
+          createAuthenticationFailure('IPC_UNAVAILABLE') as Awaited<
+            ReturnType<HealthScreeningApi['patient']['findDuplicates']>
+          >
+      ),
+      create: vi.fn(
+        async () =>
+          createAuthenticationFailure('IPC_UNAVAILABLE') as Awaited<
+            ReturnType<HealthScreeningApi['patient']['create']>
+          >
+      )
     }
   }
 }

@@ -78,15 +78,22 @@ describe('shared IPC contracts', () => {
         logout: 'health-screening:auth:logout',
         recordActivity: 'health-screening:auth:record-activity',
         sessionChanged: 'health-screening:auth:session-changed'
+      },
+      patient: {
+        search: 'health-screening:patient:search',
+        getSummary: 'health-screening:patient:get-summary',
+        findDuplicates: 'health-screening:patient:find-duplicates',
+        create: 'health-screening:patient:create'
       }
     })
     expect(
       new Set([
         ...Object.values(ipcChannels.app),
         ...Object.values(ipcChannels.firstRun),
-        ...Object.values(ipcChannels.auth)
+        ...Object.values(ipcChannels.auth),
+        ...Object.values(ipcChannels.patient)
       ]).size
-    ).toBe(12)
+    ).toBe(16)
   })
 
   it('uses strict empty request objects for app operations', () => {

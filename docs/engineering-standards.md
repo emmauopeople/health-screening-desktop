@@ -61,6 +61,12 @@ an honest dashboard, and transparent planned-module routes. It adds no IPC,
 preload methods, main-process services, database reads, migrations, clinical
 records, patient tabs, synchronization, backup, network behavior, browser
 routing, or browser persistence.
+HSD-025 adds the offline patient registry vertical slice. It appends immutable
+schema version 2, a main-process patient repository and application service,
+fixed authenticated patient IPC/preload methods, renderer search/registration
+UI, duplicate review, and four volatile patient tabs. It does not add screening
+workflow data, referral/follow-up data, sync transport, network behavior,
+browser persistence, generic IPC, or renderer-owned authorization.
 
 ## TypeScript
 
@@ -148,6 +154,13 @@ results. Shell route state must remain volatile React/controller state only; do
 not store it in URLs, browser history, `localStorage`, `sessionStorage`,
 IndexedDB, cookies, Cache API, files, or window names.
 
+Renderer patient tabs are volatile registry views. They may hold active tab,
+replacement-dialog, and dirty-guard UI state in React only. They must not store
+patient route state or drafts in browser persistence, URLs, files, network
+requests, or renderer-owned caches. Ctrl+K and Alt+1 through Alt+4 are renderer
+shortcuts only; main-process authorization remains authoritative for patient
+IPC.
+
 ## Database Migrations
 
 Released migration files are immutable. Do not edit, rename, reorder, squash, or
@@ -168,6 +181,12 @@ Every application table introduced by a migration must be `STRICT`. Booleans use
 integer 0/1 checks, JSON text uses `json_valid` checks, and clinical or audit
 relationships use restrict foreign keys rather than cascade deletes unless a
 later approved task explicitly changes that rule.
+
+Schema version 2 is the HSD-025 patient registry migration. Later migrations
+must not edit `0001-initial-schema.sql` or `0002-patient-registry.sql`. The
+version-2 schema validator must continue composing the schema-v1 contract with
+the HSD-025 sequence table, patient search indexes, active local identifier
+uniqueness, and active-patient identity triggers.
 
 ## Database Transactions
 
@@ -254,6 +273,13 @@ redact, repair, emit, or recursively audit events. They must require authentic
 HSD-008 transaction capabilities before validating or writing, keep installation
 and optional user references SQLite-enforced, and decode rows and lists from
 unknown values with strict descriptor checks.
+
+Patient repositories must allocate local patient codes only from
+`local_sequences` inside the caller-owned transaction. Patient create writes
+must keep the patient, active local identifier, participation/data-use
+acknowledgment, and pending outbox row atomic. Duplicate-review workflow,
+override approval, and audit events belong in the application service, not the
+repository.
 
 Audit metadata must be copied into a new bounded graph, sorted
 lexicographically by object key, serialized deterministically, checked against
@@ -411,6 +437,15 @@ HSD-015 permits two first-run operations:
   `health-screening:first-run:initialize` with a strict first-run command and
   minimized initialized state.
 
+HSD-025 permits four authenticated patient operations for
+`LOCAL_ADMIN`, `NURSE`, and `TRAINED_SCREENER` sessions:
+
+- `patient.search(request)` on `health-screening:patient:search`.
+- `patient.getSummary(request)` on `health-screening:patient:get-summary`.
+- `patient.findDuplicates(request)` on
+  `health-screening:patient:find-duplicates`.
+- `patient.create(request)` on `health-screening:patient:create`.
+
 All IPC request, response, and result schemas live under `src/shared/ipc`.
 Schemas are authoritative and TypeScript types are inferred from them. Runtime
 validation is required in main before trusted execution, in main before success
@@ -425,7 +460,8 @@ The renderer receives only `window.healthScreening.app.getInfo`,
 `window.healthScreening.app.getHealth`,
 `window.healthScreening.firstRun.getState`, and
 `window.healthScreening.firstRun.initialize`, plus the fixed
-`window.healthScreening.auth` methods from HSD-022. Do not expose raw
+`window.healthScreening.auth` methods from HSD-022 and fixed
+`window.healthScreening.patient` methods from HSD-025. Do not expose raw
 `ipcRenderer`, generic `invoke` or `send` wrappers, synchronous IPC, event
 objects, arbitrary channels, Node globals, filesystem APIs, `process`,
 `Buffer`, or `require`.

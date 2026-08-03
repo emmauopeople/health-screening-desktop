@@ -11,7 +11,8 @@ under `src/main/database/migrations/sql/`.
 - Use positive integer versions beginning at `1` with no gaps.
 - Use stable lowercase kebab-case names.
 - Import SQL with `?raw` so the text is bundled into the Electron main output.
-- HSD-007 production contains only version `1`, `initial-schema`.
+- HSD-025 production contains versions `1` (`initial-schema`) and `2`
+  (`patient-registry`).
 - Do not export raw SQL through preload, renderer, or shared contracts.
 
 ## Checksums
@@ -57,11 +58,11 @@ If any step fails, the runner attempts one rollback and throws a controlled
 migration error. A rollback failure is logged safely and does not replace the
 original migration error.
 
-For HSD-007, schema version 1 is validated before migration 1 commits, after
-all migrations finish, and on every idempotent current-version startup. The
-validator checks the exact non-internal table set, strict mode, exact named
-index set, exact table column metadata, `schema_migrations` structure, and
-`foreign_keys=ON`.
+Schema version 1 is validated before migration 1 commits. Schema version 2 is
+validated before migration 2 commits, after all migrations finish, and on every
+idempotent current-version startup. The version-2 validator includes the full
+schema-v1 contract plus the HSD-025 sequence table, patient search indexes,
+active local-code identifier uniqueness, and active-patient identity triggers.
 
 ## Compatibility Rules
 
@@ -77,7 +78,7 @@ index set, exact table column metadata, `schema_migrations` structure, and
 The application never downgrades, deletes, resets, replaces, or auto-repairs an
 incompatible production database.
 
-## Adding `0002`
+## Adding Later Migrations
 
 For a future reviewed task:
 

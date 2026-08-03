@@ -77,7 +77,7 @@ describe('application navigation catalog', () => {
     expect(getVisibleApplicationMenus('UNKNOWN')).toEqual([])
   })
 
-  it('freezes returned catalogs and keeps dashboard as the only available command', () => {
+  it('freezes returned catalogs and exposes only dashboard and patient registry commands', () => {
     const adminMenus = getVisibleApplicationMenus('LOCAL_ADMIN')
 
     expect(Object.isFrozen(applicationCommandDefinitions)).toBe(true)
@@ -88,7 +88,12 @@ describe('application navigation catalog', () => {
       applicationCommandDefinitions
         .filter((definition) => definition.availability === 'AVAILABLE')
         .map((definition) => definition.id)
-    ).toEqual(['HOME_DASHBOARD'])
+    ).toEqual([
+      'HOME_DASHBOARD',
+      'HOME_QUICK_PATIENT_SEARCH',
+      'PATIENTS_PATIENT_SEARCH',
+      'PATIENTS_REGISTER_NEW_PATIENT'
+    ])
   })
 })
 

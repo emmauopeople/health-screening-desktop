@@ -30,17 +30,19 @@ authorization remains authoritative for future protected operations.
 | `NURSE`            | Home, Patients, Screening, Referrals, Reports                 |
 | `TRAINED_SCREENER` | Home, Patients, Screening, Referrals                          |
 
-`HOME_DASHBOARD` is the only available command in HSD-024. Every other command
-routes to a transparent planned-module workspace with the command label, "Not
-available in this build.", and the owning future work package.
+HSD-025 makes patient search and registration commands available. Other future
+clinical commands still route to a transparent planned-module workspace with
+the command label, "Not available in this build.", and the owning future work
+package.
 
 ## Dashboard
 
-The dashboard is an honest empty operational surface. It renders deployment and
+The dashboard is an honest operational surface. It renders deployment and
 time-zone context, five noninteractive summary cards, role-filtered quick
-actions, and an accessible worklist table with one empty-state row. It must not
-render sample patients, counts, dates, site names, session names, sync totals,
-or backup timestamps.
+actions, an enabled patient-registry search/register control, and an accessible
+worklist table with one empty-state row. It must not render sample patients,
+counts, dates, site names, session names, sync totals, backup timestamps,
+screening history, or referral/follow-up values.
 
 ## Keyboard Model
 
@@ -50,12 +52,16 @@ Space toggle the contextual panel, and Escape closes the panel and restores
 focus to the active primary menu.
 
 F6 cycles major focus zones in order: top bar, contextual command panel when
-open, workspace, then top bar. Shift+F6 cycles in reverse. HSD-024 deliberately
-skips the absent patient-tab region and does not render an empty focus target.
+open, patient tabs when present, workspace, then top bar. Shift+F6 cycles in
+reverse. When no patient tabs are open, the patient-tab zone is skipped.
 
-## HSD-025 Boundary
+Ctrl+K opens patient search and focuses the search field. Alt+1 through Alt+4
+activate the corresponding open patient tab.
 
-HSD-025 owns patient search, patient registration, duplicate review,
-four-patient tabs, and unsaved-change guards. HSD-024 may label those planned
-workspaces but must not implement forms, patient tabs, patient records, or
-clinical state.
+## Patient Registry
+
+HSD-025 implements patient search, patient registration, duplicate review,
+four-patient tabs, and reusable dirty-tab close guards. Patient tabs show only
+registry summary data. Clinical screening history and referral/follow-up panels
+show unavailable placeholders until later workflow slices implement those data
+sources.

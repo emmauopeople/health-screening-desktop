@@ -35,6 +35,9 @@ without adding IPC, preload, renderer code, migrations, or persistent sessions.
 HSD-022 exposes that service through `src/main/ipc/authentication`, which owns
 authenticated handler mapping, safe auth IPC errors, a scoped session publisher,
 and the main-only authorization adapter for future protected business handlers.
+HSD-025 adds `application/patients`, which composes installation, patient,
+audit, and transaction boundaries for patient search, duplicate review,
+duplicate override, and atomic patient registration.
 
 `src/main/foundation` owns main-process-only primitives for local data writes,
 including validated UUID v4 entity IDs and UTC timestamps. These providers are
@@ -68,7 +71,10 @@ that repository method only from the application layer. HSD-012 adds the typed
 location repository over the existing schema-v1 `locations` table. HSD-013 adds
 the typed append-only audit-event repository over the existing schema-v1
 `audit_log` table. Repositories own exact SQL and row decoding, while writes
-use caller-owned transaction-scoped capabilities.
+use caller-owned transaction-scoped capabilities. HSD-025 adds the patient
+repository over schema-v2 registry objects for local search, duplicate
+candidate lookup, and transaction-scoped patient/identifier/acknowledgment/
+outbox creation.
 
 `src/main/security/password` owns the HSD-010 local password credential
 primitive. It validates exact plaintext password input, serializes strict
@@ -90,9 +96,11 @@ The renderer must not import from `src/main`.
 `src/preload` exposes a narrow typed bridge through `contextBridge`. HSD-005
 exposes fixed asynchronous application metadata and shell-health methods.
 HSD-015 adds fixed first-run state and initialization methods. HSD-022 adds a
-fixed `auth` method group and validated session-change subscription. Preload
-does not expose raw `ipcRenderer`, generic send/execute APIs, Electron event
-objects, filesystem access, shell access, or dynamic channel dispatch.
+fixed `auth` method group and validated session-change subscription. HSD-025
+adds a fixed `patient` method group for search, summary, duplicate review, and
+create. Preload does not expose raw `ipcRenderer`, generic send/execute APIs,
+Electron event objects, filesystem access, shell access, or dynamic channel
+dispatch.
 
 ## Renderer
 
@@ -119,12 +127,15 @@ password modules, network behavior, synchronization, or clinical workflows.
 `src/renderer/src/app/shell` owns the HSD-024 authenticated application shell.
 It contains the frozen role-visible navigation catalog, renderer-only shell
 controller, keyboard focus helpers, primary top bar, contextual command panel,
-dashboard workspace, and transparent planned-module workspace. It receives only
-safe startup metadata and public authenticated user data. It does not introduce
-IPC, preload methods, browser routing, browser persistence, clinical records,
-patient tabs, database access, network behavior, or authorization decisions.
-HSD-025 owns patient search, duplicate review, four-patient tabs, and
-unsaved-change guards.
+dashboard workspace, patient tab host, and transparent planned-module
+workspace. It receives only safe startup metadata and public authenticated user
+data. It does not introduce browser routing, browser persistence, clinical
+records, database access, network behavior, or authorization decisions.
+
+`src/renderer/src/app/patients` owns the HSD-025 patient registry presentation:
+search, registration, duplicate review UI, patient tab state helpers, the
+four-tab replacement dialog, dirty-tab guard dialog, and read-only registry
+overview placeholders for future clinical panels.
 
 ## Shared Contracts
 

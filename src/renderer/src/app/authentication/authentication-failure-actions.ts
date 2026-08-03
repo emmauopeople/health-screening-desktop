@@ -7,7 +7,7 @@ import {
 } from './authentication-message-mapping'
 
 export type AuthenticationInteractiveOperation =
-  'LOGIN' | 'PASSWORD_CHANGE' | 'UNLOCK' | 'LOCK' | 'LOGOUT'
+  'LOGIN' | 'PASSWORD_CHANGE' | 'UNLOCK' | 'LOCK' | 'LOGOUT' | 'PATIENT'
 
 export type AuthenticationFailureAction =
   | {

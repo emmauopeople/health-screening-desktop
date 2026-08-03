@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
+import { createAuthenticationFailure, type HealthScreeningApi } from '@shared/ipc'
 
 import {
   ApplicationShell,
@@ -28,15 +29,17 @@ describe('application shell rendering', () => {
         busy: false,
         operationError: null,
         alertRef: { current: null },
+        api: createPatientApiStub(),
         onLock: vi.fn(),
-        onLogout: vi.fn()
+        onLogout: vi.fn(),
+        onAuthenticationFailure: vi.fn()
       })
     )
 
     const displayMarkup = markup.replaceAll('&#x27;', "'")
 
     expect(displayMarkup).toContain('Welcome, Admin User')
-    expect(displayMarkup).toContain('Local data ready')
+    expect(displayMarkup).toContain('Local patient registry ready')
     expect(displayMarkup).toContain('No screening session open')
     expect(displayMarkup).toContain('application-command-panel')
     expect(displayMarkup).toContain('Dashboard')
@@ -45,9 +48,9 @@ describe('application shell rendering', () => {
     expect(displayMarkup).not.toContain(`Today${String.fromCharCode(0x2019)}s patient worklist`)
     expect(displayMarkup).toContain('Patient code')
     expect(displayMarkup).toContain('Age / sex')
-    expect(displayMarkup).toContain('Patient worklist data is not available in HSD-024.')
+    expect(displayMarkup).toContain('Patient worklist data is not available in HSD-025.')
     expect(displayMarkup).toContain(
-      'Patient search, registration, and worklist data are unavailable in HSD-024.'
+      'Patient search and registration use the local offline registry.'
     )
     expect(displayMarkup).not.toContain('Jane')
     expect(displayMarkup).not.toContain('Grace')
@@ -66,7 +69,7 @@ describe('application shell rendering', () => {
     expect(displayMarkup.match(/class="dashboard-summary-card"/g)).toHaveLength(5)
     expect(displayMarkup).toContain('class="dashboard-lower-grid"')
     expect(displayMarkup).toContain('class="dashboard-quick-action-number"')
-    expect(displayMarkup).toContain('disabled=""')
+    expect(displayMarkup).not.toContain('disabled=""')
     expect(displayMarkup).not.toContain(
       'Screening totals require the future encounter data source.</p>'
     )
@@ -138,4 +141,15 @@ function user(role: ApplicationShellUser['role']): ApplicationShellUser {
     displayName: 'Admin User',
     role
   }
+}
+
+function createPatientApiStub(): HealthScreeningApi {
+  return {
+    patient: {
+      search: vi.fn(async () => createAuthenticationFailure('IPC_UNAVAILABLE')),
+      getSummary: vi.fn(async () => createAuthenticationFailure('IPC_UNAVAILABLE')),
+      findDuplicates: vi.fn(async () => createAuthenticationFailure('IPC_UNAVAILABLE')),
+      create: vi.fn(async () => createAuthenticationFailure('IPC_UNAVAILABLE'))
+    }
+  } as unknown as HealthScreeningApi
 }

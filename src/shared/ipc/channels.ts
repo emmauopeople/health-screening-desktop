@@ -16,9 +16,16 @@ export const ipcChannels = {
     logout: 'health-screening:auth:logout',
     recordActivity: 'health-screening:auth:record-activity',
     sessionChanged: 'health-screening:auth:session-changed'
+  },
+  patient: {
+    search: 'health-screening:patient:search',
+    getSummary: 'health-screening:patient:get-summary',
+    findDuplicates: 'health-screening:patient:find-duplicates',
+    create: 'health-screening:patient:create'
   }
 } as const
 
 export type AppIpcChannel = (typeof ipcChannels.app)[keyof typeof ipcChannels.app]
 export type FirstRunIpcChannel = (typeof ipcChannels.firstRun)[keyof typeof ipcChannels.firstRun]
 export type AuthenticationIpcChannel = (typeof ipcChannels.auth)[keyof typeof ipcChannels.auth]
+export type PatientIpcChannel = (typeof ipcChannels.patient)[keyof typeof ipcChannels.patient]

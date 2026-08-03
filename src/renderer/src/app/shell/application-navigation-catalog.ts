@@ -53,14 +53,7 @@ const commandDefinitions = [
     'PLANNED',
     plannedOwners.session
   ),
-  command(
-    'HOME_QUICK_PATIENT_SEARCH',
-    'HOME',
-    'Quick Patient Search',
-    allRoles,
-    'PLANNED',
-    plannedOwners.hsd025
-  ),
+  command('HOME_QUICK_PATIENT_SEARCH', 'HOME', 'Quick Patient Search', allRoles, 'AVAILABLE', null),
   command(
     'HOME_OPEN_REFERRALS',
     'HOME',
@@ -70,21 +63,14 @@ const commandDefinitions = [
     plannedOwners.referrals
   ),
   command('HOME_SYNC_CENTER', 'HOME', 'Sync Center', adminOnlyRoles, 'PLANNED', plannedOwners.sync),
-  command(
-    'PATIENTS_PATIENT_SEARCH',
-    'PATIENTS',
-    'Patient Search',
-    allRoles,
-    'PLANNED',
-    plannedOwners.hsd025
-  ),
+  command('PATIENTS_PATIENT_SEARCH', 'PATIENTS', 'Patient Search', allRoles, 'AVAILABLE', null),
   command(
     'PATIENTS_REGISTER_NEW_PATIENT',
     'PATIENTS',
     'Register New Patient',
     allRoles,
-    'PLANNED',
-    plannedOwners.hsd025
+    'AVAILABLE',
+    null
   ),
   command(
     'PATIENTS_RECENT_PATIENTS',
