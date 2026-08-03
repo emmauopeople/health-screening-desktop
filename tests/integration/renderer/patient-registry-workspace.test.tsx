@@ -301,6 +301,176 @@ describe('patient registry workspace mounted regressions', () => {
     await mounted.unmount()
   })
 
+  it('renders registration required indicators and focuses the first invalid enabled control', async () => {
+    const api = createApi()
+    const mounted = await mountWorkspace({
+      api,
+      commandId: 'PATIENTS_REGISTER_NEW_PATIENT'
+    })
+
+    expect(requiredGroupLabel(mounted, 'Patient name').textContent).toContain('*')
+    expect(requiredGroupLabel(mounted, 'Patient name').textContent).toContain('required')
+    expect(requiredGroupLabel(mounted, 'Date of birth or approximate age').textContent).toContain(
+      '*'
+    )
+    expect(text(mounted)).toContain('At least one name field is required.')
+    expect(fieldInput(mounted, 'Given name').getAttribute('aria-required')).toBeNull()
+    expect(fieldInput(mounted, 'Family name').getAttribute('aria-required')).toBeNull()
+    expect(fieldInput(mounted, 'Other names').getAttribute('aria-required')).toBeNull()
+    expect(fieldInput(mounted, 'Age as of date').getAttribute('aria-required')).toBeNull()
+
+    await clickButton(mounted, 'Create patient')
+
+    expect(api.patient.create).not.toHaveBeenCalled()
+    expect(text(mounted)).toContain('Enter a date of birth or approximate age.')
+    expect(document.activeElement).toBe(fieldInput(mounted, 'Given name'))
+
+    await mounted.unmount()
+  })
+
+  it('disables approximate age fields when exact date of birth is entered', async () => {
+    const mounted = await mountWorkspace({ commandId: 'PATIENTS_REGISTER_NEW_PATIENT' })
+
+    await changeInput(fieldInput(mounted, 'Date of birth'), '1990-01-02')
+
+    expect(fieldInput(mounted, 'Approximate age').value).toBe('')
+    expect(fieldInput(mounted, 'Approximate age').disabled).toBe(true)
+    expect(fieldInput(mounted, 'Age as of date').value).toBe('')
+    expect(fieldInput(mounted, 'Age as of date').disabled).toBe(true)
+    expect(text(mounted)).toContain('Disabled because an exact date of birth is recorded.')
+    expect(fieldInput(mounted, 'Approximate age').getAttribute('aria-describedby')).toContain(
+      'patient-registration-exact-dob-disabled-note'
+    )
+
+    await mounted.unmount()
+  })
+
+  it('disables date of birth and requires age as of date when approximate age is entered', async () => {
+    const mounted = await mountWorkspace({ commandId: 'PATIENTS_REGISTER_NEW_PATIENT' })
+
+    await changeInput(fieldInput(mounted, 'Date of birth'), '1990-01-02')
+    await changeInput(fieldInput(mounted, 'Date of birth'), '')
+    await changeInput(fieldInput(mounted, 'Approximate age'), '34')
+
+    expect(fieldInput(mounted, 'Date of birth').value).toBe('')
+    expect(fieldInput(mounted, 'Date of birth').disabled).toBe(true)
+    expect(fieldInput(mounted, 'Age as of date').disabled).toBe(false)
+    expect(fieldInput(mounted, 'Age as of date').getAttribute('aria-required')).toBe('true')
+    expect(fieldInput(mounted, 'Age as of date').value).toBe(currentLocalDate())
+    expect(fieldLabel(mounted, 'Age as of date').textContent).toContain('*')
+    expect(fieldLabel(mounted, 'Age as of date').textContent).toContain('required')
+
+    await mounted.unmount()
+  })
+
+  it('clearing approximate age restores the date-of-birth option and clears age as of date', async () => {
+    const mounted = await mountWorkspace({ commandId: 'PATIENTS_REGISTER_NEW_PATIENT' })
+
+    await changeInput(fieldInput(mounted, 'Approximate age'), '34')
+    await changeInput(fieldInput(mounted, 'Age as of date'), '2020-02-03')
+    await changeInput(fieldInput(mounted, 'Approximate age'), '')
+
+    expect(fieldInput(mounted, 'Date of birth').disabled).toBe(false)
+    expect(fieldInput(mounted, 'Age as of date').value).toBe('')
+    expect(fieldInput(mounted, 'Age as of date').disabled).toBe(true)
+    expect(fieldInput(mounted, 'Age as of date').getAttribute('aria-required')).toBeNull()
+
+    await mounted.unmount()
+  })
+
+  it('does not submit stale age values when switching between age-entry methods', async () => {
+    const api = createApi()
+    api.patient.create.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'CREATED',
+        patient: patientDetail({ id: patientIdThree, patientCode: 'PT-000003' })
+      })
+    )
+    const mounted = await mountWorkspace({
+      api,
+      commandId: 'PATIENTS_REGISTER_NEW_PATIENT'
+    })
+
+    await changeInput(fieldInput(mounted, 'Given name'), 'Ada')
+    await changeInput(fieldInput(mounted, 'Approximate age'), '34')
+    await changeInput(fieldInput(mounted, 'Age as of date'), '2020-02-03')
+    await changeInput(fieldInput(mounted, 'Approximate age'), '')
+    await changeInput(fieldInput(mounted, 'Date of birth'), '1990-01-02')
+    await clickButton(mounted, 'Create patient')
+
+    expect(api.patient.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dateOfBirth: '1990-01-02',
+        approximateAgeYears: null,
+        ageAsOfDate: null,
+        duplicateReviewToken: null
+      })
+    )
+
+    await mounted.unmount()
+  })
+
+  it('creates a valid exact-date-of-birth registration', async () => {
+    const api = createApi()
+    api.patient.create.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'CREATED',
+        patient: patientDetail({ id: patientIdThree, patientCode: 'PT-000003' })
+      })
+    )
+    const mounted = await mountWorkspace({
+      api,
+      commandId: 'PATIENTS_REGISTER_NEW_PATIENT'
+    })
+
+    await fillExactDobRegistration(mounted)
+    await clickButton(mounted, 'Create patient')
+
+    expect(api.patient.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        givenName: 'Ada',
+        dateOfBirth: '1990-01-02',
+        approximateAgeYears: null,
+        ageAsOfDate: null,
+        duplicateReviewToken: null
+      })
+    )
+    expect(text(mounted)).toContain('Patient created.')
+
+    await mounted.unmount()
+  })
+
+  it('creates a valid approximate-age registration', async () => {
+    const api = createApi()
+    api.patient.create.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'CREATED',
+        patient: patientDetail({ id: patientIdThree, patientCode: 'PT-000003' })
+      })
+    )
+    const mounted = await mountWorkspace({
+      api,
+      commandId: 'PATIENTS_REGISTER_NEW_PATIENT'
+    })
+
+    await fillApproximateAgeRegistration(mounted)
+    await changeInput(fieldInput(mounted, 'Age as of date'), '2020-02-03')
+    await clickButton(mounted, 'Create patient')
+
+    expect(api.patient.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        givenName: 'Ada',
+        dateOfBirth: null,
+        approximateAgeYears: 34,
+        ageAsOfDate: '2020-02-03',
+        duplicateReviewToken: null
+      })
+    )
+    expect(text(mounted)).toContain('Patient created.')
+
+    await mounted.unmount()
+  })
+
   it('surfaces registration validation failures without leaving creation busy', async () => {
     const api = createApi()
     api.patient.create.mockResolvedValueOnce(createPatientFailure('VALIDATION_FAILED'))
@@ -322,6 +492,7 @@ describe('patient registry workspace mounted regressions', () => {
     expect(duplicateReviewPanel(mounted)).toBeNull()
     expect(mounted.container.querySelector('[data-shell-slot="patient-tabs"]')).toBeNull()
 
+    await fillExactDobRegistration(mounted)
     await clickButton(mounted, 'Create patient')
 
     expect(api.patient.create).toHaveBeenCalledOnce()
@@ -342,6 +513,7 @@ describe('patient registry workspace mounted regressions', () => {
 
     await changeInput(fieldInput(mounted, 'Given name'), 'Protected Draft')
     await changeInput(fieldInput(mounted, 'Family name'), 'Unauthorized')
+    await changeInput(fieldInput(mounted, 'Date of birth'), '1990-01-02')
     await clickButton(mounted, 'Create patient')
 
     expect(mounted.onAuthenticationFailure).toHaveBeenCalledWith('AUTHORIZATION_FAILED')
@@ -372,6 +544,7 @@ describe('patient registry workspace mounted regressions', () => {
       commandId: 'PATIENTS_REGISTER_NEW_PATIENT'
     })
 
+    await fillExactDobRegistration(mounted)
     await clickButton(mounted, 'Create patient')
 
     expect(
@@ -448,6 +621,7 @@ describe('patient registry workspace mounted regressions', () => {
       commandId: 'PATIENTS_REGISTER_NEW_PATIENT'
     })
 
+    await fillExactDobRegistration(mounted)
     await clickButton(mounted, 'Create patient')
     await clickButton(mounted, 'Return to edit')
 
@@ -563,6 +737,7 @@ describe('patient registry workspace mounted regressions', () => {
           api.patient.create.mockResolvedValueOnce(createPatientFailure('IPC_FORBIDDEN'))
         },
         run: async (mounted) => {
+          await fillExactDobRegistration(mounted)
           await clickButton(mounted, 'Create patient')
         }
       },
@@ -928,6 +1103,32 @@ function fieldInput(mounted: MountedWorkspace, label: string): HTMLInputElement 
   return field
 }
 
+function fieldLabel(mounted: MountedWorkspace, label: string): HTMLLabelElement {
+  for (const candidate of Array.from(
+    mounted.container.querySelectorAll<HTMLLabelElement>('label')
+  )) {
+    const text = candidate.querySelector('.patient-field-label-text')?.textContent?.trim()
+
+    if (text === label) {
+      return candidate
+    }
+  }
+
+  throw new Error(`Expected label ${label} to be rendered.`)
+}
+
+function requiredGroupLabel(mounted: MountedWorkspace, label: string): HTMLElement {
+  const groupLabel = Array.from(
+    mounted.container.querySelectorAll<HTMLElement>('.patient-field-group-label')
+  ).find((candidate) => candidate.textContent?.includes(label))
+
+  if (groupLabel === undefined) {
+    throw new Error(`Expected required group ${label} to be rendered.`)
+  }
+
+  return groupLabel
+}
+
 function fieldControl<TElement extends HTMLElement>(
   mounted: MountedWorkspace,
   label: string,
@@ -944,6 +1145,16 @@ function fieldControl<TElement extends HTMLElement>(
   }
 
   return null
+}
+
+async function fillExactDobRegistration(mounted: MountedWorkspace): Promise<void> {
+  await changeInput(fieldInput(mounted, 'Given name'), 'Ada')
+  await changeInput(fieldInput(mounted, 'Date of birth'), '1990-01-02')
+}
+
+async function fillApproximateAgeRegistration(mounted: MountedWorkspace): Promise<void> {
+  await changeInput(fieldInput(mounted, 'Given name'), 'Ada')
+  await changeInput(fieldInput(mounted, 'Approximate age'), '34')
 }
 
 async function clickButton(mounted: MountedWorkspace, label: string): Promise<void> {
@@ -1029,6 +1240,15 @@ function text(mounted: MountedWorkspace): string {
 
 function stylesheet(): string {
   return readFileSync('src/renderer/src/styles/main.css', 'utf8')
+}
+
+function currentLocalDate(): string {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
 }
 
 function createDeferred<TValue>(): DeferredPromise<TValue> {

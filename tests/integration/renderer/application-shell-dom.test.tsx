@@ -890,6 +890,14 @@ describe('application shell DOM integration', () => {
     const mounted = await mountApp(harness.api)
 
     await openRegistrationWorkspace(mounted)
+    await fillRegistrationDraft(mounted, {
+      givenName: 'Possible',
+      familyName: 'Duplicate',
+      dateOfBirth: '1990-01-02',
+      sex: 'FEMALE',
+      village: 'Bastos',
+      phone: '+237 600 000 333'
+    })
     await clickButton(mounted, 'Create patient')
 
     expect(text(mounted)).toContain('Possible Duplicate Patients')
@@ -1036,6 +1044,7 @@ describe('application shell DOM integration', () => {
     await clickButton(mounted, 'Select')
     await clickButton(mounted, 'Register New Patient')
     await changeInput(patientFieldInput(mounted, 'Given name'), 'Forbidden Draft')
+    await changeInput(patientFieldInput(mounted, 'Date of birth'), '1990-01-02')
     await clickButton(mounted, 'Create patient')
 
     expect(text(mounted)).toContain('Authentication is unavailable.')

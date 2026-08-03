@@ -1208,6 +1208,14 @@ h1 {
   line-height: 1.3;
 }
 
+.patient-fields-grid input:disabled,
+.patient-fields-grid select:disabled,
+.patient-fields-grid textarea:disabled {
+  color: var(--shell-secondary-text);
+  background: #eef3f7;
+  opacity: 1;
+}
+
 .patient-search-toolbar .button,
 .patient-pagination .button,
 .patient-detail-actions .button,
@@ -1326,7 +1334,8 @@ h1 {
 }
 
 .patient-detail-list dt,
-.patient-fields-grid span {
+.patient-field-label-text,
+.patient-field-group-label {
   display: block;
   margin-bottom: 5px;
   color: var(--shell-secondary-text);
@@ -1334,6 +1343,44 @@ h1 {
   font-weight: 700;
   line-height: 1.25;
   text-transform: uppercase;
+}
+
+.patient-field-group-label {
+  margin-bottom: 3px;
+}
+
+.patient-required-indicator {
+  display: inline-flex;
+  margin-left: 3px;
+  color: #8a3a2f;
+  font-weight: 800;
+}
+
+.patient-field-group {
+  min-width: 0;
+}
+
+.patient-field-group-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.patient-field-help,
+.patient-field-error {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.patient-field-help {
+  color: var(--shell-secondary-text);
+}
+
+.patient-field-error {
+  color: #8a3a2f;
 }
 
 .patient-detail-list dd {
@@ -1634,7 +1681,8 @@ h1 {
   .patient-registration-review-layout,
   .patient-duplicates-layout,
   .patient-detail-list,
-  .patient-fields-grid {
+  .patient-fields-grid,
+  .patient-field-group-grid {
     grid-template-columns: 1fr;
   }
 
