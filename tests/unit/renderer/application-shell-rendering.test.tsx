@@ -25,7 +25,6 @@ describe('application shell rendering', () => {
     const markup = renderToStaticMarkup(
       createElement(ApplicationShell, {
         api: createShellApi(),
-        authGeneration: 1,
         context: shellContext,
         user: user('LOCAL_ADMIN'),
         busy: false,

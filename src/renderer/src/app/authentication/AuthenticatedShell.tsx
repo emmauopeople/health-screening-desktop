@@ -134,9 +134,8 @@ export function AuthenticatedShell({
 
   return (
     <ApplicationShell
-      key={route.user.role}
+      key={`${route.user.username}:${route.user.role}`}
       api={api}
-      authGeneration={route.revision}
       context={shellContext}
       user={route.user}
       busy={isSubmitting}

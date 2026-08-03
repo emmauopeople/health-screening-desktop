@@ -20,8 +20,10 @@ import {
   type PublicAuthenticationSession,
   type PublicAuthenticatedUser,
   type PublicPatientDetail,
+  type PublicPatientDuplicateCandidate,
   type PublicPatientSummary,
   type PublicLockedAuthenticationSession,
+  type PublicPasswordChangeRequiredAuthenticationSession,
   type PublicSignedOutAuthenticationSession,
   type UtcTimestamp
 } from '@shared/ipc'
@@ -725,6 +727,325 @@ describe('application shell DOM integration', () => {
     await mounted.unmount()
   })
 
+  it('preserves registration draft and component identity across ACTIVE session revisions', async () => {
+    const harness = createAppApi(activeSession(1))
+    const mounted = await mountApp(harness.api)
+
+    await openRegistrationWorkspace(mounted)
+    await fillRegistrationDraft(mounted, {
+      givenName: 'Revision',
+      familyName: 'Proof',
+      dateOfBirth: '1991-03-04',
+      sex: 'FEMALE',
+      village: 'Bastos',
+      phone: '+237 600 000 111'
+    })
+
+    const givenNameInput = patientFieldInput(mounted, 'Given name')
+
+    await emitSession(harness, activeSession(2, { ...baseUser, displayName: 'Updated User' }))
+
+    expect(patientFieldInput(mounted, 'Given name')).toBe(givenNameInput)
+    expectRegistrationDraft(mounted, {
+      givenName: 'Revision',
+      familyName: 'Proof',
+      dateOfBirth: '1991-03-04',
+      sex: 'FEMALE',
+      village: 'Bastos',
+      phone: '+237 600 000 111'
+    })
+    expectWorkspaceHeading(mounted, 'Register New Patient')
+    expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Patients commands')
+    expect(commandButtonByText(mounted, 'Register New Patient').getAttribute('aria-current')).toBe(
+      'page'
+    )
+
+    await mounted.unmount()
+  })
+
+  it('preserves registration draft when recordActivity returns a newer ACTIVE revision', async () => {
+    const harness = createAppApi(activeSession(1))
+    harness.api.auth.recordActivity.mockResolvedValueOnce(
+      createIpcSuccess(activeSession(2)) as AuthRecordActivityResult
+    )
+    const mounted = await mountApp(harness.api)
+
+    await openRegistrationWorkspace(mounted)
+    await fillRegistrationDraft(mounted, {
+      givenName: 'Activity',
+      familyName: 'Reporter',
+      dateOfBirth: '1988-07-09',
+      sex: 'MALE',
+      village: 'Melen',
+      phone: '+237 600 000 222'
+    })
+
+    const givenNameInput = patientFieldInput(mounted, 'Given name')
+
+    await dispatchKeyboard(givenNameInput, 'A')
+
+    expect(harness.api.auth.recordActivity).toHaveBeenCalledOnce()
+    expect(patientFieldInput(mounted, 'Given name')).toBe(givenNameInput)
+    expectRegistrationDraft(mounted, {
+      givenName: 'Activity',
+      familyName: 'Reporter',
+      dateOfBirth: '1988-07-09',
+      sex: 'MALE',
+      village: 'Melen',
+      phone: '+237 600 000 222'
+    })
+    expectWorkspaceHeading(mounted, 'Register New Patient')
+
+    await mounted.unmount()
+  })
+
+  it('preserves selected patient details, edit draft, and dirty state across ACTIVE revisions', async () => {
+    const harness = createAppApi(activeSession(1))
+    harness.api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    harness.api.patient.get.mockResolvedValueOnce(createIpcSuccess(shellPatientDetail()))
+    const mounted = await mountApp(harness.api)
+
+    await clickButton(mounted, 'Patients')
+    await clickButtonExact(mounted, 'Search')
+    await clickButton(mounted, 'Select')
+
+    expect(text(mounted)).toContain('Protected Patient')
+
+    await clickButton(mounted, 'Edit')
+    await changeInput(patientFieldInput(mounted, 'Village'), 'Revision Village')
+    await emitSession(harness, activeSession(2))
+
+    expectWorkspaceHeading(mounted, 'Patient Search and Management')
+    expect(text(mounted)).toContain('PT-000001')
+    expect(text(mounted)).toContain('Unsaved edits')
+    expect(patientFieldInput(mounted, 'Village').value).toBe('Revision Village')
+
+    await mounted.unmount()
+  })
+
+  it('preserves patient search query and results across ACTIVE revisions', async () => {
+    const harness = createAppApi(activeSession(1))
+    harness.api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    const mounted = await mountApp(harness.api)
+
+    await clickButton(mounted, 'Patients')
+    await changeInput(registrySearchInput(mounted), 'Protected')
+    await clickButtonExact(mounted, 'Search')
+
+    expect(text(mounted)).toContain('Protected Patient')
+
+    await emitSession(harness, activeSession(2))
+
+    expect(registrySearchInput(mounted).value).toBe('Protected')
+    expect(text(mounted)).toContain('Protected Patient')
+    expect(harness.api.patient.search).toHaveBeenCalledOnce()
+
+    await mounted.unmount()
+  })
+
+  it('preserves recent patients across ACTIVE revisions without remounting the recent pane', async () => {
+    const harness = createAppApi(activeSession(1))
+    harness.api.patient.listRecent.mockResolvedValueOnce(
+      createIpcSuccess([shellPatientSummary({ displayName: 'Recent Protected' })])
+    )
+    const mounted = await mountApp(harness.api)
+
+    await clickButton(mounted, 'Patients')
+    await clickButton(mounted, 'Recent Patients')
+
+    expect(text(mounted)).toContain('Recent Protected')
+
+    await emitSession(harness, activeSession(2))
+
+    expectWorkspaceHeading(mounted, 'Recent Patients')
+    expect(text(mounted)).toContain('Recent Protected')
+    expect(harness.api.patient.listRecent).toHaveBeenCalledOnce()
+
+    await mounted.unmount()
+  })
+
+  it('preserves duplicate-review candidates and token state across ACTIVE revisions', async () => {
+    const harness = createAppApi(activeSession(1))
+    harness.api.patient.create
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          status: 'DUPLICATE_REVIEW_REQUIRED',
+          candidates: [
+            duplicateCandidate(
+              shellPatientSummary({
+                id: '22222222-2222-4222-8222-222222222222',
+                patientCode: 'PT-000002',
+                displayName: 'Possible Match'
+              })
+            )
+          ],
+          duplicateReviewToken: 'duplicate-review-token-active-revision'
+        })
+      )
+      .mockResolvedValueOnce(createPatientFailure('VALIDATION_FAILED'))
+    const mounted = await mountApp(harness.api)
+
+    await openRegistrationWorkspace(mounted)
+    await clickButton(mounted, 'Create patient')
+
+    expect(text(mounted)).toContain('Possible Duplicate Patients')
+    expect(text(mounted)).toContain('Possible Match')
+
+    await emitSession(harness, activeSession(2))
+
+    expectWorkspaceHeading(mounted, 'Register New Patient')
+    expect(text(mounted)).toContain('Possible Duplicate Patients')
+    expect(text(mounted)).toContain('Match reasons: name, date of birth')
+
+    await clickButton(mounted, 'Continue registration despite possible matches')
+    await clickDialogButton(mounted, 'Continue registration despite possible matches')
+
+    expect(harness.api.patient.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        duplicateReviewToken: 'duplicate-review-token-active-revision'
+      })
+    )
+
+    await mounted.unmount()
+  })
+
+  it('preserves version-conflict comparison state across ACTIVE revisions', async () => {
+    const harness = createAppApi(activeSession(1))
+    harness.api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    harness.api.patient.get.mockResolvedValueOnce(
+      createIpcSuccess(shellPatientDetail({ village: 'Original Village' }))
+    )
+    harness.api.patient.update.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'PATIENT_VERSION_CONFLICT',
+        patient: shellPatientDetail({
+          displayName: 'Protected Latest',
+          village: 'Latest Village',
+          rowVersion: 2
+        })
+      })
+    )
+    const mounted = await mountApp(harness.api)
+
+    await clickButton(mounted, 'Patients')
+    await clickButtonExact(mounted, 'Search')
+    await clickButton(mounted, 'Select')
+    await clickButton(mounted, 'Edit')
+    await changeInput(patientFieldInput(mounted, 'Village'), 'Attempted Village')
+    await clickButton(mounted, 'Save changes')
+
+    expect(text(mounted)).toContain('Latest authoritative patient')
+
+    await emitSession(harness, activeSession(2))
+
+    expect(text(mounted)).toContain('Latest authoritative patient')
+    expect(text(mounted)).toContain('Latest Village')
+    expect(patientFieldInput(mounted, 'Village').value).toBe('Attempted Village')
+    expect(text(mounted)).toContain('Unsaved edits')
+
+    await mounted.unmount()
+  })
+
+  it.each([
+    {
+      name: 'LOCKED',
+      session: lockedSession(2),
+      expectedText: 'Session locked.'
+    },
+    {
+      name: 'SIGNED_OUT',
+      session: signedOutSession(2),
+      expectedText: 'Sign in to Health Screening.'
+    },
+    {
+      name: 'PASSWORD_CHANGE_REQUIRED',
+      session: passwordChangeRequiredSession(2),
+      expectedText: 'Change required password.'
+    }
+  ])('clears volatile patient state when the session becomes $name', async (testCase) => {
+    const harness = createAppApi(activeSession(1))
+    harness.api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    harness.api.patient.get.mockResolvedValueOnce(createIpcSuccess(shellPatientDetail()))
+    const mounted = await mountApp(harness.api)
+
+    await clickButton(mounted, 'Patients')
+    await clickButtonExact(mounted, 'Search')
+    await clickButton(mounted, 'Select')
+    await clickButton(mounted, 'Register New Patient')
+    await changeInput(patientFieldInput(mounted, 'Given name'), 'Volatile Draft')
+
+    await emitSession(harness, testCase.session)
+
+    expect(text(mounted)).toContain(testCase.expectedText)
+    expect(text(mounted)).not.toContain('Protected Patient')
+    expect(mounted.container.querySelector('.patient-registration')).toBeNull()
+    expect(mounted.container.querySelector('.patient-detail-pane')).toBeNull()
+
+    await mounted.unmount()
+  })
+
+  it('clears patient state when the authenticated user identity changes', async () => {
+    const harness = createAppApi(activeSession(1))
+    harness.api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    harness.api.patient.get.mockResolvedValueOnce(createIpcSuccess(shellPatientDetail()))
+    const mounted = await mountApp(harness.api)
+
+    await clickButton(mounted, 'Patients')
+    await clickButtonExact(mounted, 'Search')
+    await clickButton(mounted, 'Select')
+
+    expect(text(mounted)).toContain('Protected Patient')
+
+    await emitSession(
+      harness,
+      activeSession(2, {
+        ...baseUser,
+        username: 'Other.User',
+        displayName: 'Other User'
+      })
+    )
+
+    expect(text(mounted)).toContain('Welcome, Other User')
+    expect(text(mounted)).not.toContain('Protected Patient')
+    expectWorkspaceHeading(mounted, 'Welcome, Other User')
+
+    await mounted.unmount()
+  })
+
+  it('clears patient identity and registration draft when IPC_FORBIDDEN occurs', async () => {
+    const harness = createAppApi(activeSession(1))
+    harness.api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    harness.api.patient.get.mockResolvedValueOnce(createIpcSuccess(shellPatientDetail()))
+    harness.api.patient.create.mockResolvedValueOnce(createPatientFailure('IPC_FORBIDDEN'))
+    const mounted = await mountApp(harness.api)
+
+    await clickButton(mounted, 'Patients')
+    await clickButtonExact(mounted, 'Search')
+    await clickButton(mounted, 'Select')
+    await clickButton(mounted, 'Register New Patient')
+    await changeInput(patientFieldInput(mounted, 'Given name'), 'Forbidden Draft')
+    await clickButton(mounted, 'Create patient')
+
+    expect(text(mounted)).toContain('Authentication is unavailable.')
+    expect(text(mounted)).not.toContain('Protected Patient')
+    expect(mounted.container.querySelector('.patient-registration')).toBeNull()
+    expect(mounted.container.querySelector('.patient-detail-pane')).toBeNull()
+
+    await mounted.unmount()
+  })
+
   it('preserves one active-shell F6 listener across ACTIVE revisions and removes it on unmount', async () => {
     const addEventListenerSpy = vi.spyOn(window, 'addEventListener')
     const removeEventListenerSpy = vi.spyOn(window, 'removeEventListener')
@@ -797,11 +1118,16 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
   }
   auth: {
     getSession: ReturnType<typeof vi.fn<HealthScreeningApi['auth']['getSession']>>
+    recordActivity: ReturnType<typeof vi.fn<HealthScreeningApi['auth']['recordActivity']>>
   } & HealthScreeningApi['auth']
   patient: {
     search: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['search']>>
     get: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['get']>>
+    create: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['create']>>
     update: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['update']>>
+    listRecent: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['listRecent']>>
+    findDuplicates: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['findDuplicates']>>
+    markNotDuplicate: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['markNotDuplicate']>>
   } & HealthScreeningApi['patient']
 }
 
@@ -814,6 +1140,15 @@ interface AppApiHarness {
 interface MountedApp {
   readonly container: HTMLElement
   unmount(): Promise<void>
+}
+
+interface RegistrationDraftValues {
+  readonly givenName: string
+  readonly familyName: string
+  readonly dateOfBirth: string
+  readonly sex: string
+  readonly village: string
+  readonly phone: string
 }
 
 function createAppApi(initialSession: PublicAuthenticationSession): AppApiHarness {
@@ -949,7 +1284,6 @@ async function mountShell({
     root.render(
       createElement(ApplicationShell, {
         api: createAppApi(activeSession(1)).api,
-        authGeneration: 1,
         context: shellContext,
         user: shellUser,
         busy: false,
@@ -1138,6 +1472,16 @@ function patientSearchInput(mounted: MountedApp): HTMLInputElement {
   return input
 }
 
+function registrySearchInput(mounted: MountedApp): HTMLInputElement {
+  const input = mounted.container.querySelector<HTMLInputElement>('#patient-registry-search')
+
+  if (input === null) {
+    throw new Error('Expected patient registry search input to be rendered.')
+  }
+
+  return input
+}
+
 function worklistRows(mounted: MountedApp): HTMLTableRowElement[] {
   return Array.from(
     mounted.container.querySelectorAll<HTMLTableRowElement>('.dashboard-worklist tbody tr')
@@ -1173,19 +1517,67 @@ function expectWorkspaceHeading(mounted: MountedApp, expected: string): void {
 }
 
 function patientFieldInput(mounted: MountedApp, label: string): HTMLInputElement {
+  const input = patientFieldControl<HTMLInputElement>(mounted, label, 'input')
+
+  if (input !== null) {
+    return input
+  }
+
+  throw new Error(`Expected patient field ${label} to be rendered.`)
+}
+
+function patientFieldSelect(mounted: MountedApp, label: string): HTMLSelectElement {
+  const select = patientFieldControl<HTMLSelectElement>(mounted, label, 'select')
+
+  if (select !== null) {
+    return select
+  }
+
+  throw new Error(`Expected patient select field ${label} to be rendered.`)
+}
+
+function patientFieldControl<TElement extends HTMLElement>(
+  mounted: MountedApp,
+  label: string,
+  selector: string
+): TElement | null {
   for (const candidate of Array.from(
     mounted.container.querySelectorAll<HTMLLabelElement>('label')
   )) {
     if (candidate.querySelector('span')?.textContent?.trim() === label) {
-      const input = candidate.querySelector<HTMLInputElement>('input')
-
-      if (input !== null) {
-        return input
-      }
+      return candidate.querySelector<TElement>(selector)
     }
   }
 
-  throw new Error(`Expected patient field ${label} to be rendered.`)
+  return null
+}
+
+async function openRegistrationWorkspace(mounted: MountedApp): Promise<void> {
+  await clickButton(mounted, 'Patients')
+  await clickButton(mounted, 'Register New Patient')
+
+  expectWorkspaceHeading(mounted, 'Register New Patient')
+}
+
+async function fillRegistrationDraft(
+  mounted: MountedApp,
+  values: RegistrationDraftValues
+): Promise<void> {
+  await changeInput(patientFieldInput(mounted, 'Given name'), values.givenName)
+  await changeInput(patientFieldInput(mounted, 'Family name'), values.familyName)
+  await changeInput(patientFieldInput(mounted, 'Date of birth'), values.dateOfBirth)
+  await changeSelect(patientFieldSelect(mounted, 'Sex'), values.sex)
+  await changeInput(patientFieldInput(mounted, 'Village'), values.village)
+  await changeInput(patientFieldInput(mounted, 'Phone'), values.phone)
+}
+
+function expectRegistrationDraft(mounted: MountedApp, values: RegistrationDraftValues): void {
+  expect(patientFieldInput(mounted, 'Given name').value).toBe(values.givenName)
+  expect(patientFieldInput(mounted, 'Family name').value).toBe(values.familyName)
+  expect(patientFieldInput(mounted, 'Date of birth').value).toBe(values.dateOfBirth)
+  expect(patientFieldSelect(mounted, 'Sex').value).toBe(values.sex)
+  expect(patientFieldInput(mounted, 'Village').value).toBe(values.village)
+  expect(patientFieldInput(mounted, 'Phone').value).toBe(values.phone)
 }
 
 async function changeInput(input: HTMLInputElement, value: string): Promise<void> {
@@ -1193,6 +1585,16 @@ async function changeInput(input: HTMLInputElement, value: string): Promise<void
     const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
     valueSetter?.call(input, value)
     input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }))
+    await flushPromises()
+  })
+  await flushReact()
+}
+
+async function changeSelect(select: HTMLSelectElement, value: string): Promise<void> {
+  await act(async () => {
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+    valueSetter?.call(select, value)
+    select.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }))
     await flushPromises()
   })
   await flushReact()
@@ -1276,6 +1678,15 @@ function shellPatientDetail(overrides: Partial<PublicPatientDetail> = {}): Publi
   }
 }
 
+function duplicateCandidate(patient: PublicPatientSummary): PublicPatientDuplicateCandidate {
+  return {
+    patient,
+    matchedOn: ['name', 'date_of_birth'],
+    score: 87,
+    status: 'POSSIBLE_DUPLICATE'
+  }
+}
+
 async function flushReact(): Promise<void> {
   for (let index = 0; index < 4; index += 1) {
     await act(async () => {
@@ -1315,6 +1726,17 @@ function lockedSession(revision: number): PublicLockedAuthenticationSession {
     user: baseUser,
     reason: 'MANUAL',
     absoluteExpiresAt: futureTimestamp(12 * 60 * 60_000),
+    revision
+  }
+}
+
+function passwordChangeRequiredSession(
+  revision: number
+): PublicPasswordChangeRequiredAuthenticationSession {
+  return {
+    status: 'PASSWORD_CHANGE_REQUIRED',
+    user: baseUser,
+    expiresAt: futureTimestamp(15 * 60_000),
     revision
   }
 }

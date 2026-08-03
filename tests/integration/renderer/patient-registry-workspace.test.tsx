@@ -52,7 +52,6 @@ interface MountedWorkspace {
   readonly onSelectCommand: ReturnType<typeof vi.fn<(commandId: ApplicationCommandId) => void>>
   getSelectedPatient(): PublicPatientDetail | null
   setCommandId(commandId: PatientCommandId): Promise<void>
-  setAuthGeneration(authGeneration: number): Promise<void>
   runNavigationGuard(commandId: ApplicationCommandId): Promise<boolean>
   unmount(): Promise<void>
 }
@@ -328,6 +327,26 @@ describe('patient registry workspace mounted regressions', () => {
     expect(api.patient.create).toHaveBeenCalledOnce()
     expect(text(mounted)).toContain('The request could not be processed.')
     expect(buttonByText(mounted, 'Create patient').disabled).toBe(false)
+
+    await mounted.unmount()
+  })
+
+  it('clears registration draft on authorization failure without an auth-generation remount', async () => {
+    const api = createApi()
+    api.patient.create.mockResolvedValueOnce(createPatientFailure('AUTHORIZATION_FAILED'))
+
+    const mounted = await mountWorkspace({
+      api,
+      commandId: 'PATIENTS_REGISTER_NEW_PATIENT'
+    })
+
+    await changeInput(fieldInput(mounted, 'Given name'), 'Protected Draft')
+    await changeInput(fieldInput(mounted, 'Family name'), 'Unauthorized')
+    await clickButton(mounted, 'Create patient')
+
+    expect(mounted.onAuthenticationFailure).toHaveBeenCalledWith('AUTHORIZATION_FAILED')
+    expect(fieldInput(mounted, 'Given name').value).toBe('')
+    expect(fieldInput(mounted, 'Family name').value).toBe('')
 
     await mounted.unmount()
   })
@@ -612,7 +631,7 @@ describe('patient registry workspace mounted regressions', () => {
     }
   })
 
-  it('reconciles authentication patient failures and suppresses stale loads after auth generation changes', async () => {
+  it('reconciles authentication patient failures and suppresses stale loads after protected-state invalidation', async () => {
     const api = createApi()
     api.patient.search
       .mockResolvedValueOnce(createPatientFailure('AUTH_LOCKED'))
@@ -651,11 +670,13 @@ describe('patient registry workspace mounted regressions', () => {
 
     await clickButton(mounted, 'Search')
     await clickButton(mounted, 'Select')
-    await mounted.setAuthGeneration(2)
+    api.patient.search.mockResolvedValueOnce(createPatientFailure('AUTH_LOCKED'))
+    await clickButton(mounted, 'Search')
 
     staleGet.resolve(createIpcSuccess(patientDetail({ displayName: 'Stale Patient' })))
     await flushReact()
 
+    expect(mounted.onAuthenticationFailure).toHaveBeenLastCalledWith('AUTH_LOCKED')
     expect(text(mounted)).not.toContain('Stale Patient')
 
     await mounted.unmount()
@@ -664,14 +685,12 @@ describe('patient registry workspace mounted regressions', () => {
 
 async function mountWorkspace({
   api = createApi(),
-  authGeneration = 1,
   commandId = 'PATIENTS_PATIENT_SEARCH',
   selectedPatient = null,
   onAuthenticationFailure = vi.fn<(code: PatientErrorCode) => void>(),
   onSelectCommand = vi.fn<(commandId: ApplicationCommandId) => void>()
 }: {
   readonly api?: MockedHealthScreeningApi
-  readonly authGeneration?: number
   readonly commandId?: PatientCommandId
   readonly selectedPatient?: PublicPatientDetail | null
   readonly onAuthenticationFailure?: ReturnType<typeof vi.fn<(code: PatientErrorCode) => void>>
@@ -681,7 +700,6 @@ async function mountWorkspace({
   document.body.append(container)
   const root = createRoot(container)
   const headingRef = { current: null } as RefObject<HTMLHeadingElement | null>
-  let currentAuthGeneration = authGeneration
   let currentCommandId = commandId
   let currentSelectedPatient = selectedPatient
   let registeredGuard: PatientWorkspaceNavigationGuard | null = null
@@ -690,9 +708,7 @@ async function mountWorkspace({
   const renderWorkspace = (): void => {
     root.render(
       createElement(PatientRegistryWorkspace, {
-        key: currentAuthGeneration,
         api,
-        authGeneration: currentAuthGeneration,
         commandId: currentCommandId,
         headingId: 'patient-registry-test-heading',
         headingRef,
@@ -746,15 +762,6 @@ async function mountWorkspace({
     async setCommandId(nextCommandId: PatientCommandId): Promise<void> {
       await act(async () => {
         currentCommandId = nextCommandId
-        renderWorkspace()
-        await flushPromises()
-      })
-      await flushReact()
-    },
-    async setAuthGeneration(nextAuthGeneration: number): Promise<void> {
-      await act(async () => {
-        currentAuthGeneration = nextAuthGeneration
-        currentSelectedPatient = null
         renderWorkspace()
         await flushPromises()
       })

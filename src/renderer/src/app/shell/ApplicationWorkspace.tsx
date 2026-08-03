@@ -1,5 +1,5 @@
 import type { RefObject } from 'react'
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import type { HealthScreeningApi, PatientErrorCode, PublicPatientDetail } from '@shared/ipc'
 
 import { PatientRegistryWorkspace } from '../patients/PatientRegistryWorkspace'
@@ -15,7 +15,6 @@ import type {
 
 interface ApplicationWorkspaceProps {
   readonly api: HealthScreeningApi
-  readonly authGeneration: number
   readonly context: ApplicationShellContext
   readonly user: ApplicationShellUser
   readonly route: ApplicationWorkspaceRoute
@@ -30,7 +29,6 @@ const workspaceHeadingId = 'application-workspace-heading'
 
 export function ApplicationWorkspace({
   api,
-  authGeneration,
   context,
   user,
   route,
@@ -40,20 +38,7 @@ export function ApplicationWorkspace({
   onPatientAuthenticationFailure,
   registerNavigationGuard
 }: ApplicationWorkspaceProps): React.JSX.Element {
-  const [selectedPatientState, setSelectedPatientState] = useState<{
-    readonly authGeneration: number
-    readonly patient: PublicPatientDetail | null
-  }>(() => ({ authGeneration, patient: null }))
-  const selectedPatient =
-    selectedPatientState.authGeneration === authGeneration && route.status === 'PATIENTS'
-      ? selectedPatientState.patient
-      : null
-  const setSelectedPatient = useCallback(
-    (patient: PublicPatientDetail | null): void => {
-      setSelectedPatientState({ authGeneration, patient })
-    },
-    [authGeneration]
-  )
+  const [selectedPatient, setSelectedPatient] = useState<PublicPatientDetail | null>(null)
 
   return (
     <main
@@ -73,9 +58,7 @@ export function ApplicationWorkspace({
         />
       ) : route.status === 'PATIENTS' ? (
         <PatientRegistryWorkspace
-          key={authGeneration}
           api={api}
-          authGeneration={authGeneration}
           commandId={route.commandId}
           headingId={workspaceHeadingId}
           headingRef={headingRef}

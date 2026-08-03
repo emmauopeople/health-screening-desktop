@@ -29,7 +29,6 @@ type PatientCommandId =
 
 interface PatientRegistryWorkspaceProps {
   readonly api: HealthScreeningApi
-  readonly authGeneration: number
   readonly commandId: PatientCommandId
   readonly headingId: string
   readonly headingRef: RefObject<HTMLHeadingElement | null>
@@ -41,6 +40,8 @@ interface PatientRegistryWorkspaceProps {
 }
 
 type LoadState = 'IDLE' | 'LOADING' | 'READY' | 'EMPTY' | 'ERROR'
+type PatientStateInvalidator = () => void
+type RegisterPatientStateInvalidator = (invalidator: PatientStateInvalidator) => () => void
 
 const transportFailureMessage = 'The desktop service is unavailable.'
 
@@ -64,7 +65,6 @@ const emptyEditableFields: PatientEditableFields = Object.freeze({
 
 export function PatientRegistryWorkspace({
   api,
-  authGeneration,
   commandId,
   headingId,
   headingRef,
@@ -75,7 +75,8 @@ export function PatientRegistryWorkspace({
   registerNavigationGuard
 }: PatientRegistryWorkspaceProps): React.JSX.Element {
   const mountedRef = useMountedRef()
-  const authGenerationRef = useLatestRef(authGeneration)
+  const securityEpochRef = useRef(0)
+  const patientStateInvalidatorsRef = useRef(new Set<PatientStateInvalidator>())
   const [editMode, setEditMode] = useState(false)
   const [draft, setDraft] = useState<PatientEditableFields>(emptyEditableFields)
   const [editDirty, setEditDirty] = useState(false)
@@ -89,7 +90,26 @@ export function PatientRegistryWorkspace({
   const patientLoadRequestRef = useRef(0)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
 
+  const invalidateProtectedPatientState = useCallback((): void => {
+    securityEpochRef.current += 1
+  }, [])
+
+  const registerPatientStateInvalidator = useCallback(
+    (invalidator: PatientStateInvalidator): (() => void) => {
+      patientStateInvalidatorsRef.current.add(invalidator)
+
+      return () => {
+        patientStateInvalidatorsRef.current.delete(invalidator)
+      }
+    },
+    []
+  )
+
   const clearProtectedPatientState = useCallback((): void => {
+    invalidateProtectedPatientState()
+    for (const invalidatePatientState of Array.from(patientStateInvalidatorsRef.current)) {
+      invalidatePatientState()
+    }
     onSelectedPatientChange(null)
     setDraft(emptyEditableFields)
     setEditMode(false)
@@ -100,7 +120,7 @@ export function PatientRegistryWorkspace({
     pendingDirtyActionNeedsNavigationBypassRef.current = false
     allowResolvedDirtyNavigationRef.current = false
     setShowDirtyGuard(false)
-  }, [onSelectedPatientChange])
+  }, [invalidateProtectedPatientState, onSelectedPatientChange])
 
   const handlePatientFailure = useCallback(
     (code: PatientErrorCode, fallbackMessage: string): boolean => {
@@ -183,23 +203,23 @@ export function PatientRegistryWorkspace({
   }, [onSelectCommand])
 
   const isCurrentOperation = useCallback(
-    (startedAuthGeneration: number): boolean =>
-      mountedRef.current && authGenerationRef.current === startedAuthGeneration,
-    [authGenerationRef, mountedRef]
+    (startedSecurityEpoch: number): boolean =>
+      mountedRef.current && securityEpochRef.current === startedSecurityEpoch,
+    [mountedRef]
   )
 
   const loadAndSelectPatient = useCallback(
     async (patientId: string): Promise<boolean> => {
       const requestId = patientLoadRequestRef.current + 1
       patientLoadRequestRef.current = requestId
-      const startedAuthGeneration = authGenerationRef.current
+      const startedSecurityEpoch = securityEpochRef.current
       setMessage('Loading patient.')
 
       try {
         const result = await api.patient.get({ patientId })
 
         if (
-          !isCurrentOperation(startedAuthGeneration) ||
+          !isCurrentOperation(startedSecurityEpoch) ||
           patientLoadRequestRef.current !== requestId
         ) {
           return false
@@ -219,7 +239,7 @@ export function PatientRegistryWorkspace({
         return true
       } catch {
         if (
-          isCurrentOperation(startedAuthGeneration) &&
+          isCurrentOperation(startedSecurityEpoch) &&
           patientLoadRequestRef.current === requestId
         ) {
           setMessage(transportFailureMessage)
@@ -228,7 +248,7 @@ export function PatientRegistryWorkspace({
         return false
       }
     },
-    [api, authGenerationRef, handlePatientFailure, isCurrentOperation, onSelectedPatientChange]
+    [api, handlePatientFailure, isCurrentOperation, onSelectedPatientChange]
   )
 
   const selectPatient = useCallback(
@@ -245,7 +265,7 @@ export function PatientRegistryWorkspace({
       return false
     }
 
-    const startedAuthGeneration = authGenerationRef.current
+    const startedSecurityEpoch = securityEpochRef.current
     setSaving(true)
     setMessage(null)
 
@@ -256,7 +276,7 @@ export function PatientRegistryWorkspace({
         patch: draft
       })
 
-      if (!isCurrentOperation(startedAuthGeneration)) {
+      if (!isCurrentOperation(startedSecurityEpoch)) {
         return false
       }
 
@@ -281,19 +301,18 @@ export function PatientRegistryWorkspace({
       setMessage('Changes saved.')
       return true
     } catch {
-      if (isCurrentOperation(startedAuthGeneration)) {
+      if (isCurrentOperation(startedSecurityEpoch)) {
         setMessage(transportFailureMessage)
       }
 
       return false
     } finally {
-      if (isCurrentOperation(startedAuthGeneration)) {
+      if (isCurrentOperation(startedSecurityEpoch)) {
         setSaving(false)
       }
     }
   }, [
     api,
-    authGenerationRef,
     draft,
     handlePatientFailure,
     isCurrentOperation,
@@ -358,7 +377,8 @@ export function PatientRegistryWorkspace({
       {commandId === 'PATIENTS_REGISTER_NEW_PATIENT' ? (
         <PatientRegistrationWorkspace
           api={api}
-          authGeneration={authGeneration}
+          securityEpochRef={securityEpochRef}
+          registerStateInvalidator={registerPatientStateInvalidator}
           onPatientFailure={handlePatientFailure}
           onPatientCreated={(patient) => {
             onSelectedPatientChange(patient)
@@ -382,7 +402,8 @@ export function PatientRegistryWorkspace({
             {commandId === 'PATIENTS_PATIENT_SEARCH' ? (
               <PatientSearchPane
                 api={api}
-                authGeneration={authGeneration}
+                securityEpochRef={securityEpochRef}
+                registerStateInvalidator={registerPatientStateInvalidator}
                 selectedPatientId={selectedPatient?.id ?? null}
                 searchInputRef={searchInputRef}
                 onPatientFailure={handlePatientFailure}
@@ -393,7 +414,8 @@ export function PatientRegistryWorkspace({
             {commandId === 'PATIENTS_RECENT_PATIENTS' ? (
               <RecentPatientsPane
                 api={api}
-                authGeneration={authGeneration}
+                securityEpochRef={securityEpochRef}
+                registerStateInvalidator={registerPatientStateInvalidator}
                 selectedPatientId={selectedPatient?.id ?? null}
                 onPatientFailure={handlePatientFailure}
                 onSelectPatient={selectPatient}
@@ -402,7 +424,8 @@ export function PatientRegistryWorkspace({
             {commandId === 'PATIENTS_POSSIBLE_DUPLICATES' ? (
               <PossibleDuplicatesPane
                 api={api}
-                authGeneration={authGeneration}
+                securityEpochRef={securityEpochRef}
+                registerStateInvalidator={registerPatientStateInvalidator}
                 onPatientFailure={handlePatientFailure}
                 onSelectPatient={selectPatient}
                 onMessage={setMessage}
@@ -530,7 +553,8 @@ export function PatientRegistryWorkspace({
 
 function PatientSearchPane({
   api,
-  authGeneration,
+  securityEpochRef,
+  registerStateInvalidator,
   selectedPatientId,
   searchInputRef,
   onPatientFailure,
@@ -538,7 +562,8 @@ function PatientSearchPane({
   onRegister
 }: {
   readonly api: HealthScreeningApi
-  readonly authGeneration: number
+  readonly securityEpochRef: MutableRefObject<number>
+  registerStateInvalidator: RegisterPatientStateInvalidator
   readonly selectedPatientId: string | null
   readonly searchInputRef: RefObject<HTMLInputElement | null>
   onPatientFailure(code: PatientErrorCode, message: string): boolean
@@ -546,7 +571,6 @@ function PatientSearchPane({
   onRegister(): void
 }): React.JSX.Element {
   const mountedRef = useMountedRef()
-  const authGenerationRef = useLatestRef(authGeneration)
   const requestRef = useRef(0)
   const [query, setQuery] = useState('')
   const [pageSize, setPageSize] = useState<25 | 50 | 100>(25)
@@ -556,11 +580,26 @@ function PatientSearchPane({
   const [state, setState] = useState<LoadState>('IDLE')
   const [failureMessage, setFailureMessage] = useState<string | null>(null)
 
+  const invalidateLocalState = useCallback((): void => {
+    requestRef.current += 1
+    setQuery('')
+    setPage(1)
+    setItems([])
+    setTotal(0)
+    setState('IDLE')
+    setFailureMessage(null)
+  }, [])
+
+  useEffect(
+    () => registerStateInvalidator(invalidateLocalState),
+    [invalidateLocalState, registerStateInvalidator]
+  )
+
   const runSearch = useCallback(
     async (nextPage: number): Promise<void> => {
       const requestId = requestRef.current + 1
       requestRef.current = requestId
-      const startedAuthGeneration = authGenerationRef.current
+      const startedSecurityEpoch = securityEpochRef.current
       setState('LOADING')
       setFailureMessage(null)
 
@@ -573,7 +612,7 @@ function PatientSearchPane({
 
         if (
           !mountedRef.current ||
-          authGenerationRef.current !== startedAuthGeneration ||
+          securityEpochRef.current !== startedSecurityEpoch ||
           requestRef.current !== requestId
         ) {
           return
@@ -595,7 +634,7 @@ function PatientSearchPane({
       } catch {
         if (
           mountedRef.current &&
-          authGenerationRef.current === startedAuthGeneration &&
+          securityEpochRef.current === startedSecurityEpoch &&
           requestRef.current === requestId
         ) {
           setItems([])
@@ -605,7 +644,7 @@ function PatientSearchPane({
         }
       }
     },
-    [api, authGenerationRef, mountedRef, onPatientFailure, pageSize, query]
+    [api, mountedRef, onPatientFailure, pageSize, query, securityEpochRef]
   )
 
   const emptyText = getPatientSearchEmptyText(state, failureMessage)
@@ -687,28 +726,41 @@ function PatientSearchPane({
 
 function RecentPatientsPane({
   api,
-  authGeneration,
+  securityEpochRef,
+  registerStateInvalidator,
   selectedPatientId,
   onPatientFailure,
   onSelectPatient
 }: {
   readonly api: HealthScreeningApi
-  readonly authGeneration: number
+  readonly securityEpochRef: MutableRefObject<number>
+  registerStateInvalidator: RegisterPatientStateInvalidator
   readonly selectedPatientId: string | null
   onPatientFailure(code: PatientErrorCode, message: string): boolean
   onSelectPatient(patientId: string): void
 }): React.JSX.Element {
   const mountedRef = useMountedRef()
-  const authGenerationRef = useLatestRef(authGeneration)
   const requestRef = useRef(0)
   const [items, setItems] = useState<readonly PublicPatientSummary[]>([])
   const [state, setState] = useState<LoadState>('IDLE')
   const [failureMessage, setFailureMessage] = useState<string | null>(null)
 
+  const invalidateLocalState = useCallback((): void => {
+    requestRef.current += 1
+    setItems([])
+    setState('IDLE')
+    setFailureMessage(null)
+  }, [])
+
+  useEffect(
+    () => registerStateInvalidator(invalidateLocalState),
+    [invalidateLocalState, registerStateInvalidator]
+  )
+
   const loadRecent = useCallback(async (): Promise<void> => {
     const requestId = requestRef.current + 1
     requestRef.current = requestId
-    const startedAuthGeneration = authGenerationRef.current
+    const startedSecurityEpoch = securityEpochRef.current
     setState('LOADING')
     setFailureMessage(null)
 
@@ -717,7 +769,7 @@ function RecentPatientsPane({
 
       if (
         !mountedRef.current ||
-        authGenerationRef.current !== startedAuthGeneration ||
+        securityEpochRef.current !== startedSecurityEpoch ||
         requestRef.current !== requestId
       ) {
         return
@@ -736,7 +788,7 @@ function RecentPatientsPane({
     } catch {
       if (
         mountedRef.current &&
-        authGenerationRef.current === startedAuthGeneration &&
+        securityEpochRef.current === startedSecurityEpoch &&
         requestRef.current === requestId
       ) {
         setItems([])
@@ -744,7 +796,7 @@ function RecentPatientsPane({
         setFailureMessage(transportFailureMessage)
       }
     }
-  }, [api, authGenerationRef, mountedRef, onPatientFailure])
+  }, [api, mountedRef, onPatientFailure, securityEpochRef])
 
   useEffect(() => {
     let active = true
@@ -776,19 +828,20 @@ function RecentPatientsPane({
 
 function PossibleDuplicatesPane({
   api,
-  authGeneration,
+  securityEpochRef,
+  registerStateInvalidator,
   onPatientFailure,
   onSelectPatient,
   onMessage
 }: {
   readonly api: HealthScreeningApi
-  readonly authGeneration: number
+  readonly securityEpochRef: MutableRefObject<number>
+  registerStateInvalidator: RegisterPatientStateInvalidator
   onPatientFailure(code: PatientErrorCode, message: string): boolean
   onSelectPatient(patientId: string): void
   onMessage(message: string | null): void
 }): React.JSX.Element {
   const mountedRef = useMountedRef()
-  const authGenerationRef = useLatestRef(authGeneration)
   const loadRequestRef = useRef(0)
   const reviewPendingRef = useRef(false)
   const [pairs, setPairs] = useState<readonly PublicPatientDuplicatePair[]>([])
@@ -797,10 +850,25 @@ function PossibleDuplicatesPane({
   const [failureMessage, setFailureMessage] = useState<string | null>(null)
   const [reviewPending, setReviewPending] = useState(false)
 
+  const invalidateLocalState = useCallback((): void => {
+    loadRequestRef.current += 1
+    reviewPendingRef.current = false
+    setPairs([])
+    setSelectedPair(null)
+    setState('IDLE')
+    setFailureMessage(null)
+    setReviewPending(false)
+  }, [])
+
+  useEffect(
+    () => registerStateInvalidator(invalidateLocalState),
+    [invalidateLocalState, registerStateInvalidator]
+  )
+
   const loadPairs = useCallback(async (): Promise<void> => {
     const requestId = loadRequestRef.current + 1
     loadRequestRef.current = requestId
-    const startedAuthGeneration = authGenerationRef.current
+    const startedSecurityEpoch = securityEpochRef.current
     setState('LOADING')
     setFailureMessage(null)
 
@@ -813,7 +881,7 @@ function PossibleDuplicatesPane({
 
       if (
         !mountedRef.current ||
-        authGenerationRef.current !== startedAuthGeneration ||
+        securityEpochRef.current !== startedSecurityEpoch ||
         loadRequestRef.current !== requestId
       ) {
         return
@@ -834,7 +902,7 @@ function PossibleDuplicatesPane({
     } catch {
       if (
         mountedRef.current &&
-        authGenerationRef.current === startedAuthGeneration &&
+        securityEpochRef.current === startedSecurityEpoch &&
         loadRequestRef.current === requestId
       ) {
         setPairs([])
@@ -843,7 +911,7 @@ function PossibleDuplicatesPane({
         setFailureMessage(transportFailureMessage)
       }
     }
-  }, [api, authGenerationRef, mountedRef, onPatientFailure])
+  }, [api, mountedRef, onPatientFailure, securityEpochRef])
 
   useEffect(() => {
     let active = true
@@ -868,7 +936,7 @@ function PossibleDuplicatesPane({
       return
     }
 
-    const startedAuthGeneration = authGenerationRef.current
+    const startedSecurityEpoch = securityEpochRef.current
     reviewPendingRef.current = true
     setReviewPending(true)
     onMessage(null)
@@ -880,7 +948,7 @@ function PossibleDuplicatesPane({
         reasonCodes: ['MANUAL_REVIEW']
       })
 
-      if (!mountedRef.current || authGenerationRef.current !== startedAuthGeneration) {
+      if (!mountedRef.current || securityEpochRef.current !== startedSecurityEpoch) {
         return
       }
 
@@ -892,11 +960,11 @@ function PossibleDuplicatesPane({
       onMessage('Duplicate review saved.')
       await loadPairs()
     } catch {
-      if (mountedRef.current && authGenerationRef.current === startedAuthGeneration) {
+      if (mountedRef.current && securityEpochRef.current === startedSecurityEpoch) {
         onMessage(transportFailureMessage)
       }
     } finally {
-      if (mountedRef.current && authGenerationRef.current === startedAuthGeneration) {
+      if (mountedRef.current && securityEpochRef.current === startedSecurityEpoch) {
         reviewPendingRef.current = false
         setReviewPending(false)
       }
@@ -969,7 +1037,8 @@ function PossibleDuplicatesPane({
 
 function PatientRegistrationWorkspace({
   api,
-  authGeneration,
+  securityEpochRef,
+  registerStateInvalidator,
   onPatientCreated,
   onOpenPatient,
   onPatientFailure,
@@ -977,7 +1046,8 @@ function PatientRegistrationWorkspace({
   onCancel
 }: {
   readonly api: HealthScreeningApi
-  readonly authGeneration: number
+  readonly securityEpochRef: MutableRefObject<number>
+  registerStateInvalidator: RegisterPatientStateInvalidator
   onPatientCreated(patient: PublicPatientDetail): void
   onOpenPatient(patientId: string): void
   onPatientFailure(code: PatientErrorCode, message: string): boolean
@@ -985,7 +1055,6 @@ function PatientRegistrationWorkspace({
   onCancel(): void
 }): React.JSX.Element {
   const mountedRef = useMountedRef()
-  const authGenerationRef = useLatestRef(authGeneration)
   const createRequestRef = useRef(0)
   const duplicateRequestRef = useRef(0)
   const duplicateCheckPendingRef = useRef(false)
@@ -998,6 +1067,24 @@ function PatientRegistrationWorkspace({
   const [createPending, setCreatePending] = useState(false)
 
   const anyPending = duplicateCheckPending || createPending
+
+  const invalidateLocalState = useCallback((): void => {
+    duplicateRequestRef.current += 1
+    createRequestRef.current += 1
+    duplicateCheckPendingRef.current = false
+    createPendingRef.current = false
+    setDraft(emptyEditableFields)
+    setCandidates([])
+    setDuplicateReviewToken(null)
+    setConfirmContinue(false)
+    setDuplicateCheckPending(false)
+    setCreatePending(false)
+  }, [])
+
+  useEffect(
+    () => registerStateInvalidator(invalidateLocalState),
+    [invalidateLocalState, registerStateInvalidator]
+  )
 
   const updateDraft = (nextDraft: PatientEditableFields): void => {
     setDraft(nextDraft)
@@ -1014,7 +1101,7 @@ function PatientRegistrationWorkspace({
 
     const requestId = duplicateRequestRef.current + 1
     duplicateRequestRef.current = requestId
-    const startedAuthGeneration = authGenerationRef.current
+    const startedSecurityEpoch = securityEpochRef.current
     duplicateCheckPendingRef.current = true
     setDuplicateCheckPending(true)
     onMessage(null)
@@ -1028,7 +1115,7 @@ function PatientRegistrationWorkspace({
 
       if (
         !mountedRef.current ||
-        authGenerationRef.current !== startedAuthGeneration ||
+        securityEpochRef.current !== startedSecurityEpoch ||
         duplicateRequestRef.current !== requestId
       ) {
         return
@@ -1045,7 +1132,7 @@ function PatientRegistrationWorkspace({
     } catch {
       if (
         mountedRef.current &&
-        authGenerationRef.current === startedAuthGeneration &&
+        securityEpochRef.current === startedSecurityEpoch &&
         duplicateRequestRef.current === requestId
       ) {
         onMessage(transportFailureMessage)
@@ -1053,7 +1140,7 @@ function PatientRegistrationWorkspace({
     } finally {
       if (
         mountedRef.current &&
-        authGenerationRef.current === startedAuthGeneration &&
+        securityEpochRef.current === startedSecurityEpoch &&
         duplicateRequestRef.current === requestId
       ) {
         duplicateCheckPendingRef.current = false
@@ -1069,7 +1156,7 @@ function PatientRegistrationWorkspace({
 
     const requestId = createRequestRef.current + 1
     createRequestRef.current = requestId
-    const startedAuthGeneration = authGenerationRef.current
+    const startedSecurityEpoch = securityEpochRef.current
     createPendingRef.current = true
     setCreatePending(true)
     onMessage(null)
@@ -1082,7 +1169,7 @@ function PatientRegistrationWorkspace({
 
       if (
         !mountedRef.current ||
-        authGenerationRef.current !== startedAuthGeneration ||
+        securityEpochRef.current !== startedSecurityEpoch ||
         createRequestRef.current !== requestId
       ) {
         return
@@ -1105,7 +1192,7 @@ function PatientRegistrationWorkspace({
     } catch {
       if (
         mountedRef.current &&
-        authGenerationRef.current === startedAuthGeneration &&
+        securityEpochRef.current === startedSecurityEpoch &&
         createRequestRef.current === requestId
       ) {
         onMessage(transportFailureMessage)
@@ -1113,7 +1200,7 @@ function PatientRegistrationWorkspace({
     } finally {
       if (
         mountedRef.current &&
-        authGenerationRef.current === startedAuthGeneration &&
+        securityEpochRef.current === startedSecurityEpoch &&
         createRequestRef.current === requestId
       ) {
         createPendingRef.current = false
@@ -1840,16 +1927,6 @@ function useMountedRef(): MutableRefObject<boolean> {
   }, [])
 
   return mountedRef
-}
-
-function useLatestRef<TValue>(value: TValue): MutableRefObject<TValue> {
-  const ref = useRef(value)
-
-  useEffect(() => {
-    ref.current = value
-  }, [value])
-
-  return ref
 }
 
 function trapDialogFocus(

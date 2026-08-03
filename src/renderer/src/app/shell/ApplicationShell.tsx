@@ -29,7 +29,6 @@ import { ContextCommandPanel } from './ContextCommandPanel'
 
 interface ApplicationShellProps {
   readonly api: HealthScreeningApi
-  readonly authGeneration: number
   readonly context: ApplicationShellContext
   readonly user: ApplicationShellUser
   readonly busy: boolean
@@ -44,7 +43,6 @@ const commandPanelId = 'application-command-panel'
 
 export function ApplicationShell({
   api,
-  authGeneration,
   context,
   user,
   busy,
@@ -278,7 +276,6 @@ export function ApplicationShell({
       </div>
       <ApplicationWorkspace
         api={api}
-        authGeneration={authGeneration}
         context={context}
         user={user}
         route={state.route}
