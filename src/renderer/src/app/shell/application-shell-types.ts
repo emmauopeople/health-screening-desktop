@@ -62,6 +62,8 @@ export type ApplicationWorkspaceRoute =
       readonly plannedOwner: string
     }
 
+export type PatientWorkspaceNavigationGuard = (commandId: ApplicationCommandId) => boolean
+
 export interface ApplicationShellContext {
   readonly applicationName: string
   readonly applicationVersion: string

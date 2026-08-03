@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { HealthScreeningApi } from '@shared/ipc'
+import type { HealthScreeningApi, PatientErrorCode } from '@shared/ipc'
 
 import {
   getApplicationCommandDefinition,
@@ -18,6 +18,7 @@ import type {
   ApplicationShellContext,
   ApplicationShellState,
   ApplicationShellUser,
+  PatientWorkspaceNavigationGuard,
   PrimaryApplicationMenu
 } from './application-shell-types'
 import { ApplicationTopBar } from './ApplicationTopBar'
@@ -26,6 +27,7 @@ import { ContextCommandPanel } from './ContextCommandPanel'
 
 interface ApplicationShellProps {
   readonly api: HealthScreeningApi
+  readonly authGeneration: number
   readonly context: ApplicationShellContext
   readonly user: ApplicationShellUser
   readonly busy: boolean
@@ -33,19 +35,22 @@ interface ApplicationShellProps {
   readonly alertRef: React.RefObject<HTMLDivElement | null>
   onLock(): void
   onLogout(): void
+  onPatientAuthenticationFailure(code: PatientErrorCode): void
 }
 
 const commandPanelId = 'application-command-panel'
 
 export function ApplicationShell({
   api,
+  authGeneration,
   context,
   user,
   busy,
   operationError,
   alertRef,
   onLock,
-  onLogout
+  onLogout,
+  onPatientAuthenticationFailure
 }: ApplicationShellProps): React.JSX.Element {
   const controller = useMemo(
     () => createApplicationShellController({ role: user.role }),
@@ -58,6 +63,7 @@ export function ApplicationShell({
   const commandPanelRef = useRef<HTMLElement | null>(null)
   const workspaceRef = useRef<HTMLElement | null>(null)
   const workspaceHeadingRef = useRef<HTMLHeadingElement | null>(null)
+  const workspaceNavigationGuardRef = useRef<PatientWorkspaceNavigationGuard | null>(null)
   const stateRef = useRef<ApplicationShellState>(state)
   const focusedMenuRef = useRef<PrimaryApplicationMenu>(focusedMenu)
   const menus = useMemo(() => getVisibleApplicationMenus(user.role), [user.role])
@@ -139,6 +145,10 @@ export function ApplicationShell({
 
   const selectCommand = useCallback(
     (commandId: ApplicationCommandId) => {
+      if (workspaceNavigationGuardRef.current?.(commandId) === false) {
+        return
+      }
+
       const definition = getApplicationCommandDefinition(commandId)
 
       if (definition !== null) {
@@ -255,12 +265,17 @@ export function ApplicationShell({
       </div>
       <ApplicationWorkspace
         api={api}
+        authGeneration={authGeneration}
         context={context}
         user={user}
         route={state.route}
         workspaceRef={workspaceRef}
         headingRef={workspaceHeadingRef}
         onSelectCommand={selectCommand}
+        onPatientAuthenticationFailure={onPatientAuthenticationFailure}
+        registerNavigationGuard={(guard) => {
+          workspaceNavigationGuardRef.current = guard
+        }}
       />
       <footer className="application-shell-footer" data-shell-slot="footer">
         <span>Local data ready. Patient registry management is available.</span>

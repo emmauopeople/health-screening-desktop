@@ -1,30 +1,48 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { RefObject } from 'react'
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  MutableRefObject,
+  ReactNode,
+  RefObject
+} from 'react'
 
 import type {
   HealthScreeningApi,
   PatientEditableFields,
+  PatientErrorCode,
   PublicPatientDetail,
   PublicPatientDuplicateCandidate,
   PublicPatientDuplicatePair,
   PublicPatientSummary
 } from '@shared/ipc'
 
-import type { ApplicationCommandId } from '../shell/application-shell-types'
+import type {
+  ApplicationCommandId,
+  PatientWorkspaceNavigationGuard
+} from '../shell/application-shell-types'
+
+type PatientCommandId =
+  | 'PATIENTS_PATIENT_SEARCH'
+  | 'PATIENTS_REGISTER_NEW_PATIENT'
+  | 'PATIENTS_RECENT_PATIENTS'
+  | 'PATIENTS_POSSIBLE_DUPLICATES'
 
 interface PatientRegistryWorkspaceProps {
   readonly api: HealthScreeningApi
-  readonly commandId:
-    | 'PATIENTS_PATIENT_SEARCH'
-    | 'PATIENTS_REGISTER_NEW_PATIENT'
-    | 'PATIENTS_RECENT_PATIENTS'
-    | 'PATIENTS_POSSIBLE_DUPLICATES'
+  readonly authGeneration: number
+  readonly commandId: PatientCommandId
   readonly headingId: string
   readonly headingRef: RefObject<HTMLHeadingElement | null>
   readonly selectedPatient: PublicPatientDetail | null
   onSelectedPatientChange(patient: PublicPatientDetail | null): void
+  onPatientAuthenticationFailure(code: PatientErrorCode): void
   onSelectCommand(commandId: ApplicationCommandId): void
+  registerNavigationGuard(guard: PatientWorkspaceNavigationGuard | null): void
 }
+
+type LoadState = 'IDLE' | 'LOADING' | 'READY' | 'EMPTY' | 'ERROR'
+
+const transportFailureMessage = 'The desktop service is unavailable.'
 
 const emptyEditableFields: PatientEditableFields = Object.freeze({
   givenName: null,
@@ -46,21 +64,96 @@ const emptyEditableFields: PatientEditableFields = Object.freeze({
 
 export function PatientRegistryWorkspace({
   api,
+  authGeneration,
   commandId,
   headingId,
   headingRef,
   selectedPatient,
   onSelectedPatientChange,
-  onSelectCommand
+  onPatientAuthenticationFailure,
+  onSelectCommand,
+  registerNavigationGuard
 }: PatientRegistryWorkspaceProps): React.JSX.Element {
+  const mountedRef = useMountedRef()
+  const authGenerationRef = useLatestRef(authGeneration)
   const [editMode, setEditMode] = useState(false)
   const [draft, setDraft] = useState<PatientEditableFields>(emptyEditableFields)
   const [editDirty, setEditDirty] = useState(false)
+  const [conflictPatient, setConflictPatient] = useState<PublicPatientDetail | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [showDirtyGuard, setShowDirtyGuard] = useState(false)
   const pendingDirtyAction = useRef<(() => void) | null>(null)
+  const patientLoadRequestRef = useRef(0)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
+
+  const clearProtectedPatientState = useCallback((): void => {
+    onSelectedPatientChange(null)
+    setDraft(emptyEditableFields)
+    setEditMode(false)
+    setEditDirty(false)
+    setConflictPatient(null)
+    setSaving(false)
+    pendingDirtyAction.current = null
+    setShowDirtyGuard(false)
+  }, [onSelectedPatientChange])
+
+  const handlePatientFailure = useCallback(
+    (code: PatientErrorCode, fallbackMessage: string): boolean => {
+      if (
+        code === 'IPC_FORBIDDEN' ||
+        code === 'AUTH_LOCKED' ||
+        code === 'AUTH_UNAUTHENTICATED' ||
+        code === 'AUTH_PASSWORD_CHANGE_REQUIRED' ||
+        code === 'AUTHORIZATION_FAILED'
+      ) {
+        clearProtectedPatientState()
+        setMessage(fallbackMessage)
+        onPatientAuthenticationFailure(code)
+        return true
+      }
+
+      setMessage(fallbackMessage)
+      return false
+    },
+    [clearProtectedPatientState, onPatientAuthenticationFailure]
+  )
+
+  const beginDirtyGuard = useCallback(
+    (action: () => void): boolean => {
+      if (!editDirty) {
+        action()
+        return true
+      }
+
+      pendingDirtyAction.current = action
+      setShowDirtyGuard(true)
+      return false
+    },
+    [editDirty]
+  )
+
+  useEffect(() => {
+    const guard: PatientWorkspaceNavigationGuard = (nextCommandId) => {
+      if (isPatientCommand(nextCommandId) && nextCommandId === commandId) {
+        return true
+      }
+
+      if (!editDirty) {
+        return true
+      }
+
+      pendingDirtyAction.current = () => onSelectCommand(nextCommandId)
+      setShowDirtyGuard(true)
+      return false
+    }
+
+    registerNavigationGuard(guard)
+
+    return () => {
+      registerNavigationGuard(null)
+    }
+  }, [commandId, editDirty, onSelectCommand, registerNavigationGuard])
 
   useEffect(() => {
     const listener = (event: KeyboardEvent): void => {
@@ -78,38 +171,70 @@ export function PatientRegistryWorkspace({
     return () => window.removeEventListener('keydown', listener)
   }, [onSelectCommand])
 
-  const guardedAction = useCallback(
-    (action: () => void) => {
-      if (!editDirty) {
-        action()
-        return
-      }
+  const isCurrentOperation = useCallback(
+    (startedAuthGeneration: number): boolean =>
+      mountedRef.current && authGenerationRef.current === startedAuthGeneration,
+    [authGenerationRef, mountedRef]
+  )
 
-      pendingDirtyAction.current = action
-      setShowDirtyGuard(true)
+  const loadAndSelectPatient = useCallback(
+    async (patientId: string): Promise<boolean> => {
+      const requestId = patientLoadRequestRef.current + 1
+      patientLoadRequestRef.current = requestId
+      const startedAuthGeneration = authGenerationRef.current
+      setMessage('Loading patient.')
+
+      try {
+        const result = await api.patient.get({ patientId })
+
+        if (
+          !isCurrentOperation(startedAuthGeneration) ||
+          patientLoadRequestRef.current !== requestId
+        ) {
+          return false
+        }
+
+        if (!result.ok) {
+          handlePatientFailure(result.error.code, result.error.message)
+          return false
+        }
+
+        onSelectedPatientChange(result.data)
+        setDraft(detailToEditable(result.data))
+        setEditMode(false)
+        setEditDirty(false)
+        setConflictPatient(null)
+        setMessage(null)
+        return true
+      } catch {
+        if (
+          isCurrentOperation(startedAuthGeneration) &&
+          patientLoadRequestRef.current === requestId
+        ) {
+          setMessage(transportFailureMessage)
+        }
+
+        return false
+      }
     },
-    [editDirty]
+    [api, authGenerationRef, handlePatientFailure, isCurrentOperation, onSelectedPatientChange]
   )
 
   const selectPatient = useCallback(
-    (patientId: string) => {
-      guardedAction(() => {
-        void loadPatient(api, patientId, onSelectedPatientChange, setMessage).then((patient) => {
-          if (patient !== null) {
-            setEditMode(false)
-            setEditDirty(false)
-          }
-        })
+    (patientId: string): void => {
+      beginDirtyGuard(() => {
+        void loadAndSelectPatient(patientId)
       })
     },
-    [api, guardedAction, onSelectedPatientChange]
+    [beginDirtyGuard, loadAndSelectPatient]
   )
 
   const saveDraft = useCallback(async (): Promise<boolean> => {
-    if (selectedPatient === null) {
+    if (selectedPatient === null || saving) {
       return false
     }
 
+    const startedAuthGeneration = authGenerationRef.current
     setSaving(true)
     setMessage(null)
 
@@ -120,39 +245,64 @@ export function PatientRegistryWorkspace({
         patch: draft
       })
 
+      if (!isCurrentOperation(startedAuthGeneration)) {
+        return false
+      }
+
       if (!result.ok) {
-        setMessage(result.error.message)
+        handlePatientFailure(result.error.code, result.error.message)
+        return false
+      }
+
+      if (result.data.status === 'PATIENT_VERSION_CONFLICT') {
+        setConflictPatient(result.data.patient)
+        setEditMode(true)
+        setEditDirty(true)
+        setMessage('The patient changed after you opened it. Review the latest details.')
         return false
       }
 
       onSelectedPatientChange(result.data.patient)
       setDraft(detailToEditable(result.data.patient))
       setEditDirty(false)
-
-      if (result.data.status === 'PATIENT_VERSION_CONFLICT') {
-        setMessage('The patient changed after you opened it. Review the latest details.')
-        return false
-      }
-
+      setConflictPatient(null)
       setEditMode(false)
       setMessage('Changes saved.')
       return true
-    } finally {
-      setSaving(false)
-    }
-  }, [api, draft, onSelectedPatientChange, selectedPatient])
+    } catch {
+      if (isCurrentOperation(startedAuthGeneration)) {
+        setMessage(transportFailureMessage)
+      }
 
-  const discardDraft = useCallback(() => {
+      return false
+    } finally {
+      if (isCurrentOperation(startedAuthGeneration)) {
+        setSaving(false)
+      }
+    }
+  }, [
+    api,
+    authGenerationRef,
+    draft,
+    handlePatientFailure,
+    isCurrentOperation,
+    onSelectedPatientChange,
+    saving,
+    selectedPatient
+  ])
+
+  const discardDraft = useCallback((): void => {
     if (selectedPatient !== null) {
       setDraft(detailToEditable(selectedPatient))
     }
 
     setEditDirty(false)
+    setConflictPatient(null)
     setEditMode(false)
     setMessage(null)
   }, [selectedPatient])
 
-  const completePendingAction = useCallback(() => {
+  const completePendingDirtyAction = useCallback((): void => {
     const action = pendingDirtyAction.current
     pendingDirtyAction.current = null
     setShowDirtyGuard(false)
@@ -189,13 +339,22 @@ export function PatientRegistryWorkspace({
       {commandId === 'PATIENTS_REGISTER_NEW_PATIENT' ? (
         <PatientRegistrationWorkspace
           api={api}
-          onMessage={setMessage}
+          authGeneration={authGeneration}
+          onPatientFailure={handlePatientFailure}
           onPatientCreated={(patient) => {
             onSelectedPatientChange(patient)
+            setDraft(detailToEditable(patient))
             setEditMode(false)
             setEditDirty(false)
+            setConflictPatient(null)
+            setMessage('Patient created.')
             onSelectCommand('PATIENTS_PATIENT_SEARCH')
           }}
+          onOpenPatient={(patientId) => {
+            onSelectCommand('PATIENTS_PATIENT_SEARCH')
+            void loadAndSelectPatient(patientId)
+          }}
+          onMessage={setMessage}
           onCancel={() => onSelectCommand('PATIENTS_PATIENT_SEARCH')}
         />
       ) : (
@@ -204,24 +363,28 @@ export function PatientRegistryWorkspace({
             {commandId === 'PATIENTS_PATIENT_SEARCH' ? (
               <PatientSearchPane
                 api={api}
+                authGeneration={authGeneration}
                 selectedPatientId={selectedPatient?.id ?? null}
                 searchInputRef={searchInputRef}
+                onPatientFailure={handlePatientFailure}
                 onSelectPatient={selectPatient}
-                onRegister={() =>
-                  guardedAction(() => onSelectCommand('PATIENTS_REGISTER_NEW_PATIENT'))
-                }
+                onRegister={() => onSelectCommand('PATIENTS_REGISTER_NEW_PATIENT')}
               />
             ) : null}
             {commandId === 'PATIENTS_RECENT_PATIENTS' ? (
               <RecentPatientsPane
                 api={api}
+                authGeneration={authGeneration}
                 selectedPatientId={selectedPatient?.id ?? null}
+                onPatientFailure={handlePatientFailure}
                 onSelectPatient={selectPatient}
               />
             ) : null}
             {commandId === 'PATIENTS_POSSIBLE_DUPLICATES' ? (
               <PossibleDuplicatesPane
                 api={api}
+                authGeneration={authGeneration}
+                onPatientFailure={handlePatientFailure}
                 onSelectPatient={selectPatient}
                 onMessage={setMessage}
               />
@@ -234,6 +397,7 @@ export function PatientRegistryWorkspace({
             editMode={editMode}
             dirty={editDirty}
             saving={saving}
+            conflictPatient={conflictPatient}
             onDraftChange={(nextDraft) => {
               setDraft(nextDraft)
               setEditDirty(true)
@@ -243,74 +407,99 @@ export function PatientRegistryWorkspace({
                 setDraft(detailToEditable(selectedPatient))
                 setEditMode(true)
                 setEditDirty(false)
+                setConflictPatient(null)
               }
             }}
             onSave={() => {
               void saveDraft()
             }}
             onCancel={() => {
-              if (editDirty) {
-                guardedAction(discardDraft)
-                return
-              }
-
-              discardDraft()
+              beginDirtyGuard(discardDraft)
             }}
             onReload={() => {
               if (selectedPatient !== null) {
-                void loadPatient(api, selectedPatient.id, onSelectedPatientChange, setMessage)
+                void loadAndSelectPatient(selectedPatient.id)
               }
+            }}
+            onReloadLatest={() => {
+              if (conflictPatient !== null) {
+                onSelectedPatientChange(conflictPatient)
+                setDraft(detailToEditable(conflictPatient))
+                setEditMode(false)
+                setEditDirty(false)
+                setConflictPatient(null)
+                setMessage('Loaded the latest patient details.')
+              }
+            }}
+            onDiscardMyEdits={() => {
+              if (conflictPatient !== null) {
+                onSelectedPatientChange(conflictPatient)
+                setDraft(detailToEditable(conflictPatient))
+                setEditMode(false)
+                setEditDirty(false)
+                setConflictPatient(null)
+                setMessage('Discarded your edits.')
+              }
+            }}
+            onContinueEditing={() => {
+              setConflictPatient(null)
+              setEditMode(true)
+              setEditDirty(true)
+              setMessage('Continue editing your unsaved changes.')
             }}
           />
         </div>
       )}
 
       {showDirtyGuard ? (
-        <div className="patient-dialog-backdrop" role="presentation">
-          <div
-            className="patient-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="dirty-title"
-          >
-            <h2 id="dirty-title">Unsaved patient changes</h2>
-            <div className="patient-dialog-actions">
-              <button
-                type="button"
-                className="button button-primary"
-                onClick={() => {
-                  void saveDraft().then((saved) => {
-                    if (saved) {
-                      completePendingAction()
-                    }
-                  })
-                }}
-              >
-                Save changes
-              </button>
-              <button
-                type="button"
-                className="button button-secondary"
-                onClick={() => {
-                  discardDraft()
-                  completePendingAction()
-                }}
-              >
-                Discard edits
-              </button>
-              <button
-                type="button"
-                className="button button-secondary"
-                onClick={() => {
-                  pendingDirtyAction.current = null
-                  setShowDirtyGuard(false)
-                }}
-              >
-                Cancel
-              </button>
-            </div>
+        <PatientModalDialog
+          title="Unsaved patient changes"
+          pending={saving}
+          onCancel={() => {
+            pendingDirtyAction.current = null
+            setShowDirtyGuard(false)
+          }}
+        >
+          <p className="patient-dialog-copy">Save or discard your edits before leaving.</p>
+          <div className="patient-dialog-actions">
+            <button
+              type="button"
+              className="button button-primary"
+              disabled={saving}
+              onClick={() => {
+                void saveDraft().then((saved) => {
+                  if (saved) {
+                    completePendingDirtyAction()
+                  }
+                })
+              }}
+            >
+              Save changes
+            </button>
+            <button
+              type="button"
+              className="button button-secondary"
+              disabled={saving}
+              onClick={() => {
+                discardDraft()
+                completePendingDirtyAction()
+              }}
+            >
+              Discard edits
+            </button>
+            <button
+              type="button"
+              className="button button-secondary"
+              disabled={saving}
+              onClick={() => {
+                pendingDirtyAction.current = null
+                setShowDirtyGuard(false)
+              }}
+            >
+              Cancel
+            </button>
           </div>
-        </div>
+        </PatientModalDialog>
       ) : null}
     </>
   )
@@ -318,69 +507,98 @@ export function PatientRegistryWorkspace({
 
 function PatientSearchPane({
   api,
+  authGeneration,
   selectedPatientId,
   searchInputRef,
+  onPatientFailure,
   onSelectPatient,
   onRegister
 }: {
   readonly api: HealthScreeningApi
+  readonly authGeneration: number
   readonly selectedPatientId: string | null
   readonly searchInputRef: RefObject<HTMLInputElement | null>
+  onPatientFailure(code: PatientErrorCode, message: string): boolean
   onSelectPatient(patientId: string): void
   onRegister(): void
 }): React.JSX.Element {
+  const mountedRef = useMountedRef()
+  const authGenerationRef = useLatestRef(authGeneration)
+  const requestRef = useRef(0)
   const [query, setQuery] = useState('')
   const [pageSize, setPageSize] = useState<25 | 50 | 100>(25)
   const [page, setPage] = useState(1)
   const [items, setItems] = useState<readonly PublicPatientSummary[]>([])
   const [total, setTotal] = useState(0)
-  const [busy, setBusy] = useState(false)
+  const [state, setState] = useState<LoadState>('IDLE')
+  const [failureMessage, setFailureMessage] = useState<string | null>(null)
 
   const runSearch = useCallback(
-    async (nextPage: number) => {
-      setBusy(true)
-      const result = await api.patient.search({
-        query,
-        page: nextPage,
-        pageSize
-      })
-      setBusy(false)
+    async (nextPage: number): Promise<void> => {
+      const requestId = requestRef.current + 1
+      requestRef.current = requestId
+      const startedAuthGeneration = authGenerationRef.current
+      setState('LOADING')
+      setFailureMessage(null)
 
-      if (result.ok) {
+      try {
+        const result = await api.patient.search({
+          query,
+          page: nextPage,
+          pageSize
+        })
+
+        if (
+          !mountedRef.current ||
+          authGenerationRef.current !== startedAuthGeneration ||
+          requestRef.current !== requestId
+        ) {
+          return
+        }
+
+        if (!result.ok) {
+          onPatientFailure(result.error.code, result.error.message)
+          setItems([])
+          setTotal(0)
+          setState('ERROR')
+          setFailureMessage(result.error.message)
+          return
+        }
+
         setItems(result.data.items)
         setTotal(result.data.total)
         setPage(result.data.page)
+        setState(result.data.items.length === 0 ? 'EMPTY' : 'READY')
+      } catch {
+        if (
+          mountedRef.current &&
+          authGenerationRef.current === startedAuthGeneration &&
+          requestRef.current === requestId
+        ) {
+          setItems([])
+          setTotal(0)
+          setState('ERROR')
+          setFailureMessage(transportFailureMessage)
+        }
       }
     },
-    [api, pageSize, query]
+    [api, authGenerationRef, mountedRef, onPatientFailure, pageSize, query]
   )
 
-  useEffect(() => {
-    let active = true
-
-    const runInitialSearch = async (): Promise<void> => {
-      await Promise.resolve()
-
-      if (active) {
-        await runSearch(1)
-      }
-    }
-
-    void runInitialSearch()
-
-    return () => {
-      active = false
-    }
-  }, [runSearch])
+  const emptyText = getPatientSearchEmptyText(state, failureMessage)
 
   return (
     <>
       <div className="patient-search-toolbar">
+        <label className="patient-search-label" htmlFor="patient-registry-search">
+          Patient search
+        </label>
         <input
+          id="patient-registry-search"
           ref={searchInputRef}
           type="search"
           value={query}
-          placeholder="Search by code, name, phone, DOB, age, sex, village, quarter"
+          placeholder="Code, name, phone, DOB, age, sex, village, quarter"
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
@@ -388,7 +606,12 @@ function PatientSearchPane({
             }
           }}
         />
-        <button type="button" className="button button-primary" onClick={() => void runSearch(1)}>
+        <button
+          type="button"
+          className="button button-primary"
+          disabled={state === 'LOADING'}
+          onClick={() => void runSearch(1)}
+        >
           Search
         </button>
         <button type="button" className="button button-secondary" onClick={onRegister}>
@@ -397,6 +620,7 @@ function PatientSearchPane({
         <select
           value={pageSize}
           aria-label="Page size"
+          disabled={state === 'LOADING'}
           onChange={(event) => {
             const value = Number(event.target.value)
             setPageSize(value === 50 || value === 100 ? value : 25)
@@ -410,7 +634,7 @@ function PatientSearchPane({
       <PatientSummaryTable
         items={items}
         selectedPatientId={selectedPatientId}
-        emptyText={busy ? 'Searching...' : 'No matching patients.'}
+        emptyText={emptyText}
         onSelectPatient={onSelectPatient}
       />
       <div className="patient-pagination">
@@ -420,7 +644,7 @@ function PatientSearchPane({
         <button
           type="button"
           className="button button-secondary"
-          disabled={page <= 1}
+          disabled={state === 'LOADING' || page <= 1}
           onClick={() => void runSearch(page - 1)}
         >
           Previous
@@ -428,7 +652,7 @@ function PatientSearchPane({
         <button
           type="button"
           className="button button-secondary"
-          disabled={page * pageSize >= total}
+          disabled={state === 'LOADING' || page * pageSize >= total}
           onClick={() => void runSearch(page + 1)}
         >
           Next
@@ -440,28 +664,88 @@ function PatientSearchPane({
 
 function RecentPatientsPane({
   api,
+  authGeneration,
   selectedPatientId,
+  onPatientFailure,
   onSelectPatient
 }: {
   readonly api: HealthScreeningApi
+  readonly authGeneration: number
   readonly selectedPatientId: string | null
+  onPatientFailure(code: PatientErrorCode, message: string): boolean
   onSelectPatient(patientId: string): void
 }): React.JSX.Element {
+  const mountedRef = useMountedRef()
+  const authGenerationRef = useLatestRef(authGeneration)
+  const requestRef = useRef(0)
   const [items, setItems] = useState<readonly PublicPatientSummary[]>([])
+  const [state, setState] = useState<LoadState>('IDLE')
+  const [failureMessage, setFailureMessage] = useState<string | null>(null)
+
+  const loadRecent = useCallback(async (): Promise<void> => {
+    const requestId = requestRef.current + 1
+    requestRef.current = requestId
+    const startedAuthGeneration = authGenerationRef.current
+    setState('LOADING')
+    setFailureMessage(null)
+
+    try {
+      const result = await api.patient.listRecent({ limit: 25 })
+
+      if (
+        !mountedRef.current ||
+        authGenerationRef.current !== startedAuthGeneration ||
+        requestRef.current !== requestId
+      ) {
+        return
+      }
+
+      if (!result.ok) {
+        onPatientFailure(result.error.code, result.error.message)
+        setItems([])
+        setState('ERROR')
+        setFailureMessage(result.error.message)
+        return
+      }
+
+      setItems(result.data)
+      setState(result.data.length === 0 ? 'EMPTY' : 'READY')
+    } catch {
+      if (
+        mountedRef.current &&
+        authGenerationRef.current === startedAuthGeneration &&
+        requestRef.current === requestId
+      ) {
+        setItems([])
+        setState('ERROR')
+        setFailureMessage(transportFailureMessage)
+      }
+    }
+  }, [api, authGenerationRef, mountedRef, onPatientFailure])
 
   useEffect(() => {
-    void api.patient.listRecent({ limit: 25 }).then((result) => {
-      if (result.ok) {
-        setItems(result.data)
+    let active = true
+
+    const run = async (): Promise<void> => {
+      await Promise.resolve()
+
+      if (active) {
+        await loadRecent()
       }
-    })
-  }, [api])
+    }
+
+    void run()
+
+    return () => {
+      active = false
+    }
+  }, [loadRecent])
 
   return (
     <PatientSummaryTable
       items={items}
       selectedPatientId={selectedPatientId}
-      emptyText="No recent patients."
+      emptyText={getRecentEmptyText(state, failureMessage)}
       onSelectPatient={onSelectPatient}
     />
   )
@@ -469,33 +753,79 @@ function RecentPatientsPane({
 
 function PossibleDuplicatesPane({
   api,
+  authGeneration,
+  onPatientFailure,
   onSelectPatient,
   onMessage
 }: {
   readonly api: HealthScreeningApi
+  readonly authGeneration: number
+  onPatientFailure(code: PatientErrorCode, message: string): boolean
   onSelectPatient(patientId: string): void
   onMessage(message: string | null): void
 }): React.JSX.Element {
+  const mountedRef = useMountedRef()
+  const authGenerationRef = useLatestRef(authGeneration)
+  const loadRequestRef = useRef(0)
+  const reviewPendingRef = useRef(false)
   const [pairs, setPairs] = useState<readonly PublicPatientDuplicatePair[]>([])
   const [selectedPair, setSelectedPair] = useState<PublicPatientDuplicatePair | null>(null)
+  const [state, setState] = useState<LoadState>('IDLE')
+  const [failureMessage, setFailureMessage] = useState<string | null>(null)
+  const [reviewPending, setReviewPending] = useState(false)
 
-  const loadPairs = useCallback(async () => {
-    const result = await api.patient.findDuplicates({
-      identity: null,
-      patientId: null,
-      limit: 25
-    })
+  const loadPairs = useCallback(async (): Promise<void> => {
+    const requestId = loadRequestRef.current + 1
+    loadRequestRef.current = requestId
+    const startedAuthGeneration = authGenerationRef.current
+    setState('LOADING')
+    setFailureMessage(null)
 
-    if (result.ok) {
+    try {
+      const result = await api.patient.findDuplicates({
+        identity: null,
+        patientId: null,
+        limit: 25
+      })
+
+      if (
+        !mountedRef.current ||
+        authGenerationRef.current !== startedAuthGeneration ||
+        loadRequestRef.current !== requestId
+      ) {
+        return
+      }
+
+      if (!result.ok) {
+        onPatientFailure(result.error.code, result.error.message)
+        setPairs([])
+        setSelectedPair(null)
+        setState('ERROR')
+        setFailureMessage(result.error.message)
+        return
+      }
+
       setPairs(result.data.pairs)
       setSelectedPair(result.data.pairs[0] ?? null)
+      setState(result.data.pairs.length === 0 ? 'EMPTY' : 'READY')
+    } catch {
+      if (
+        mountedRef.current &&
+        authGenerationRef.current === startedAuthGeneration &&
+        loadRequestRef.current === requestId
+      ) {
+        setPairs([])
+        setSelectedPair(null)
+        setState('ERROR')
+        setFailureMessage(transportFailureMessage)
+      }
     }
-  }, [api])
+  }, [api, authGenerationRef, mountedRef, onPatientFailure])
 
   useEffect(() => {
     let active = true
 
-    const loadInitialPairs = async (): Promise<void> => {
+    const run = async (): Promise<void> => {
       await Promise.resolve()
 
       if (active) {
@@ -503,17 +833,59 @@ function PossibleDuplicatesPane({
       }
     }
 
-    void loadInitialPairs()
+    void run()
 
     return () => {
       active = false
     }
   }, [loadPairs])
 
+  const markNotDuplicate = async (pair: PublicPatientDuplicatePair): Promise<void> => {
+    if (reviewPendingRef.current) {
+      return
+    }
+
+    const startedAuthGeneration = authGenerationRef.current
+    reviewPendingRef.current = true
+    setReviewPending(true)
+    onMessage(null)
+
+    try {
+      const result = await api.patient.markNotDuplicate({
+        patientIdA: pair.first.id,
+        patientIdB: pair.second.id,
+        reasonCodes: ['MANUAL_REVIEW']
+      })
+
+      if (!mountedRef.current || authGenerationRef.current !== startedAuthGeneration) {
+        return
+      }
+
+      if (!result.ok) {
+        onPatientFailure(result.error.code, result.error.message)
+        return
+      }
+
+      onMessage('Duplicate review saved.')
+      await loadPairs()
+    } catch {
+      if (mountedRef.current && authGenerationRef.current === startedAuthGeneration) {
+        onMessage(transportFailureMessage)
+      }
+    } finally {
+      if (mountedRef.current && authGenerationRef.current === startedAuthGeneration) {
+        reviewPendingRef.current = false
+        setReviewPending(false)
+      }
+    }
+  }
+
   return (
     <div className="patient-duplicates-layout">
       <div className="patient-duplicate-pairs">
-        {pairs.length === 0 ? <p className="patient-empty">No possible duplicates.</p> : null}
+        {pairs.length === 0 ? (
+          <p className="patient-empty">{getDuplicatePairsEmptyText(state, failureMessage)}</p>
+        ) : null}
         {pairs.map((pair) => (
           <button
             key={pair.pairKey}
@@ -525,6 +897,7 @@ function PossibleDuplicatesPane({
             <span>{pair.first.patientCode}</span>
             <span>{pair.second.patientCode}</span>
             <strong>{pair.score}</strong>
+            <span className="patient-match-reasons">{formatMatchReasons(pair.matchedOn)}</span>
           </button>
         ))}
       </div>
@@ -533,12 +906,16 @@ function PossibleDuplicatesPane({
           <p className="patient-empty">Select a duplicate pair.</p>
         ) : (
           <>
-            <DuplicatePatientCard patient={selectedPair.first} />
-            <DuplicatePatientCard patient={selectedPair.second} />
+            <DuplicatePatientCard patient={selectedPair.first} matchedOn={selectedPair.matchedOn} />
+            <DuplicatePatientCard
+              patient={selectedPair.second}
+              matchedOn={selectedPair.matchedOn}
+            />
             <div className="patient-detail-actions">
               <button
                 type="button"
                 className="button button-secondary"
+                disabled={reviewPending}
                 onClick={() => onSelectPatient(selectedPair.first.id)}
               >
                 View first
@@ -546,6 +923,7 @@ function PossibleDuplicatesPane({
               <button
                 type="button"
                 className="button button-secondary"
+                disabled={reviewPending}
                 onClick={() => onSelectPatient(selectedPair.second.id)}
               >
                 View second
@@ -553,22 +931,8 @@ function PossibleDuplicatesPane({
               <button
                 type="button"
                 className="button button-primary"
-                onClick={() => {
-                  void api.patient
-                    .markNotDuplicate({
-                      patientIdA: selectedPair.first.id,
-                      patientIdB: selectedPair.second.id,
-                      reasonCodes: ['MANUAL_REVIEW']
-                    })
-                    .then((result) => {
-                      if (result.ok) {
-                        onMessage('Duplicate review saved.')
-                        void loadPairs()
-                      } else {
-                        onMessage(result.error.message)
-                      }
-                    })
-                }}
+                disabled={reviewPending}
+                onClick={() => void markNotDuplicate(selectedPair)}
               >
                 Mark not duplicate
               </button>
@@ -582,71 +946,214 @@ function PossibleDuplicatesPane({
 
 function PatientRegistrationWorkspace({
   api,
+  authGeneration,
   onPatientCreated,
+  onOpenPatient,
+  onPatientFailure,
   onMessage,
   onCancel
 }: {
   readonly api: HealthScreeningApi
+  readonly authGeneration: number
   onPatientCreated(patient: PublicPatientDetail): void
+  onOpenPatient(patientId: string): void
+  onPatientFailure(code: PatientErrorCode, message: string): boolean
   onMessage(message: string | null): void
   onCancel(): void
 }): React.JSX.Element {
+  const mountedRef = useMountedRef()
+  const authGenerationRef = useLatestRef(authGeneration)
+  const createRequestRef = useRef(0)
+  const duplicateRequestRef = useRef(0)
+  const duplicateCheckPendingRef = useRef(false)
+  const createPendingRef = useRef(false)
   const [draft, setDraft] = useState<PatientEditableFields>(emptyEditableFields)
   const [candidates, setCandidates] = useState<readonly PublicPatientDuplicateCandidate[]>([])
   const [duplicateReviewToken, setDuplicateReviewToken] = useState<string | null>(null)
+  const [confirmContinue, setConfirmContinue] = useState(false)
+  const [duplicateCheckPending, setDuplicateCheckPending] = useState(false)
+  const [createPending, setCreatePending] = useState(false)
+
+  const anyPending = duplicateCheckPending || createPending
+
+  const updateDraft = (nextDraft: PatientEditableFields): void => {
+    setDraft(nextDraft)
+    setCandidates([])
+    setDuplicateReviewToken(null)
+    setConfirmContinue(false)
+    onMessage(null)
+  }
 
   const checkDuplicates = async (): Promise<void> => {
-    const result = await api.patient.findDuplicates({
-      identity: draft,
-      patientId: null,
-      limit: 10
-    })
+    if (duplicateCheckPendingRef.current || createPendingRef.current) {
+      return
+    }
 
-    if (result.ok) {
+    const requestId = duplicateRequestRef.current + 1
+    duplicateRequestRef.current = requestId
+    const startedAuthGeneration = authGenerationRef.current
+    duplicateCheckPendingRef.current = true
+    setDuplicateCheckPending(true)
+    onMessage(null)
+
+    try {
+      const result = await api.patient.findDuplicates({
+        identity: draft,
+        patientId: null,
+        limit: 10
+      })
+
+      if (
+        !mountedRef.current ||
+        authGenerationRef.current !== startedAuthGeneration ||
+        duplicateRequestRef.current !== requestId
+      ) {
+        return
+      }
+
+      if (!result.ok) {
+        onPatientFailure(result.error.code, result.error.message)
+        return
+      }
+
       setCandidates(result.data.candidates)
+      setDuplicateReviewToken(null)
       onMessage(result.data.candidates.length === 0 ? 'No likely duplicates found.' : null)
-    } else {
-      onMessage(result.error.message)
+    } catch {
+      if (
+        mountedRef.current &&
+        authGenerationRef.current === startedAuthGeneration &&
+        duplicateRequestRef.current === requestId
+      ) {
+        onMessage(transportFailureMessage)
+      }
+    } finally {
+      if (
+        mountedRef.current &&
+        authGenerationRef.current === startedAuthGeneration &&
+        duplicateRequestRef.current === requestId
+      ) {
+        duplicateCheckPendingRef.current = false
+        setDuplicateCheckPending(false)
+      }
     }
   }
 
-  const createPatient = async (): Promise<void> => {
-    const result = await api.patient.create({
-      ...draft,
-      duplicateReviewToken
-    })
-
-    if (!result.ok) {
-      onMessage(result.error.message)
+  const createPatient = async (duplicateToken: string | null): Promise<void> => {
+    if (createPendingRef.current) {
       return
     }
 
-    if (result.data.status === 'DUPLICATE_REVIEW_REQUIRED') {
-      setCandidates(result.data.candidates)
-      setDuplicateReviewToken(result.data.duplicateReviewToken)
-      onMessage('Review possible duplicates before creating this patient.')
-      return
-    }
+    const requestId = createRequestRef.current + 1
+    createRequestRef.current = requestId
+    const startedAuthGeneration = authGenerationRef.current
+    createPendingRef.current = true
+    setCreatePending(true)
+    onMessage(null)
 
-    onPatientCreated(result.data.patient)
-    onMessage('Patient created.')
+    try {
+      const result = await api.patient.create({
+        ...draft,
+        duplicateReviewToken: duplicateToken
+      })
+
+      if (
+        !mountedRef.current ||
+        authGenerationRef.current !== startedAuthGeneration ||
+        createRequestRef.current !== requestId
+      ) {
+        return
+      }
+
+      if (!result.ok) {
+        onPatientFailure(result.error.code, result.error.message)
+        return
+      }
+
+      if (result.data.status === 'DUPLICATE_REVIEW_REQUIRED') {
+        setCandidates(result.data.candidates)
+        setDuplicateReviewToken(result.data.duplicateReviewToken)
+        setConfirmContinue(false)
+        onMessage('Review possible duplicates before creating this patient.')
+        return
+      }
+
+      onPatientCreated(result.data.patient)
+    } catch {
+      if (
+        mountedRef.current &&
+        authGenerationRef.current === startedAuthGeneration &&
+        createRequestRef.current === requestId
+      ) {
+        onMessage(transportFailureMessage)
+      }
+    } finally {
+      if (
+        mountedRef.current &&
+        authGenerationRef.current === startedAuthGeneration &&
+        createRequestRef.current === requestId
+      ) {
+        createPendingRef.current = false
+        setCreatePending(false)
+      }
+    }
   }
 
   return (
     <section className="patient-registration">
-      <PatientFieldsForm draft={draft} onDraftChange={setDraft} />
+      <PatientFieldsForm draft={draft} disabled={anyPending} onDraftChange={updateDraft} />
       {candidates.length > 0 ? (
         <div className="patient-duplicate-review">
           <h2>Possible duplicates</h2>
+          <p className="patient-duplicate-review-copy">
+            Review the fixed match reasons before continuing registration.
+          </p>
           {candidates.map((candidate) => (
-            <DuplicatePatientCard key={candidate.patient.id} patient={candidate.patient} />
+            <DuplicatePatientCard
+              key={candidate.patient.id}
+              patient={candidate.patient}
+              matchedOn={candidate.matchedOn}
+            >
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={anyPending}
+                onClick={() => onOpenPatient(candidate.patient.id)}
+              >
+                Open existing patient
+              </button>
+            </DuplicatePatientCard>
           ))}
+          <div className="patient-detail-actions">
+            <button
+              type="button"
+              className="button button-secondary"
+              disabled={anyPending}
+              onClick={() => {
+                setCandidates([])
+                setDuplicateReviewToken(null)
+                setConfirmContinue(false)
+                onMessage(null)
+              }}
+            >
+              Return to edit
+            </button>
+            <button
+              type="button"
+              className="button button-primary"
+              disabled={anyPending || duplicateReviewToken === null}
+              onClick={() => setConfirmContinue(true)}
+            >
+              Continue registration despite possible matches
+            </button>
+          </div>
         </div>
       ) : null}
       <div className="patient-detail-actions">
         <button
           type="button"
           className="button button-secondary"
+          disabled={anyPending}
           onClick={() => void checkDuplicates()}
         >
           Check duplicates
@@ -654,14 +1161,50 @@ function PatientRegistrationWorkspace({
         <button
           type="button"
           className="button button-primary"
-          onClick={() => void createPatient()}
+          disabled={anyPending || duplicateReviewToken !== null}
+          onClick={() => void createPatient(null)}
         >
           Create patient
         </button>
-        <button type="button" className="button button-secondary" onClick={onCancel}>
+        <button
+          type="button"
+          className="button button-secondary"
+          disabled={anyPending}
+          onClick={onCancel}
+        >
           Cancel
         </button>
       </div>
+
+      {confirmContinue && duplicateReviewToken !== null ? (
+        <PatientModalDialog
+          title="Continue registration despite possible matches"
+          pending={createPending}
+          onCancel={() => setConfirmContinue(false)}
+        >
+          <p className="patient-dialog-copy">
+            This will create a new patient even though possible matches were found.
+          </p>
+          <div className="patient-dialog-actions">
+            <button
+              type="button"
+              className="button button-secondary"
+              disabled={createPending}
+              onClick={() => setConfirmContinue(false)}
+            >
+              Return to edit
+            </button>
+            <button
+              type="button"
+              className="button button-primary"
+              disabled={createPending}
+              onClick={() => void createPatient(duplicateReviewToken)}
+            >
+              Continue registration despite possible matches
+            </button>
+          </div>
+        </PatientModalDialog>
+      ) : null}
     </section>
   )
 }
@@ -732,22 +1275,30 @@ function PatientDetailPane({
   editMode,
   dirty,
   saving,
+  conflictPatient,
   onDraftChange,
   onEdit,
   onSave,
   onCancel,
-  onReload
+  onReload,
+  onReloadLatest,
+  onDiscardMyEdits,
+  onContinueEditing
 }: {
   readonly patient: PublicPatientDetail | null
   readonly draft: PatientEditableFields
   readonly editMode: boolean
   readonly dirty: boolean
   readonly saving: boolean
+  readonly conflictPatient: PublicPatientDetail | null
   onDraftChange(draft: PatientEditableFields): void
   onEdit(): void
   onSave(): void
   onCancel(): void
   onReload(): void
+  onReloadLatest(): void
+  onDiscardMyEdits(): void
+  onContinueEditing(): void
 }): React.JSX.Element {
   return (
     <aside className="patient-detail-pane" aria-label="Selected patient">
@@ -759,7 +1310,39 @@ function PatientDetailPane({
             <h2>{patient.patientCode}</h2>
             <span>{dirty ? 'Unsaved edits' : 'Editing'}</span>
           </div>
-          <PatientFieldsForm draft={draft} onDraftChange={onDraftChange} />
+          {conflictPatient !== null ? (
+            <div className="patient-conflict-review" role="status">
+              <h3>Latest authoritative patient</h3>
+              <dl className="patient-detail-list">
+                <DetailRow label="Name" value={conflictPatient.displayName} />
+                <DetailRow label="Age / DOB" value={formatAgeDob(conflictPatient)} />
+                <DetailRow
+                  label="Village / quarter"
+                  value={formatVillageQuarter(conflictPatient)}
+                />
+                <DetailRow
+                  label="Updated"
+                  value={`${conflictPatient.updatedAt} by ${conflictPatient.updatedByDisplayName}`}
+                />
+              </dl>
+              <div className="patient-detail-actions">
+                <button type="button" className="button button-secondary" onClick={onReloadLatest}>
+                  Reload latest
+                </button>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={onDiscardMyEdits}
+                >
+                  Discard my edits
+                </button>
+                <button type="button" className="button button-primary" onClick={onContinueEditing}>
+                  Continue editing
+                </button>
+              </div>
+            </div>
+          ) : null}
+          <PatientFieldsForm draft={draft} disabled={saving} onDraftChange={onDraftChange} />
           <div className="patient-detail-actions">
             <button
               type="button"
@@ -769,10 +1352,20 @@ function PatientDetailPane({
             >
               Save changes
             </button>
-            <button type="button" className="button button-secondary" onClick={onCancel}>
+            <button
+              type="button"
+              className="button button-secondary"
+              disabled={saving}
+              onClick={onCancel}
+            >
               Cancel
             </button>
-            <button type="button" className="button button-secondary" onClick={onReload}>
+            <button
+              type="button"
+              className="button button-secondary"
+              disabled={saving}
+              onClick={onReload}
+            >
               Reload
             </button>
           </div>
@@ -810,9 +1403,11 @@ function PatientDetailPane({
 
 function PatientFieldsForm({
   draft,
+  disabled = false,
   onDraftChange
 }: {
   readonly draft: PatientEditableFields
+  readonly disabled?: boolean
   onDraftChange(draft: PatientEditableFields): void
 }): React.JSX.Element {
   const update = <TKey extends keyof PatientEditableFields>(
@@ -821,7 +1416,7 @@ function PatientFieldsForm({
   ): void => onDraftChange({ ...draft, [key]: value })
 
   return (
-    <div className="patient-fields-grid">
+    <fieldset className="patient-fields-grid" disabled={disabled}>
       <TextField
         label="Given name"
         value={draft.givenName}
@@ -920,7 +1515,7 @@ function PatientFieldsForm({
           <option value="DECLINED">Declined</option>
         </select>
       </label>
-    </div>
+    </fieldset>
   )
 }
 
@@ -988,9 +1583,13 @@ function NumberField({
 }
 
 function DuplicatePatientCard({
-  patient
+  patient,
+  matchedOn,
+  children
 }: {
   readonly patient: PublicPatientSummary
+  readonly matchedOn?: readonly string[]
+  readonly children?: ReactNode
 }): React.JSX.Element {
   return (
     <div className="patient-duplicate-card">
@@ -998,6 +1597,71 @@ function DuplicatePatientCard({
       <span>{patient.displayName}</span>
       <span>{formatAgeDob(patient)}</span>
       <span>{formatVillageQuarter(patient)}</span>
+      {matchedOn !== undefined ? (
+        <span className="patient-match-reasons">
+          Match reasons: {formatMatchReasons(matchedOn)}
+        </span>
+      ) : null}
+      {children !== undefined ? (
+        <div className="patient-duplicate-card-actions">{children}</div>
+      ) : null}
+    </div>
+  )
+}
+
+function PatientModalDialog({
+  title,
+  pending,
+  onCancel,
+  children
+}: {
+  readonly title: string
+  readonly pending: boolean
+  onCancel(): void
+  readonly children: ReactNode
+}): React.JSX.Element {
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  const headingRef = useRef<HTMLHeadingElement | null>(null)
+  const previousFocusRef = useRef<Element | null>(null)
+
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement
+    headingRef.current?.focus({ preventScroll: true })
+
+    return () => {
+      const previousFocus = previousFocusRef.current
+
+      if (previousFocus instanceof HTMLElement && document.contains(previousFocus)) {
+        previousFocus.focus({ preventScroll: true })
+      }
+    }
+  }, [])
+
+  return (
+    <div className="patient-dialog-backdrop" role="presentation">
+      <div
+        ref={dialogRef}
+        className="patient-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="patient-dialog-title"
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && !pending) {
+            event.preventDefault()
+            onCancel()
+            return
+          }
+
+          if (event.key === 'Tab') {
+            trapDialogFocus(event, dialogRef.current)
+          }
+        }}
+      >
+        <h2 ref={headingRef} id="patient-dialog-title" tabIndex={-1}>
+          {title}
+        </h2>
+        {children}
+      </div>
     </div>
   )
 }
@@ -1037,22 +1701,45 @@ function detailToEditable(patient: PublicPatientDetail): PatientEditableFields {
   }
 }
 
-async function loadPatient(
-  api: HealthScreeningApi,
-  patientId: string,
-  onSelectedPatientChange: (patient: PublicPatientDetail | null) => void,
-  onMessage: (message: string | null) => void
-): Promise<PublicPatientDetail | null> {
-  const result = await api.patient.get({ patientId })
-
-  if (!result.ok) {
-    onMessage(result.error.message)
-    return null
+function getPatientSearchEmptyText(state: LoadState, failureMessage: string | null): string {
+  switch (state) {
+    case 'IDLE':
+      return 'Enter search terms, then press Search.'
+    case 'LOADING':
+      return 'Searching patients.'
+    case 'ERROR':
+      return failureMessage ?? 'Patient search failed.'
+    case 'EMPTY':
+      return 'No matching patients.'
+    case 'READY':
+      return 'No matching patients.'
   }
+}
 
-  onMessage(null)
-  onSelectedPatientChange(result.data)
-  return result.data
+function getRecentEmptyText(state: LoadState, failureMessage: string | null): string {
+  switch (state) {
+    case 'IDLE':
+    case 'LOADING':
+      return 'Loading recent patients.'
+    case 'ERROR':
+      return failureMessage ?? 'Recent patients failed to load.'
+    case 'EMPTY':
+    case 'READY':
+      return 'No recent patients.'
+  }
+}
+
+function getDuplicatePairsEmptyText(state: LoadState, failureMessage: string | null): string {
+  switch (state) {
+    case 'IDLE':
+    case 'LOADING':
+      return 'Loading possible duplicates.'
+    case 'ERROR':
+      return failureMessage ?? 'Possible duplicates failed to load.'
+    case 'EMPTY':
+    case 'READY':
+      return 'No possible duplicates.'
+  }
 }
 
 function formatAgeDob(patient: PublicPatientSummary): string {
@@ -1071,8 +1758,94 @@ function formatVillageQuarter(patient: PublicPatientSummary): string {
   return [patient.village, patient.quarter].filter(Boolean).join(' / ') || 'Not recorded'
 }
 
+function formatMatchReasons(matchedOn: readonly string[]): string {
+  return matchedOn.map(formatMatchReason).join(', ')
+}
+
+function formatMatchReason(reason: string): string {
+  switch (reason) {
+    case 'phone':
+      return 'phone'
+    case 'date_of_birth':
+      return 'date of birth'
+    case 'sex':
+      return 'sex'
+    case 'village':
+      return 'village'
+    case 'name':
+      return 'name'
+    case 'approximate_age':
+      return 'approximate age'
+    default:
+      return reason.replaceAll('_', ' ')
+  }
+}
+
 function emptyToNull(value: string): string | null {
   const trimmed = value.trim()
 
   return trimmed.length === 0 ? null : value
+}
+
+function isPatientCommand(commandId: ApplicationCommandId): commandId is PatientCommandId {
+  return commandId.startsWith('PATIENTS_')
+}
+
+function useMountedRef(): MutableRefObject<boolean> {
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  return mountedRef
+}
+
+function useLatestRef<TValue>(value: TValue): MutableRefObject<TValue> {
+  const ref = useRef(value)
+
+  useEffect(() => {
+    ref.current = value
+  }, [value])
+
+  return ref
+}
+
+function trapDialogFocus(
+  event: ReactKeyboardEvent<HTMLDivElement>,
+  dialog: HTMLElement | null
+): void {
+  if (dialog === null) {
+    return
+  }
+
+  const focusable = Array.from(
+    dialog.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+    )
+  )
+
+  if (focusable.length === 0) {
+    event.preventDefault()
+    dialog.focus()
+    return
+  }
+
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last?.focus()
+    return
+  }
+
+  if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first?.focus()
+  }
 }

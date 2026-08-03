@@ -19,6 +19,8 @@ import {
   type PublicActiveAuthenticationSession,
   type PublicAuthenticationSession,
   type PublicAuthenticatedUser,
+  type PublicPatientDetail,
+  type PublicPatientSummary,
   type PublicLockedAuthenticationSession,
   type PublicSignedOutAuthenticationSession,
   type UtcTimestamp
@@ -342,7 +344,7 @@ describe('application shell DOM integration', () => {
     expect(text(mounted)).toContain('Patient Search and Management')
     expect(text(mounted)).toContain('Select a patient to view or update details.')
     expect(text(mounted)).not.toContain('Not available in this build.')
-    expect(harness.api.patient.search).toHaveBeenCalled()
+    expect(harness.api.patient.search).not.toHaveBeenCalled()
 
     await clickButton(mounted, 'Home')
     await clickButton(mounted, 'Dashboard')
@@ -357,6 +359,99 @@ describe('application shell DOM integration', () => {
     expect(commandPanel(mounted)?.textContent).toContain('Patient Search')
 
     await mounted.unmount()
+  })
+
+  it('shows authentication unavailable and clears patient identity when patient IPC is forbidden', async () => {
+    const harness = createAppApi(activeSession(1))
+    harness.api.patient.search.mockResolvedValueOnce(createPatientFailure('IPC_FORBIDDEN'))
+    const mounted = await mountApp(harness.api)
+
+    await clickButton(mounted, 'Patients')
+    await clickButton(mounted, 'Patient Search')
+    await clickButtonExact(mounted, 'Search')
+
+    expect(text(mounted)).toContain('Authentication is unavailable.')
+    expect(text(mounted)).toContain('Authentication is unavailable from the current window.')
+    expect(text(mounted)).not.toContain('Patient Search and Management')
+    expect(text(mounted)).not.toContain('Protected Patient')
+
+    await mounted.unmount()
+  })
+
+  it.each([
+    {
+      code: 'AUTH_LOCKED' as const,
+      session: lockedSession(2),
+      expectedText: 'Session locked.'
+    },
+    {
+      code: 'AUTH_UNAUTHENTICATED' as const,
+      session: signedOutSession(2),
+      expectedText: 'Sign in to Health Screening.'
+    }
+  ])('reconciles $code patient failures through the authentication route', async (testCase) => {
+    const harness = createAppApi(activeSession(1))
+    harness.api.patient.search.mockResolvedValueOnce(
+      createPatientFailure(testCase.code) as Awaited<
+        ReturnType<HealthScreeningApi['patient']['search']>
+      >
+    )
+    const mounted = await mountApp(harness.api)
+    harness.setSessionSilently(testCase.session)
+
+    await clickButton(mounted, 'Patients')
+    await clickButton(mounted, 'Patient Search')
+    await clickButtonExact(mounted, 'Search')
+
+    expect(harness.api.auth.getSession).toHaveBeenCalledTimes(2)
+    expect(text(mounted)).toContain(testCase.expectedText)
+    expect(text(mounted)).not.toContain('Patient Search and Management')
+
+    await mounted.unmount()
+  })
+
+  it('unmounts the patient workspace and clears selected identity on lock and logout', async () => {
+    const lockHarness = createAppApi(activeSession(1))
+    lockHarness.api.patient.search.mockResolvedValue(
+      createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    lockHarness.api.patient.get.mockResolvedValue(createIpcSuccess(shellPatientDetail()))
+    const lockedMounted = await mountApp(lockHarness.api)
+
+    await clickButton(lockedMounted, 'Patients')
+    await clickButton(lockedMounted, 'Patient Search')
+    await clickButtonExact(lockedMounted, 'Search')
+    await clickButton(lockedMounted, 'Select')
+
+    expect(text(lockedMounted)).toContain('Protected Patient')
+
+    await clickButton(lockedMounted, 'Lock')
+
+    expect(text(lockedMounted)).toContain('Session locked.')
+    expect(text(lockedMounted)).not.toContain('Protected Patient')
+
+    await lockedMounted.unmount()
+
+    const logoutHarness = createAppApi(activeSession(1))
+    logoutHarness.api.patient.search.mockResolvedValue(
+      createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    logoutHarness.api.patient.get.mockResolvedValue(createIpcSuccess(shellPatientDetail()))
+    const logoutMounted = await mountApp(logoutHarness.api)
+
+    await clickButton(logoutMounted, 'Patients')
+    await clickButton(logoutMounted, 'Patient Search')
+    await clickButtonExact(logoutMounted, 'Search')
+    await clickButton(logoutMounted, 'Select')
+
+    expect(text(logoutMounted)).toContain('Protected Patient')
+
+    await clickButton(logoutMounted, 'Sign out')
+
+    expect(text(logoutMounted)).toContain('Sign in to Health Screening.')
+    expect(text(logoutMounted)).not.toContain('Protected Patient')
+
+    await logoutMounted.unmount()
   })
 
   it('keeps shell route state across active revisions and resets after leaving active', async () => {
@@ -438,7 +533,7 @@ describe('application shell DOM integration', () => {
     expect(harness.api.app.getInfo).toHaveBeenCalledOnce()
     expect(harness.api.app.getHealth).toHaveBeenCalledOnce()
     expect(harness.api.firstRun.getState).toHaveBeenCalledOnce()
-    expect(harness.api.patient.search).toHaveBeenCalled()
+    expect(harness.api.patient.search).not.toHaveBeenCalled()
 
     await mounted.unmount()
   })
@@ -453,13 +548,18 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
     getState: ReturnType<typeof vi.fn<HealthScreeningApi['firstRun']['getState']>>
     initialize: ReturnType<typeof vi.fn<HealthScreeningApi['firstRun']['initialize']>>
   }
+  auth: {
+    getSession: ReturnType<typeof vi.fn<HealthScreeningApi['auth']['getSession']>>
+  } & HealthScreeningApi['auth']
   patient: {
     search: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['search']>>
+    get: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['get']>>
   } & HealthScreeningApi['patient']
 }
 
 interface AppApiHarness {
   readonly api: MockedHealthScreeningApi
+  setSessionSilently(session: PublicAuthenticationSession): void
   emitSession(session: PublicAuthenticationSession): void
 }
 
@@ -552,6 +652,9 @@ function createAppApi(initialSession: PublicAuthenticationSession): AppApiHarnes
 
   return {
     api,
+    setSessionSilently(session: PublicAuthenticationSession): void {
+      currentSession = session
+    },
     emitSession(session: PublicAuthenticationSession): void {
       currentSession = session
 
@@ -598,13 +701,15 @@ async function mountShell({
     root.render(
       createElement(ApplicationShell, {
         api: createAppApi(activeSession(1)).api,
+        authGeneration: 1,
         context: shellContext,
         user: shellUser,
         busy: false,
         operationError,
         alertRef: { current: null },
         onLock: vi.fn(),
-        onLogout: vi.fn()
+        onLogout: vi.fn(),
+        onPatientAuthenticationFailure: vi.fn()
       })
     )
     await flushPromises()
@@ -626,6 +731,22 @@ async function mountShell({
 async function clickButton(mounted: MountedApp, label: string): Promise<void> {
   const button = Array.from(mounted.container.querySelectorAll('button')).find((candidate) =>
     candidate.textContent?.includes(label)
+  )
+
+  if (button === undefined) {
+    throw new Error(`Expected button ${label} to be rendered.`)
+  }
+
+  await act(async () => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await flushPromises()
+  })
+  await flushReact()
+}
+
+async function clickButtonExact(mounted: MountedApp, label: string): Promise<void> {
+  const button = Array.from(mounted.container.querySelectorAll('button')).find(
+    (candidate) => candidate.textContent?.trim() === label
   )
 
   if (button === undefined) {
@@ -791,6 +912,47 @@ function countWindowListenerCalls(
 
 function text(mounted: MountedApp): string {
   return mounted.container.textContent ?? ''
+}
+
+function shellPatientSummary(overrides: Partial<PublicPatientSummary> = {}): PublicPatientSummary {
+  return {
+    id: '11111111-1111-4111-8111-111111111111',
+    patientCode: 'PT-000001',
+    displayName: 'Protected Patient',
+    givenName: 'Protected',
+    familyName: 'Patient',
+    otherNames: null,
+    dateOfBirth: '1990-01-02',
+    approximateAgeYears: null,
+    ageAsOfDate: null,
+    sex: 'FEMALE',
+    village: 'Bastos',
+    quarter: 'East',
+    phone: '+237 600 000 001',
+    status: 'ACTIVE',
+    rowVersion: 1,
+    updatedAt: futureTimestamp(0),
+    ...overrides
+  }
+}
+
+function shellPatientDetail(overrides: Partial<PublicPatientDetail> = {}): PublicPatientDetail {
+  return {
+    ...shellPatientSummary(overrides),
+    alternateContactName: null,
+    alternateContactPhone: null,
+    residenceNotes: null,
+    acknowledgment: {
+      status: 'NOT_REQUESTED',
+      recordedAt: null,
+      recordedByDisplayName: null
+    },
+    createdAt: futureTimestamp(0),
+    createdByDisplayName: 'Admin User',
+    updatedByDisplayName: 'Admin User',
+    clinicalStatus: 'NOT_AVAILABLE',
+    ...overrides
+  }
 }
 
 async function flushReact(): Promise<void> {

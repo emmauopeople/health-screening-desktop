@@ -25,13 +25,15 @@ describe('application shell rendering', () => {
     const markup = renderToStaticMarkup(
       createElement(ApplicationShell, {
         api: createShellApi(),
+        authGeneration: 1,
         context: shellContext,
         user: user('LOCAL_ADMIN'),
         busy: false,
         operationError: null,
         alertRef: { current: null },
         onLock: vi.fn(),
-        onLogout: vi.fn()
+        onLogout: vi.fn(),
+        onPatientAuthenticationFailure: vi.fn()
       })
     )
 

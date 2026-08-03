@@ -1,5 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
-import type { AuthLockResult, AuthLogoutResult, HealthScreeningApi } from '@shared/ipc'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type {
+  AuthLockResult,
+  AuthLogoutResult,
+  HealthScreeningApi,
+  PatientErrorCode
+} from '@shared/ipc'
 
 import {
   createAuthenticationFormController,
@@ -34,6 +39,7 @@ export function AuthenticatedShell({
   })
   const alertRef = useRef<HTMLDivElement | null>(null)
   const formControllerRef = useRef<AuthenticationFormController | null>(null)
+  const patientReconcilePendingRef = useRef(false)
 
   if (formControllerRef.current === null) {
     formControllerRef.current = createAuthenticationFormController({ onState: setOperationState })
@@ -54,6 +60,33 @@ export function AuthenticatedShell({
   }, [operationState])
 
   const isSubmitting = operationState.status === 'SUBMITTING'
+
+  const handlePatientAuthenticationFailure = useCallback(
+    (code: PatientErrorCode): void => {
+      if (code === 'IPC_FORBIDDEN') {
+        controller.showUnavailable(true)
+        return
+      }
+
+      if (
+        code !== 'AUTH_LOCKED' &&
+        code !== 'AUTH_UNAUTHENTICATED' &&
+        code !== 'AUTH_PASSWORD_CHANGE_REQUIRED'
+      ) {
+        return
+      }
+
+      if (patientReconcilePendingRef.current) {
+        return
+      }
+
+      patientReconcilePendingRef.current = true
+      void controller.reconcile().finally(() => {
+        patientReconcilePendingRef.current = false
+      })
+    },
+    [controller]
+  )
 
   async function handleLock(): Promise<void> {
     await runSessionTransition('LOCK', () => api.auth.lock())
@@ -103,6 +136,7 @@ export function AuthenticatedShell({
     <ApplicationShell
       key={route.user.role}
       api={api}
+      authGeneration={route.revision}
       context={shellContext}
       user={route.user}
       busy={isSubmitting}
@@ -114,6 +148,7 @@ export function AuthenticatedShell({
       onLogout={() => {
         void handleLogout()
       }}
+      onPatientAuthenticationFailure={handlePatientAuthenticationFailure}
     />
   )
 }

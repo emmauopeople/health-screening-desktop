@@ -50,9 +50,19 @@ const patientEntityType = parseAuditEntityType('PATIENT')
 const duplicateReviewEntityType = parseAuditEntityType('PATIENT_DUPLICATE_REVIEW')
 
 interface DuplicateReviewTokenState {
+  readonly actorUserId: string
   readonly signature: string
-  readonly candidateIds: readonly string[]
+  readonly candidates: readonly DuplicateReviewTokenCandidate[]
+  readonly issuedAtMs: number
+  readonly expiresAtMs: number
 }
+
+interface DuplicateReviewTokenCandidate {
+  readonly id: string
+  readonly rowVersion: number
+}
+
+const duplicateReviewTokenTtlMs = 5 * 60 * 1000
 
 export function createPatientRegistryService({
   installationRepository,
@@ -117,25 +127,31 @@ export function createPatientRegistryService({
           limit: 10
         })
         const signature = createDuplicateSignature(fields, candidates)
+        const acceptedDuplicateReviewToken = getAcceptedDuplicateReviewToken(
+          request,
+          actor,
+          signature,
+          candidates,
+          Date.now()
+        )
 
-        if (!isDuplicateReviewAccepted(request, signature, candidates)) {
+        if (candidates.length > 0 && acceptedDuplicateReviewToken === null) {
+          const issuedAtMs = Date.now()
+          pruneExpiredDuplicateReviewTokens(issuedAtMs)
           const token = randomUUID()
           duplicateReviewTokens.set(token, {
+            actorUserId: actor.userId,
             signature,
-            candidateIds: candidates.map((candidate) => candidate.patient.id)
+            candidates: createDuplicateTokenCandidates(candidates),
+            issuedAtMs,
+            expiresAtMs: issuedAtMs + duplicateReviewTokenTtlMs
           })
 
-          if (candidates.length > 0) {
-            return createIpcSuccess({
-              status: 'DUPLICATE_REVIEW_REQUIRED',
-              candidates: candidates.map(toPublicCandidate),
-              duplicateReviewToken: token
-            }) as PatientCreateResult
-          }
-        }
-
-        if (request.duplicateReviewToken !== null) {
-          duplicateReviewTokens.delete(request.duplicateReviewToken)
+          return createIpcSuccess({
+            status: 'DUPLICATE_REVIEW_REQUIRED',
+            candidates: candidates.map(toPublicCandidate),
+            duplicateReviewToken: token
+          }) as PatientCreateResult
         }
 
         const created = transactionExecutor.run((context) => {
@@ -189,6 +205,10 @@ export function createPatientRegistryService({
 
           return patient
         })
+
+        if (acceptedDuplicateReviewToken !== null) {
+          duplicateReviewTokens.delete(acceptedDuplicateReviewToken)
+        }
 
         return createIpcSuccess({
           status: 'CREATED',
@@ -401,29 +421,46 @@ export function createPatientRegistryService({
     }
   })
 
-  function isDuplicateReviewAccepted(
+  function getAcceptedDuplicateReviewToken(
     request: PatientCreateRequest,
+    actor: PatientServiceActor,
     signature: string,
-    candidates: readonly PatientDuplicateCandidateRecord[]
-  ): boolean {
+    candidates: readonly PatientDuplicateCandidateRecord[],
+    nowMs: number
+  ): string | null {
     if (candidates.length === 0) {
-      return true
+      return null
     }
 
     if (request.duplicateReviewToken === null) {
-      return false
+      return null
     }
 
     const tokenState = duplicateReviewTokens.get(request.duplicateReviewToken)
 
-    return (
+    if (tokenState !== undefined && tokenState.expiresAtMs <= nowMs) {
+      duplicateReviewTokens.delete(request.duplicateReviewToken)
+      return null
+    }
+
+    const accepted =
       tokenState !== undefined &&
+      tokenState.actorUserId === actor.userId &&
       tokenState.signature === signature &&
-      arraysEqual(
-        tokenState.candidateIds,
-        candidates.map((candidate) => candidate.patient.id)
+      duplicateTokenCandidatesEqual(
+        tokenState.candidates,
+        createDuplicateTokenCandidates(candidates)
       )
-    )
+
+    return accepted ? request.duplicateReviewToken : null
+  }
+
+  function pruneExpiredDuplicateReviewTokens(nowMs: number): void {
+    for (const [token, state] of duplicateReviewTokens) {
+      if (state.expiresAtMs <= nowMs) {
+        duplicateReviewTokens.delete(token)
+      }
+    }
   }
 }
 
@@ -510,6 +547,32 @@ function createDuplicateSignature(
   })
 }
 
+function createDuplicateTokenCandidates(
+  candidates: readonly PatientDuplicateCandidateRecord[]
+): readonly DuplicateReviewTokenCandidate[] {
+  return Object.freeze(
+    candidates.map((candidate) =>
+      Object.freeze({
+        id: candidate.patient.id,
+        rowVersion: candidate.patient.rowVersion
+      })
+    )
+  )
+}
+
+function duplicateTokenCandidatesEqual(
+  left: readonly DuplicateReviewTokenCandidate[],
+  right: readonly DuplicateReviewTokenCandidate[]
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (candidate, index) =>
+        candidate.id === right[index]?.id && candidate.rowVersion === right[index]?.rowVersion
+    )
+  )
+}
+
 function orderPair(
   first: PatientDetailRecord,
   second: PatientDetailRecord
@@ -532,10 +595,6 @@ function createPatientIdentityKey(patient: PatientSummaryRecord): string {
 
 function normalizePhoneDigitsForIdentity(phone: string | null): string {
   return phone?.replace(/\D/gu, '') ?? ''
-}
-
-function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
 function toPatientFailure(
