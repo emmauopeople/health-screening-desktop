@@ -73,6 +73,7 @@ describe('patient registry workspace mounted regressions', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     document.body.innerHTML = ''
@@ -252,6 +253,533 @@ describe('patient registry workspace mounted regressions', () => {
     expect(text(mounted)).toContain('No matching patients.')
     expect(text(mounted)).not.toContain('Ada Ngono')
     expect(mounted.getSelectedPatient()).toBeNull()
+
+    await mounted.unmount()
+  })
+
+  it('debounces live patient searches until the final 300 millisecond delay', async () => {
+    const api = createApi()
+    api.patient.search
+      .mockResolvedValueOnce(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [patientSummary({ displayName: 'Say Patient' })],
+          page: 1,
+          pageSize: 25,
+          total: 1
+        })
+      )
+
+    const mounted = await mountWorkspace({ api })
+    vi.useFakeTimers()
+    const input = searchInput(mounted)
+    input.focus()
+
+    await changeInput(input, 'say')
+
+    expect(api.patient.search).toHaveBeenCalledOnce()
+
+    await advanceTimersByTime(299)
+
+    expect(api.patient.search).toHaveBeenCalledOnce()
+
+    await advanceTimersByTime(1)
+
+    expect(api.patient.search).toHaveBeenCalledTimes(2)
+    expect(api.patient.search).toHaveBeenLastCalledWith({ query: 'say', page: 1, pageSize: 25 })
+    expect(text(mounted)).toContain('Say Patient')
+    expect(document.activeElement).toBe(input)
+
+    await mounted.unmount()
+  })
+
+  it('coalesces rapid live-search typing into one final request', async () => {
+    const api = createApi()
+    api.patient.search
+      .mockResolvedValueOnce(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [patientSummary({ displayName: 'Babungo Patient' })],
+          page: 1,
+          pageSize: 25,
+          total: 1
+        })
+      )
+
+    const mounted = await mountWorkspace({ api })
+    vi.useFakeTimers()
+
+    await changeInput(searchInput(mounted), 'b')
+    await advanceTimersByTime(100)
+    await changeInput(searchInput(mounted), 'ba')
+    await advanceTimersByTime(100)
+    await changeInput(searchInput(mounted), 'bab')
+    await advanceTimersByTime(100)
+    await changeInput(searchInput(mounted), 'babungo')
+    await advanceTimersByTime(299)
+
+    expect(api.patient.search).toHaveBeenCalledOnce()
+
+    await advanceTimersByTime(1)
+
+    expect(api.patient.search).toHaveBeenCalledTimes(2)
+    expect(api.patient.search).toHaveBeenLastCalledWith({
+      query: 'babungo',
+      page: 1,
+      pageSize: 25
+    })
+    expect(text(mounted)).toContain('Babungo Patient')
+
+    await mounted.unmount()
+  })
+
+  it('runs live searches on page one with the current page size', async () => {
+    const api = createApi()
+    api.patient.search
+      .mockResolvedValueOnce(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+      .mockResolvedValueOnce(createIpcSuccess({ items: [], page: 1, pageSize: 50, total: 0 }))
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [patientSummary({ displayName: 'Page Size Match' })],
+          page: 1,
+          pageSize: 50,
+          total: 1
+        })
+      )
+
+    const mounted = await mountWorkspace({ api })
+
+    await changeSelect(pageSizeSelect(mounted), '50')
+
+    vi.useFakeTimers()
+    await changeInput(searchInput(mounted), 'say')
+    await advanceTimersByTime(300)
+
+    expect(api.patient.search).toHaveBeenLastCalledWith({ query: 'say', page: 1, pageSize: 50 })
+    expect(text(mounted)).toContain('Page Size Match')
+
+    await mounted.unmount()
+  })
+
+  it('clears pending live search immediately and restores the default list with first-row selection', async () => {
+    const api = createApi()
+    const briceSummary = patientSummary({
+      id: patientIdTwo,
+      patientCode: 'PT-000002',
+      displayName: 'Brice Muna',
+      givenName: 'Brice',
+      familyName: 'Muna'
+    })
+    api.patient.search
+      .mockResolvedValueOnce(
+        createIpcSuccess({ items: [briceSummary], page: 1, pageSize: 25, total: 1 })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+      )
+    api.patient.get.mockImplementation(({ patientId }) =>
+      Promise.resolve(
+        createIpcSuccess(
+          patientId === patientIdTwo
+            ? patientDetail({
+                id: patientIdTwo,
+                patientCode: 'PT-000002',
+                displayName: 'Brice Muna',
+                givenName: 'Brice',
+                familyName: 'Muna'
+              })
+            : patientDetail()
+        )
+      )
+    )
+
+    const mounted = await mountWorkspace({ api })
+    vi.useFakeTimers()
+
+    expect(patientRowByCode(mounted, 'PT-000002').getAttribute('aria-selected')).toBe('true')
+
+    await changeInput(searchInput(mounted), 'Brice')
+    await changeInput(searchInput(mounted), '')
+
+    expect(api.patient.search).toHaveBeenCalledTimes(2)
+    expect(api.patient.search).toHaveBeenLastCalledWith({ query: '', page: 1, pageSize: 25 })
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
+    expect(mounted.getSelectedPatient()?.id).toBe(patientIdOne)
+
+    await advanceTimersByTime(300)
+
+    expect(api.patient.search).toHaveBeenCalledTimes(2)
+
+    await mounted.unmount()
+  })
+
+  it('clearing live search preserves the current selection when it remains visible', async () => {
+    const api = createApi()
+    const briceSummary = patientSummary({
+      id: patientIdTwo,
+      patientCode: 'PT-000002',
+      displayName: 'Brice Muna',
+      givenName: 'Brice',
+      familyName: 'Muna'
+    })
+    api.patient.search
+      .mockResolvedValueOnce(
+        createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [briceSummary, patientSummary()],
+          page: 1,
+          pageSize: 25,
+          total: 2
+        })
+      )
+    api.patient.get.mockResolvedValueOnce(createIpcSuccess(patientDetail()))
+
+    const mounted = await mountWorkspace({ api })
+    vi.useFakeTimers()
+
+    await changeInput(searchInput(mounted), 'Ada')
+    await changeInput(searchInput(mounted), '')
+
+    expect(api.patient.search).toHaveBeenCalledTimes(2)
+    expect(api.patient.get).toHaveBeenCalledOnce()
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
+    expect(mounted.getSelectedPatient()?.id).toBe(patientIdOne)
+
+    await advanceTimersByTime(300)
+
+    expect(api.patient.search).toHaveBeenCalledTimes(2)
+
+    await mounted.unmount()
+  })
+
+  it('Search and Enter cancel pending live-search debounce timers', async () => {
+    const api = createApi()
+    api.patient.search
+      .mockResolvedValueOnce(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [patientSummary({ displayName: 'Button Match' })],
+          page: 1,
+          pageSize: 25,
+          total: 1
+        })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [patientSummary({ displayName: 'Enter Match' })],
+          page: 1,
+          pageSize: 25,
+          total: 1
+        })
+      )
+
+    const mounted = await mountWorkspace({ api })
+    vi.useFakeTimers()
+
+    await changeInput(searchInput(mounted), 'button')
+    await clickButton(mounted, 'Search')
+    await advanceTimersByTime(300)
+
+    expect(api.patient.search).toHaveBeenCalledTimes(2)
+    expect(api.patient.search).toHaveBeenLastCalledWith({
+      query: 'button',
+      page: 1,
+      pageSize: 25
+    })
+
+    await changeInput(searchInput(mounted), 'enter')
+    await dispatchKeyboard(searchInput(mounted), 'Enter')
+    await advanceTimersByTime(300)
+
+    expect(api.patient.search).toHaveBeenCalledTimes(3)
+    expect(api.patient.search).toHaveBeenLastCalledWith({
+      query: 'enter',
+      page: 1,
+      pageSize: 25
+    })
+
+    await mounted.unmount()
+  })
+
+  it('page-size changes cancel pending debounce and immediately use the current input query', async () => {
+    const api = createApi()
+    api.patient.search
+      .mockResolvedValueOnce(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [patientSummary({ displayName: 'Sized Search' })],
+          page: 1,
+          pageSize: 50,
+          total: 1
+        })
+      )
+
+    const mounted = await mountWorkspace({ api })
+    vi.useFakeTimers()
+
+    await changeInput(searchInput(mounted), 'say')
+    await changeSelect(pageSizeSelect(mounted), '50')
+    await advanceTimersByTime(300)
+
+    expect(api.patient.search).toHaveBeenCalledTimes(2)
+    expect(api.patient.search).toHaveBeenLastCalledWith({ query: 'say', page: 1, pageSize: 50 })
+    expect(text(mounted)).toContain('Sized Search')
+
+    await mounted.unmount()
+  })
+
+  it('pagination uses the applied query while a different live-search input is pending', async () => {
+    const api = createApi()
+    const pageTwo = patientSummary({
+      id: patientIdTwo,
+      patientCode: 'PT-000002',
+      displayName: 'Ada Page Two',
+      givenName: 'Ada',
+      familyName: 'Page Two'
+    })
+    api.patient.search
+      .mockResolvedValueOnce(
+        createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 50 })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 50 })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({ items: [pageTwo], page: 2, pageSize: 25, total: 50 })
+      )
+    api.patient.get.mockImplementation(({ patientId }) =>
+      Promise.resolve(
+        createIpcSuccess(
+          patientId === patientIdTwo
+            ? patientDetail({
+                id: patientIdTwo,
+                patientCode: 'PT-000002',
+                displayName: 'Ada Page Two',
+                givenName: 'Ada',
+                familyName: 'Page Two'
+              })
+            : patientDetail()
+        )
+      )
+    )
+
+    const mounted = await mountWorkspace({ api })
+    vi.useFakeTimers()
+
+    await changeInput(searchInput(mounted), 'Ada')
+    await clickButton(mounted, 'Search')
+    await changeInput(searchInput(mounted), 'Brice')
+    await clickButton(mounted, 'Next')
+    await advanceTimersByTime(300)
+
+    expect(api.patient.search).toHaveBeenCalledTimes(3)
+    expect(api.patient.search).toHaveBeenLastCalledWith({ query: 'Ada', page: 2, pageSize: 25 })
+    expect(text(mounted)).toContain('Ada Page Two')
+
+    await mounted.unmount()
+  })
+
+  it('suppresses stale live-search responses after a newer debounced search wins', async () => {
+    const api = createApi()
+    const staleSearch =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    const currentSearch =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    api.patient.search
+      .mockResolvedValueOnce(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+      .mockReturnValueOnce(staleSearch.promise)
+      .mockReturnValueOnce(currentSearch.promise)
+
+    const mounted = await mountWorkspace({ api })
+    vi.useFakeTimers()
+
+    await changeInput(searchInput(mounted), 'old')
+    await advanceTimersByTime(300)
+    await changeInput(searchInput(mounted), 'new')
+    await advanceTimersByTime(300)
+
+    currentSearch.resolve(
+      createIpcSuccess({
+        items: [patientSummary({ displayName: 'Current Live Match' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    await flushReact()
+
+    staleSearch.resolve(
+      createIpcSuccess({
+        items: [patientSummary({ displayName: 'Stale Live Match' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    await flushReact()
+
+    expect(text(mounted)).toContain('Current Live Match')
+    expect(text(mounted)).not.toContain('Stale Live Match')
+
+    await mounted.unmount()
+  })
+
+  it('cancels pending live-search timers on unmount', async () => {
+    const api = createApi()
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 })
+    )
+
+    const mounted = await mountWorkspace({ api })
+    vi.useFakeTimers()
+
+    await changeInput(searchInput(mounted), 'say')
+    await mounted.unmount()
+    await advanceTimersByTime(300)
+
+    expect(api.patient.search).toHaveBeenCalledOnce()
+  })
+
+  it('cancels pending live-search timers when IPC_FORBIDDEN clears protected state', async () => {
+    const api = createApi()
+    api.patient.search
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [patientSummary({ patientCode: 'PT-000099', displayName: 'Protected Name' })],
+          page: 1,
+          pageSize: 25,
+          total: 1
+        })
+      )
+      .mockResolvedValueOnce(createPatientFailure('IPC_FORBIDDEN'))
+
+    const mounted = await mountWorkspace({
+      api,
+      selectedPatient: patientDetail({ patientCode: 'PT-000099', displayName: 'Protected Name' })
+    })
+    vi.useFakeTimers()
+
+    await changeInput(searchInput(mounted), 'forbidden')
+    await clickButton(mounted, 'Search')
+    await advanceTimersByTime(300)
+
+    expect(api.patient.search).toHaveBeenCalledTimes(2)
+    expect(mounted.onAuthenticationFailure).toHaveBeenCalledWith('IPC_FORBIDDEN')
+    expect(mounted.getSelectedPatient()).toBeNull()
+    expect(text(mounted)).not.toContain('Protected Name')
+
+    await mounted.unmount()
+  })
+
+  it('stages dirty live-search transitions and Cancel preserves the old table and draft', async () => {
+    const api = createApi()
+    const mounted = await mountDirtyPatientSearchWorkspace({ api })
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 })
+    )
+    vi.useFakeTimers()
+
+    await changeInput(searchInput(mounted), 'No matches')
+    await advanceTimersByTime(300)
+
+    expect(dialog(mounted)).not.toBeNull()
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
+    expect(text(mounted)).not.toContain('No matching patients.')
+
+    await clickButtonWithin(dialog(mounted)!, 'Cancel')
+
+    expect(dialog(mounted)).toBeNull()
+    expect(searchInput(mounted).value).toBe('No matches')
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
+    expect(fieldInput(mounted, 'Village').value).toBe('Dirty Village')
+    expect(text(mounted)).not.toContain('No matching patients.')
+
+    await mounted.unmount()
+  })
+
+  it('applies dirty live-search results after Discard or successful Save', async () => {
+    const api = createApi()
+    const discardMounted = await mountDirtyPatientSearchWorkspace({ api })
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 })
+    )
+    vi.useFakeTimers()
+
+    await changeInput(searchInput(discardMounted), 'No matches')
+    await advanceTimersByTime(300)
+    await clickButtonWithin(dialog(discardMounted)!, 'Discard edits')
+
+    expect(text(discardMounted)).toContain('No matching patients.')
+    expect(discardMounted.getSelectedPatient()).toBeNull()
+
+    await discardMounted.unmount()
+    vi.useRealTimers()
+
+    const saveApi = createApi()
+    const saveMounted = await mountDirtyPatientSearchWorkspace({ api: saveApi })
+    saveApi.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 })
+    )
+    saveApi.patient.update.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'UPDATED',
+        patient: patientDetail({ village: 'Dirty Village', rowVersion: 2 })
+      })
+    )
+    vi.useFakeTimers()
+
+    await changeInput(searchInput(saveMounted), 'No matches')
+    await advanceTimersByTime(300)
+    await clickButtonWithin(dialog(saveMounted)!, 'Save changes')
+
+    expect(saveApi.patient.update).toHaveBeenCalledWith({
+      patientId: patientIdOne,
+      expectedRowVersion: 1,
+      patch: expect.objectContaining({ village: 'Dirty Village' })
+    })
+    expect(text(saveMounted)).toContain('No matching patients.')
+    expect(saveMounted.getSelectedPatient()).toBeNull()
+
+    await saveMounted.unmount()
+  })
+
+  it('does not restart initial loading or pending debounce work on patient-search rerenders', async () => {
+    const api = createApi()
+    api.patient.search
+      .mockResolvedValueOnce(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [patientSummary({ displayName: 'Stable Timer Match' })],
+          page: 1,
+          pageSize: 25,
+          total: 1
+        })
+      )
+
+    const mounted = await mountWorkspace({ api })
+    vi.useFakeTimers()
+
+    await advanceTimersByTime(1000)
+
+    expect(api.patient.search).toHaveBeenCalledOnce()
+
+    await changeInput(searchInput(mounted), 'stable')
+    await advanceTimersByTime(150)
+    await mounted.setCommandId('PATIENTS_PATIENT_SEARCH')
+    await advanceTimersByTime(149)
+
+    expect(api.patient.search).toHaveBeenCalledOnce()
+
+    await advanceTimersByTime(1)
+
+    expect(api.patient.search).toHaveBeenCalledTimes(2)
+    expect(api.patient.search).toHaveBeenLastCalledWith({
+      query: 'stable',
+      page: 1,
+      pageSize: 25
+    })
 
     await mounted.unmount()
   })
@@ -2145,6 +2673,14 @@ async function changeSelect(select: HTMLSelectElement, value: string): Promise<v
 async function dispatchKeyboard(element: Element, key: string): Promise<void> {
   await act(async () => {
     element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    await flushPromises()
+  })
+  await flushReact()
+}
+
+async function advanceTimersByTime(milliseconds: number): Promise<void> {
+  await act(async () => {
+    vi.advanceTimersByTime(milliseconds)
     await flushPromises()
   })
   await flushReact()

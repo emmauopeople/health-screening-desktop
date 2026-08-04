@@ -56,6 +56,7 @@ interface PatientSearchDisplaySnapshot {
   readonly total: number
   readonly page: number
   readonly pageSize: PatientSearchPageSize
+  readonly appliedQuery: string
   readonly state: LoadState
   readonly failureMessage: string | null
 }
@@ -63,6 +64,7 @@ interface PatientSearchDisplaySnapshot {
 interface PatientSearchResultSnapshot {
   readonly requestId: number
   readonly securityEpoch: number
+  readonly queryText: string
   readonly items: readonly PublicPatientSummary[]
   readonly total: number
   readonly page: number
@@ -72,6 +74,7 @@ interface PatientSearchResultSnapshot {
 }
 
 const transportFailureMessage = 'The desktop service is unavailable.'
+const patientSearchDebounceMs = 300
 const localDatePattern = /^\d{4}-\d{2}-\d{2}$/u
 
 const emptyEditableFields: PatientEditableFields = Object.freeze({
@@ -646,7 +649,9 @@ function PatientSearchPane({
   const mountedRef = useMountedRef()
   const requestRef = useRef(0)
   const initialLoadStartedRef = useRef(false)
-  const [query, setQuery] = useState('')
+  const debounceTimerRef = useRef<number | null>(null)
+  const [queryInput, setQueryInput] = useState('')
+  const [appliedQuery, setAppliedQuery] = useState('')
   const [pageSize, setPageSize] = useState<PatientSearchPageSize>(25)
   const [page, setPage] = useState(1)
   const [items, setItems] = useState<readonly PublicPatientSummary[]>([])
@@ -655,25 +660,37 @@ function PatientSearchPane({
   const [failureMessage, setFailureMessage] = useState<string | null>(null)
   const selectedPatientIdRef = useLatestRef(selectedPatientId)
   const preferredPatientRevealRef = useLatestRef(preferredPatientReveal)
+  const queryInputRef = useLatestRef(queryInput)
+  const appliedQueryRef = useLatestRef(appliedQuery)
   const pageSizeRef = useLatestRef(pageSize)
   const displaySnapshotRef = useLatestRef<PatientSearchDisplaySnapshot>({
     items,
     total,
     page,
     pageSize,
+    appliedQuery,
     state,
     failureMessage
   })
 
+  const clearDebounceTimer = useCallback((): void => {
+    if (debounceTimerRef.current !== null) {
+      window.clearTimeout(debounceTimerRef.current)
+      debounceTimerRef.current = null
+    }
+  }, [])
+
   const invalidateLocalState = useCallback((): void => {
+    clearDebounceTimer()
     requestRef.current += 1
-    setQuery('')
+    setQueryInput('')
+    setAppliedQuery('')
     setPage(1)
     setItems([])
     setTotal(0)
     setState('IDLE')
     setFailureMessage(null)
-  }, [])
+  }, [clearDebounceTimer])
 
   useEffect(
     () => registerStateInvalidator(invalidateLocalState),
@@ -686,6 +703,7 @@ function PatientSearchPane({
       setTotal(snapshot.total)
       setPage(snapshot.page)
       setPageSize(snapshot.pageSize)
+      setAppliedQuery(snapshot.appliedQuery)
       setState(snapshot.state)
       setFailureMessage(snapshot.failureMessage)
     },
@@ -706,6 +724,7 @@ function PatientSearchPane({
       setTotal(snapshot.total)
       setPage(snapshot.page)
       setPageSize(snapshot.pageSize)
+      setAppliedQuery(snapshot.queryText)
       setState(snapshot.items.length === 0 ? 'EMPTY' : 'READY')
       setFailureMessage(null)
 
@@ -760,11 +779,15 @@ function PatientSearchPane({
 
         if (!result.ok) {
           if (onPatientFailure(result.error.code, result.error.message)) {
+            clearDebounceTimer()
             return
           }
 
           setItems([])
           setTotal(0)
+          setPage(pageNumber)
+          setPageSize(pageSizeValue)
+          setAppliedQuery(queryText)
           setState('ERROR')
           setFailureMessage(result.error.message)
           return
@@ -796,6 +819,7 @@ function PatientSearchPane({
         const snapshot = createPatientSearchResultSnapshot({
           requestId,
           securityEpoch: startedSecurityEpoch,
+          queryText,
           items: visibleItems,
           total: visibleTotal,
           page: result.data.page,
@@ -824,6 +848,9 @@ function PatientSearchPane({
         ) {
           setItems([])
           setTotal(0)
+          setPage(pageNumber)
+          setPageSize(pageSizeValue)
+          setAppliedQuery(queryText)
           setState('ERROR')
           setFailureMessage(transportFailureMessage)
         }
@@ -832,6 +859,7 @@ function PatientSearchPane({
     [
       api,
       applySearchResultSnapshot,
+      clearDebounceTimer,
       displaySnapshotRef,
       mountedRef,
       onGuardPatientContextTransition,
@@ -842,6 +870,56 @@ function PatientSearchPane({
       selectedPatientIdRef
     ]
   )
+
+  const runImmediateSearch = useCallback(
+    ({
+      queryText,
+      pageNumber,
+      pageSizeValue
+    }: {
+      readonly queryText: string
+      readonly pageNumber: number
+      readonly pageSizeValue: PatientSearchPageSize
+    }): void => {
+      clearDebounceTimer()
+      void executeSearch({
+        queryText: normalizePatientSearchQuery(queryText),
+        pageNumber,
+        pageSizeValue
+      })
+    },
+    [clearDebounceTimer, executeSearch]
+  )
+
+  const handleQueryInputChange = useCallback(
+    (nextQueryInput: string): void => {
+      setQueryInput(nextQueryInput)
+      clearDebounceTimer()
+
+      const normalizedQuery = normalizePatientSearchQuery(nextQueryInput)
+
+      if (normalizedQuery.length === 0) {
+        void executeSearch({
+          queryText: '',
+          pageNumber: 1,
+          pageSizeValue: pageSizeRef.current
+        })
+        return
+      }
+
+      debounceTimerRef.current = window.setTimeout(() => {
+        debounceTimerRef.current = null
+        void executeSearch({
+          queryText: normalizePatientSearchQuery(queryInputRef.current),
+          pageNumber: 1,
+          pageSizeValue: pageSizeRef.current
+        })
+      }, patientSearchDebounceMs)
+    },
+    [clearDebounceTimer, executeSearch, pageSizeRef, queryInputRef]
+  )
+
+  useEffect(() => clearDebounceTimer, [clearDebounceTimer])
 
   useEffect(() => {
     if (initialLoadStartedRef.current) {
@@ -856,8 +934,15 @@ function PatientSearchPane({
     })
   }, [executeSearch, pageSizeRef])
 
-  const emptyText = getPatientSearchEmptyText(state, failureMessage, query)
-  const statusText = getPatientSearchStatusText(state, failureMessage, total, page, pageSize, query)
+  const emptyText = getPatientSearchEmptyText(state, failureMessage, appliedQuery)
+  const statusText = getPatientSearchStatusText(
+    state,
+    failureMessage,
+    total,
+    page,
+    pageSize,
+    appliedQuery
+  )
 
   return (
     <>
@@ -869,12 +954,16 @@ function PatientSearchPane({
           id="patient-registry-search"
           ref={searchInputRef}
           type="search"
-          value={query}
+          value={queryInput}
           placeholder="Code, name, phone, DOB, age, sex, village, quarter"
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => handleQueryInputChange(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
-              void executeSearch({ queryText: query, pageNumber: 1, pageSizeValue: pageSize })
+              runImmediateSearch({
+                queryText: queryInputRef.current,
+                pageNumber: 1,
+                pageSizeValue: pageSizeRef.current
+              })
             }
           }}
         />
@@ -883,7 +972,11 @@ function PatientSearchPane({
           className="button button-primary"
           disabled={state === 'LOADING'}
           onClick={() =>
-            void executeSearch({ queryText: query, pageNumber: 1, pageSizeValue: pageSize })
+            runImmediateSearch({
+              queryText: queryInputRef.current,
+              pageNumber: 1,
+              pageSizeValue: pageSizeRef.current
+            })
           }
         >
           Search
@@ -899,7 +992,11 @@ function PatientSearchPane({
             const value = Number(event.target.value)
             const nextPageSize = coercePatientSearchPageSize(value)
             setPageSize(nextPageSize)
-            void executeSearch({ queryText: query, pageNumber: 1, pageSizeValue: nextPageSize })
+            runImmediateSearch({
+              queryText: queryInputRef.current,
+              pageNumber: 1,
+              pageSizeValue: nextPageSize
+            })
           }}
         >
           <option value={25}>25</option>
@@ -925,7 +1022,11 @@ function PatientSearchPane({
           className="button button-secondary"
           disabled={state === 'LOADING' || page <= 1}
           onClick={() =>
-            void executeSearch({ queryText: query, pageNumber: page - 1, pageSizeValue: pageSize })
+            runImmediateSearch({
+              queryText: appliedQueryRef.current,
+              pageNumber: page - 1,
+              pageSizeValue: pageSizeRef.current
+            })
           }
         >
           Previous
@@ -935,7 +1036,11 @@ function PatientSearchPane({
           className="button button-secondary"
           disabled={state === 'LOADING' || page * pageSize >= total}
           onClick={() =>
-            void executeSearch({ queryText: query, pageNumber: page + 1, pageSizeValue: pageSize })
+            runImmediateSearch({
+              queryText: appliedQueryRef.current,
+              pageNumber: page + 1,
+              pageSizeValue: pageSizeRef.current
+            })
           }
         >
           Next
@@ -2558,6 +2663,10 @@ function coercePatientSearchPageSize(value: number): PatientSearchPageSize {
   return value === 50 || value === 100 ? value : 25
 }
 
+function normalizePatientSearchQuery(query: string): string {
+  return query.trim().length === 0 ? '' : query
+}
+
 function getPatientSearchTargetPatientId(
   items: readonly PublicPatientSummary[],
   selectedPatientId: string | null,
@@ -2577,6 +2686,7 @@ function getPatientSearchTargetPatientId(
 function createPatientSearchResultSnapshot({
   requestId,
   securityEpoch,
+  queryText,
   items,
   total,
   page,
@@ -2586,6 +2696,7 @@ function createPatientSearchResultSnapshot({
 }: {
   readonly requestId: number
   readonly securityEpoch: number
+  readonly queryText: string
   readonly items: readonly PublicPatientSummary[]
   readonly total: number
   readonly page: number
@@ -2596,6 +2707,7 @@ function createPatientSearchResultSnapshot({
   return Object.freeze({
     requestId,
     securityEpoch,
+    queryText,
     items: Object.freeze([...items]),
     total,
     page,
