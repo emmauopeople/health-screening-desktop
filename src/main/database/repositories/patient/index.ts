@@ -1,4 +1,14 @@
+export { createPatientDemographicAmendmentRepository } from './patient-demographic-amendment-repository'
 export { createPatientRepository } from './patient-repository'
+export {
+  comparePatientDemographicAmendmentFields,
+  normalizePatientDemographicAmendmentReasonNote,
+  parsePatientDemographicAmendmentFieldName,
+  parsePatientDemographicAmendmentReasonCode,
+  parsePatientDemographicAmendmentRowVersion,
+  parsePatientDemographicAmendmentValueForField,
+  patientDemographicAmendmentFieldOrder
+} from './patient-demographic-amendment-validation'
 export {
   formatPatientCode,
   normalizeDuplicateReasonCodes,
@@ -30,3 +40,15 @@ export type {
   PatientUpdateResultRecord,
   UpdatePatientRepositoryInput
 } from './patient-types'
+export type {
+  InsertPatientDemographicAmendmentInput,
+  PatientDemographicAmendmentChangeInput,
+  PatientDemographicAmendmentChangeRecord,
+  PatientDemographicAmendmentFieldName,
+  PatientDemographicAmendmentHistoryInput,
+  PatientDemographicAmendmentHistoryResult,
+  PatientDemographicAmendmentReasonCode,
+  PatientDemographicAmendmentRecord,
+  PatientDemographicAmendmentRepository,
+  PatientDemographicAmendmentValue
+} from './patient-demographic-amendment-types'
