@@ -658,20 +658,22 @@ function PatientSearchPane({
   const [total, setTotal] = useState(0)
   const [state, setState] = useState<LoadState>('IDLE')
   const [failureMessage, setFailureMessage] = useState<string | null>(null)
+  const stableDisplaySnapshotRef = useRef<PatientSearchDisplaySnapshot>(
+    createPatientSearchDisplaySnapshot({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 25,
+      appliedQuery: '',
+      state: 'IDLE',
+      failureMessage: null
+    })
+  )
   const selectedPatientIdRef = useLatestRef(selectedPatientId)
   const preferredPatientRevealRef = useLatestRef(preferredPatientReveal)
   const queryInputRef = useLatestRef(queryInput)
   const appliedQueryRef = useLatestRef(appliedQuery)
   const pageSizeRef = useLatestRef(pageSize)
-  const displaySnapshotRef = useLatestRef<PatientSearchDisplaySnapshot>({
-    items,
-    total,
-    page,
-    pageSize,
-    appliedQuery,
-    state,
-    failureMessage
-  })
 
   const clearDebounceTimer = useCallback((): void => {
     if (debounceTimerRef.current !== null) {
@@ -680,34 +682,37 @@ function PatientSearchPane({
     }
   }, [])
 
+  const applySearchDisplaySnapshot = useCallback((snapshot: PatientSearchDisplaySnapshot): void => {
+    stableDisplaySnapshotRef.current = snapshot
+    setItems(snapshot.items)
+    setTotal(snapshot.total)
+    setPage(snapshot.page)
+    setPageSize(snapshot.pageSize)
+    setAppliedQuery(snapshot.appliedQuery)
+    setState(snapshot.state)
+    setFailureMessage(snapshot.failureMessage)
+  }, [])
+
   const invalidateLocalState = useCallback((): void => {
     clearDebounceTimer()
     requestRef.current += 1
     setQueryInput('')
-    setAppliedQuery('')
-    setPage(1)
-    setItems([])
-    setTotal(0)
-    setState('IDLE')
-    setFailureMessage(null)
-  }, [clearDebounceTimer])
+    applySearchDisplaySnapshot(
+      createPatientSearchDisplaySnapshot({
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize: 25,
+        appliedQuery: '',
+        state: 'IDLE',
+        failureMessage: null
+      })
+    )
+  }, [applySearchDisplaySnapshot, clearDebounceTimer])
 
   useEffect(
     () => registerStateInvalidator(invalidateLocalState),
     [invalidateLocalState, registerStateInvalidator]
-  )
-
-  const restoreSearchDisplaySnapshot = useCallback(
-    (snapshot: PatientSearchDisplaySnapshot): void => {
-      setItems(snapshot.items)
-      setTotal(snapshot.total)
-      setPage(snapshot.page)
-      setPageSize(snapshot.pageSize)
-      setAppliedQuery(snapshot.appliedQuery)
-      setState(snapshot.state)
-      setFailureMessage(snapshot.failureMessage)
-    },
-    []
   )
 
   const applySearchResultSnapshot = useCallback(
@@ -720,13 +725,17 @@ function PatientSearchPane({
         return
       }
 
-      setItems(snapshot.items)
-      setTotal(snapshot.total)
-      setPage(snapshot.page)
-      setPageSize(snapshot.pageSize)
-      setAppliedQuery(snapshot.queryText)
-      setState(snapshot.items.length === 0 ? 'EMPTY' : 'READY')
-      setFailureMessage(null)
+      applySearchDisplaySnapshot(
+        createPatientSearchDisplaySnapshot({
+          items: snapshot.items,
+          total: snapshot.total,
+          page: snapshot.page,
+          pageSize: snapshot.pageSize,
+          appliedQuery: snapshot.queryText,
+          state: snapshot.items.length === 0 ? 'EMPTY' : 'READY',
+          failureMessage: null
+        })
+      )
 
       if (snapshot.preferredPatientIdToConsume !== null) {
         onPreferredPatientRevealConsumed(snapshot.preferredPatientIdToConsume)
@@ -737,6 +746,7 @@ function PatientSearchPane({
       }
     },
     [
+      applySearchDisplaySnapshot,
       mountedRef,
       onApplyPatientSearchTarget,
       onPreferredPatientRevealConsumed,
@@ -758,7 +768,7 @@ function PatientSearchPane({
       const requestId = requestRef.current + 1
       requestRef.current = requestId
       const startedSecurityEpoch = securityEpochRef.current
-      const previousDisplaySnapshot = displaySnapshotRef.current
+      const previousDisplaySnapshot = stableDisplaySnapshotRef.current
       setState('LOADING')
       setFailureMessage(null)
 
@@ -783,13 +793,17 @@ function PatientSearchPane({
             return
           }
 
-          setItems([])
-          setTotal(0)
-          setPage(pageNumber)
-          setPageSize(pageSizeValue)
-          setAppliedQuery(queryText)
-          setState('ERROR')
-          setFailureMessage(result.error.message)
+          applySearchDisplaySnapshot(
+            createPatientSearchDisplaySnapshot({
+              items: [],
+              total: 0,
+              page: pageNumber,
+              pageSize: pageSizeValue,
+              appliedQuery: queryText,
+              state: 'ERROR',
+              failureMessage: result.error.message
+            })
+          )
           return
         }
 
@@ -838,7 +852,7 @@ function PatientSearchPane({
         })
 
         if (!appliedImmediately) {
-          restoreSearchDisplaySnapshot(previousDisplaySnapshot)
+          applySearchDisplaySnapshot(previousDisplaySnapshot)
         }
       } catch {
         if (
@@ -846,26 +860,29 @@ function PatientSearchPane({
           securityEpochRef.current === startedSecurityEpoch &&
           requestRef.current === requestId
         ) {
-          setItems([])
-          setTotal(0)
-          setPage(pageNumber)
-          setPageSize(pageSizeValue)
-          setAppliedQuery(queryText)
-          setState('ERROR')
-          setFailureMessage(transportFailureMessage)
+          applySearchDisplaySnapshot(
+            createPatientSearchDisplaySnapshot({
+              items: [],
+              total: 0,
+              page: pageNumber,
+              pageSize: pageSizeValue,
+              appliedQuery: queryText,
+              state: 'ERROR',
+              failureMessage: transportFailureMessage
+            })
+          )
         }
       }
     },
     [
       api,
+      applySearchDisplaySnapshot,
       applySearchResultSnapshot,
       clearDebounceTimer,
-      displaySnapshotRef,
       mountedRef,
       onGuardPatientContextTransition,
       onPatientFailure,
       preferredPatientRevealRef,
-      restoreSearchDisplaySnapshot,
       securityEpochRef,
       selectedPatientIdRef
     ]
@@ -895,6 +912,8 @@ function PatientSearchPane({
     (nextQueryInput: string): void => {
       setQueryInput(nextQueryInput)
       clearDebounceTimer()
+      requestRef.current += 1
+      applySearchDisplaySnapshot(stableDisplaySnapshotRef.current)
 
       const normalizedQuery = normalizePatientSearchQuery(nextQueryInput)
 
@@ -916,7 +935,7 @@ function PatientSearchPane({
         })
       }, patientSearchDebounceMs)
     },
-    [clearDebounceTimer, executeSearch, pageSizeRef, queryInputRef]
+    [applySearchDisplaySnapshot, clearDebounceTimer, executeSearch, pageSizeRef, queryInputRef]
   )
 
   useEffect(() => clearDebounceTimer, [clearDebounceTimer])
@@ -2681,6 +2700,26 @@ function getPatientSearchTargetPatientId(
   }
 
   return items[0]?.id ?? null
+}
+
+function createPatientSearchDisplaySnapshot({
+  items,
+  total,
+  page,
+  pageSize,
+  appliedQuery,
+  state,
+  failureMessage
+}: PatientSearchDisplaySnapshot): PatientSearchDisplaySnapshot {
+  return Object.freeze({
+    items: Object.freeze([...items]),
+    total,
+    page,
+    pageSize,
+    appliedQuery,
+    state,
+    failureMessage
+  })
 }
 
 function createPatientSearchResultSnapshot({

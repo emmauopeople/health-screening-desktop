@@ -581,6 +581,343 @@ describe('patient registry workspace mounted regressions', () => {
     await mounted.unmount()
   })
 
+  it('invalidates an in-flight search immediately when a newer live query is typed', async () => {
+    const api = createApi()
+    const oldSearch = createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    const newSearch = createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    const oldResult = patientSummary({
+      id: patientIdThree,
+      patientCode: 'PT-000003',
+      displayName: 'Superseded Live Result',
+      givenName: 'Superseded',
+      familyName: 'Live'
+    })
+    const newResult = patientSummary({
+      id: patientIdTwo,
+      patientCode: 'PT-000002',
+      displayName: 'Current Live Result',
+      givenName: 'Current',
+      familyName: 'Live'
+    })
+    api.patient.search
+      .mockResolvedValueOnce(
+        createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+      )
+      .mockReturnValueOnce(oldSearch.promise)
+      .mockReturnValueOnce(newSearch.promise)
+    api.patient.get.mockImplementation(({ patientId }) =>
+      Promise.resolve(
+        createIpcSuccess(
+          patientId === patientIdTwo
+            ? patientDetail(newResult)
+            : patientId === patientIdThree
+              ? patientDetail(oldResult)
+              : patientDetail()
+        )
+      )
+    )
+
+    const mounted = await mountWorkspace({ api })
+    vi.useFakeTimers()
+
+    await changeInput(searchInput(mounted), 'old')
+    await dispatchKeyboard(searchInput(mounted), 'Enter')
+
+    expect(text(mounted)).toContain('Loading patients.')
+
+    await changeInput(searchInput(mounted), 'new')
+
+    expect(api.patient.search).toHaveBeenCalledTimes(2)
+    expect(text(mounted)).toContain('Ada Ngono')
+    expect(text(mounted)).toContain('Showing 1-1 of 1 patients.')
+    expect(text(mounted)).not.toContain('Loading patients.')
+
+    oldSearch.resolve(createIpcSuccess({ items: [oldResult], page: 1, pageSize: 25, total: 1 }))
+    await flushReact()
+
+    expect(text(mounted)).not.toContain('Superseded Live Result')
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
+    expect(mounted.getSelectedPatient()?.id).toBe(patientIdOne)
+    expect(dialog(mounted)).toBeNull()
+
+    await advanceTimersByTime(299)
+
+    expect(api.patient.search).toHaveBeenCalledTimes(2)
+    expect(text(mounted)).not.toContain('Loading patients.')
+
+    await advanceTimersByTime(1)
+
+    expect(api.patient.search).toHaveBeenCalledTimes(3)
+    expect(api.patient.search).toHaveBeenLastCalledWith({ query: 'new', page: 1, pageSize: 25 })
+    expect(text(mounted)).toContain('Loading patients.')
+
+    newSearch.resolve(createIpcSuccess({ items: [newResult], page: 1, pageSize: 25, total: 1 }))
+    await flushReact()
+
+    expect(text(mounted)).toContain('Current Live Result')
+    expect(text(mounted)).not.toContain('Superseded Live Result')
+    expect(patientRowByCode(mounted, 'PT-000002').getAttribute('aria-selected')).toBe('true')
+    expect(mounted.getSelectedPatient()?.id).toBe(patientIdTwo)
+    expect(api.patient.get).toHaveBeenCalledTimes(2)
+    expect(api.patient.get).toHaveBeenLastCalledWith({ patientId: patientIdTwo })
+
+    await mounted.unmount()
+  })
+
+  it('does not let a superseded dirty live-search result open the guard', async () => {
+    const api = createApi()
+    const oldSearch = createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    const mounted = await mountDirtyPatientSearchWorkspace({ api })
+    api.patient.search.mockReturnValueOnce(oldSearch.promise).mockResolvedValueOnce(
+      createIpcSuccess({
+        items: [patientSummary({ displayName: 'Current Dirty Live Result' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    vi.useFakeTimers()
+
+    await changeInput(searchInput(mounted), 'old')
+    await dispatchKeyboard(searchInput(mounted), 'Enter')
+    await changeInput(searchInput(mounted), 'new')
+
+    oldSearch.resolve(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+    await flushReact()
+
+    expect(dialog(mounted)).toBeNull()
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
+    expect(fieldInput(mounted, 'Village').value).toBe('Dirty Village')
+    expect(text(mounted)).toContain('Ada Ngono')
+    expect(text(mounted)).not.toContain('No matching patients.')
+    expect(text(mounted)).not.toContain('Loading patients.')
+
+    await advanceTimersByTime(300)
+
+    expect(api.patient.search).toHaveBeenLastCalledWith({ query: 'new', page: 1, pageSize: 25 })
+    expect(dialog(mounted)).toBeNull()
+    expect(fieldInput(mounted, 'Village').value).toBe('Dirty Village')
+
+    await mounted.unmount()
+  })
+
+  it('preserves a preferred reveal when a live-query change supersedes its in-flight search', async () => {
+    const api = createApi()
+    const staleSearch =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    const currentSearch =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    const patientA = patientDetail({ displayName: 'Patient A' })
+    const patientB = patientDetail({
+      id: patientIdTwo,
+      patientCode: 'PT-000002',
+      displayName: 'Preferred Current Patient',
+      givenName: 'Preferred',
+      familyName: 'Current',
+      createdByDisplayName: 'Preferred Current Detail Author'
+    })
+    api.patient.create.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'DUPLICATE_REVIEW_REQUIRED',
+        candidates: [duplicateCandidate(patientSummary(patientB))],
+        duplicateReviewToken: 'duplicate-review-token-live-stale'
+      })
+    )
+    api.patient.search
+      .mockReturnValueOnce(staleSearch.promise)
+      .mockReturnValueOnce(currentSearch.promise)
+    api.patient.get.mockResolvedValueOnce(createIpcSuccess(patientB))
+
+    const mounted = await mountWorkspace({
+      api,
+      commandId: 'PATIENTS_REGISTER_NEW_PATIENT',
+      selectedPatient: patientA
+    })
+    vi.useFakeTimers()
+
+    await fillExactDobRegistration(mounted)
+    await clickButton(mounted, 'Create patient')
+    await clickButton(mounted, 'Open existing patient')
+    await changeInput(searchInput(mounted), 'preferred')
+
+    staleSearch.resolve(
+      createIpcSuccess({
+        items: [patientSummary(patientA), patientSummary(patientB)],
+        page: 1,
+        pageSize: 25,
+        total: 2
+      })
+    )
+    await flushReact()
+
+    expect(text(mounted)).not.toContain('Preferred Current Patient')
+    expect(mounted.getSelectedPatient()?.id).toBe(patientIdOne)
+    expect(api.patient.get).not.toHaveBeenCalled()
+
+    await advanceTimersByTime(300)
+
+    expect(api.patient.search).toHaveBeenCalledTimes(2)
+    expect(api.patient.search).toHaveBeenLastCalledWith({
+      query: 'preferred',
+      page: 1,
+      pageSize: 25
+    })
+
+    currentSearch.resolve(
+      createIpcSuccess({
+        items: [patientSummary(patientA)],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    await flushReact()
+
+    expect(patientRowByCode(mounted, 'PT-000002').getAttribute('aria-selected')).toBe('true')
+    expect(api.patient.get).toHaveBeenCalledTimes(1)
+    expect(api.patient.get).toHaveBeenCalledWith({ patientId: patientIdTwo })
+    expect(mounted.getSelectedPatient()?.id).toBe(patientIdTwo)
+    expect(text(mounted)).toContain('Preferred Current Detail Author')
+
+    await mounted.unmount()
+  })
+
+  it('clearing a live query immediately invalidates an older in-flight search', async () => {
+    const api = createApi()
+    const oldSearch = createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    const defaultSearch =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    const staleResult = patientSummary({
+      id: patientIdTwo,
+      patientCode: 'PT-000002',
+      displayName: 'Stale Clear Result',
+      givenName: 'Stale',
+      familyName: 'Clear'
+    })
+    api.patient.search
+      .mockResolvedValueOnce(
+        createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+      )
+      .mockReturnValueOnce(oldSearch.promise)
+      .mockReturnValueOnce(defaultSearch.promise)
+    api.patient.get.mockResolvedValueOnce(createIpcSuccess(patientDetail()))
+
+    const mounted = await mountWorkspace({ api })
+    vi.useFakeTimers()
+
+    await changeInput(searchInput(mounted), 'old')
+    await dispatchKeyboard(searchInput(mounted), 'Enter')
+    await changeInput(searchInput(mounted), '')
+
+    expect(api.patient.search).toHaveBeenCalledTimes(3)
+    expect(api.patient.search).toHaveBeenLastCalledWith({ query: '', page: 1, pageSize: 25 })
+
+    oldSearch.resolve(createIpcSuccess({ items: [staleResult], page: 1, pageSize: 25, total: 1 }))
+    await flushReact()
+
+    expect(text(mounted)).not.toContain('Stale Clear Result')
+
+    defaultSearch.resolve(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    await flushReact()
+
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
+    expect(text(mounted)).toContain('Ada Ngono')
+
+    await advanceTimersByTime(300)
+
+    expect(api.patient.search).toHaveBeenCalledTimes(3)
+
+    await mounted.unmount()
+  })
+
+  it('Search and Enter keep superseded in-flight searches from applying', async () => {
+    const api = createApi()
+    const staleButtonSearch =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    const currentButtonSearch =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    const staleEnterSearch =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    const currentEnterSearch =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    api.patient.search
+      .mockResolvedValueOnce(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+      .mockReturnValueOnce(staleButtonSearch.promise)
+      .mockReturnValueOnce(currentButtonSearch.promise)
+      .mockReturnValueOnce(staleEnterSearch.promise)
+      .mockReturnValueOnce(currentEnterSearch.promise)
+
+    const mounted = await mountWorkspace({ api })
+    vi.useFakeTimers()
+
+    await changeInput(searchInput(mounted), 'stale button')
+    await dispatchKeyboard(searchInput(mounted), 'Enter')
+    await changeInput(searchInput(mounted), 'current button')
+    await clickButton(mounted, 'Search')
+
+    staleButtonSearch.resolve(
+      createIpcSuccess({
+        items: [patientSummary({ displayName: 'Stale Button Result' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    await flushReact()
+
+    expect(text(mounted)).not.toContain('Stale Button Result')
+
+    currentButtonSearch.resolve(
+      createIpcSuccess({
+        items: [patientSummary({ displayName: 'Current Button Result' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    await flushReact()
+
+    expect(text(mounted)).toContain('Current Button Result')
+
+    await changeInput(searchInput(mounted), 'stale enter')
+    await dispatchKeyboard(searchInput(mounted), 'Enter')
+    await changeInput(searchInput(mounted), 'current enter')
+    await dispatchKeyboard(searchInput(mounted), 'Enter')
+
+    staleEnterSearch.resolve(
+      createIpcSuccess({
+        items: [patientSummary({ displayName: 'Stale Enter Result' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    await flushReact()
+
+    expect(text(mounted)).not.toContain('Stale Enter Result')
+
+    currentEnterSearch.resolve(
+      createIpcSuccess({
+        items: [patientSummary({ displayName: 'Current Enter Result' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    await flushReact()
+
+    expect(text(mounted)).toContain('Current Enter Result')
+    expect(api.patient.search).toHaveBeenCalledTimes(5)
+
+    await advanceTimersByTime(300)
+
+    expect(api.patient.search).toHaveBeenCalledTimes(5)
+
+    await mounted.unmount()
+  })
+
   it('suppresses stale live-search responses after a newer debounced search wins', async () => {
     const api = createApi()
     const staleSearch =
