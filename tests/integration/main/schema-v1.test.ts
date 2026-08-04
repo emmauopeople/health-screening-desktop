@@ -4,37 +4,79 @@ import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import { describe, expect, it, vi } from 'vitest'
 
-import { createProductionDatabaseMigrationRunner } from '@main/database'
+import {
+  createProductionDatabaseMigrationRunner,
+  MigrationCompatibilityError,
+  MigrationExecutionError
+} from '@main/database'
+import { databaseMigrations } from '@main/database/migrations/migration-manifest'
+import { runDatabaseMigrations } from '@main/database/migrations/migration-runner'
 import {
   createSchemaMigrationsTableSql,
   type SchemaVersion1ColumnContract
 } from '@main/database/migrations/schema-v1-contract'
 import {
-  schemaVersion2NamedIndexes,
-  schemaVersion2TableContracts,
-  schemaVersion2TableNames
+  schemaVersion3NamedIndexes,
+  schemaVersion3TableContracts,
+  schemaVersion3TableNames,
+  schemaVersion3TriggerNames,
+  validateSchemaVersion3
 } from '@main/database/migrations'
 
 const now = '2026-07-29T00:00:00Z'
+const registryAcknowledgmentType = 'PATIENT_REGISTRY_ACKNOWLEDGMENT'
 
-describe('schema version 2', () => {
+const demographicAmendmentFields = Object.freeze([
+  'given_name',
+  'family_name',
+  'other_names',
+  'date_of_birth',
+  'approximate_age_years',
+  'age_as_of_date',
+  'sex',
+  'village',
+  'quarter',
+  'phone',
+  'alternate_contact_name',
+  'alternate_contact_phone',
+  'residence_notes',
+  'status'
+] as const)
+
+const prohibitedDemographicAmendmentFields = Object.freeze([
+  'id',
+  'patient_id',
+  'patient_code',
+  'display_name',
+  'name_normalized',
+  'phone_normalized',
+  'acknowledgment_status',
+  'created_by',
+  'created_at',
+  'updated_by',
+  'updated_at',
+  'row_version'
+] as const)
+
+describe('schema version 3', () => {
   it('creates exactly the required empty strict tables and named indexes', async () => {
     await withMigratedDatabase((connection) => {
-      expect(readUserVersion(connection)).toBe(2)
-      expect(readTableNames(connection)).toEqual([...schemaVersion2TableNames])
-      expect(readNamedIndexNames(connection)).toEqual([...schemaVersion2NamedIndexes])
+      expect(readUserVersion(connection)).toBe(3)
+      expect(readTableNames(connection)).toEqual([...schemaVersion3TableNames])
+      expect(readNamedIndexNames(connection)).toEqual([...schemaVersion3NamedIndexes])
+      expect(readTriggerNames(connection)).toEqual([...schemaVersion3TriggerNames])
 
       const strictByTable = readStrictByTable(connection)
 
-      for (const tableName of schemaVersion2TableNames) {
+      for (const tableName of schemaVersion3TableNames) {
         expect(strictByTable.get(tableName)).toBe(1)
       }
 
-      for (const tableName of schemaVersion2TableNames) {
+      for (const tableName of schemaVersion3TableNames) {
         const rowCount = readTableCount(connection, tableName)
 
         expect(rowCount).toBe(
-          tableName === 'schema_migrations' ? 2 : tableName === 'patient_local_sequence' ? 1 : 0
+          tableName === 'schema_migrations' ? 3 : tableName === 'patient_local_sequence' ? 1 : 0
         )
       }
     })
@@ -42,7 +84,7 @@ describe('schema version 2', () => {
 
   it('matches exact ordered table_xinfo metadata for every required table', async () => {
     await withMigratedDatabase((connection) => {
-      for (const tableContract of schemaVersion2TableContracts) {
+      for (const tableContract of schemaVersion3TableContracts) {
         expect(readTableXInfo(connection, tableContract.name)).toEqual(tableContract.columns)
       }
     })
@@ -273,6 +315,284 @@ describe('schema version 2', () => {
       ).toThrow()
     })
   })
+
+  it('enforces demographic amendment header constraints and foreign keys', async () => {
+    await withMigratedDatabase((connection) => {
+      insertValidGraph(connection)
+
+      expect(() => insertValidAmendment(connection)).not.toThrow()
+      expect(() =>
+        insertValidAmendment(connection, {
+          id: 'amendment-bad-version',
+          priorRowVersion: 1,
+          resultingRowVersion: 3
+        })
+      ).toThrow()
+      expect(() =>
+        insertValidAmendment(connection, {
+          id: 'amendment-bad-reason',
+          priorRowVersion: 2,
+          resultingRowVersion: 3,
+          reasonCode: 'NOT_A_REASON'
+        })
+      ).toThrow()
+      expect(() =>
+        insertValidAmendment(connection, {
+          id: 'amendment-other-null',
+          priorRowVersion: 3,
+          resultingRowVersion: 4,
+          reasonCode: 'OTHER',
+          reasonNote: null
+        })
+      ).toThrow()
+      expect(() =>
+        insertValidAmendment(connection, {
+          id: 'amendment-other-blank',
+          priorRowVersion: 3,
+          resultingRowVersion: 4,
+          reasonCode: 'OTHER',
+          reasonNote: '   '
+        })
+      ).toThrow()
+      expect(() =>
+        insertValidAmendment(connection, {
+          id: 'amendment-dupe-version'
+        })
+      ).toThrow()
+      expect(() =>
+        insertValidAmendment(connection, {
+          id: 'amendment-missing-patient',
+          patientId: 'missing-patient',
+          priorRowVersion: 2,
+          resultingRowVersion: 3
+        })
+      ).toThrow()
+      expect(() =>
+        insertValidAmendment(connection, {
+          id: 'amendment-missing-user',
+          priorRowVersion: 2,
+          resultingRowVersion: 3,
+          amendedBy: 'missing-user'
+        })
+      ).toThrow()
+    })
+  })
+
+  it('enforces demographic amendment changed-field constraints', async () => {
+    await withMigratedDatabase((connection) => {
+      insertValidGraph(connection)
+      insertValidAmendment(connection)
+
+      for (const fieldName of demographicAmendmentFields) {
+        expect(() =>
+          insertAmendmentChange(
+            connection,
+            'amendment-1',
+            fieldName,
+            JSON.stringify(`previous-${fieldName}`),
+            JSON.stringify(`new-${fieldName}`)
+          )
+        ).not.toThrow()
+      }
+
+      for (const fieldName of prohibitedDemographicAmendmentFields) {
+        expect(() =>
+          insertAmendmentChange(connection, 'amendment-1', fieldName, '"previous"', '"new"')
+        ).toThrow()
+      }
+      expect(() =>
+        insertAmendmentChange(connection, 'amendment-1', 'given_name', '{invalid', '"Amina"')
+      ).toThrow()
+      expect(() =>
+        insertAmendmentChange(connection, 'amendment-1', 'family_name', '[]', '"Patient"')
+      ).toThrow()
+      expect(() =>
+        insertAmendmentChange(connection, 'amendment-1', 'other_names', '"Test"', '{}')
+      ).toThrow()
+      expect(() =>
+        insertAmendmentChange(connection, 'amendment-1', 'sex', '"FEMALE"', '"FEMALE"')
+      ).toThrow()
+    })
+  })
+
+  it('rejects updates and deletes to demographic amendment history with bounded messages', async () => {
+    await withMigratedDatabase((connection) => {
+      insertValidGraph(connection)
+      insertValidAmendment(connection)
+      insertAmendmentChange(connection, 'amendment-1', 'given_name', '"Amina"', '"Test Amina"')
+
+      const headerUpdateError = captureError(() =>
+        connection
+          .prepare("UPDATE patient_demographic_amendments SET reason_note = 'changed'")
+          .run()
+      )
+      const headerDeleteError = captureError(() =>
+        connection.prepare('DELETE FROM patient_demographic_amendments').run()
+      )
+      const changeUpdateError = captureError(() =>
+        connection
+          .prepare('UPDATE patient_demographic_amendment_changes SET new_value_json = \'"B"\'')
+          .run()
+      )
+      const changeDeleteError = captureError(() =>
+        connection.prepare('DELETE FROM patient_demographic_amendment_changes').run()
+      )
+
+      expectSqliteErrorMessage(headerUpdateError, 'patient demographic amendments are append-only')
+      expectSqliteErrorMessage(headerDeleteError, 'patient demographic amendments are append-only')
+      expectSqliteErrorMessage(
+        changeUpdateError,
+        'patient demographic amendment changes are append-only'
+      )
+      expectSqliteErrorMessage(
+        changeDeleteError,
+        'patient demographic amendment changes are append-only'
+      )
+
+      for (const error of [
+        headerUpdateError,
+        headerDeleteError,
+        changeUpdateError,
+        changeDeleteError
+      ]) {
+        expect(String((error as Error).message)).not.toContain('patient-1')
+        expect(String((error as Error).message)).not.toContain('P-001')
+        expect(String((error as Error).message)).not.toContain('Patient One')
+      }
+    })
+  })
+
+  it('preserves pre-version-3 acknowledgment rows and enforces linked version metadata', async () => {
+    await withVersion2Database((connection) => {
+      insertValidGraph(connection)
+      insertConsentRecordVersion2(connection, {
+        id: 'consent-pre-v3',
+        consentType: registryAcknowledgmentType
+      })
+
+      createProductionDatabaseMigrationRunner({
+        applicationVersion: '1.0.0',
+        logger: {
+          info: vi.fn<(message: string) => void>(),
+          error: vi.fn<(message: string) => void>()
+        },
+        clock: { now: () => '2026-07-29T00:00:00.000Z' }
+      })(connection)
+
+      const preV3Row = connection
+        .prepare(
+          `SELECT patient_prior_row_version, patient_resulting_row_version
+           FROM consent_records
+           WHERE id = ?`
+        )
+        .get('consent-pre-v3') as {
+        patient_prior_row_version: number | null
+        patient_resulting_row_version: number | null
+      }
+
+      expect(preV3Row).toEqual({
+        patient_prior_row_version: null,
+        patient_resulting_row_version: null
+      })
+      expect(() =>
+        insertConsentRecordVersion3(connection, {
+          id: 'consent-linked',
+          patientPriorRowVersion: 1,
+          patientResultingRowVersion: 2
+        })
+      ).not.toThrow()
+      expect(() =>
+        insertConsentRecordVersion3(connection, {
+          id: 'consent-missing-resulting',
+          patientPriorRowVersion: 1,
+          patientResultingRowVersion: null
+        })
+      ).toThrow()
+      expect(() =>
+        insertConsentRecordVersion3(connection, {
+          id: 'consent-missing-prior',
+          patientPriorRowVersion: null,
+          patientResultingRowVersion: 2
+        })
+      ).toThrow()
+      expect(() =>
+        insertConsentRecordVersion3(connection, {
+          id: 'consent-nonconsecutive',
+          patientPriorRowVersion: 1,
+          patientResultingRowVersion: 3
+        })
+      ).toThrow()
+    })
+  })
+
+  it('rejects updates and deletes only for registry acknowledgment rows', async () => {
+    await withMigratedDatabase((connection) => {
+      insertValidGraph(connection)
+      insertConsentRecordVersion3(connection, {
+        id: 'consent-registry',
+        consentType: registryAcknowledgmentType
+      })
+      insertConsentRecordVersion3(connection, {
+        id: 'consent-unrelated',
+        consentType: 'TEST_UNRELATED_ACKNOWLEDGMENT'
+      })
+
+      const registryUpdateError = captureError(() =>
+        connection
+          .prepare("UPDATE consent_records SET notes = 'changed' WHERE id = 'consent-registry'")
+          .run()
+      )
+      const registryDeleteError = captureError(() =>
+        connection.prepare("DELETE FROM consent_records WHERE id = 'consent-registry'").run()
+      )
+
+      expectSqliteErrorMessage(
+        registryUpdateError,
+        'registry acknowledgment records are append-only'
+      )
+      expectSqliteErrorMessage(
+        registryDeleteError,
+        'registry acknowledgment records are append-only'
+      )
+      expect(String((registryUpdateError as Error).message)).not.toContain('patient-1')
+      expect(String((registryDeleteError as Error).message)).not.toContain('patient-1')
+
+      expect(() =>
+        connection
+          .prepare("UPDATE consent_records SET notes = 'changed' WHERE id = 'consent-unrelated'")
+          .run()
+      ).not.toThrow()
+      expect(() =>
+        connection.prepare("DELETE FROM consent_records WHERE id = 'consent-unrelated'").run()
+      ).not.toThrow()
+    })
+  })
+
+  it('accepts the exact schema version 3 contract and rejects required object drift', async () => {
+    await withMigratedDatabase((connection) => {
+      expect(() => validateSchemaVersion3(connection, 'compatibility')).not.toThrow()
+    })
+
+    await expectSchemaVersion3Drift(
+      (connection) => connection.exec('DROP TABLE patient_demographic_amendment_changes'),
+      'missing table'
+    )
+    await expectSchemaVersion3MigrationDrift('  amended_at TEXT NOT NULL,\n', '', 'missing column')
+    await expectSchemaVersion3Drift(
+      (connection) => connection.exec('DROP INDEX ix_patient_demographic_amendments_patient_time'),
+      'missing index'
+    )
+    await expectSchemaVersion3MigrationDrift(
+      '  CONSTRAINT fk_patient_demographic_amendments_patient FOREIGN KEY (patient_id)\n    REFERENCES patients (id) ON UPDATE RESTRICT ON DELETE RESTRICT,\n',
+      '',
+      'missing foreign key'
+    )
+    await expectSchemaVersion3MigrationDrift("      'STATUS_CHANGE',\n", '', 'missing constraint')
+    await expectSchemaVersion3Drift(
+      (connection) => connection.exec('DROP TRIGGER tr_patient_demographic_amendments_no_update'),
+      'missing trigger'
+    )
+  })
 })
 
 async function withMigratedDatabase(test: (connection: Database.Database) => void): Promise<void> {
@@ -290,6 +610,45 @@ async function withMigratedDatabase(test: (connection: Database.Database) => voi
       },
       clock: { now: () => '2026-07-29T00:00:00.000Z' }
     })(connection)
+    test(connection)
+  } finally {
+    connection.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+}
+
+async function withDatabase(test: (connection: Database.Database) => void): Promise<void> {
+  const directory = await mkdtemp(join(tmpdir(), 'hsd026-schema-'))
+  const databasePath = join(directory, 'health-screening.sqlite3')
+  const connection = new Database(databasePath)
+
+  try {
+    configureHsd006Pragmas(connection)
+    test(connection)
+  } finally {
+    connection.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+}
+
+async function withVersion2Database(test: (connection: Database.Database) => void): Promise<void> {
+  const directory = await mkdtemp(join(tmpdir(), 'hsd026-schema-v2-'))
+  const databasePath = join(directory, 'health-screening.sqlite3')
+  const connection = new Database(databasePath)
+
+  try {
+    configureHsd006Pragmas(connection)
+    runDatabaseMigrations({
+      connection,
+      migrations: databaseMigrations.slice(0, 2),
+      applicationVersion: '1.0.0',
+      logger: {
+        info: vi.fn<(message: string) => void>(),
+        error: vi.fn<(message: string) => void>()
+      },
+      clock: { now: () => '2026-07-29T00:00:00.000Z' },
+      expectedHighestVersion: 2
+    })
     test(connection)
   } finally {
     connection.close()
@@ -331,6 +690,19 @@ function readNamedIndexNames(connection: Database.Database): string[] {
          FROM sqlite_master
          WHERE type = 'index'
            AND name NOT LIKE 'sqlite_autoindex_%'
+         ORDER BY name`
+      )
+      .all() as Array<{ name: string }>
+  ).map((row) => row.name)
+}
+
+function readTriggerNames(connection: Database.Database): string[] {
+  return (
+    connection
+      .prepare(
+        `SELECT name
+         FROM sqlite_master
+         WHERE type = 'trigger'
          ORDER BY name`
       )
       .all() as Array<{ name: string }>
@@ -597,4 +969,211 @@ function insertPatient(connection: Database.Database, id: string, patientCode: s
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(id, patientCode, 'Patient One', `patient ${id}`, 'ACTIVE', 'user-1', now, 'user-1', now)
+}
+
+function insertValidAmendment(
+  connection: Database.Database,
+  overrides: {
+    id?: string
+    patientId?: string
+    priorRowVersion?: number
+    resultingRowVersion?: number
+    reasonCode?: string
+    reasonNote?: string | null
+    amendedBy?: string
+  } = {}
+): void {
+  connection
+    .prepare(
+      `INSERT INTO patient_demographic_amendments (
+        id,
+        patient_id,
+        prior_row_version,
+        resulting_row_version,
+        reason_code,
+        reason_note,
+        amended_by,
+        amended_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      overrides.id ?? 'amendment-1',
+      overrides.patientId ?? 'patient-1',
+      overrides.priorRowVersion ?? 1,
+      overrides.resultingRowVersion ?? 2,
+      overrides.reasonCode ?? 'DATA_ENTRY_CORRECTION',
+      Object.hasOwn(overrides, 'reasonNote')
+        ? overrides.reasonNote
+        : 'Correcting synthetic test demographic data',
+      overrides.amendedBy ?? 'user-1',
+      now
+    )
+}
+
+function insertAmendmentChange(
+  connection: Database.Database,
+  amendmentId: string,
+  fieldName: string,
+  previousValueJson: string,
+  newValueJson: string
+): void {
+  connection
+    .prepare(
+      `INSERT INTO patient_demographic_amendment_changes (
+        amendment_id,
+        field_name,
+        previous_value_json,
+        new_value_json
+      ) VALUES (?, ?, ?, ?)`
+    )
+    .run(amendmentId, fieldName, previousValueJson, newValueJson)
+}
+
+function insertConsentRecordVersion2(
+  connection: Database.Database,
+  overrides: {
+    id?: string
+    consentType?: string
+  } = {}
+): void {
+  connection
+    .prepare(
+      `INSERT INTO consent_records (
+        id,
+        patient_id,
+        consent_type,
+        status,
+        source_type,
+        effective_at,
+        withdrawn_at,
+        notes,
+        recorded_by,
+        recorded_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      overrides.id ?? 'consent-1',
+      'patient-1',
+      overrides.consentType ?? registryAcknowledgmentType,
+      'ACKNOWLEDGED',
+      'PATIENT_REPORTED',
+      now,
+      null,
+      'Synthetic test acknowledgment row',
+      'user-1',
+      now
+    )
+}
+
+function insertConsentRecordVersion3(
+  connection: Database.Database,
+  overrides: {
+    id?: string
+    consentType?: string
+    patientPriorRowVersion?: number | null
+    patientResultingRowVersion?: number | null
+  } = {}
+): void {
+  connection
+    .prepare(
+      `INSERT INTO consent_records (
+        id,
+        patient_id,
+        consent_type,
+        status,
+        source_type,
+        effective_at,
+        withdrawn_at,
+        notes,
+        recorded_by,
+        recorded_at,
+        patient_prior_row_version,
+        patient_resulting_row_version
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      overrides.id ?? 'consent-1',
+      'patient-1',
+      overrides.consentType ?? registryAcknowledgmentType,
+      'ACKNOWLEDGED',
+      'PATIENT_REPORTED',
+      now,
+      null,
+      'Synthetic test acknowledgment row',
+      'user-1',
+      now,
+      overrides.patientPriorRowVersion ?? null,
+      overrides.patientResultingRowVersion ?? null
+    )
+}
+
+async function expectSchemaVersion3Drift(
+  mutate: (connection: Database.Database) => void,
+  label: string
+): Promise<void> {
+  await withMigratedDatabase((connection) => {
+    mutate(connection)
+
+    expect(() => validateSchemaVersion3(connection, 'compatibility'), label).toThrow(
+      MigrationCompatibilityError
+    )
+  })
+}
+
+async function expectSchemaVersion3MigrationDrift(
+  search: string,
+  replacement: string,
+  label: string
+): Promise<void> {
+  const version3Migration = databaseMigrations[2]
+
+  if (version3Migration === undefined) {
+    throw new Error('Missing version 3 migration')
+  }
+
+  const normalizedSql = version3Migration.sql.replaceAll('\r\n', '\n')
+
+  if (!normalizedSql.includes(search)) {
+    throw new Error(`Missing drift search target for ${label}`)
+  }
+
+  await withDatabase((connection) => {
+    expect(
+      () =>
+        runDatabaseMigrations({
+          connection,
+          migrations: [
+            ...databaseMigrations.slice(0, 2),
+            {
+              ...version3Migration,
+              sql: normalizedSql.replace(search, replacement)
+            }
+          ],
+          applicationVersion: '1.0.0',
+          logger: {
+            info: vi.fn<(message: string) => void>(),
+            error: vi.fn<(message: string) => void>()
+          },
+          clock: { now: () => '2026-07-29T00:00:00.000Z' },
+          expectedHighestVersion: 3,
+          schemaValidators: new Map([[3, validateSchemaVersion3]])
+        }),
+      label
+    ).toThrow(MigrationExecutionError)
+  })
+}
+
+function captureError(action: () => void): unknown {
+  try {
+    action()
+  } catch (error) {
+    return error
+  }
+
+  throw new Error('Expected action to throw')
+}
+
+function expectSqliteErrorMessage(error: unknown, expectedMessage: string): void {
+  expect(error).toBeInstanceOf(Error)
+  expect(String((error as Error).message)).toContain(expectedMessage)
 }
