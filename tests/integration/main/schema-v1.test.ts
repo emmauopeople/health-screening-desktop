@@ -545,6 +545,18 @@ describe('schema version 3', () => {
       const registryDeleteError = captureError(() =>
         connection.prepare("DELETE FROM consent_records WHERE id = 'consent-registry'").run()
       )
+      const registryTypeChangeError = captureError(() =>
+        connection
+          .prepare(
+            "UPDATE consent_records SET consent_type = 'TEST_UNRELATED_ACKNOWLEDGMENT' WHERE id = 'consent-registry'"
+          )
+          .run()
+      )
+      const unrelatedIntoRegistryError = captureError(() =>
+        connection
+          .prepare("UPDATE consent_records SET consent_type = ? WHERE id = 'consent-unrelated'")
+          .run(registryAcknowledgmentType)
+      )
 
       expectSqliteErrorMessage(
         registryUpdateError,
@@ -554,8 +566,18 @@ describe('schema version 3', () => {
         registryDeleteError,
         'registry acknowledgment records are append-only'
       )
+      expectSqliteErrorMessage(
+        registryTypeChangeError,
+        'registry acknowledgment records are append-only'
+      )
+      expectSqliteErrorMessage(
+        unrelatedIntoRegistryError,
+        'registry acknowledgment records are append-only'
+      )
       expect(String((registryUpdateError as Error).message)).not.toContain('patient-1')
       expect(String((registryDeleteError as Error).message)).not.toContain('patient-1')
+      expect(String((registryTypeChangeError as Error).message)).not.toContain('patient-1')
+      expect(String((unrelatedIntoRegistryError as Error).message)).not.toContain('patient-1')
 
       expect(() =>
         connection
@@ -592,6 +614,104 @@ describe('schema version 3', () => {
       (connection) => connection.exec('DROP TRIGGER tr_patient_demographic_amendments_no_update'),
       'missing trigger'
     )
+    await expectSchemaVersion3MigrationDrift(
+      "WHEN OLD.consent_type = 'PATIENT_REGISTRY_ACKNOWLEDGMENT'\n  OR NEW.consent_type = 'PATIENT_REGISTRY_ACKNOWLEDGMENT'",
+      "WHEN OLD.consent_type = 'PATIENT_REGISTRY_ACKNOWLEDGMENT'",
+      'missing registry acknowledgment NEW trigger condition'
+    )
+  })
+
+  it('rejects malformed same-name definitions for required version 3 indexes', async () => {
+    const malformedIndexDefinitions: ReadonlyArray<{
+      indexName: string
+      cases: ReadonlyArray<{ label: string; sql: string }>
+    }> = [
+      {
+        indexName: 'ix_patient_demographic_amendments_patient_time',
+        cases: [
+          {
+            label: 'wrong table',
+            sql: `CREATE INDEX ix_patient_demographic_amendments_patient_time
+              ON consent_records (patient_id, recorded_at DESC, id DESC);`
+          },
+          {
+            label: 'wrong column order',
+            sql: `CREATE INDEX ix_patient_demographic_amendments_patient_time
+              ON patient_demographic_amendments (amended_at DESC, patient_id, id DESC);`
+          },
+          {
+            label: 'wrong direction',
+            sql: `CREATE INDEX ix_patient_demographic_amendments_patient_time
+              ON patient_demographic_amendments (patient_id, amended_at, id DESC);`
+          },
+          {
+            label: 'wrong uniqueness',
+            sql: `CREATE UNIQUE INDEX ix_patient_demographic_amendments_patient_time
+              ON patient_demographic_amendments (patient_id, amended_at DESC, id DESC);`
+          }
+        ]
+      },
+      {
+        indexName: 'ix_patient_demographic_amendment_changes_field',
+        cases: [
+          {
+            label: 'wrong table',
+            sql: `CREATE INDEX ix_patient_demographic_amendment_changes_field
+              ON patients (name_normalized, id);`
+          },
+          {
+            label: 'wrong column order',
+            sql: `CREATE INDEX ix_patient_demographic_amendment_changes_field
+              ON patient_demographic_amendment_changes (amendment_id, field_name);`
+          },
+          {
+            label: 'wrong direction',
+            sql: `CREATE INDEX ix_patient_demographic_amendment_changes_field
+              ON patient_demographic_amendment_changes (field_name DESC, amendment_id);`
+          },
+          {
+            label: 'wrong uniqueness',
+            sql: `CREATE UNIQUE INDEX ix_patient_demographic_amendment_changes_field
+              ON patient_demographic_amendment_changes (field_name, amendment_id);`
+          }
+        ]
+      },
+      {
+        indexName: 'ix_consent_records_registry_ack_history',
+        cases: [
+          {
+            label: 'wrong table',
+            sql: `CREATE INDEX ix_consent_records_registry_ack_history
+              ON patients (id, patient_code, created_at DESC, updated_at DESC);`
+          },
+          {
+            label: 'wrong column order',
+            sql: `CREATE INDEX ix_consent_records_registry_ack_history
+              ON consent_records (consent_type, patient_id, recorded_at DESC, id DESC);`
+          },
+          {
+            label: 'wrong direction',
+            sql: `CREATE INDEX ix_consent_records_registry_ack_history
+              ON consent_records (patient_id, consent_type, recorded_at, id DESC);`
+          },
+          {
+            label: 'wrong uniqueness',
+            sql: `CREATE UNIQUE INDEX ix_consent_records_registry_ack_history
+              ON consent_records (patient_id, consent_type, recorded_at DESC, id DESC);`
+          }
+        ]
+      }
+    ]
+
+    for (const { indexName, cases } of malformedIndexDefinitions) {
+      for (const malformedCase of cases) {
+        await expectSchemaVersion3IndexDrift(
+          indexName,
+          malformedCase.sql,
+          `${indexName} ${malformedCase.label}`
+        )
+      }
+    }
   })
 })
 
@@ -1161,6 +1281,16 @@ async function expectSchemaVersion3MigrationDrift(
       label
     ).toThrow(MigrationExecutionError)
   })
+}
+
+async function expectSchemaVersion3IndexDrift(
+  indexName: string,
+  replacementSql: string,
+  label: string
+): Promise<void> {
+  await expectSchemaVersion3Drift((connection) => {
+    connection.exec(`DROP INDEX ${quoteIdentifier(indexName)}; ${replacementSql}`)
+  }, label)
 }
 
 function captureError(action: () => void): unknown {

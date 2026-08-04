@@ -54,6 +54,14 @@ interface SqliteIndexInfoRow {
   name: unknown
 }
 
+interface SqliteIndexXInfoRow {
+  seqno: unknown
+  cid: unknown
+  name: unknown
+  desc: unknown
+  key: unknown
+}
+
 interface ForeignKeyContract {
   readonly tableName: string
   readonly from: string
@@ -61,6 +69,18 @@ interface ForeignKeyContract {
   readonly to: string
   readonly onUpdate: string
   readonly onDelete: string
+}
+
+interface IndexContract {
+  readonly name: string
+  readonly tableName: string
+  readonly unique: boolean
+  readonly columns: readonly IndexColumnContract[]
+}
+
+interface IndexColumnContract {
+  readonly name: string
+  readonly descending: boolean
 }
 
 const textPk = (name: string): SchemaVersion1ColumnContract => column(name, 'TEXT', 1, 1)
@@ -117,6 +137,25 @@ const requiredForeignKeys = Object.freeze([
   )
 ])
 
+const requiredIndexDefinitions = Object.freeze([
+  indexContract(
+    'ix_patient_demographic_amendments_patient_time',
+    'patient_demographic_amendments',
+    [indexColumn('patient_id', false), indexColumn('amended_at', true), indexColumn('id', true)]
+  ),
+  indexContract(
+    'ix_patient_demographic_amendment_changes_field',
+    'patient_demographic_amendment_changes',
+    [indexColumn('field_name', false), indexColumn('amendment_id', false)]
+  ),
+  indexContract('ix_consent_records_registry_ack_history', 'consent_records', [
+    indexColumn('patient_id', false),
+    indexColumn('consent_type', false),
+    indexColumn('recorded_at', true),
+    indexColumn('id', true)
+  ])
+])
+
 const requiredTriggerSqlSnippets = Object.freeze(
   new Map([
     [
@@ -151,7 +190,7 @@ const requiredTriggerSqlSnippets = Object.freeze(
       'tr_consent_records_registry_acknowledgment_no_update',
       [
         'BEFORE UPDATE ON consent_records',
-        "WHEN OLD.consent_type = 'PATIENT_REGISTRY_ACKNOWLEDGMENT'",
+        "WHEN OLD.consent_type = 'PATIENT_REGISTRY_ACKNOWLEDGMENT' OR NEW.consent_type = 'PATIENT_REGISTRY_ACKNOWLEDGMENT'",
         "RAISE(ABORT, 'registry acknowledgment records are append-only')"
       ]
     ],
@@ -280,6 +319,7 @@ function isSchemaVersion3Valid(connection: MigrationConnection): boolean {
       hasExactSchemaMigrationsSql(connection) &&
       hasRequiredForeignKeys(connection) &&
       hasRequiredUniqueConstraint(connection) &&
+      hasRequiredIndexDefinitions(connection) &&
       hasRequiredTableSql(connection) &&
       hasRequiredTriggerSql(connection)
     )
@@ -344,6 +384,20 @@ function hasRequiredUniqueConstraint(connection: MigrationConnection): boolean {
   return readUniqueIndexes(connection, 'patient_demographic_amendments').some((indexName) =>
     arraysEqual(readIndexColumns(connection, indexName), ['patient_id', 'resulting_row_version'])
   )
+}
+
+function hasRequiredIndexDefinitions(connection: MigrationConnection): boolean {
+  return requiredIndexDefinitions.every((expected) => {
+    const actualIndex = readTableIndexes(connection, expected.tableName).find(
+      (candidate) => candidate.name === expected.name
+    )
+
+    return (
+      actualIndex !== undefined &&
+      actualIndex.unique === expected.unique &&
+      indexColumnsEqual(readIndexKeyColumns(connection, expected.name), expected.columns)
+    )
+  })
 }
 
 function hasRequiredTableSql(connection: MigrationConnection): boolean {
@@ -469,12 +523,43 @@ function readUniqueIndexes(connection: MigrationConnection, tableName: string): 
     .map((row) => String(row.name))
 }
 
+function readTableIndexes(
+  connection: MigrationConnection,
+  tableName: string
+): ReadonlyArray<{ name: string; unique: boolean }> {
+  return (
+    connection
+      .prepare(`PRAGMA index_list(${quoteIdentifier(tableName)})`)
+      .all() as SqliteIndexListRow[]
+  ).map((row) => ({
+    name: String(row.name),
+    unique: Number(row.unique) === 1
+  }))
+}
+
 function readIndexColumns(connection: MigrationConnection, indexName: string): readonly string[] {
   return (
     connection
       .prepare(`PRAGMA index_info(${quoteIdentifier(indexName)})`)
       .all() as SqliteIndexInfoRow[]
   ).map((row) => String(row.name))
+}
+
+function readIndexKeyColumns(
+  connection: MigrationConnection,
+  indexName: string
+): readonly IndexColumnContract[] {
+  return (
+    connection
+      .prepare(`PRAGMA index_xinfo(${quoteIdentifier(indexName)})`)
+      .all() as SqliteIndexXInfoRow[]
+  )
+    .filter((row) => Number(row.key) === 1)
+    .sort((left, right) => Number(left.seqno) - Number(right.seqno))
+    .map((row) => ({
+      name: String(row.name),
+      descending: Number(row.desc) === 1
+    }))
 }
 
 function readCreateSql(
@@ -573,9 +658,45 @@ function foreignKey(
   })
 }
 
+function indexContract(
+  name: string,
+  tableName: string,
+  columns: readonly IndexColumnContract[],
+  unique = false
+): IndexContract {
+  return Object.freeze({
+    name,
+    tableName,
+    unique,
+    columns: Object.freeze([...columns])
+  })
+}
+
+function indexColumn(name: string, descending: boolean): IndexColumnContract {
+  return Object.freeze({ name, descending })
+}
+
 function arraysEqual(actual: readonly string[], expected: readonly string[]): boolean {
   return (
     actual.length === expected.length && actual.every((value, index) => value === expected[index])
+  )
+}
+
+function indexColumnsEqual(
+  actual: readonly IndexColumnContract[],
+  expected: readonly IndexColumnContract[]
+): boolean {
+  return (
+    actual.length === expected.length &&
+    actual.every((actualColumn, index) => {
+      const expectedColumn = expected[index]
+
+      return (
+        expectedColumn !== undefined &&
+        actualColumn.name === expectedColumn.name &&
+        actualColumn.descending === expectedColumn.descending
+      )
+    })
   )
 }
 

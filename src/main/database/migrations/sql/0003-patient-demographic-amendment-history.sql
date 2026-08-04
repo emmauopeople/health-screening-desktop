@@ -123,6 +123,7 @@ CREATE INDEX ix_consent_records_registry_ack_history
 CREATE TRIGGER tr_consent_records_registry_acknowledgment_no_update
 BEFORE UPDATE ON consent_records
 WHEN OLD.consent_type = 'PATIENT_REGISTRY_ACKNOWLEDGMENT'
+  OR NEW.consent_type = 'PATIENT_REGISTRY_ACKNOWLEDGMENT'
 BEGIN
   SELECT RAISE(ABORT, 'registry acknowledgment records are append-only');
 END;
