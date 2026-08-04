@@ -256,6 +256,375 @@ describe('patient registry workspace mounted regressions', () => {
     await mounted.unmount()
   })
 
+  it('guards dirty zero-result searches and Cancel preserves the old table, draft, and conflict state', async () => {
+    const api = createApi()
+    const mounted = await mountDirtyPatientSearchWorkspace({ api })
+    const latest = patientDetail({
+      displayName: 'Ada Latest',
+      village: 'Latest Village',
+      rowVersion: 2
+    })
+    api.patient.update.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'PATIENT_VERSION_CONFLICT', patient: latest })
+    )
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 })
+    )
+
+    await clickButton(mounted, 'Save changes')
+
+    expect(text(mounted)).toContain('Latest authoritative patient')
+    expect(text(mounted)).toContain('Latest Village')
+
+    await changeInput(searchInput(mounted), 'No matches')
+    await clickButton(mounted, 'Search')
+
+    expect(dialog(mounted)).not.toBeNull()
+    expect(buttonByTextWithin(dialog(mounted)!, 'Save changes')).toBeInstanceOf(HTMLButtonElement)
+    expect(buttonByTextWithin(dialog(mounted)!, 'Discard edits')).toBeInstanceOf(HTMLButtonElement)
+    expect(buttonByTextWithin(dialog(mounted)!, 'Cancel')).toBeInstanceOf(HTMLButtonElement)
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
+    expect(text(mounted)).not.toContain('No matching patients.')
+
+    await clickButtonWithin(dialog(mounted)!, 'Cancel')
+
+    expect(dialog(mounted)).toBeNull()
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
+    expect(mounted.getSelectedPatient()?.id).toBe(patientIdOne)
+    expect(fieldInput(mounted, 'Village').value).toBe('Dirty Village')
+    expect(text(mounted)).toContain('Latest authoritative patient')
+    expect(text(mounted)).toContain('Unsaved edits')
+    expect(text(mounted)).not.toContain('No matching patients.')
+
+    await mounted.unmount()
+  })
+
+  it('discards dirty edits before applying an empty search result', async () => {
+    const api = createApi()
+    const mounted = await mountDirtyPatientSearchWorkspace({ api })
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 })
+    )
+
+    await changeInput(searchInput(mounted), 'No matches')
+    await clickButton(mounted, 'Search')
+    await clickButtonWithin(dialog(mounted)!, 'Discard edits')
+
+    expect(dialog(mounted)).toBeNull()
+    expect(text(mounted)).toContain('No matching patients.')
+    expect(text(mounted)).not.toContain('Ada Ngono')
+    expect(mounted.getSelectedPatient()).toBeNull()
+    expect(text(mounted)).toContain('Select a patient to view or update details.')
+
+    await mounted.unmount()
+  })
+
+  it('saves dirty edits before applying an empty search result', async () => {
+    const api = createApi()
+    const mounted = await mountDirtyPatientSearchWorkspace({ api })
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 })
+    )
+    api.patient.update.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'UPDATED',
+        patient: patientDetail({ village: 'Dirty Village', rowVersion: 2 })
+      })
+    )
+
+    await changeInput(searchInput(mounted), 'No matches')
+    await clickButton(mounted, 'Search')
+    await clickButtonWithin(dialog(mounted)!, 'Save changes')
+
+    expect(api.patient.update).toHaveBeenCalledWith({
+      patientId: patientIdOne,
+      expectedRowVersion: 1,
+      patch: expect.objectContaining({ village: 'Dirty Village' })
+    })
+    expect(dialog(mounted)).toBeNull()
+    expect(text(mounted)).toContain('No matching patients.')
+    expect(mounted.getSelectedPatient()).toBeNull()
+
+    await mounted.unmount()
+  })
+
+  it('keeps the old table, patient, and draft when guarded save fails before an empty search', async () => {
+    const api = createApi()
+    const mounted = await mountDirtyPatientSearchWorkspace({ api })
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 })
+    )
+    api.patient.update.mockResolvedValueOnce(createPatientFailure('INTERNAL_ERROR'))
+
+    await changeInput(searchInput(mounted), 'No matches')
+    await clickButton(mounted, 'Search')
+    await clickButtonWithin(dialog(mounted)!, 'Save changes')
+
+    expect(dialog(mounted)).not.toBeNull()
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
+    expect(mounted.getSelectedPatient()?.id).toBe(patientIdOne)
+    expect(fieldInput(mounted, 'Village').value).toBe('Dirty Village')
+    expect(text(mounted)).not.toContain('No matching patients.')
+    expect(text(mounted)).toContain('The application could not complete the request.')
+
+    await mounted.unmount()
+  })
+
+  it('guards dirty searches that would select another first patient and Cancel keeps the old result set', async () => {
+    const api = createApi()
+    const mounted = await mountDirtyPatientSearchWorkspace({ api })
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({
+        items: [
+          patientSummary({
+            id: patientIdTwo,
+            patientCode: 'PT-000002',
+            displayName: 'Brice Muna',
+            givenName: 'Brice',
+            familyName: 'Muna'
+          })
+        ],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+
+    await changeInput(searchInput(mounted), 'Brice')
+    await clickButton(mounted, 'Search')
+
+    expect(dialog(mounted)).not.toBeNull()
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
+    expect(text(mounted)).not.toContain('Brice Muna')
+
+    await clickButtonWithin(dialog(mounted)!, 'Cancel')
+
+    expect(dialog(mounted)).toBeNull()
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
+    expect(text(mounted)).not.toContain('Brice Muna')
+    expect(fieldInput(mounted, 'Village').value).toBe('Dirty Village')
+
+    await mounted.unmount()
+  })
+
+  it('discards dirty edits before selecting a different first search result', async () => {
+    const api = createApi()
+    const mounted = await mountDirtyPatientSearchWorkspace({ api })
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({
+        items: [
+          patientSummary({
+            id: patientIdTwo,
+            patientCode: 'PT-000002',
+            displayName: 'Brice Muna',
+            givenName: 'Brice',
+            familyName: 'Muna'
+          })
+        ],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    api.patient.get.mockResolvedValueOnce(
+      createIpcSuccess(
+        patientDetail({
+          id: patientIdTwo,
+          patientCode: 'PT-000002',
+          displayName: 'Brice Muna',
+          givenName: 'Brice',
+          familyName: 'Muna'
+        })
+      )
+    )
+
+    await changeInput(searchInput(mounted), 'Brice')
+    await clickButton(mounted, 'Search')
+    await clickButtonWithin(dialog(mounted)!, 'Discard edits')
+
+    expect(dialog(mounted)).toBeNull()
+    expect(patientRowByCode(mounted, 'PT-000002').getAttribute('aria-selected')).toBe('true')
+    expect(text(mounted)).toContain('Brice Muna')
+    expect(mounted.getSelectedPatient()?.id).toBe(patientIdTwo)
+
+    await mounted.unmount()
+  })
+
+  it('applies dirty search results without a guard when the selected patient remains visible', async () => {
+    const api = createApi()
+    const mounted = await mountDirtyPatientSearchWorkspace({ api })
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({
+        items: [
+          patientSummary({
+            id: patientIdTwo,
+            patientCode: 'PT-000002',
+            displayName: 'Brice Muna',
+            givenName: 'Brice',
+            familyName: 'Muna'
+          }),
+          patientSummary()
+        ],
+        page: 1,
+        pageSize: 25,
+        total: 2
+      })
+    )
+
+    await changeInput(searchInput(mounted), 'Ada or Brice')
+    await clickButton(mounted, 'Search')
+
+    expect(dialog(mounted)).toBeNull()
+    expect(text(mounted)).toContain('Brice Muna')
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
+    expect(fieldInput(mounted, 'Village').value).toBe('Dirty Village')
+    expect(api.patient.get).not.toHaveBeenCalled()
+
+    await mounted.unmount()
+  })
+
+  it('suppresses stale dirty search results without replacing a pending guarded transition', async () => {
+    const api = createApi()
+    const staleSearch =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    const currentSearch =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    const mounted = await mountDirtyPatientSearchWorkspace({ api })
+    api.patient.search
+      .mockReturnValueOnce(staleSearch.promise)
+      .mockReturnValueOnce(currentSearch.promise)
+    api.patient.get.mockResolvedValueOnce(
+      createIpcSuccess(
+        patientDetail({
+          id: patientIdTwo,
+          patientCode: 'PT-000002',
+          displayName: 'Current Patient',
+          givenName: 'Current',
+          familyName: 'Patient'
+        })
+      )
+    )
+
+    await changeInput(searchInput(mounted), 'stale')
+    await dispatchKeyboard(searchInput(mounted), 'Enter')
+    await changeInput(searchInput(mounted), 'current')
+    await dispatchKeyboard(searchInput(mounted), 'Enter')
+
+    currentSearch.resolve(
+      createIpcSuccess({
+        items: [
+          patientSummary({
+            id: patientIdTwo,
+            patientCode: 'PT-000002',
+            displayName: 'Current Patient',
+            givenName: 'Current',
+            familyName: 'Patient'
+          })
+        ],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    await flushReact()
+
+    expect(dialog(mounted)).not.toBeNull()
+    expect(text(mounted)).not.toContain('Current Patient')
+
+    staleSearch.resolve(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+    await flushReact()
+
+    expect(dialog(mounted)).not.toBeNull()
+    expect(text(mounted)).not.toContain('No matching patients.')
+
+    await clickButtonWithin(dialog(mounted)!, 'Discard edits')
+
+    expect(patientRowByCode(mounted, 'PT-000002').getAttribute('aria-selected')).toBe('true')
+    expect(text(mounted)).toContain('Current Patient')
+    expect(mounted.getSelectedPatient()?.id).toBe(patientIdTwo)
+
+    await mounted.unmount()
+  })
+
+  it('bypasses dirty search guards and clears protected state on IPC_FORBIDDEN', async () => {
+    const api = createApi()
+    const mounted = await mountDirtyPatientSearchWorkspace({
+      api,
+      initialDetail: patientDetail({
+        patientCode: 'PT-000099',
+        displayName: 'Protected Name',
+        village: 'Original Village'
+      }),
+      initialSummary: patientSummary({ patientCode: 'PT-000099', displayName: 'Protected Name' })
+    })
+    api.patient.search.mockResolvedValueOnce(createPatientFailure('IPC_FORBIDDEN'))
+
+    await clickButton(mounted, 'Search')
+
+    expect(dialog(mounted)).toBeNull()
+    expect(mounted.onAuthenticationFailure).toHaveBeenCalledWith('IPC_FORBIDDEN')
+    expect(mounted.getSelectedPatient()).toBeNull()
+    expect(text(mounted)).not.toContain('Protected Name')
+
+    await mounted.unmount()
+  })
+
+  it('guards dirty pagination before replacing the selected patient', async () => {
+    const api = createApi()
+    const mounted = await mountDirtyPatientSearchWorkspace({ api, initialSearchTotal: 50 })
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({
+        items: [
+          patientSummary({
+            id: patientIdTwo,
+            patientCode: 'PT-000002',
+            displayName: 'Page Two Patient',
+            givenName: 'Page Two',
+            familyName: 'Patient'
+          })
+        ],
+        page: 2,
+        pageSize: 25,
+        total: 50
+      })
+    )
+
+    await clickButton(mounted, 'Next')
+
+    expect(dialog(mounted)).not.toBeNull()
+    expect(text(mounted)).not.toContain('Page Two Patient')
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
+
+    await clickButtonWithin(dialog(mounted)!, 'Cancel')
+
+    expect(text(mounted)).toContain('Page 1 / 2')
+    expect(fieldInput(mounted, 'Village').value).toBe('Dirty Village')
+
+    await mounted.unmount()
+  })
+
+  it('guards dirty page-size changes and restores the prior page size on Cancel', async () => {
+    const api = createApi()
+    const mounted = await mountDirtyPatientSearchWorkspace({ api, initialSearchTotal: 75 })
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [], page: 1, pageSize: 50, total: 0 })
+    )
+
+    await changeSelect(pageSizeSelect(mounted), '50')
+
+    expect(dialog(mounted)).not.toBeNull()
+    expect(pageSizeSelect(mounted).value).toBe('25')
+    expect(text(mounted)).not.toContain('No matching patients.')
+
+    await clickButtonWithin(dialog(mounted)!, 'Cancel')
+
+    expect(pageSizeSelect(mounted).value).toBe('25')
+    expect(text(mounted)).toContain('Page 1 / 3')
+    expect(fieldInput(mounted, 'Village').value).toBe('Dirty Village')
+
+    await mounted.unmount()
+  })
+
   it('selects the first row on next and previous pages when the prior selection is absent', async () => {
     const api = createApi()
     const pageOne = patientSummary()
@@ -1219,6 +1588,40 @@ async function mountWorkspace({
       container.remove()
     }
   }
+}
+
+async function mountDirtyPatientSearchWorkspace({
+  api = createApi(),
+  initialDetail = patientDetail({ village: 'Original Village' }),
+  initialSummary = patientSummary(initialDetail),
+  initialSearchTotal = 1,
+  draftVillage = 'Dirty Village'
+}: {
+  readonly api?: MockedHealthScreeningApi
+  readonly initialDetail?: PublicPatientDetail
+  readonly initialSummary?: PublicPatientSummary
+  readonly initialSearchTotal?: number
+  readonly draftVillage?: string
+} = {}): Promise<MountedWorkspace> {
+  api.patient.search.mockResolvedValueOnce(
+    createIpcSuccess({
+      items: [initialSummary],
+      page: 1,
+      pageSize: 25,
+      total: initialSearchTotal
+    })
+  )
+
+  const mounted = await mountWorkspace({ api, selectedPatient: initialDetail })
+
+  expect(patientRowByCode(mounted, initialSummary.patientCode).getAttribute('aria-selected')).toBe(
+    'true'
+  )
+
+  await clickButton(mounted, 'Edit')
+  await changeInput(fieldInput(mounted, 'Village'), draftVillage)
+
+  return mounted
 }
 
 function createApi(): MockedHealthScreeningApi {

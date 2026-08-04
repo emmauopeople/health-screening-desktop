@@ -51,6 +51,26 @@ interface PreferredPatientReveal {
   readonly patient: PublicPatientSummary
 }
 
+interface PatientSearchDisplaySnapshot {
+  readonly items: readonly PublicPatientSummary[]
+  readonly total: number
+  readonly page: number
+  readonly pageSize: PatientSearchPageSize
+  readonly state: LoadState
+  readonly failureMessage: string | null
+}
+
+interface PatientSearchResultSnapshot {
+  readonly requestId: number
+  readonly securityEpoch: number
+  readonly items: readonly PublicPatientSummary[]
+  readonly total: number
+  readonly page: number
+  readonly pageSize: PatientSearchPageSize
+  readonly targetPatientId: string | null
+  readonly preferredPatientIdToConsume: string | null
+}
+
 const transportFailureMessage = 'The desktop service is unavailable.'
 const localDatePattern = /^\d{4}-\d{2}-\d{2}$/u
 
@@ -282,6 +302,20 @@ export function PatientRegistryWorkspace({
     setSaving(false)
   }, [onSelectedPatientChange])
 
+  const applyPatientSearchTarget = useCallback(
+    (patientId: string | null): void => {
+      if (patientId === null) {
+        clearSelectedPatient()
+        return
+      }
+
+      if (selectedPatient?.id !== patientId) {
+        void loadAndSelectPatient(patientId)
+      }
+    },
+    [clearSelectedPatient, loadAndSelectPatient, selectedPatient?.id]
+  )
+
   const saveDraft = useCallback(async (): Promise<boolean> => {
     if (selectedPatient === null || saving) {
       return false
@@ -415,7 +449,6 @@ export function PatientRegistryWorkspace({
           onOpenPatient={(patient) => {
             setPreferredPatientReveal({ patient })
             onSelectCommand('PATIENTS_PATIENT_SEARCH')
-            void loadAndSelectPatient(patient.id)
           }}
           onMessage={setMessage}
           onCancel={() => onSelectCommand('PATIENTS_PATIENT_SEARCH')}
@@ -433,7 +466,8 @@ export function PatientRegistryWorkspace({
                 searchInputRef={searchInputRef}
                 onPatientFailure={handlePatientFailure}
                 onSelectPatient={selectPatient}
-                onClearSelection={clearSelectedPatient}
+                onApplyPatientSearchTarget={applyPatientSearchTarget}
+                onGuardPatientContextTransition={beginDirtyGuard}
                 onPreferredPatientRevealConsumed={(patientId) => {
                   setPreferredPatientReveal((currentReveal) =>
                     currentReveal?.patient.id === patientId ? null : currentReveal
@@ -591,7 +625,8 @@ function PatientSearchPane({
   searchInputRef,
   onPatientFailure,
   onSelectPatient,
-  onClearSelection,
+  onApplyPatientSearchTarget,
+  onGuardPatientContextTransition,
   onPreferredPatientRevealConsumed,
   onRegister
 }: {
@@ -603,7 +638,8 @@ function PatientSearchPane({
   readonly searchInputRef: RefObject<HTMLInputElement | null>
   onPatientFailure(code: PatientErrorCode, message: string): boolean
   onSelectPatient(patientId: string): void
-  onClearSelection(): void
+  onApplyPatientSearchTarget(patientId: string | null): void
+  onGuardPatientContextTransition(action: () => void): boolean
   onPreferredPatientRevealConsumed(patientId: string): void
   onRegister(): void
 }): React.JSX.Element {
@@ -620,6 +656,14 @@ function PatientSearchPane({
   const selectedPatientIdRef = useLatestRef(selectedPatientId)
   const preferredPatientRevealRef = useLatestRef(preferredPatientReveal)
   const pageSizeRef = useLatestRef(pageSize)
+  const displaySnapshotRef = useLatestRef<PatientSearchDisplaySnapshot>({
+    items,
+    total,
+    page,
+    pageSize,
+    state,
+    failureMessage
+  })
 
   const invalidateLocalState = useCallback((): void => {
     requestRef.current += 1
@@ -636,6 +680,52 @@ function PatientSearchPane({
     [invalidateLocalState, registerStateInvalidator]
   )
 
+  const restoreSearchDisplaySnapshot = useCallback(
+    (snapshot: PatientSearchDisplaySnapshot): void => {
+      setItems(snapshot.items)
+      setTotal(snapshot.total)
+      setPage(snapshot.page)
+      setPageSize(snapshot.pageSize)
+      setState(snapshot.state)
+      setFailureMessage(snapshot.failureMessage)
+    },
+    []
+  )
+
+  const applySearchResultSnapshot = useCallback(
+    (snapshot: PatientSearchResultSnapshot): void => {
+      if (
+        !mountedRef.current ||
+        securityEpochRef.current !== snapshot.securityEpoch ||
+        requestRef.current !== snapshot.requestId
+      ) {
+        return
+      }
+
+      setItems(snapshot.items)
+      setTotal(snapshot.total)
+      setPage(snapshot.page)
+      setPageSize(snapshot.pageSize)
+      setState(snapshot.items.length === 0 ? 'EMPTY' : 'READY')
+      setFailureMessage(null)
+
+      if (snapshot.preferredPatientIdToConsume !== null) {
+        onPreferredPatientRevealConsumed(snapshot.preferredPatientIdToConsume)
+      }
+
+      if (selectedPatientIdRef.current !== snapshot.targetPatientId) {
+        onApplyPatientSearchTarget(snapshot.targetPatientId)
+      }
+    },
+    [
+      mountedRef,
+      onApplyPatientSearchTarget,
+      onPreferredPatientRevealConsumed,
+      securityEpochRef,
+      selectedPatientIdRef
+    ]
+  )
+
   const executeSearch = useCallback(
     async ({
       queryText,
@@ -649,6 +739,7 @@ function PatientSearchPane({
       const requestId = requestRef.current + 1
       requestRef.current = requestId
       const startedSecurityEpoch = securityEpochRef.current
+      const previousDisplaySnapshot = displaySnapshotRef.current
       setState('LOADING')
       setFailureMessage(null)
 
@@ -690,36 +781,31 @@ function PatientSearchPane({
             ? result.data.total
             : Math.max(result.data.total, visibleItems.length)
 
-        setItems(visibleItems)
-        setTotal(visibleTotal)
-        setPage(result.data.page)
-        setState(visibleItems.length === 0 ? 'EMPTY' : 'READY')
+        const snapshot = createPatientSearchResultSnapshot({
+          requestId,
+          securityEpoch: startedSecurityEpoch,
+          items: visibleItems,
+          total: visibleTotal,
+          page: result.data.page,
+          pageSize: pageSizeValue,
+          targetPatientId: getPatientSearchTargetPatientId(
+            visibleItems,
+            selectedPatientIdRef.current
+          ),
+          preferredPatientIdToConsume: preferredReveal?.patient.id ?? null
+        })
 
-        if (preferredReveal !== null) {
-          onPreferredPatientRevealConsumed(preferredReveal.patient.id)
-        }
-
-        const currentPatientId = selectedPatientIdRef.current
-        const currentPatientIsVisible =
-          currentPatientId !== null &&
-          visibleItems.some((patient) => patient.id === currentPatientId)
-
-        if (
-          preferredPatient !== null &&
-          visibleItems.some((patient) => patient.id === preferredPatient.id)
-        ) {
+        if (selectedPatientIdRef.current === snapshot.targetPatientId) {
+          applySearchResultSnapshot(snapshot)
           return
         }
 
-        if (visibleItems.length === 0) {
-          onClearSelection()
-          return
-        }
+        const appliedImmediately = onGuardPatientContextTransition(() => {
+          applySearchResultSnapshot(snapshot)
+        })
 
-        const firstPatient = visibleItems[0]
-
-        if (!currentPatientIsVisible && firstPatient !== undefined) {
-          onSelectPatient(firstPatient.id)
+        if (!appliedImmediately) {
+          restoreSearchDisplaySnapshot(previousDisplaySnapshot)
         }
       } catch {
         if (
@@ -736,12 +822,13 @@ function PatientSearchPane({
     },
     [
       api,
+      applySearchResultSnapshot,
+      displaySnapshotRef,
       mountedRef,
-      onClearSelection,
+      onGuardPatientContextTransition,
       onPatientFailure,
-      onPreferredPatientRevealConsumed,
-      onSelectPatient,
       preferredPatientRevealRef,
+      restoreSearchDisplaySnapshot,
       securityEpochRef,
       selectedPatientIdRef
     ]
@@ -2460,6 +2547,48 @@ function getPatientSearchStatusText(
 
 function coercePatientSearchPageSize(value: number): PatientSearchPageSize {
   return value === 50 || value === 100 ? value : 25
+}
+
+function getPatientSearchTargetPatientId(
+  items: readonly PublicPatientSummary[],
+  selectedPatientId: string | null
+): string | null {
+  if (selectedPatientId !== null && items.some((patient) => patient.id === selectedPatientId)) {
+    return selectedPatientId
+  }
+
+  return items[0]?.id ?? null
+}
+
+function createPatientSearchResultSnapshot({
+  requestId,
+  securityEpoch,
+  items,
+  total,
+  page,
+  pageSize,
+  targetPatientId,
+  preferredPatientIdToConsume
+}: {
+  readonly requestId: number
+  readonly securityEpoch: number
+  readonly items: readonly PublicPatientSummary[]
+  readonly total: number
+  readonly page: number
+  readonly pageSize: PatientSearchPageSize
+  readonly targetPatientId: string | null
+  readonly preferredPatientIdToConsume: string | null
+}): PatientSearchResultSnapshot {
+  return Object.freeze({
+    requestId,
+    securityEpoch,
+    items: Object.freeze([...items]),
+    total,
+    page,
+    pageSize,
+    targetPatientId,
+    preferredPatientIdToConsume
+  })
 }
 
 function revealPatientInSearchItems(
