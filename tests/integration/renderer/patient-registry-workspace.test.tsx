@@ -728,7 +728,232 @@ describe('patient registry workspace mounted regressions', () => {
     expect(mounted.getSelectedPatient()?.id).toBe(patientIdThree)
     expect(text(mounted)).toContain('PT-000003')
     expect(text(mounted)).toContain('Created Patient')
+    expect(api.patient.get).not.toHaveBeenCalled()
     expect(mounted.onSelectCommand).toHaveBeenCalledWith('PATIENTS_PATIENT_SEARCH')
+
+    await mounted.unmount()
+  })
+
+  it('prioritizes a preferred duplicate candidate over the visible selected patient', async () => {
+    const api = createApi()
+    const patientA = patientDetail({
+      displayName: 'Patient A',
+      givenName: 'Patient',
+      familyName: 'A'
+    })
+    const patientB = patientDetail({
+      id: patientIdTwo,
+      patientCode: 'PT-000002',
+      displayName: 'Preferred Existing Patient',
+      givenName: 'Preferred',
+      familyName: 'Existing',
+      createdByDisplayName: 'Preferred Detail Author'
+    })
+    const patientASummary = patientSummary(patientA)
+    const patientBSummary = patientSummary(patientB)
+    api.patient.create.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'DUPLICATE_REVIEW_REQUIRED',
+        candidates: [duplicateCandidate(patientBSummary)],
+        duplicateReviewToken: 'duplicate-review-token-priority'
+      })
+    )
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({
+        items: [patientASummary, patientBSummary],
+        page: 1,
+        pageSize: 25,
+        total: 2
+      })
+    )
+    api.patient.get.mockResolvedValueOnce(createIpcSuccess(patientB))
+
+    const mounted = await mountWorkspace({
+      api,
+      commandId: 'PATIENTS_REGISTER_NEW_PATIENT',
+      selectedPatient: patientA
+    })
+
+    await fillExactDobRegistration(mounted)
+    await clickButton(mounted, 'Create patient')
+    await clickButton(mounted, 'Open existing patient')
+
+    expect(api.patient.search).toHaveBeenCalledWith({ query: '', page: 1, pageSize: 25 })
+    expect(api.patient.get).toHaveBeenCalledTimes(1)
+    expect(api.patient.get).toHaveBeenCalledWith({ patientId: patientIdTwo })
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('false')
+    expect(patientRowByCode(mounted, 'PT-000002').getAttribute('aria-selected')).toBe('true')
+    expect(mounted.getSelectedPatient()?.id).toBe(patientIdTwo)
+    expect(text(mounted)).toContain('Preferred Existing Patient')
+    expect(text(mounted)).toContain('Preferred Detail Author')
+
+    await mounted.unmount()
+  })
+
+  it('inserts and selects a preferred duplicate candidate absent from the backend page', async () => {
+    const api = createApi()
+    const patientA = patientDetail({ displayName: 'Patient A' })
+    const patientB = patientDetail({
+      id: patientIdTwo,
+      patientCode: 'PT-000002',
+      displayName: 'Inserted Preferred Patient',
+      givenName: 'Inserted',
+      familyName: 'Preferred',
+      createdByDisplayName: 'Inserted Detail Author'
+    })
+    api.patient.create.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'DUPLICATE_REVIEW_REQUIRED',
+        candidates: [duplicateCandidate(patientSummary(patientB))],
+        duplicateReviewToken: 'duplicate-review-token-insert'
+      })
+    )
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({
+        items: [patientSummary(patientA)],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    api.patient.get.mockResolvedValueOnce(createIpcSuccess(patientB))
+
+    const mounted = await mountWorkspace({
+      api,
+      commandId: 'PATIENTS_REGISTER_NEW_PATIENT',
+      selectedPatient: patientA
+    })
+
+    await fillExactDobRegistration(mounted)
+    await clickButton(mounted, 'Create patient')
+    await clickButton(mounted, 'Open existing patient')
+
+    expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('false')
+    expect(patientRowByCode(mounted, 'PT-000002').getAttribute('aria-selected')).toBe('true')
+    expect(api.patient.get).toHaveBeenCalledTimes(1)
+    expect(api.patient.get).toHaveBeenCalledWith({ patientId: patientIdTwo })
+    expect(mounted.getSelectedPatient()?.id).toBe(patientIdTwo)
+    expect(text(mounted)).toContain('Inserted Detail Author')
+
+    await mounted.unmount()
+  })
+
+  it('does not let a stale search consume the preferred duplicate reveal', async () => {
+    const api = createApi()
+    const staleSearch =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    const currentSearch =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    const patientA = patientDetail({ displayName: 'Patient A' })
+    const patientB = patientDetail({
+      id: patientIdTwo,
+      patientCode: 'PT-000002',
+      displayName: 'Stale-Protected Preferred Patient',
+      givenName: 'Stale-Protected',
+      familyName: 'Preferred',
+      createdByDisplayName: 'Stale-Protected Detail Author'
+    })
+    api.patient.create.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'DUPLICATE_REVIEW_REQUIRED',
+        candidates: [duplicateCandidate(patientSummary(patientB))],
+        duplicateReviewToken: 'duplicate-review-token-stale'
+      })
+    )
+    api.patient.search
+      .mockReturnValueOnce(staleSearch.promise)
+      .mockReturnValueOnce(currentSearch.promise)
+    api.patient.get.mockResolvedValueOnce(createIpcSuccess(patientB))
+
+    const mounted = await mountWorkspace({
+      api,
+      commandId: 'PATIENTS_REGISTER_NEW_PATIENT',
+      selectedPatient: patientA
+    })
+
+    await fillExactDobRegistration(mounted)
+    await clickButton(mounted, 'Create patient')
+    await clickButton(mounted, 'Open existing patient')
+    await dispatchKeyboard(searchInput(mounted), 'Enter')
+
+    staleSearch.resolve(
+      createIpcSuccess({
+        items: [patientSummary(patientA), patientSummary(patientB)],
+        page: 1,
+        pageSize: 25,
+        total: 2
+      })
+    )
+    await flushReact()
+
+    expect(text(mounted)).not.toContain('Stale-Protected Preferred Patient')
+
+    currentSearch.resolve(
+      createIpcSuccess({
+        items: [patientSummary(patientA)],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    await flushReact()
+
+    expect(patientRowByCode(mounted, 'PT-000002').getAttribute('aria-selected')).toBe('true')
+    expect(api.patient.get).toHaveBeenCalledTimes(1)
+    expect(api.patient.get).toHaveBeenCalledWith({ patientId: patientIdTwo })
+    expect(text(mounted)).toContain('Stale-Protected Detail Author')
+
+    await mounted.unmount()
+  })
+
+  it('clears a preferred duplicate reveal on IPC_FORBIDDEN search failure', async () => {
+    const api = createApi()
+    const patientA = patientDetail({ displayName: 'Patient A' })
+    const patientB = patientDetail({
+      id: patientIdTwo,
+      patientCode: 'PT-000002',
+      displayName: 'Forbidden Preferred Patient',
+      givenName: 'Forbidden',
+      familyName: 'Preferred'
+    })
+    api.patient.create.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'DUPLICATE_REVIEW_REQUIRED',
+        candidates: [duplicateCandidate(patientSummary(patientB))],
+        duplicateReviewToken: 'duplicate-review-token-forbidden'
+      })
+    )
+    api.patient.search
+      .mockResolvedValueOnce(createPatientFailure('IPC_FORBIDDEN'))
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [patientSummary(patientA)],
+          page: 1,
+          pageSize: 25,
+          total: 1
+        })
+      )
+    api.patient.get.mockResolvedValueOnce(createIpcSuccess(patientA))
+
+    const mounted = await mountWorkspace({
+      api,
+      commandId: 'PATIENTS_REGISTER_NEW_PATIENT',
+      selectedPatient: patientA
+    })
+
+    await fillExactDobRegistration(mounted)
+    await clickButton(mounted, 'Create patient')
+    await clickButton(mounted, 'Open existing patient')
+
+    expect(mounted.onAuthenticationFailure).toHaveBeenCalledWith('IPC_FORBIDDEN')
+    expect(mounted.getSelectedPatient()).toBeNull()
+
+    await clickButton(mounted, 'Search')
+
+    expect(text(mounted)).toContain('Patient A')
+    expect(text(mounted)).not.toContain('PT-000002')
+    expect(api.patient.get).toHaveBeenCalledTimes(1)
+    expect(api.patient.get).toHaveBeenCalledWith({ patientId: patientIdOne })
 
     await mounted.unmount()
   })

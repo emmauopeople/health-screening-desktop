@@ -780,6 +780,18 @@ function PatientSearchPane({
           preferredPatient === null || visibleItems === result.data.items
             ? result.data.total
             : Math.max(result.data.total, visibleItems.length)
+        const preferredPatientId = preferredPatient?.id ?? null
+        const targetPatientId = getPatientSearchTargetPatientId(
+          visibleItems,
+          selectedPatientIdRef.current,
+          preferredPatientId
+        )
+        const preferredPatientIdToConsume =
+          preferredPatientId !== null &&
+          targetPatientId === preferredPatientId &&
+          visibleItems.some((patient) => patient.id === preferredPatientId)
+            ? preferredPatientId
+            : null
 
         const snapshot = createPatientSearchResultSnapshot({
           requestId,
@@ -788,11 +800,8 @@ function PatientSearchPane({
           total: visibleTotal,
           page: result.data.page,
           pageSize: pageSizeValue,
-          targetPatientId: getPatientSearchTargetPatientId(
-            visibleItems,
-            selectedPatientIdRef.current
-          ),
-          preferredPatientIdToConsume: preferredReveal?.patient.id ?? null
+          targetPatientId,
+          preferredPatientIdToConsume
         })
 
         if (selectedPatientIdRef.current === snapshot.targetPatientId) {
@@ -2551,8 +2560,13 @@ function coercePatientSearchPageSize(value: number): PatientSearchPageSize {
 
 function getPatientSearchTargetPatientId(
   items: readonly PublicPatientSummary[],
-  selectedPatientId: string | null
+  selectedPatientId: string | null,
+  preferredPatientId: string | null
 ): string | null {
+  if (preferredPatientId !== null && items.some((patient) => patient.id === preferredPatientId)) {
+    return preferredPatientId
+  }
+
   if (selectedPatientId !== null && items.some((patient) => patient.id === selectedPatientId)) {
     return selectedPatientId
   }
