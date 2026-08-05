@@ -30,7 +30,11 @@ import { createEntityIdGenerator, parseEntityId } from '@main/foundation/entity-
 import { createUtcClock, parseUtcTimestamp } from '@main/foundation/utc-clock'
 
 const now = '2026-07-29T12:34:56.789Z'
+const adjustedNow = '2026-07-29T12:34:56.790Z'
+const initialAcknowledgmentRecordedAt = '2026-07-29T12:34:55.789Z'
 const later = '2026-07-29T12:34:57.789Z'
+const rollbackPrevious = '2026-07-29T12:35:01.111Z'
+const rollbackAdjusted = '2026-07-29T12:35:01.112Z'
 const installationId = '11111111-1111-4111-8111-111111111111'
 const adminId = '22222222-2222-4222-8222-222222222222'
 const nurseId = '33333333-3333-4333-8333-333333333333'
@@ -306,6 +310,121 @@ describe('patient acknowledgment service', () => {
         ).toMatchObject({ status: 'RECORDED', patient: { acknowledgmentStatus: status } })
       })
     }
+  })
+
+  it('adjusts equal-timestamp acknowledgment events so the new event becomes latest', async () => {
+    await withAcknowledgmentService(({ connection, service, acknowledgmentRepository }) => {
+      const previousAcknowledgmentId = generatedIds[7]
+
+      seedCoreRecords(connection, { rowVersion: 2 })
+      insertRawAcknowledgment(connection, {
+        id: previousAcknowledgmentId,
+        status: 'ACKNOWLEDGED',
+        recordedAt: now,
+        effectiveAt: now,
+        priorRowVersion: 1,
+        resultingRowVersion: 2
+      })
+
+      const result = service.record(
+        {
+          patientId: parseEntityId(patientId),
+          expectedRowVersion: 2,
+          status: 'DECLINED',
+          note: null
+        },
+        adminActor
+      )
+
+      expect(result).toMatchObject({
+        status: 'RECORDED',
+        acknowledgmentId: generatedIds[0],
+        patient: {
+          rowVersion: 3,
+          acknowledgmentStatus: 'DECLINED',
+          acknowledgmentRecordedAt: adjustedNow
+        }
+      })
+      expect(acknowledgmentRepository.getLatestByPatient(parseEntityId(patientId))).toMatchObject({
+        id: generatedIds[0],
+        status: 'DECLINED',
+        recordedAt: adjustedNow,
+        priorRowVersion: 2,
+        resultingRowVersion: 3
+      })
+      expect(readPatient(connection, patientId)).toMatchObject({
+        row_version: 3,
+        updated_at: adjustedNow
+      })
+      expect(readRawAcknowledgment(connection, generatedIds[0])).toMatchObject({
+        effective_at: adjustedNow,
+        recorded_at: adjustedNow,
+        patient_prior_row_version: 2,
+        patient_resulting_row_version: 3
+      })
+      expect(readAuditRowsWithOccurredAt(connection)).toEqual([
+        expect.objectContaining({ occurred_at: adjustedNow })
+      ])
+      expect(readOutboxRowsWithCreatedAt(connection)).toEqual([
+        expect.objectContaining({ created_at: adjustedNow })
+      ])
+      expect(JSON.parse(readOutboxRowsWithCreatedAt(connection)[0]!.payload_json)).toMatchObject({
+        acknowledgment_id: generatedIds[0],
+        previous_acknowledgment_id: previousAcknowledgmentId,
+        previous_status: 'ACKNOWLEDGED',
+        status: 'DECLINED',
+        recorded_at: adjustedNow
+      })
+    })
+  })
+
+  it('adjusts acknowledgment timestamps when the transaction clock moves backward', async () => {
+    await withAcknowledgmentService(({ connection, service, acknowledgmentRepository }) => {
+      const previousAcknowledgmentId = generatedIds[7]
+
+      seedCoreRecords(connection, { rowVersion: 2 })
+      insertRawAcknowledgment(connection, {
+        id: previousAcknowledgmentId,
+        status: 'DECLINED',
+        recordedAt: rollbackPrevious,
+        effectiveAt: rollbackPrevious,
+        priorRowVersion: 1,
+        resultingRowVersion: 2
+      })
+
+      const result = service.record(
+        {
+          patientId: parseEntityId(patientId),
+          expectedRowVersion: 2,
+          status: 'ACKNOWLEDGED',
+          note: null
+        },
+        nurseActor
+      )
+
+      expect(result).toMatchObject({
+        status: 'RECORDED',
+        acknowledgmentId: generatedIds[0],
+        patient: {
+          rowVersion: 3,
+          acknowledgmentStatus: 'ACKNOWLEDGED',
+          acknowledgmentRecordedAt: rollbackAdjusted
+        }
+      })
+      expect(acknowledgmentRepository.getLatestByPatient(parseEntityId(patientId))).toMatchObject({
+        id: generatedIds[0],
+        status: 'ACKNOWLEDGED',
+        recordedAt: rollbackAdjusted
+      })
+      expect(readRawAcknowledgment(connection, generatedIds[0])).toMatchObject({
+        effective_at: rollbackAdjusted,
+        recorded_at: rollbackAdjusted
+      })
+      expect(readPatient(connection, patientId)).toMatchObject({
+        row_version: 3,
+        updated_at: rollbackAdjusted
+      })
+    })
   })
 
   it('returns optimistic-concurrency and missing-patient results without writes', async () => {
@@ -943,7 +1062,9 @@ function seedCoreRecords(
         : initialAcknowledgmentId,
     patientId: overrides.patientId ?? patientId,
     status: 'NOT_REQUESTED',
+    effectiveAt: initialAcknowledgmentRecordedAt,
     recordedBy: adminId,
+    recordedAt: initialAcknowledgmentRecordedAt,
     priorRowVersion: null,
     resultingRowVersion: null
   })
@@ -1184,10 +1305,33 @@ function readRawAcknowledgments(connection: Database.Database): Array<Record<str
     .all() as Array<Record<string, unknown>>
 }
 
+function readRawAcknowledgment(
+  connection: Database.Database,
+  acknowledgmentId: string
+): Record<string, unknown> {
+  const row = connection.prepare('SELECT * FROM consent_records WHERE id = ?').get(acknowledgmentId)
+
+  if (row === undefined) {
+    return {}
+  }
+
+  return row as Record<string, unknown>
+}
+
 function readAuditRows(connection: Database.Database): Array<Record<string, string>> {
   return connection
     .prepare(
       `SELECT action, entity_type, entity_id, metadata_json
+       FROM audit_log
+       ORDER BY rowid`
+    )
+    .all() as Array<Record<string, string>>
+}
+
+function readAuditRowsWithOccurredAt(connection: Database.Database): Array<Record<string, string>> {
+  return connection
+    .prepare(
+      `SELECT action, entity_type, entity_id, occurred_at, metadata_json
        FROM audit_log
        ORDER BY rowid`
     )
@@ -1209,6 +1353,26 @@ function readOutboxRows(connection: Database.Database): Array<{
     operation: string
     payload_schema_version: string
     payload_json: string
+  }>
+}
+
+function readOutboxRowsWithCreatedAt(connection: Database.Database): Array<{
+  operation: string
+  payload_schema_version: string
+  payload_json: string
+  created_at: string
+}> {
+  return connection
+    .prepare(
+      `SELECT operation, payload_schema_version, payload_json, created_at
+       FROM sync_outbox
+       ORDER BY rowid`
+    )
+    .all() as Array<{
+    operation: string
+    payload_schema_version: string
+    payload_json: string
+    created_at: string
   }>
 }
 

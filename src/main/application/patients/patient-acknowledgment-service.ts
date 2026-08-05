@@ -9,6 +9,7 @@ import {
   type PatientDetailRecord
 } from '@main/database'
 import { parseEntityId, type EntityId } from '@main/foundation/entity-id'
+import { parseUtcTimestamp, type UtcTimestamp } from '@main/foundation/utc-clock'
 
 import type {
   ListPatientAcknowledgmentHistoryRequest,
@@ -85,7 +86,10 @@ export function createPatientAcknowledgmentService({
           })
         }
 
-        const recordedAt = context.nowUtc()
+        const recordedAt = createMonotonicAcknowledgmentTimestamp(
+          context.nowUtc(),
+          latestAcknowledgment?.recordedAt ?? null
+        )
         const acknowledgmentId = context.newEntityId()
         const advanceResult = patientRepository.advanceRowVersionForAcknowledgment(
           context.connection,
@@ -216,7 +220,7 @@ function verifyRecordedPatient(
   patient: PatientDetailRecord | null,
   status: ParsedRecordAcknowledgmentCommand['status'],
   resultingRowVersion: number,
-  recordedAt: string
+  recordedAt: UtcTimestamp
 ): asserts patient is PatientDetailRecord {
   if (
     patient === null ||
@@ -224,6 +228,41 @@ function verifyRecordedPatient(
     patient.acknowledgmentStatus !== status ||
     patient.acknowledgmentRecordedAt !== recordedAt
   ) {
+    throw new RepositoryValidationError()
+  }
+}
+
+function createMonotonicAcknowledgmentTimestamp(
+  clockTimestamp: UtcTimestamp,
+  previousRecordedAt: UtcTimestamp | null
+): UtcTimestamp {
+  try {
+    const parsedClockTimestamp = parseUtcTimestamp(clockTimestamp)
+
+    if (previousRecordedAt === null) {
+      return parsedClockTimestamp
+    }
+
+    const parsedPreviousRecordedAt = parseUtcTimestamp(previousRecordedAt)
+    const clockMilliseconds = new Date(parsedClockTimestamp).getTime()
+    const previousMilliseconds = new Date(parsedPreviousRecordedAt).getTime()
+
+    if (!Number.isFinite(clockMilliseconds) || !Number.isFinite(previousMilliseconds)) {
+      throw new RepositoryValidationError()
+    }
+
+    if (clockMilliseconds > previousMilliseconds) {
+      return parsedClockTimestamp
+    }
+
+    const adjustedMilliseconds = previousMilliseconds + 1
+
+    if (!Number.isFinite(adjustedMilliseconds)) {
+      throw new RepositoryValidationError()
+    }
+
+    return parseUtcTimestamp(new Date(adjustedMilliseconds).toISOString())
+  } catch {
     throw new RepositoryValidationError()
   }
 }
