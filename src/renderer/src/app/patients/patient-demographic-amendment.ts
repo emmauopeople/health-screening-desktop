@@ -1,8 +1,9 @@
-import type {
-  LocalUserRole,
-  PatientAmendDemographicsRequest,
-  PatientDemographicAmendmentReasonCode,
-  PublicPatientDetail
+import {
+  patientAmendmentNoteSchema,
+  type LocalUserRole,
+  type PatientAmendDemographicsRequest,
+  type PatientDemographicAmendmentReasonCode,
+  type PublicPatientDetail
 } from '@shared/ipc'
 
 export type PatientDemographicAmendmentPatch = PatientAmendDemographicsRequest['patch']
@@ -252,14 +253,19 @@ export function validatePatientDemographicAmendment(
     setFocus('reasonCode')
   }
 
+  const sharedNoteCompatible = patientAmendmentNoteSchema.safeParse(input.reasonNote).success
+
   if (countUnicodeCodePoints(input.reasonNote) > maximumReasonNoteCodePoints) {
     errors.reasonNote = 'Reason note must be 500 characters or fewer.'
     setFocus('reasonNote')
-  } else if (containsUnsafeControlCharacter(input.reasonNote)) {
+  } else if (containsUnsafeAmendmentNoteCharacter(input.reasonNote)) {
     errors.reasonNote = 'Reason note contains unsupported control characters.'
     setFocus('reasonNote')
   } else if (containsUnpairedSurrogate(input.reasonNote)) {
     errors.reasonNote = 'Reason note contains unsupported characters.'
+    setFocus('reasonNote')
+  } else if (!sharedNoteCompatible) {
+    errors.reasonNote = 'Reason note contains unsupported control characters.'
     setFocus('reasonNote')
   }
 
@@ -464,15 +470,16 @@ function isValidLocalDate(value: string): boolean {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
 }
 
-function containsUnsafeControlCharacter(value: string): boolean {
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index)
+function containsUnsafeAmendmentNoteCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0)!
 
-    if ((code >= 0x00 && code <= 0x08) || code === 0x0b || code === 0x0c) {
-      return true
-    }
-
-    if ((code >= 0x0e && code <= 0x1f) || code === 0x7f) {
+    if (
+      codePoint <= 0x1f ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x2028 ||
+      codePoint === 0x2029
+    ) {
       return true
     }
   }

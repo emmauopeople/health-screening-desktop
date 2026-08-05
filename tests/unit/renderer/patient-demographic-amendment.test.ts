@@ -164,6 +164,17 @@ describe('patient demographic amendment helpers', () => {
     const base = patientDetail()
     const changed = { ...createPatientDemographicDraft(base), village: 'Mendankwe' }
     const astralCharacter = '\u{1f642}'
+    const unsafeControlCases = Object.freeze([
+      ['tab', '\t'],
+      ['line feed', '\n'],
+      ['carriage return', '\r'],
+      ['unit separator', '\u001f'],
+      ['delete', '\u007f'],
+      ['next line', '\u0085'],
+      ['application program command', '\u009f'],
+      ['line separator', '\u2028'],
+      ['paragraph separator', '\u2029']
+    ] as const)
 
     expect(
       validatePatientDemographicAmendment({
@@ -181,22 +192,36 @@ describe('patient demographic amendment helpers', () => {
         basePatient: base,
         draft: changed,
         reasonCode: 'OTHER',
-        reasonNote: astralCharacter.repeat(501),
+        reasonNote: 'Ordinary Unicode Cafe\u0301 update',
         userRole: 'LOCAL_ADMIN',
         today
       }).errors.reasonNote
-    ).toBe('Reason note must be 500 characters or fewer.')
+    ).toBeUndefined()
 
     expect(
       validatePatientDemographicAmendment({
         basePatient: base,
         draft: changed,
         reasonCode: 'OTHER',
-        reasonNote: 'unsafe\u0001note',
+        reasonNote: astralCharacter.repeat(501),
         userRole: 'LOCAL_ADMIN',
         today
       }).errors.reasonNote
-    ).toBe('Reason note contains unsupported control characters.')
+    ).toBe('Reason note must be 500 characters or fewer.')
+
+    for (const [label, unsafeCharacter] of unsafeControlCases) {
+      expect(
+        validatePatientDemographicAmendment({
+          basePatient: base,
+          draft: changed,
+          reasonCode: 'OTHER',
+          reasonNote: `unsafe${unsafeCharacter}note`,
+          userRole: 'LOCAL_ADMIN',
+          today
+        }).errors.reasonNote,
+        label
+      ).toBe('Reason note contains unsupported control characters.')
+    }
 
     expect(
       validatePatientDemographicAmendment({
@@ -204,6 +229,17 @@ describe('patient demographic amendment helpers', () => {
         draft: changed,
         reasonCode: 'OTHER',
         reasonNote: 'bad\uD800note',
+        userRole: 'LOCAL_ADMIN',
+        today
+      }).errors.reasonNote
+    ).toBe('Reason note contains unsupported characters.')
+
+    expect(
+      validatePatientDemographicAmendment({
+        basePatient: base,
+        draft: changed,
+        reasonCode: 'OTHER',
+        reasonNote: 'bad\uDC00note',
         userRole: 'LOCAL_ADMIN',
         today
       }).errors.reasonNote

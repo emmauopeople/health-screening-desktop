@@ -1976,6 +1976,33 @@ describe('patient registry workspace mounted regressions', () => {
     await mounted.unmount()
   })
 
+  it('rejects unsafe reason-note characters locally before invoking IPC', async () => {
+    const api = createApi()
+    const unsafeNote = 'Line one\nLine two\u0085Line three\u2028'
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    const mounted = await mountWorkspace({ api, selectedPatient: patientDetail() })
+
+    await clickButton(mounted, 'Amend demographics')
+    await changeInput(fieldInput(mounted, 'Village'), 'Bamenda')
+    await changeSelect(fieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
+    await changeTextarea(fieldTextarea(mounted, 'Reason note'), unsafeNote)
+    await clickButton(mounted, 'Save amendment')
+
+    expect(api.patient.amendDemographics).not.toHaveBeenCalled()
+    expect(text(mounted)).toContain('Reason note contains unsupported control characters.')
+    expect(fieldInput(mounted, 'Village').value).toBe('Bamenda')
+    expect(fieldSelect(mounted, 'Reason').value).toBe('DATA_ENTRY_CORRECTION')
+    expect(fieldTextarea(mounted, 'Reason note').value).toBe(unsafeNote)
+    expect(mounted.container.querySelector('[role="alert"]')?.textContent).toContain(
+      'Review the demographic amendment'
+    )
+    expect(document.activeElement).toBe(mounted.container.querySelector('[role="alert"]'))
+
+    await mounted.unmount()
+  })
+
   it('prevents trained screeners from changing status while allowing ordinary amendments', async () => {
     const api = createApi()
     const updated = patientDetail({ village: 'Screener Village', rowVersion: 2 })
@@ -2626,6 +2653,202 @@ describe('patient registry workspace mounted regressions', () => {
 
     expect(fieldInput(mounted, 'Village').value).toBe('Attempted Village')
     expect(text(mounted)).not.toContain('Patient changed before this amendment was saved')
+
+    await mounted.unmount()
+  })
+
+  it('retries conflicts only by explicit action using the latest row version and intended patch', async () => {
+    const api = createApi()
+    const original = patientDetail({
+      village: 'Original Village',
+      quarter: 'Original Quarter',
+      phone: '+237 600 000 001',
+      rowVersion: 1
+    })
+    const latestVersionTwo = patientDetail({
+      displayName: 'Ada Latest Two',
+      village: 'Latest Village',
+      quarter: 'Row 2 Quarter',
+      phone: '+237 600 000 002',
+      rowVersion: 2,
+      updatedAt: '2026-08-04T12:00:00.000Z',
+      updatedByDisplayName: 'Second User'
+    })
+    const latestVersionThree = patientDetail({
+      displayName: 'Ada Latest Three',
+      village: 'Newest Village',
+      quarter: 'Row 3 Quarter',
+      phone: '+237 600 000 003',
+      rowVersion: 3,
+      updatedAt: '2026-08-05T12:00:00.000Z',
+      updatedByDisplayName: 'Third User'
+    })
+    api.patient.amendDemographics
+      .mockResolvedValueOnce(
+        createIpcSuccess({ status: 'PATIENT_VERSION_CONFLICT', patient: latestVersionTwo })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({ status: 'PATIENT_VERSION_CONFLICT', patient: latestVersionThree })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          status: 'AMENDED',
+          amendmentId,
+          patient: patientDetail({
+            village: 'Attempted Village',
+            quarter: 'Row 3 Quarter',
+            phone: '+237 600 000 003',
+            rowVersion: 4
+          })
+        })
+      )
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary(original)], page: 1, pageSize: 25, total: 1 })
+    )
+
+    const mounted = await mountWorkspace({ api, selectedPatient: original })
+
+    await clickButton(mounted, 'Amend demographics')
+    await changeInput(fieldInput(mounted, 'Village'), 'Attempted Village')
+    await changeSelect(fieldSelect(mounted, 'Reason'), 'PATIENT_REPORTED_CHANGE')
+    await changeTextarea(fieldTextarea(mounted, 'Reason note'), 'Patient reported a new village.')
+    await clickButton(mounted, 'Save amendment')
+
+    expect(api.patient.amendDemographics).toHaveBeenCalledTimes(1)
+    expect(fieldInput(mounted, 'Village').value).toBe('Attempted Village')
+    expect(fieldInput(mounted, 'Quarter').value).toBe('Row 2 Quarter')
+    expect(fieldInput(mounted, 'Phone').value).toBe('+237 600 000 002')
+    expect(text(mounted)).toContain('Original Village')
+    expect(text(mounted)).toContain('Latest Village')
+    expect(text(mounted)).toContain('Attempted Village')
+
+    await clickButton(mounted, 'Retry amendment')
+
+    expect(api.patient.amendDemographics).toHaveBeenCalledTimes(2)
+    expect(api.patient.amendDemographics).toHaveBeenLastCalledWith({
+      patientId: patientIdOne,
+      expectedRowVersion: 2,
+      reasonCode: 'PATIENT_REPORTED_CHANGE',
+      reasonNote: 'Patient reported a new village.',
+      patch: { village: 'Attempted Village' }
+    })
+    expect(fieldInput(mounted, 'Village').value).toBe('Attempted Village')
+    expect(fieldInput(mounted, 'Quarter').value).toBe('Row 3 Quarter')
+    expect(fieldInput(mounted, 'Phone').value).toBe('+237 600 000 003')
+    expect(mounted.getSelectedPatient()?.rowVersion).toBe(3)
+    expect(api.patient.amendDemographics).toHaveBeenCalledTimes(2)
+    expect(text(mounted)).toContain('Latest Village')
+    expect(text(mounted)).toContain('Newest Village')
+    expect(text(mounted)).toContain('Attempted Village')
+
+    await clickButton(mounted, 'Retry amendment')
+
+    expect(api.patient.amendDemographics).toHaveBeenCalledTimes(3)
+    expect(api.patient.amendDemographics).toHaveBeenLastCalledWith({
+      patientId: patientIdOne,
+      expectedRowVersion: 3,
+      reasonCode: 'PATIENT_REPORTED_CHANGE',
+      reasonNote: 'Patient reported a new village.',
+      patch: { village: 'Attempted Village' }
+    })
+
+    await mounted.unmount()
+  })
+
+  it('discards a conflict review by keeping latest details and clearing amendment state', async () => {
+    const api = createApi()
+    const original = patientDetail({ village: 'Original Village' })
+    const latest = patientDetail({
+      displayName: 'Ada Latest',
+      village: 'Latest Village',
+      rowVersion: 2,
+      updatedByDisplayName: 'Second User'
+    })
+    api.patient.amendDemographics.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'PATIENT_VERSION_CONFLICT', patient: latest })
+    )
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary(original)], page: 1, pageSize: 25, total: 1 })
+    )
+    const mounted = await mountWorkspace({ api, selectedPatient: original })
+
+    await clickButton(mounted, 'Amend demographics')
+    await changeInput(fieldInput(mounted, 'Village'), 'Attempted Village')
+    await changeSelect(fieldSelect(mounted, 'Reason'), 'OTHER')
+    await changeTextarea(fieldTextarea(mounted, 'Reason note'), 'Sensitive conflict note.')
+    await clickButton(mounted, 'Save amendment')
+
+    expect(api.patient.amendDemographics).toHaveBeenCalledOnce()
+    expect(text(mounted)).toContain('Patient changed before this amendment was saved')
+
+    await clickButton(mounted, 'Discard amendment and load latest')
+
+    expect(api.patient.amendDemographics).toHaveBeenCalledOnce()
+    expect(mounted.getSelectedPatient()).toEqual(latest)
+    expect(text(mounted)).toContain('Latest Village')
+    expect(text(mounted)).not.toContain('Draft amendment')
+    expect(text(mounted)).not.toContain('Sensitive conflict note.')
+
+    await clickButton(mounted, 'Amend demographics')
+
+    expect(fieldInput(mounted, 'Village').value).toBe('Latest Village')
+    expect(fieldSelect(mounted, 'Reason').value).toBe('')
+    expect(fieldTextarea(mounted, 'Reason note').value).toBe('')
+
+    await mounted.unmount()
+  })
+
+  it('rebases trained screener conflicts without restoring stale status changes', async () => {
+    const api = createApi()
+    const original = patientDetail({ status: 'ACTIVE', village: 'Original Village' })
+    const latest = patientDetail({
+      status: 'INACTIVE',
+      village: 'Latest Village',
+      rowVersion: 2,
+      updatedByDisplayName: 'Second User'
+    })
+    api.patient.amendDemographics
+      .mockResolvedValueOnce(
+        createIpcSuccess({ status: 'PATIENT_VERSION_CONFLICT', patient: latest })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          status: 'AMENDED',
+          amendmentId,
+          patient: patientDetail({
+            status: 'INACTIVE',
+            village: 'Attempted Village',
+            rowVersion: 3
+          })
+        })
+      )
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary(original)], page: 1, pageSize: 25, total: 1 })
+    )
+    const mounted = await mountWorkspace({
+      api,
+      selectedPatient: original,
+      userRole: 'TRAINED_SCREENER'
+    })
+
+    await clickButton(mounted, 'Amend demographics')
+    await changeInput(fieldInput(mounted, 'Village'), 'Attempted Village')
+    await changeSelect(fieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
+    await clickButton(mounted, 'Save amendment')
+
+    expect(fieldSelect(mounted, 'Status').value).toBe('INACTIVE')
+    expect(fieldSelect(mounted, 'Status').disabled).toBe(true)
+
+    await clickButton(mounted, 'Retry amendment')
+
+    expect(api.patient.amendDemographics).toHaveBeenCalledTimes(2)
+    expect(api.patient.amendDemographics).toHaveBeenLastCalledWith({
+      patientId: patientIdOne,
+      expectedRowVersion: 2,
+      reasonCode: 'DATA_ENTRY_CORRECTION',
+      reasonNote: null,
+      patch: { village: 'Attempted Village' }
+    })
 
     await mounted.unmount()
   })
@@ -3676,6 +3899,16 @@ function fieldSelect(mounted: MountedWorkspace, label: string): HTMLSelectElemen
   return field
 }
 
+function fieldTextarea(mounted: MountedWorkspace, label: string): HTMLTextAreaElement {
+  const field = fieldControl<HTMLTextAreaElement>(mounted, label, 'textarea')
+
+  if (field === null) {
+    throw new Error(`Expected textarea field ${label} to be rendered.`)
+  }
+
+  return field
+}
+
 function fieldLabel(mounted: MountedWorkspace, label: string): HTMLLabelElement {
   for (const candidate of Array.from(
     mounted.container.querySelectorAll<HTMLLabelElement>('label')
@@ -3776,6 +4009,16 @@ async function changeInput(input: HTMLInputElement, value: string): Promise<void
     const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
     valueSetter?.call(input, value)
     input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }))
+    await flushPromises()
+  })
+  await flushReact()
+}
+
+async function changeTextarea(textarea: HTMLTextAreaElement, value: string): Promise<void> {
+  await act(async () => {
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+    valueSetter?.call(textarea, value)
+    textarea.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }))
     await flushPromises()
   })
   await flushReact()
