@@ -585,6 +585,28 @@ describe('patient demographic amendment repository', () => {
       expectSafeControlledError(error)
     })
   })
+
+  it('fails closed when persisted status changes are missing a reason note', async () => {
+    await withAmendmentRepository(({ connection, repository }) => {
+      insertRawUser(connection)
+      insertRawPatient(connection)
+      insertMalformedAmendmentFixture(connection, {
+        fieldName: 'status',
+        previousValueJson: '"ACTIVE"',
+        newValueJson: '"INACTIVE"',
+        reasonNote: null
+      })
+
+      const error = captureError(() =>
+        repository.listByPatient({ patientId: parseEntityId(patientId), page: 1, pageSize: 25 })
+      )
+
+      expect(error).toBeInstanceOf(RepositoryDataIntegrityError)
+      expectSafeControlledError(error)
+      expect(JSON.stringify(error)).not.toContain('SQLITE')
+      expect(JSON.stringify(error)).not.toContain('constraint')
+    })
+  })
 })
 
 interface AmendmentHarness {
@@ -781,6 +803,7 @@ function insertMalformedAmendmentFixture(
     fieldName?: string
     previousValueJson?: string
     newValueJson?: string
+    reasonNote?: string | null
   }
 ): void {
   connection
@@ -796,7 +819,15 @@ function insertMalformedAmendmentFixture(
       amended_at
     ) VALUES (?, ?, 1, 2, 'DATA_ENTRY_CORRECTION', ?, ?, ?)`
     )
-    .run(amendmentId, patientId, 'Malformed synthetic fixture.', actorId, now)
+    .run(
+      amendmentId,
+      patientId,
+      Object.prototype.hasOwnProperty.call(overrides, 'reasonNote')
+        ? overrides.reasonNote
+        : 'Malformed synthetic fixture.',
+      actorId,
+      now
+    )
 
   connection.pragma('ignore_check_constraints = ON')
   try {

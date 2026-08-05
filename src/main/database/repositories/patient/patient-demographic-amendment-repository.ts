@@ -264,6 +264,10 @@ function createAmendmentRecord(
     throw new RepositoryDataIntegrityError()
   }
 
+  if (header.reasonNote === null && changes.some((change) => change.fieldName === 'status')) {
+    throw new RepositoryDataIntegrityError()
+  }
+
   return Object.freeze({
     id: header.id,
     patientId: header.patientId,
