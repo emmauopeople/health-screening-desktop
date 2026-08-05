@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { createIpcSuccessResultSchema } from './result'
 
 const unsafeTransportValue = Symbol('UnsafePatientIpcTransportValue')
+const maximumPatientTransportArrayLength = 100
 const utcTimestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u
 const localDatePattern = /^\d{4}-\d{2}-\d{2}$/u
 const patientCodePattern = /^PT-\d{6}$/u
@@ -696,14 +697,19 @@ function copySafeTransportArray(value: object, active: WeakSet<object>): unknown
     }
 
     const length = lengthDescriptor.value
-    const allowedKeys = new Set<string>(['length'])
 
-    for (let index = 0; index < length; index += 1) {
-      allowedKeys.add(String(index))
+    if (length > maximumPatientTransportArrayLength) {
+      return unsafeTransportValue
     }
 
-    for (const key of Object.getOwnPropertyNames(descriptors)) {
-      if (!allowedKeys.has(key)) {
+    const propertyNames = Object.getOwnPropertyNames(descriptors)
+
+    if (propertyNames.length !== length + 1) {
+      return unsafeTransportValue
+    }
+
+    for (const key of propertyNames) {
+      if (key !== 'length' && !isCanonicalArrayIndexKey(key, length)) {
         return unsafeTransportValue
       }
     }
@@ -730,6 +736,16 @@ function copySafeTransportArray(value: object, active: WeakSet<object>): unknown
   } finally {
     active.delete(value)
   }
+}
+
+function isCanonicalArrayIndexKey(key: string, length: number): boolean {
+  if (key.length === 0 || (key.length > 1 && key[0] === '0')) {
+    return false
+  }
+
+  const index = Number(key)
+
+  return Number.isSafeInteger(index) && index >= 0 && index < length && String(index) === key
 }
 
 function copySafeTransportObject(value: object, active: WeakSet<object>): unknown {

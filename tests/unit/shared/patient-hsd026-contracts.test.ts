@@ -13,6 +13,7 @@ import {
   patientRecordAcknowledgmentRequestSchema,
   patientRecordAcknowledgmentResultSchema,
   patientUpdateRequestSchema,
+  type PublicPatientAcknowledgmentHistoryRecord,
   publicPatientAcknowledgmentHistoryRecordSchema,
   publicPatientDemographicAmendmentRecordSchema
 } from '@shared/ipc'
@@ -404,6 +405,60 @@ describe('HSD-026 patient IPC contracts', () => {
     }
   })
 
+  it('bounds transport array work for patient history result arrays', () => {
+    const maximumItems = Array.from({ length: 100 }, (_, index) =>
+      createAcknowledgmentHistoryRecord(index)
+    )
+    const tooManyItems = Array.from({ length: 101 }, (_, index) =>
+      createAcknowledgmentHistoryRecord(index)
+    )
+    const hugeSparseItems = new Array(1_000_000_000)
+    const hugeSparseProxyItems = new Proxy(new Array(1_000_000_000), {
+      get() {
+        throw new Error(arrayProxyErrorText)
+      }
+    })
+
+    expect(
+      patientListAcknowledgmentHistoryResultSchema.safeParse(
+        createIpcSuccess({
+          items: maximumItems,
+          page: 1,
+          pageSize: 100,
+          total: 100
+        })
+      ).success
+    ).toBe(true)
+
+    expectSafeParseFailure(
+      patientListAcknowledgmentHistoryResultSchema,
+      createIpcSuccess({
+        items: tooManyItems,
+        page: 1,
+        pageSize: 100,
+        total: 101
+      })
+    )
+    expectSafeParseFailure(
+      patientListAcknowledgmentHistoryResultSchema,
+      createIpcSuccess({
+        items: hugeSparseItems,
+        page: 1,
+        pageSize: 100,
+        total: 0
+      })
+    )
+    expectSafeParseFailure(
+      patientListAcknowledgmentHistoryResultSchema,
+      createIpcSuccess({
+        items: hugeSparseProxyItems,
+        page: 1,
+        pageSize: 100,
+        total: 0
+      })
+    )
+  })
+
   it('rejects unsafe arrays in new history results without invoking accessors', () => {
     let itemsAccessorInvoked = false
     let changesAccessorInvoked = false
@@ -562,4 +617,13 @@ function expectSafeParseFailure(schema: SafeParseSchema, value: unknown): void {
   }).not.toThrow()
   expect(result?.success).toBe(false)
   expect(JSON.stringify(result)).not.toContain(arrayProxyErrorText)
+}
+
+function createAcknowledgmentHistoryRecord(
+  index: number
+): PublicPatientAcknowledgmentHistoryRecord {
+  return {
+    ...acknowledgmentRecord,
+    acknowledgmentId: `44444444-4444-4444-8444-${index.toString(16).padStart(12, '0')}`
+  }
 }
