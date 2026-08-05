@@ -1116,6 +1116,16 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
     get: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['get']>>
     create: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['create']>>
     update: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['update']>>
+    amendDemographics: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['amendDemographics']>>
+    listDemographicAmendmentHistory: ReturnType<
+      typeof vi.fn<HealthScreeningApi['patient']['listDemographicAmendmentHistory']>
+    >
+    recordAcknowledgment: ReturnType<
+      typeof vi.fn<HealthScreeningApi['patient']['recordAcknowledgment']>
+    >
+    listAcknowledgmentHistory: ReturnType<
+      typeof vi.fn<HealthScreeningApi['patient']['listAcknowledgmentHistory']>
+    >
     listRecent: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['listRecent']>>
     findDuplicates: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['findDuplicates']>>
     markNotDuplicate: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['markNotDuplicate']>>
@@ -1218,6 +1228,14 @@ function createAppApi(initialSession: PublicAuthenticationSession): AppApiHarnes
       get: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE'))),
       create: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE'))),
       update: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE'))),
+      amendDemographics: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE'))),
+      listDemographicAmendmentHistory: vi.fn(() =>
+        Promise.resolve(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+      ),
+      recordAcknowledgment: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE'))),
+      listAcknowledgmentHistory: vi.fn(() =>
+        Promise.resolve(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+      ),
       listRecent: vi.fn(() => Promise.resolve(createIpcSuccess([]))),
       findDuplicates: vi.fn(() => Promise.resolve(createIpcSuccess({ candidates: [], pairs: [] }))),
       markNotDuplicate: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE')))

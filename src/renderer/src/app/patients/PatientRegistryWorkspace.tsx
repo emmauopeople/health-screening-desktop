@@ -20,6 +20,8 @@ import type {
   ApplicationCommandId,
   PatientWorkspaceNavigationGuard
 } from '../shell/application-shell-types'
+import { PatientCurrentDetailsPanel } from './PatientCurrentDetailsPanel'
+import { PatientDetailTabs, type PatientDetailTab } from './PatientDetailTabs'
 
 type PatientCommandId =
   | 'PATIENTS_PATIENT_SEARCH'
@@ -123,6 +125,8 @@ export function PatientRegistryWorkspace({
   const allowResolvedDirtyNavigationRef = useRef(false)
   const patientLoadRequestRef = useRef(0)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const [activeDetailTab, setActiveDetailTab] = useState<PatientDetailTab>('CURRENT_DETAILS')
+  const previousSelectedPatientIdRef = useRef<string | null>(selectedPatient?.id ?? null)
 
   const invalidateProtectedPatientState = useCallback((): void => {
     securityEpochRef.current += 1
@@ -151,6 +155,7 @@ export function PatientRegistryWorkspace({
     setConflictPatient(null)
     setSaving(false)
     setPreferredPatientReveal(null)
+    setActiveDetailTab('CURRENT_DETAILS')
     pendingDirtyAction.current = null
     pendingDirtyActionNeedsNavigationBypassRef.current = false
     allowResolvedDirtyNavigationRef.current = false
@@ -191,6 +196,31 @@ export function PatientRegistryWorkspace({
       return false
     },
     [editDirty]
+  )
+
+  useEffect(() => {
+    const nextSelectedPatientId = selectedPatient?.id ?? null
+
+    if (previousSelectedPatientIdRef.current !== nextSelectedPatientId) {
+      previousSelectedPatientIdRef.current = nextSelectedPatientId
+      setActiveDetailTab('CURRENT_DETAILS')
+    }
+  }, [selectedPatient?.id])
+
+  const selectDetailTab = useCallback(
+    (tab: PatientDetailTab): void => {
+      if (tab === activeDetailTab) {
+        return
+      }
+
+      if (activeDetailTab === 'CURRENT_DETAILS' && editDirty) {
+        beginDirtyGuard(() => setActiveDetailTab(tab))
+        return
+      }
+
+      setActiveDetailTab(tab)
+    },
+    [activeDetailTab, beginDirtyGuard, editDirty]
   )
 
   useEffect(() => {
@@ -265,6 +295,7 @@ export function PatientRegistryWorkspace({
           return false
         }
 
+        setActiveDetailTab('CURRENT_DETAILS')
         onSelectedPatientChange(result.data)
         setDraft(detailToEditable(result.data))
         setEditMode(false)
@@ -297,6 +328,7 @@ export function PatientRegistryWorkspace({
 
   const clearSelectedPatient = useCallback((): void => {
     patientLoadRequestRef.current += 1
+    setActiveDetailTab('CURRENT_DETAILS')
     onSelectedPatientChange(null)
     setDraft(emptyEditableFields)
     setEditMode(false)
@@ -440,6 +472,7 @@ export function PatientRegistryWorkspace({
           registerStateInvalidator={registerPatientStateInvalidator}
           onPatientFailure={handlePatientFailure}
           onPatientCreated={(patient) => {
+            setActiveDetailTab('CURRENT_DETAILS')
             onSelectedPatientChange(patient)
             setDraft(detailToEditable(patient))
             setEditMode(false)
@@ -502,12 +535,18 @@ export function PatientRegistryWorkspace({
           </section>
 
           <PatientDetailPane
+            api={api}
             patient={selectedPatient}
             draft={draft}
             editMode={editMode}
             dirty={editDirty}
             saving={saving}
             conflictPatient={conflictPatient}
+            activeTab={activeDetailTab}
+            securityEpochRef={securityEpochRef}
+            registerStateInvalidator={registerPatientStateInvalidator}
+            onPatientFailure={handlePatientFailure}
+            onSelectTab={selectDetailTab}
             onDraftChange={(nextDraft) => {
               setDraft(nextDraft)
               setEditDirty(true)
@@ -1800,12 +1839,18 @@ function PatientSummaryTable({
 }
 
 function PatientDetailPane({
+  api,
   patient,
   draft,
   editMode,
   dirty,
   saving,
   conflictPatient,
+  activeTab,
+  securityEpochRef,
+  registerStateInvalidator,
+  onPatientFailure,
+  onSelectTab,
   onDraftChange,
   onEdit,
   onSave,
@@ -1815,12 +1860,18 @@ function PatientDetailPane({
   onDiscardMyEdits,
   onContinueEditing
 }: {
+  readonly api: HealthScreeningApi
   readonly patient: PublicPatientDetail | null
   readonly draft: PatientEditableFields
   readonly editMode: boolean
   readonly dirty: boolean
   readonly saving: boolean
   readonly conflictPatient: PublicPatientDetail | null
+  readonly activeTab: PatientDetailTab
+  readonly securityEpochRef: MutableRefObject<number>
+  registerStateInvalidator: RegisterPatientStateInvalidator
+  onPatientFailure(code: PatientErrorCode, message: string): boolean
+  onSelectTab(tab: PatientDetailTab): void
   onDraftChange(draft: PatientEditableFields): void
   onEdit(): void
   onSave(): void
@@ -1830,104 +1881,125 @@ function PatientDetailPane({
   onDiscardMyEdits(): void
   onContinueEditing(): void
 }): React.JSX.Element {
-  return (
-    <aside className="patient-detail-pane" aria-label="Selected patient">
-      {patient === null ? (
-        <p className="patient-empty">Select a patient to view or update details.</p>
-      ) : editMode ? (
-        <>
-          <div className="patient-detail-header">
-            <h2>{patient.patientCode}</h2>
-            <span>{dirty ? 'Unsaved edits' : 'Editing'}</span>
-          </div>
-          {conflictPatient !== null ? (
-            <div className="patient-conflict-review" role="status">
-              <h3>Latest authoritative patient</h3>
-              <dl className="patient-detail-list">
-                <DetailRow label="Name" value={conflictPatient.displayName} />
-                <DetailRow label="Age / DOB" value={formatAgeDob(conflictPatient)} />
-                <DetailRow
-                  label="Village / quarter"
-                  value={formatVillageQuarter(conflictPatient)}
-                />
-                <DetailRow
-                  label="Updated"
-                  value={`${conflictPatient.updatedAt} by ${conflictPatient.updatedByDisplayName}`}
-                />
-              </dl>
-              <div className="patient-detail-actions">
-                <button type="button" className="button button-secondary" onClick={onReloadLatest}>
-                  Reload latest
-                </button>
-                <button
-                  type="button"
-                  className="button button-secondary"
-                  onClick={onDiscardMyEdits}
-                >
-                  Discard my edits
-                </button>
-                <button type="button" className="button button-primary" onClick={onContinueEditing}>
-                  Continue editing
-                </button>
-              </div>
+  const currentDetails =
+    patient === null ? null : (
+      <PatientCurrentDetailsPanel>
+        {editMode ? (
+          <>
+            <div className="patient-detail-header">
+              <h2>{patient.patientCode}</h2>
+              <span>{dirty ? 'Unsaved edits' : 'Editing'}</span>
             </div>
-          ) : null}
-          <PatientFieldsForm draft={draft} disabled={saving} onDraftChange={onDraftChange} />
-          <div className="patient-detail-actions">
-            <button
-              type="button"
-              className="button button-primary"
-              disabled={saving}
-              onClick={onSave}
-            >
-              Save changes
-            </button>
-            <button
-              type="button"
-              className="button button-secondary"
-              disabled={saving}
-              onClick={onCancel}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="button button-secondary"
-              disabled={saving}
-              onClick={onReload}
-            >
-              Reload
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="patient-detail-header">
-            <h2>{patient.patientCode}</h2>
-            <button type="button" className="button button-secondary" onClick={onEdit}>
-              Edit
-            </button>
-          </div>
-          <dl className="patient-detail-list">
-            <DetailRow label="Name" value={patient.displayName} />
-            <DetailRow label="Age / DOB" value={formatAgeDob(patient)} />
-            <DetailRow label="Sex" value={patient.sex} />
-            <DetailRow label="Village / quarter" value={formatVillageQuarter(patient)} />
-            <DetailRow label="Phone" value={patient.phone ?? 'Not recorded'} />
-            <DetailRow label="Acknowledgment" value={patient.acknowledgment.status} />
-            <DetailRow label="Clinical" value="Not available" />
-            <DetailRow
-              label="Created"
-              value={`${patient.createdAt} by ${patient.createdByDisplayName}`}
-            />
-            <DetailRow
-              label="Updated"
-              value={`${patient.updatedAt} by ${patient.updatedByDisplayName}`}
-            />
-          </dl>
-        </>
-      )}
-    </aside>
+            {conflictPatient !== null ? (
+              <div className="patient-conflict-review" role="status">
+                <h3>Latest authoritative patient</h3>
+                <dl className="patient-detail-list">
+                  <DetailRow label="Name" value={conflictPatient.displayName} />
+                  <DetailRow label="Age / DOB" value={formatAgeDob(conflictPatient)} />
+                  <DetailRow
+                    label="Village / quarter"
+                    value={formatVillageQuarter(conflictPatient)}
+                  />
+                  <DetailRow
+                    label="Updated"
+                    value={`${conflictPatient.updatedAt} by ${conflictPatient.updatedByDisplayName}`}
+                  />
+                </dl>
+                <div className="patient-detail-actions">
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    onClick={onReloadLatest}
+                  >
+                    Reload latest
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    onClick={onDiscardMyEdits}
+                  >
+                    Discard my edits
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-primary"
+                    onClick={onContinueEditing}
+                  >
+                    Continue editing
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            <PatientFieldsForm draft={draft} disabled={saving} onDraftChange={onDraftChange} />
+            <div className="patient-detail-actions">
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={saving}
+                onClick={onSave}
+              >
+                Save changes
+              </button>
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={saving}
+                onClick={onCancel}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={saving}
+                onClick={onReload}
+              >
+                Reload
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="patient-detail-header">
+              <h2>{patient.patientCode}</h2>
+              <button type="button" className="button button-secondary" onClick={onEdit}>
+                Edit
+              </button>
+            </div>
+            <dl className="patient-detail-list">
+              <DetailRow label="Name" value={patient.displayName} />
+              <DetailRow label="Age / DOB" value={formatAgeDob(patient)} />
+              <DetailRow label="Sex" value={patient.sex} />
+              <DetailRow label="Village / quarter" value={formatVillageQuarter(patient)} />
+              <DetailRow label="Phone" value={patient.phone ?? 'Not recorded'} />
+              <DetailRow label="Acknowledgment" value={patient.acknowledgment.status} />
+              <DetailRow label="Clinical" value="Not available" />
+              <DetailRow
+                label="Created"
+                value={`${patient.createdAt} by ${patient.createdByDisplayName}`}
+              />
+              <DetailRow
+                label="Updated"
+                value={`${patient.updatedAt} by ${patient.updatedByDisplayName}`}
+              />
+            </dl>
+          </>
+        )}
+      </PatientCurrentDetailsPanel>
+    )
+
+  return (
+    <PatientDetailTabs
+      key={patient?.id ?? 'no-selected-patient'}
+      api={api}
+      patient={patient}
+      activeTab={activeTab}
+      currentDetails={currentDetails}
+      securityEpochRef={securityEpochRef}
+      registerStateInvalidator={registerStateInvalidator}
+      onPatientFailure={onPatientFailure}
+      onSelectTab={onSelectTab}
+    />
   )
 }
 

@@ -12,7 +12,9 @@ import {
   createPatientFailure,
   type HealthScreeningApi,
   type PatientErrorCode,
+  type PublicPatientAcknowledgmentHistoryRecord,
   type PublicPatientDetail,
+  type PublicPatientDemographicAmendmentRecord,
   type PublicPatientDuplicateCandidate,
   type PublicPatientDuplicatePair,
   type PublicPatientSummary
@@ -37,6 +39,16 @@ type MockedPatientApi = {
   get: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['get']>>
   create: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['create']>>
   update: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['update']>>
+  amendDemographics: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['amendDemographics']>>
+  listDemographicAmendmentHistory: ReturnType<
+    typeof vi.fn<HealthScreeningApi['patient']['listDemographicAmendmentHistory']>
+  >
+  recordAcknowledgment: ReturnType<
+    typeof vi.fn<HealthScreeningApi['patient']['recordAcknowledgment']>
+  >
+  listAcknowledgmentHistory: ReturnType<
+    typeof vi.fn<HealthScreeningApi['patient']['listAcknowledgmentHistory']>
+  >
   listRecent: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['listRecent']>>
   findDuplicates: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['findDuplicates']>>
   markNotDuplicate: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['markNotDuplicate']>>
@@ -66,6 +78,9 @@ const baseTimestamp = '2026-08-03T12:00:00.000Z'
 const patientIdOne = '11111111-1111-4111-8111-111111111111'
 const patientIdTwo = '22222222-2222-4222-8222-222222222222'
 const patientIdThree = '33333333-3333-4333-8333-333333333333'
+const actorId = '44444444-4444-4444-8444-444444444444'
+const amendmentId = '55555555-5555-4555-8555-555555555555'
+const acknowledgmentId = '66666666-6666-4666-8666-666666666666'
 
 describe('patient registry workspace mounted regressions', () => {
   beforeEach(() => {
@@ -1919,6 +1934,498 @@ describe('patient registry workspace mounted regressions', () => {
     await mounted.unmount()
   })
 
+  it('renders accessible selected-patient tabs with manual keyboard activation', async () => {
+    const api = createApi()
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    api.patient.listDemographicAmendmentHistory.mockResolvedValueOnce(
+      createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 })
+    )
+    const mounted = await mountWorkspace({ api, selectedPatient: patientDetail() })
+
+    expect(detailTabs(mounted).map((tab) => normalizedText(tab))).toEqual([
+      'Current Details',
+      'Demographic History',
+      'Acknowledgment History',
+      'Identifiers'
+    ])
+    expect(tabByText(mounted, 'Current Details').getAttribute('aria-selected')).toBe('true')
+    expect(activeTabPanel(mounted).getAttribute('aria-labelledby')).toBe(
+      tabByText(mounted, 'Current Details').id
+    )
+    expect(text(mounted)).toContain('Clinical')
+
+    const currentTab = tabByText(mounted, 'Current Details')
+    currentTab.focus()
+    await dispatchKeyboard(currentTab, 'ArrowRight')
+
+    expect(document.activeElement).toBe(tabByText(mounted, 'Demographic History'))
+    expect(tabByText(mounted, 'Current Details').getAttribute('aria-selected')).toBe('true')
+    expect(api.patient.listDemographicAmendmentHistory).not.toHaveBeenCalled()
+
+    await dispatchKeyboard(tabByText(mounted, 'Demographic History'), 'End')
+    expect(document.activeElement).toBe(tabByText(mounted, 'Identifiers'))
+
+    await dispatchKeyboard(tabByText(mounted, 'Identifiers'), 'Home')
+    expect(document.activeElement).toBe(tabByText(mounted, 'Current Details'))
+
+    await dispatchKeyboard(tabByText(mounted, 'Current Details'), 'ArrowRight')
+    await dispatchKeyboard(tabByText(mounted, 'Demographic History'), 'Enter')
+
+    expect(tabByText(mounted, 'Demographic History').getAttribute('aria-selected')).toBe('true')
+    expect(api.patient.listDemographicAmendmentHistory).toHaveBeenCalledWith({
+      patientId: patientIdOne,
+      page: 1,
+      pageSize: 25
+    })
+    expect(activeTabPanel(mounted).textContent).toContain('No demographic amendments recorded.')
+    expect(activeTabPanel(mounted).textContent).not.toContain('Clinical')
+
+    await mounted.unmount()
+  })
+
+  it('loads, pages, and formats demographic amendment history after tab activation', async () => {
+    const api = createApi()
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    api.patient.listDemographicAmendmentHistory
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [demographicAmendmentRecord()],
+          page: 1,
+          pageSize: 25,
+          total: 30
+        })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [
+            demographicAmendmentRecord({
+              priorRowVersion: 2,
+              resultingRowVersion: 3,
+              reasonCode: 'STATUS_CHANGE',
+              changes: [
+                {
+                  fieldName: 'status',
+                  previousValue: 'ACTIVE',
+                  newValue: 'INACTIVE'
+                }
+              ]
+            })
+          ],
+          page: 2,
+          pageSize: 25,
+          total: 30
+        })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [demographicAmendmentRecord({ amendedAt: '2026-08-04T13:00:00.000Z' })],
+          page: 1,
+          pageSize: 50,
+          total: 30
+        })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [demographicAmendmentRecord({ amendedAt: '2026-08-05T13:00:00.000Z' })],
+          page: 1,
+          pageSize: 100,
+          total: 30
+        })
+      )
+    const mounted = await mountWorkspace({ api, selectedPatient: patientDetail() })
+
+    expect(api.patient.listDemographicAmendmentHistory).not.toHaveBeenCalled()
+
+    await clickElement(tabByText(mounted, 'Demographic History'))
+
+    expect(api.patient.listDemographicAmendmentHistory).toHaveBeenCalledWith({
+      patientId: patientIdOne,
+      page: 1,
+      pageSize: 25
+    })
+    expect(activeTabPanel(mounted).textContent).toContain(
+      'Showing 1-25 of 30 demographic amendments.'
+    )
+    expect(activeTabPanel(mounted).textContent).toContain('Data entry correction')
+    expect(activeTabPanel(mounted).textContent).toContain('Given name')
+    expect(activeTabPanel(mounted).textContent).toContain('Not recorded')
+    expect(activeTabPanel(mounted).textContent).not.toContain('given_name')
+    expect(activeTabPanel(mounted).textContent).not.toContain(amendmentId)
+
+    await clickButtonWithin(activeTabPanel(mounted), 'Next')
+
+    expect(api.patient.listDemographicAmendmentHistory).toHaveBeenLastCalledWith({
+      patientId: patientIdOne,
+      page: 2,
+      pageSize: 25
+    })
+    expect(activeTabPanel(mounted).textContent).toContain('Status change')
+    expect(activeTabPanel(mounted).textContent).toContain('Version 2 to 3')
+
+    await changeSelect(historyPageSizeSelect(mounted, 'Demographic history page size'), '50')
+
+    expect(api.patient.listDemographicAmendmentHistory).toHaveBeenLastCalledWith({
+      patientId: patientIdOne,
+      page: 1,
+      pageSize: 50
+    })
+
+    await changeSelect(historyPageSizeSelect(mounted, 'Demographic history page size'), '100')
+
+    expect(api.patient.listDemographicAmendmentHistory).toHaveBeenLastCalledWith({
+      patientId: patientIdOne,
+      page: 1,
+      pageSize: 100
+    })
+
+    await mounted.unmount()
+  })
+
+  it('shows demographic history failures and retries the requested page', async () => {
+    const api = createApi()
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    api.patient.listDemographicAmendmentHistory
+      .mockResolvedValueOnce(createPatientFailure('INTERNAL_ERROR'))
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [demographicAmendmentRecord({ reasonNote: 'Retry succeeded.' })],
+          page: 1,
+          pageSize: 25,
+          total: 1
+        })
+      )
+    const mounted = await mountWorkspace({ api, selectedPatient: patientDetail() })
+
+    await clickElement(tabByText(mounted, 'Demographic History'))
+
+    expect(activeTabPanel(mounted).querySelector('[role="alert"]')?.textContent).toContain(
+      'The application could not complete the request.'
+    )
+
+    await clickButtonWithin(activeTabPanel(mounted), 'Retry')
+
+    expect(api.patient.listDemographicAmendmentHistory).toHaveBeenLastCalledWith({
+      patientId: patientIdOne,
+      page: 1,
+      pageSize: 25
+    })
+    expect(activeTabPanel(mounted).textContent).toContain('Retry succeeded.')
+
+    await mounted.unmount()
+  })
+
+  it('loads acknowledgment history with legacy version display and no physical consent terms', async () => {
+    const api = createApi()
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    api.patient.listAcknowledgmentHistory.mockResolvedValueOnce(
+      createIpcSuccess({
+        items: [
+          acknowledgmentHistoryRecord({
+            status: 'DECLINED',
+            note: 'Patient declined participation.',
+            priorRowVersion: 2,
+            resultingRowVersion: 3
+          }),
+          acknowledgmentHistoryRecord({
+            acknowledgmentId: '77777777-7777-4777-8777-777777777777',
+            status: 'NOT_REQUESTED',
+            note: null,
+            priorRowVersion: null,
+            resultingRowVersion: null
+          })
+        ],
+        page: 1,
+        pageSize: 25,
+        total: 2
+      })
+    )
+    const mounted = await mountWorkspace({ api, selectedPatient: patientDetail() })
+
+    await clickElement(tabByText(mounted, 'Acknowledgment History'))
+
+    expect(api.patient.listAcknowledgmentHistory).toHaveBeenCalledWith({
+      patientId: patientIdOne,
+      page: 1,
+      pageSize: 25
+    })
+    expect(activeTabPanel(mounted).textContent).toContain('Declined')
+    expect(activeTabPanel(mounted).textContent).toContain('Not requested')
+    expect(activeTabPanel(mounted).textContent).toContain('Patient declined participation.')
+    expect(activeTabPanel(mounted).textContent).toContain('Version information not available')
+    expect(activeTabPanel(mounted).textContent).not.toContain(acknowledgmentId)
+    expect(activeTabPanel(mounted).textContent?.toLowerCase()).not.toContain('consent')
+
+    await mounted.unmount()
+  })
+
+  it('keeps demographic and acknowledgment history requests independent across tab switches', async () => {
+    const api = createApi()
+    const demographic =
+      createDeferred<
+        Awaited<ReturnType<HealthScreeningApi['patient']['listDemographicAmendmentHistory']>>
+      >()
+    const acknowledgment =
+      createDeferred<
+        Awaited<ReturnType<HealthScreeningApi['patient']['listAcknowledgmentHistory']>>
+      >()
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    api.patient.listDemographicAmendmentHistory.mockReturnValueOnce(demographic.promise)
+    api.patient.listAcknowledgmentHistory.mockReturnValueOnce(acknowledgment.promise)
+    const mounted = await mountWorkspace({ api, selectedPatient: patientDetail() })
+
+    await clickElement(tabByText(mounted, 'Demographic History'))
+    await clickElement(tabByText(mounted, 'Acknowledgment History'))
+
+    demographic.resolve(
+      createIpcSuccess({
+        items: [demographicAmendmentRecord({ reasonNote: 'Late demographic result.' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    await flushReact()
+
+    expect(activeTabPanel(mounted).textContent).not.toContain('Late demographic result.')
+
+    acknowledgment.resolve(
+      createIpcSuccess({
+        items: [acknowledgmentHistoryRecord({ note: 'Active acknowledgment result.' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    await flushReact()
+
+    expect(activeTabPanel(mounted).textContent).toContain('Active acknowledgment result.')
+
+    await clickElement(tabByText(mounted, 'Demographic History'))
+
+    expect(api.patient.listDemographicAmendmentHistory).toHaveBeenCalledOnce()
+    expect(activeTabPanel(mounted).textContent).toContain('Late demographic result.')
+
+    await mounted.unmount()
+  })
+
+  it('ignores stale demographic history after selecting a different patient', async () => {
+    const api = createApi()
+    const staleHistory =
+      createDeferred<
+        Awaited<ReturnType<HealthScreeningApi['patient']['listDemographicAmendmentHistory']>>
+      >()
+    const first = patientDetail()
+    const second = patientDetail({
+      id: patientIdTwo,
+      patientCode: 'PT-000002',
+      displayName: 'Brice Muna',
+      givenName: 'Brice',
+      familyName: 'Muna'
+    })
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({
+        items: [patientSummary(first), patientSummary(second)],
+        page: 1,
+        pageSize: 25,
+        total: 2
+      })
+    )
+    api.patient.listDemographicAmendmentHistory.mockReturnValueOnce(staleHistory.promise)
+    api.patient.get.mockResolvedValueOnce(createIpcSuccess(second))
+    const mounted = await mountWorkspace({ api, selectedPatient: first })
+
+    await clickElement(tabByText(mounted, 'Demographic History'))
+    await clickButtonWithin(patientRowByCode(mounted, 'PT-000002'), 'Select')
+
+    staleHistory.resolve(
+      createIpcSuccess({
+        items: [demographicAmendmentRecord({ reasonNote: 'Stale demographic history.' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    await flushReact()
+
+    expect(tabByText(mounted, 'Current Details').getAttribute('aria-selected')).toBe('true')
+    expect(text(mounted)).toContain('Brice Muna')
+    expect(text(mounted)).not.toContain('Stale demographic history.')
+
+    await mounted.unmount()
+  })
+
+  it('ignores stale acknowledgment history after selecting a different patient', async () => {
+    const api = createApi()
+    const staleHistory =
+      createDeferred<
+        Awaited<ReturnType<HealthScreeningApi['patient']['listAcknowledgmentHistory']>>
+      >()
+    const first = patientDetail()
+    const second = patientDetail({
+      id: patientIdTwo,
+      patientCode: 'PT-000002',
+      displayName: 'Brice Muna',
+      givenName: 'Brice',
+      familyName: 'Muna'
+    })
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({
+        items: [patientSummary(first), patientSummary(second)],
+        page: 1,
+        pageSize: 25,
+        total: 2
+      })
+    )
+    api.patient.listAcknowledgmentHistory.mockReturnValueOnce(staleHistory.promise)
+    api.patient.get.mockResolvedValueOnce(createIpcSuccess(second))
+    const mounted = await mountWorkspace({ api, selectedPatient: first })
+
+    await clickElement(tabByText(mounted, 'Acknowledgment History'))
+    await clickButtonWithin(patientRowByCode(mounted, 'PT-000002'), 'Select')
+
+    staleHistory.resolve(
+      createIpcSuccess({
+        items: [acknowledgmentHistoryRecord({ note: 'Stale acknowledgment history.' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    await flushReact()
+
+    expect(tabByText(mounted, 'Current Details').getAttribute('aria-selected')).toBe('true')
+    expect(text(mounted)).toContain('Brice Muna')
+    expect(text(mounted)).not.toContain('Stale acknowledgment history.')
+
+    await mounted.unmount()
+  })
+
+  it('ignores history results that resolve after the workspace unmounts', async () => {
+    const api = createApi()
+    const staleHistory =
+      createDeferred<
+        Awaited<ReturnType<HealthScreeningApi['patient']['listDemographicAmendmentHistory']>>
+      >()
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    api.patient.listDemographicAmendmentHistory.mockReturnValueOnce(staleHistory.promise)
+    const mounted = await mountWorkspace({ api, selectedPatient: patientDetail() })
+
+    await clickElement(tabByText(mounted, 'Demographic History'))
+    await mounted.unmount()
+
+    staleHistory.resolve(
+      createIpcSuccess({
+        items: [demographicAmendmentRecord({ reasonNote: 'Unmounted history result.' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    await flushReact()
+
+    expect(api.patient.listDemographicAmendmentHistory).toHaveBeenCalledOnce()
+  })
+
+  it('clears selected patient and history state when a history load is authentication-protected', async () => {
+    const api = createApi()
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    api.patient.listDemographicAmendmentHistory.mockResolvedValueOnce(
+      createPatientFailure('IPC_FORBIDDEN')
+    )
+    const mounted = await mountWorkspace({ api, selectedPatient: patientDetail() })
+
+    await clickElement(tabByText(mounted, 'Demographic History'))
+
+    expect(mounted.onAuthenticationFailure).toHaveBeenCalledWith('IPC_FORBIDDEN')
+    expect(mounted.getSelectedPatient()).toBeNull()
+    expect(text(mounted)).toContain('Select a patient to view or update details.')
+    expect(detailTabs(mounted)).toEqual([])
+
+    await mounted.unmount()
+  })
+
+  it('guards dirty Current Details tab transitions with Save, Discard, and Cancel', async () => {
+    const cancelApi = createApi()
+    const cancelMounted = await mountDirtyPatientSearchWorkspace({ api: cancelApi })
+
+    await clickElement(tabByText(cancelMounted, 'Demographic History'))
+
+    expect(dialog(cancelMounted)).not.toBeNull()
+    await clickButtonWithin(dialog(cancelMounted)!, 'Cancel')
+
+    expect(tabByText(cancelMounted, 'Current Details').getAttribute('aria-selected')).toBe('true')
+    expect(fieldInput(cancelMounted, 'Village').value).toBe('Dirty Village')
+
+    await clickElement(tabByText(cancelMounted, 'Demographic History'))
+    await clickButtonWithin(dialog(cancelMounted)!, 'Discard edits')
+
+    expect(tabByText(cancelMounted, 'Demographic History').getAttribute('aria-selected')).toBe(
+      'true'
+    )
+    expect(activeTabPanel(cancelMounted).textContent).toContain(
+      'No demographic amendments recorded.'
+    )
+
+    await cancelMounted.unmount()
+
+    const saveApi = createApi()
+    const saveMounted = await mountDirtyPatientSearchWorkspace({ api: saveApi })
+    saveApi.patient.update.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'UPDATED',
+        patient: patientDetail({ village: 'Dirty Village', rowVersion: 2 })
+      })
+    )
+
+    await clickElement(tabByText(saveMounted, 'Acknowledgment History'))
+    await clickButtonWithin(dialog(saveMounted)!, 'Save changes')
+
+    expect(saveApi.patient.update).toHaveBeenCalledWith({
+      patientId: patientIdOne,
+      expectedRowVersion: 1,
+      patch: expect.objectContaining({ village: 'Dirty Village' })
+    })
+    expect(tabByText(saveMounted, 'Acknowledgment History').getAttribute('aria-selected')).toBe(
+      'true'
+    )
+    expect(saveApi.patient.listAcknowledgmentHistory).toHaveBeenCalledWith({
+      patientId: patientIdOne,
+      page: 1,
+      pageSize: 25
+    })
+
+    await saveMounted.unmount()
+
+    const failedSaveApi = createApi()
+    const failedSaveMounted = await mountDirtyPatientSearchWorkspace({ api: failedSaveApi })
+    failedSaveApi.patient.update.mockResolvedValueOnce(createPatientFailure('INTERNAL_ERROR'))
+
+    await clickElement(tabByText(failedSaveMounted, 'Demographic History'))
+    await clickButtonWithin(dialog(failedSaveMounted)!, 'Save changes')
+
+    expect(tabByText(failedSaveMounted, 'Current Details').getAttribute('aria-selected')).toBe(
+      'true'
+    )
+    expect(fieldInput(failedSaveMounted, 'Village').value).toBe('Dirty Village')
+    expect(text(failedSaveMounted)).toContain('The application could not complete the request.')
+
+    await failedSaveMounted.unmount()
+  })
+
   it('preserves attempted edits when a patient version conflict is returned', async () => {
     const api = createApi()
     const original = patientDetail({ village: 'Original Village' })
@@ -2723,6 +3230,14 @@ function createApi(): MockedHealthScreeningApi {
       get: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE'))),
       create: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE'))),
       update: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE'))),
+      amendDemographics: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE'))),
+      listDemographicAmendmentHistory: vi.fn(() =>
+        Promise.resolve(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+      ),
+      recordAcknowledgment: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE'))),
+      listAcknowledgmentHistory: vi.fn(() =>
+        Promise.resolve(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+      ),
       listRecent: vi.fn(() => Promise.resolve(createIpcSuccess([]))),
       findDuplicates: vi.fn(() => Promise.resolve(createIpcSuccess({ candidates: [], pairs: [] }))),
       markNotDuplicate: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE')))
@@ -2812,6 +3327,53 @@ function duplicatePair(): PublicPatientDuplicatePair {
   }
 }
 
+function demographicAmendmentRecord(
+  overrides: Partial<PublicPatientDemographicAmendmentRecord> = {}
+): PublicPatientDemographicAmendmentRecord {
+  return {
+    amendmentId,
+    patientId: patientIdOne,
+    priorRowVersion: 1,
+    resultingRowVersion: 2,
+    reasonCode: 'DATA_ENTRY_CORRECTION',
+    reasonNote: 'Corrected synthetic demographic details.',
+    amendedByUserId: actorId,
+    amendedByDisplayName: 'Admin User',
+    amendedAt: baseTimestamp,
+    changes: [
+      {
+        fieldName: 'givenName',
+        previousValue: null,
+        newValue: 'Ada'
+      },
+      {
+        fieldName: 'phone',
+        previousValue: '+237 600 000 000',
+        newValue: '+237 600 000 001'
+      }
+    ],
+    ...overrides
+  }
+}
+
+function acknowledgmentHistoryRecord(
+  overrides: Partial<PublicPatientAcknowledgmentHistoryRecord> = {}
+): PublicPatientAcknowledgmentHistoryRecord {
+  return {
+    acknowledgmentId,
+    patientId: patientIdOne,
+    status: 'ACKNOWLEDGED',
+    sourceType: 'LOCAL',
+    note: 'Patient acknowledged participation.',
+    recordedByUserId: actorId,
+    recordedByDisplayName: 'Admin User',
+    recordedAt: baseTimestamp,
+    priorRowVersion: 1,
+    resultingRowVersion: 2,
+    ...overrides
+  }
+}
+
 function searchInput(mounted: MountedWorkspace): HTMLInputElement {
   const input = mounted.container.querySelector<HTMLInputElement>('#patient-registry-search')
 
@@ -2844,6 +3406,42 @@ function pageSizeSelect(mounted: MountedWorkspace): HTMLSelectElement {
   }
 
   return select
+}
+
+function historyPageSizeSelect(mounted: MountedWorkspace, label: string): HTMLSelectElement {
+  const select = mounted.container.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)
+
+  if (select === null) {
+    throw new Error(`Expected history page-size select ${label} to be rendered.`)
+  }
+
+  return select
+}
+
+function detailTabs(mounted: MountedWorkspace): HTMLButtonElement[] {
+  return Array.from(
+    mounted.container.querySelectorAll<HTMLButtonElement>('[role="tablist"] [role="tab"]')
+  )
+}
+
+function tabByText(mounted: MountedWorkspace, label: string): HTMLButtonElement {
+  const tab = detailTabs(mounted).find((candidate) => normalizedText(candidate) === label)
+
+  if (tab === undefined) {
+    throw new Error(`Expected detail tab ${label} to be rendered.`)
+  }
+
+  return tab
+}
+
+function activeTabPanel(mounted: MountedWorkspace): HTMLElement {
+  const panel = mounted.container.querySelector<HTMLElement>('[role="tabpanel"]')
+
+  if (panel === null) {
+    throw new Error('Expected active patient detail tab panel to be rendered.')
+  }
+
+  return panel
 }
 
 function registrationWorkspace(mounted: MountedWorkspace): HTMLElement {
