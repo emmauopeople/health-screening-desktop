@@ -105,16 +105,16 @@ export interface HealthScreeningApi {
     get(request: PatientGetRequest): Promise<PatientGetResult>
     create(request: PatientCreateRequest): Promise<PatientCreateResult>
     update(request: PatientUpdateRequest): Promise<PatientUpdateResult>
-    amendDemographics?(
+    amendDemographics(
       request: PatientAmendDemographicsRequest
     ): Promise<PatientAmendDemographicsResult>
-    listDemographicAmendmentHistory?(
+    listDemographicAmendmentHistory(
       request: PatientListDemographicAmendmentHistoryRequest
     ): Promise<PatientListDemographicAmendmentHistoryResult>
-    recordAcknowledgment?(
+    recordAcknowledgment(
       request: PatientRecordAcknowledgmentRequest
     ): Promise<PatientRecordAcknowledgmentResult>
-    listAcknowledgmentHistory?(
+    listAcknowledgmentHistory(
       request: PatientListAcknowledgmentHistoryRequest
     ): Promise<PatientListAcknowledgmentHistoryResult>
     listRecent(request: PatientListRecentRequest): Promise<PatientListRecentResult>

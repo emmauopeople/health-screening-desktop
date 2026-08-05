@@ -1,30 +1,46 @@
 import {
   createPatientFailure,
   ipcChannels,
+  patientAmendDemographicsRequestSchema,
+  patientAmendDemographicsResultSchema,
   patientCreateRequestSchema,
   patientCreateResultSchema,
   patientFindDuplicatesRequestSchema,
   patientFindDuplicatesResultSchema,
   patientGetRequestSchema,
   patientGetResultSchema,
+  patientListAcknowledgmentHistoryRequestSchema,
+  patientListAcknowledgmentHistoryResultSchema,
+  patientListDemographicAmendmentHistoryRequestSchema,
+  patientListDemographicAmendmentHistoryResultSchema,
   patientListRecentRequestSchema,
   patientListRecentResultSchema,
   patientMarkNotDuplicateRequestSchema,
   patientMarkNotDuplicateResultSchema,
+  patientRecordAcknowledgmentRequestSchema,
+  patientRecordAcknowledgmentResultSchema,
   patientSearchRequestSchema,
   patientSearchResultSchema,
   patientUpdateRequestSchema,
   patientUpdateResultSchema,
+  type PatientAmendDemographicsRequest,
+  type PatientAmendDemographicsResult,
   type PatientCreateRequest,
   type PatientCreateResult,
   type PatientFindDuplicatesRequest,
   type PatientFindDuplicatesResult,
   type PatientGetRequest,
   type PatientGetResult,
+  type PatientListAcknowledgmentHistoryRequest,
+  type PatientListAcknowledgmentHistoryResult,
+  type PatientListDemographicAmendmentHistoryRequest,
+  type PatientListDemographicAmendmentHistoryResult,
   type PatientListRecentRequest,
   type PatientListRecentResult,
   type PatientMarkNotDuplicateRequest,
   type PatientMarkNotDuplicateResult,
+  type PatientRecordAcknowledgmentRequest,
+  type PatientRecordAcknowledgmentResult,
   type PatientSearchRequest,
   type PatientSearchResult,
   type PatientUpdateRequest,
@@ -38,6 +54,18 @@ export interface PatientApi {
   get(request: PatientGetRequest): Promise<PatientGetResult>
   create(request: PatientCreateRequest): Promise<PatientCreateResult>
   update(request: PatientUpdateRequest): Promise<PatientUpdateResult>
+  amendDemographics(
+    request: PatientAmendDemographicsRequest
+  ): Promise<PatientAmendDemographicsResult>
+  listDemographicAmendmentHistory(
+    request: PatientListDemographicAmendmentHistoryRequest
+  ): Promise<PatientListDemographicAmendmentHistoryResult>
+  recordAcknowledgment(
+    request: PatientRecordAcknowledgmentRequest
+  ): Promise<PatientRecordAcknowledgmentResult>
+  listAcknowledgmentHistory(
+    request: PatientListAcknowledgmentHistoryRequest
+  ): Promise<PatientListAcknowledgmentHistoryResult>
   listRecent(request: PatientListRecentRequest): Promise<PatientListRecentResult>
   findDuplicates(request: PatientFindDuplicatesRequest): Promise<PatientFindDuplicatesResult>
   markNotDuplicate(request: PatientMarkNotDuplicateRequest): Promise<PatientMarkNotDuplicateResult>
@@ -84,6 +112,62 @@ export function createPatientApi(invoke: IpcInvoke): PatientApi {
         resultSchema: patientUpdateResultSchema,
         validationFailure: createPatientFailure('VALIDATION_FAILED') as PatientUpdateResult,
         unavailableFailure: createPatientFailure('IPC_UNAVAILABLE') as PatientUpdateResult
+      }),
+    amendDemographics: (request: PatientAmendDemographicsRequest) =>
+      invokePatient({
+        invoke,
+        channel: ipcChannels.patient.amendDemographics,
+        request,
+        requestSchema: patientAmendDemographicsRequestSchema,
+        resultSchema: patientAmendDemographicsResultSchema,
+        validationFailure: createPatientFailure(
+          'VALIDATION_FAILED'
+        ) as PatientAmendDemographicsResult,
+        unavailableFailure: createPatientFailure(
+          'IPC_UNAVAILABLE'
+        ) as PatientAmendDemographicsResult
+      }),
+    listDemographicAmendmentHistory: (request: PatientListDemographicAmendmentHistoryRequest) =>
+      invokePatient({
+        invoke,
+        channel: ipcChannels.patient.listDemographicAmendmentHistory,
+        request,
+        requestSchema: patientListDemographicAmendmentHistoryRequestSchema,
+        resultSchema: patientListDemographicAmendmentHistoryResultSchema,
+        validationFailure: createPatientFailure(
+          'VALIDATION_FAILED'
+        ) as PatientListDemographicAmendmentHistoryResult,
+        unavailableFailure: createPatientFailure(
+          'IPC_UNAVAILABLE'
+        ) as PatientListDemographicAmendmentHistoryResult
+      }),
+    recordAcknowledgment: (request: PatientRecordAcknowledgmentRequest) =>
+      invokePatient({
+        invoke,
+        channel: ipcChannels.patient.recordAcknowledgment,
+        request,
+        requestSchema: patientRecordAcknowledgmentRequestSchema,
+        resultSchema: patientRecordAcknowledgmentResultSchema,
+        validationFailure: createPatientFailure(
+          'VALIDATION_FAILED'
+        ) as PatientRecordAcknowledgmentResult,
+        unavailableFailure: createPatientFailure(
+          'IPC_UNAVAILABLE'
+        ) as PatientRecordAcknowledgmentResult
+      }),
+    listAcknowledgmentHistory: (request: PatientListAcknowledgmentHistoryRequest) =>
+      invokePatient({
+        invoke,
+        channel: ipcChannels.patient.listAcknowledgmentHistory,
+        request,
+        requestSchema: patientListAcknowledgmentHistoryRequestSchema,
+        resultSchema: patientListAcknowledgmentHistoryResultSchema,
+        validationFailure: createPatientFailure(
+          'VALIDATION_FAILED'
+        ) as PatientListAcknowledgmentHistoryResult,
+        unavailableFailure: createPatientFailure(
+          'IPC_UNAVAILABLE'
+        ) as PatientListAcknowledgmentHistoryResult
       }),
     listRecent: (request: PatientListRecentRequest) =>
       invokePatient({

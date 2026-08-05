@@ -560,6 +560,10 @@ function createApi({
       get: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
       create: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
       update: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
+      amendDemographics: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
+      listDemographicAmendmentHistory: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
+      recordAcknowledgment: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
+      listAcknowledgmentHistory: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
       listRecent: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
       findDuplicates: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
       markNotDuplicate: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE'))
