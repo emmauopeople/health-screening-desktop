@@ -116,6 +116,13 @@ export interface UpdatePatientDemographicsRepositoryInput {
   readonly updatedAt: UtcTimestamp
 }
 
+export interface AdvancePatientAcknowledgmentRowVersionInput {
+  readonly patientId: EntityId
+  readonly expectedRowVersion: number
+  readonly updatedBy: EntityId
+  readonly updatedAt: UtcTimestamp
+}
+
 interface InsertPatientAuditOutboxInputBase {
   readonly id: EntityId
   readonly aggregateId: EntityId
@@ -131,6 +138,10 @@ export type InsertPatientAuditOutboxInput =
   | (InsertPatientAuditOutboxInputBase & {
       readonly operation: 'PATIENT_DEMOGRAPHICS_AMENDED'
       readonly payloadSchemaVersion: 'patient.demographic-amendment.v1'
+    })
+  | (InsertPatientAuditOutboxInputBase & {
+      readonly operation: 'PATIENT_ACKNOWLEDGMENT_RECORDED'
+      readonly payloadSchemaVersion: 'patient.acknowledgment.v1'
     })
 
 export interface MarkNotDuplicateInput {
@@ -157,6 +168,11 @@ export type PatientDemographicUpdateResultRecord =
   | { readonly status: 'PATIENT_VERSION_CONFLICT'; readonly patient: PatientDetailRecord }
   | { readonly status: 'NOT_FOUND' }
 
+export type PatientAcknowledgmentRowVersionAdvanceResult =
+  | { readonly status: 'ADVANCED'; readonly resultingRowVersion: number }
+  | { readonly status: 'PATIENT_VERSION_CONFLICT'; readonly patient: PatientDetailRecord }
+  | { readonly status: 'NOT_FOUND' }
+
 export interface PatientRepository {
   nextPatientCode(connection: DatabaseTransactionConnection, updatedAt: UtcTimestamp): PatientCode
   search(input: PatientSearchInput): PatientSearchResultRecord
@@ -177,6 +193,10 @@ export interface PatientRepository {
     connection: DatabaseTransactionConnection,
     input: UpdatePatientDemographicsRepositoryInput
   ): PatientDemographicUpdateResultRecord
+  advanceRowVersionForAcknowledgment(
+    connection: DatabaseTransactionConnection,
+    input: AdvancePatientAcknowledgmentRowVersionInput
+  ): PatientAcknowledgmentRowVersionAdvanceResult
   recordRecentAccess(
     connection: DatabaseTransactionConnection,
     userId: EntityId,

@@ -50,5 +50,10 @@ export interface PatientAcknowledgmentRepository {
 
   getLatestByPatient(patientId: EntityId): PatientAcknowledgmentRecord | null
 
+  getLatestByPatientForWrite(
+    connection: DatabaseTransactionConnection,
+    patientId: EntityId
+  ): PatientAcknowledgmentRecord | null
+
   listByPatient(input: PatientAcknowledgmentHistoryInput): PatientAcknowledgmentHistoryResult
 }

@@ -183,6 +183,41 @@ export function createPatientAcknowledgmentRepository(
     return decodeAcknowledgmentRecord(row)
   }
 
+  const getLatestByPatientForWrite = (
+    scopedConnection: DatabaseTransactionConnection,
+    patientId: Parameters<PatientAcknowledgmentRepository['getLatestByPatientForWrite']>[1]
+  ): PatientAcknowledgmentRecord | null => {
+    assertActiveDatabaseTransactionConnection(scopedConnection)
+
+    let parsedPatientId: string
+
+    try {
+      parsedPatientId = parseEntityId(patientId)
+    } catch (error) {
+      throw new RepositoryValidationError(getRepositoryErrorType(error))
+    }
+
+    let row: unknown
+
+    try {
+      row = scopedConnection
+        .prepare<[string], unknown>(selectLatestAcknowledgmentByPatientSql)
+        .get(parsedPatientId)
+    } catch (error) {
+      if (error instanceof DatabaseTransactionStateError) {
+        throw new DatabaseTransactionStateError(error.errorType)
+      }
+
+      throw new RepositoryReadError(getRepositoryErrorType(error))
+    }
+
+    if (row === undefined) {
+      return null
+    }
+
+    return decodeAcknowledgmentRecord(row)
+  }
+
   const listByPatient = (
     input: PatientAcknowledgmentHistoryInput
   ): PatientAcknowledgmentHistoryResult => {
@@ -207,6 +242,7 @@ export function createPatientAcknowledgmentRepository(
   return Object.freeze({
     insert,
     getLatestByPatient,
+    getLatestByPatientForWrite,
     listByPatient
   })
 }

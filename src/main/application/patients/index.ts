@@ -1,10 +1,21 @@
+export { createPatientAcknowledgmentService } from './patient-acknowledgment-service'
 export { createPatientDemographicAmendmentService } from './patient-demographic-amendment-service'
 export { createPatientRegistryService } from './patient-service'
 export {
+  createProductionPatientAcknowledgmentService,
   createProductionPatientDemographicAmendmentService,
   createProductionPatientRegistryService,
   type ProductionPatientRegistryServiceOptions
 } from './patient-service-composition'
+export type {
+  ListPatientAcknowledgmentHistoryRequest,
+  ListPatientAcknowledgmentHistoryResult,
+  PatientAcknowledgmentService,
+  PatientAcknowledgmentServiceActor,
+  PatientAcknowledgmentServiceDependencies,
+  RecordPatientAcknowledgmentRequest,
+  RecordPatientAcknowledgmentResult
+} from './patient-acknowledgment-service-types'
 export type {
   AmendPatientDemographicsRequest,
   AmendPatientDemographicsResult,

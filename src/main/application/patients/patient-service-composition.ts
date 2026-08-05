@@ -4,12 +4,15 @@ import {
   createAuditEventRepository,
   createDatabaseTransactionExecutor,
   createInstallationRepository,
+  createPatientAcknowledgmentRepository,
   createPatientDemographicAmendmentRepository,
   createPatientRepository,
   type DatabaseTransactionLogger
 } from '@main/database'
 import { createSystemEntityIdGenerator, createSystemUtcClock } from '@main/foundation'
 
+import { createPatientAcknowledgmentService } from './patient-acknowledgment-service'
+import type { PatientAcknowledgmentService } from './patient-acknowledgment-service-types'
 import { createPatientDemographicAmendmentService } from './patient-demographic-amendment-service'
 import type { PatientDemographicAmendmentService } from './patient-demographic-amendment-service-types'
 import { createPatientRegistryService } from './patient-service'
@@ -45,6 +48,24 @@ export function createProductionPatientDemographicAmendmentService({
     installationRepository: createInstallationRepository(connection),
     patientRepository: createPatientRepository(connection),
     patientDemographicAmendmentRepository: createPatientDemographicAmendmentRepository(connection),
+    auditEventRepository: createAuditEventRepository(connection),
+    transactionExecutor: createDatabaseTransactionExecutor({
+      connection,
+      idGenerator: createSystemEntityIdGenerator(),
+      clock: createSystemUtcClock(),
+      logger
+    })
+  })
+}
+
+export function createProductionPatientAcknowledgmentService({
+  connection,
+  logger
+}: ProductionPatientRegistryServiceOptions): PatientAcknowledgmentService {
+  return createPatientAcknowledgmentService({
+    installationRepository: createInstallationRepository(connection),
+    patientRepository: createPatientRepository(connection),
+    patientAcknowledgmentRepository: createPatientAcknowledgmentRepository(connection),
     auditEventRepository: createAuditEventRepository(connection),
     transactionExecutor: createDatabaseTransactionExecutor({
       connection,

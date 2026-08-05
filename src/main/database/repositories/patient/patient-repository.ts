@@ -25,10 +25,12 @@ import {
   parsePatientUtcTimestamp
 } from './patient-validation'
 import type {
+  AdvancePatientAcknowledgmentRowVersionInput,
   CreatePatientRepositoryInput,
   InsertPatientAuditOutboxInput,
   MarkNotDuplicateInput,
   NormalizedPatientFields,
+  PatientAcknowledgmentRowVersionAdvanceResult,
   PatientDemographicUpdateResultRecord,
   PatientCode,
   PatientDetailRecord,
@@ -363,6 +365,15 @@ SET
   quarter = ?,
   residence_notes = ?,
   status = ?,
+  updated_by = ?,
+  updated_at = ?,
+  row_version = row_version + 1
+WHERE id = ? AND row_version = ?;
+`
+
+const updatePatientAcknowledgmentRowVersionSql = `
+UPDATE patients
+SET
   updated_by = ?,
   updated_at = ?,
   row_version = row_version + 1
@@ -836,6 +847,61 @@ export function createPatientRepository(connection: Database.Database): PatientR
       }
     },
 
+    advanceRowVersionForAcknowledgment(
+      scopedConnection: DatabaseTransactionConnection,
+      input: AdvancePatientAcknowledgmentRowVersionInput
+    ): PatientAcknowledgmentRowVersionAdvanceResult {
+      assertActiveDatabaseTransactionConnection(scopedConnection)
+
+      try {
+        const patientId = parsePatientEntityId(input.patientId)
+        const expectedRowVersion = parsePatientRowVersion(input.expectedRowVersion)
+        const updatedBy = parseEntityId(input.updatedBy)
+        const updatedAt = parsePatientUtcTimestamp(input.updatedAt)
+        const current = readPatientAfterWrite(scopedConnection, patientId)
+
+        if (current === null) {
+          return Object.freeze({ status: 'NOT_FOUND' as const })
+        }
+
+        const result = scopedConnection
+          .prepare<[string, string, string, number]>(updatePatientAcknowledgmentRowVersionSql)
+          .run(updatedBy, updatedAt, patientId, expectedRowVersion)
+
+        if (result.changes === 0) {
+          const latest = readPatientAfterWrite(scopedConnection, patientId)
+
+          if (latest === null) {
+            return Object.freeze({ status: 'NOT_FOUND' as const })
+          }
+
+          return Object.freeze({
+            status: 'PATIENT_VERSION_CONFLICT' as const,
+            patient: latest
+          })
+        }
+
+        return Object.freeze({
+          status: 'ADVANCED' as const,
+          resultingRowVersion: expectedRowVersion + 1
+        })
+      } catch (error) {
+        if (error instanceof DatabaseTransactionStateError) {
+          throw new DatabaseTransactionStateError(error.errorType)
+        }
+
+        if (error instanceof RepositoryWriteError) {
+          throw new RepositoryWriteError(error.errorType)
+        }
+
+        if (error instanceof RepositoryValidationError) {
+          throw new RepositoryValidationError(error.errorType)
+        }
+
+        throw new RepositoryWriteError(getRepositoryErrorType(error))
+      }
+    },
+
     recordRecentAccess(
       scopedConnection: DatabaseTransactionConnection,
       userId: EntityId,
@@ -1009,6 +1075,13 @@ function validatePatientOutboxOperationSchema(input: InsertPatientAuditOutboxInp
   if (
     operation === 'PATIENT_DEMOGRAPHICS_AMENDED' &&
     payloadSchemaVersion === 'patient.demographic-amendment.v1'
+  ) {
+    return
+  }
+
+  if (
+    operation === 'PATIENT_ACKNOWLEDGMENT_RECORDED' &&
+    payloadSchemaVersion === 'patient.acknowledgment.v1'
   ) {
     return
   }

@@ -27,11 +27,13 @@ export {
   parsePatientUtcTimestamp
 } from './patient-validation'
 export type {
+  AdvancePatientAcknowledgmentRowVersionInput,
   CreatePatientRepositoryInput,
   InsertPatientAuditOutboxInput,
   MarkNotDuplicateInput,
   NormalizedPatientFields,
   PatientCode,
+  PatientAcknowledgmentRowVersionAdvanceResult,
   PatientDemographicUpdateResultRecord,
   PatientDetailRecord,
   PatientDisplayName,
