@@ -21,13 +21,15 @@ import {
   parsePatientCode,
   parsePatientEntityId,
   parsePatientRowVersion,
-  parsePatientSearchText
+  parsePatientSearchText,
+  parsePatientUtcTimestamp
 } from './patient-validation'
 import type {
   CreatePatientRepositoryInput,
   InsertPatientAuditOutboxInput,
   MarkNotDuplicateInput,
   NormalizedPatientFields,
+  PatientDemographicUpdateResultRecord,
   PatientCode,
   PatientDetailRecord,
   PatientDuplicateCandidateRecord,
@@ -37,6 +39,7 @@ import type {
   PatientSearchResultRecord,
   PatientSummaryRecord,
   PatientUpdateResultRecord,
+  UpdatePatientDemographicsRepositoryInput,
   UpdatePatientRepositoryInput
 } from './patient-types'
 
@@ -412,7 +415,7 @@ INSERT INTO sync_outbox (
   last_error_code,
   last_error_message,
   sent_at
-) VALUES (?, 'PATIENT', ?, ?, ?, 'patient.registry.v1', ?, 'PENDING', 0, NULL, NULL, NULL, NULL);
+) VALUES (?, 'PATIENT', ?, ?, ?, ?, ?, 'PENDING', 0, NULL, NULL, NULL, NULL);
 `
 
 export function createPatientRepository(connection: Database.Database): PatientRepository {
@@ -486,6 +489,27 @@ export function createPatientRepository(connection: Database.Database): PatientR
 
         return row === undefined ? null : decodeDetailRow(row)
       } catch (error) {
+        if (error instanceof RepositoryValidationError) {
+          throw new RepositoryValidationError(error.errorType)
+        }
+
+        throw new RepositoryReadError(getRepositoryErrorType(error))
+      }
+    },
+
+    getByIdForWrite(
+      scopedConnection: DatabaseTransactionConnection,
+      id: EntityId
+    ): PatientDetailRecord | null {
+      assertActiveDatabaseTransactionConnection(scopedConnection)
+
+      try {
+        return readPatientAfterWrite(scopedConnection, parsePatientEntityId(id))
+      } catch (error) {
+        if (error instanceof DatabaseTransactionStateError) {
+          throw new DatabaseTransactionStateError(error.errorType)
+        }
+
         if (error instanceof RepositoryValidationError) {
           throw new RepositoryValidationError(error.errorType)
         }
@@ -700,6 +724,113 @@ export function createPatientRepository(connection: Database.Database): PatientR
       }
     },
 
+    updateDemographics(
+      scopedConnection: DatabaseTransactionConnection,
+      input: UpdatePatientDemographicsRepositoryInput
+    ): PatientDemographicUpdateResultRecord {
+      assertActiveDatabaseTransactionConnection(scopedConnection)
+
+      try {
+        const patientId = parsePatientEntityId(input.id)
+        const expectedRowVersion = parsePatientRowVersion(input.expectedRowVersion)
+        const updatedBy = parseEntityId(input.updatedBy)
+        const updatedAt = parsePatientUtcTimestamp(input.updatedAt)
+        const current = readPatientAfterWrite(scopedConnection, patientId)
+
+        if (current === null) {
+          return Object.freeze({ status: 'NOT_FOUND' as const })
+        }
+
+        const result = scopedConnection
+          .prepare<
+            [
+              string,
+              string | null,
+              string | null,
+              string | null,
+              string,
+              string,
+              string | null,
+              number | null,
+              string | null,
+              string | null,
+              string | null,
+              string | null,
+              string | null,
+              string | null,
+              string | null,
+              string | null,
+              string,
+              string,
+              string,
+              string,
+              number
+            ]
+          >(updatePatientSql)
+          .run(
+            input.fields.displayName,
+            input.fields.givenName,
+            input.fields.familyName,
+            input.fields.otherNames,
+            input.fields.nameNormalized,
+            input.fields.sex,
+            input.fields.dateOfBirth,
+            input.fields.approximateAgeYears,
+            input.fields.ageAsOfDate,
+            input.fields.phone,
+            input.fields.phoneNormalized,
+            input.fields.alternateContactName,
+            input.fields.alternateContactPhone,
+            input.fields.village,
+            input.fields.quarter,
+            input.fields.residenceNotes,
+            input.fields.status,
+            updatedBy,
+            updatedAt,
+            patientId,
+            expectedRowVersion
+          )
+
+        if (result.changes === 0) {
+          const latest = readPatientAfterWrite(scopedConnection, patientId)
+
+          if (latest === null) {
+            return Object.freeze({ status: 'NOT_FOUND' as const })
+          }
+
+          return Object.freeze({
+            status: 'PATIENT_VERSION_CONFLICT' as const,
+            patient: latest
+          })
+        }
+
+        const updated = readPatientAfterWrite(scopedConnection, patientId)
+
+        if (updated === null) {
+          throw new RepositoryWriteError()
+        }
+
+        return Object.freeze({
+          status: 'UPDATED' as const,
+          patient: updated
+        })
+      } catch (error) {
+        if (error instanceof DatabaseTransactionStateError) {
+          throw new DatabaseTransactionStateError(error.errorType)
+        }
+
+        if (error instanceof RepositoryWriteError) {
+          throw new RepositoryWriteError(error.errorType)
+        }
+
+        if (error instanceof RepositoryValidationError) {
+          throw new RepositoryValidationError(error.errorType)
+        }
+
+        throw new RepositoryWriteError(getRepositoryErrorType(error))
+      }
+    },
+
     recordRecentAccess(
       scopedConnection: DatabaseTransactionConnection,
       userId: EntityId,
@@ -826,12 +957,13 @@ export function createPatientRepository(connection: Database.Database): PatientR
 
       try {
         scopedConnection
-          .prepare<[string, string, string, string, string]>(insertOutboxSql)
+          .prepare<[string, string, string, string, string, string]>(insertOutboxSql)
           .run(
             input.id,
             input.aggregateId,
             input.operation,
             JSON.stringify(input.payload),
+            input.payloadSchemaVersion,
             input.createdAt
           )
       } catch (error) {

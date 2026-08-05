@@ -108,11 +108,21 @@ export interface UpdatePatientRepositoryInput {
   readonly updatedAt: UtcTimestamp
 }
 
+export interface UpdatePatientDemographicsRepositoryInput {
+  readonly id: EntityId
+  readonly expectedRowVersion: number
+  readonly fields: NormalizedPatientFields
+  readonly updatedBy: EntityId
+  readonly updatedAt: UtcTimestamp
+}
+
 export interface InsertPatientAuditOutboxInput {
   readonly id: EntityId
   readonly aggregateId: EntityId
-  readonly operation: 'PATIENT_CREATED' | 'PATIENT_UPDATED' | 'DUPLICATE_REVIEWED'
+  readonly operation:
+    'PATIENT_CREATED' | 'PATIENT_UPDATED' | 'DUPLICATE_REVIEWED' | 'PATIENT_DEMOGRAPHICS_AMENDED'
   readonly createdAt: UtcTimestamp
+  readonly payloadSchemaVersion: 'patient.registry.v1' | 'patient.demographic-amendment.v1'
   readonly payload: Readonly<Record<string, unknown>>
 }
 
@@ -135,10 +145,19 @@ export type PatientUpdateResultRecord =
   | { readonly status: 'PATIENT_VERSION_CONFLICT'; readonly patient: PatientDetailRecord }
   | { readonly status: 'NOT_FOUND' }
 
+export type PatientDemographicUpdateResultRecord =
+  | { readonly status: 'UPDATED'; readonly patient: PatientDetailRecord }
+  | { readonly status: 'PATIENT_VERSION_CONFLICT'; readonly patient: PatientDetailRecord }
+  | { readonly status: 'NOT_FOUND' }
+
 export interface PatientRepository {
   nextPatientCode(connection: DatabaseTransactionConnection, updatedAt: UtcTimestamp): PatientCode
   search(input: PatientSearchInput): PatientSearchResultRecord
   getById(id: EntityId): PatientDetailRecord | null
+  getByIdForWrite(
+    connection: DatabaseTransactionConnection,
+    id: EntityId
+  ): PatientDetailRecord | null
   insert(
     connection: DatabaseTransactionConnection,
     input: CreatePatientRepositoryInput
@@ -147,6 +166,10 @@ export interface PatientRepository {
     connection: DatabaseTransactionConnection,
     input: UpdatePatientRepositoryInput
   ): PatientUpdateResultRecord
+  updateDemographics(
+    connection: DatabaseTransactionConnection,
+    input: UpdatePatientDemographicsRepositoryInput
+  ): PatientDemographicUpdateResultRecord
   recordRecentAccess(
     connection: DatabaseTransactionConnection,
     userId: EntityId,

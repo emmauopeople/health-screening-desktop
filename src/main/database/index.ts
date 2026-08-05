@@ -152,6 +152,7 @@ export {
   type PatientDemographicAmendmentRecord,
   type PatientDemographicAmendmentRepository,
   type PatientDemographicAmendmentValue,
+  type PatientDemographicUpdateResultRecord,
   type PatientDetailRecord,
   type PatientDisplayName,
   type PatientDuplicateCandidateRecord,
@@ -170,6 +171,7 @@ export {
   type UserDisplayName,
   type UpdateLocalUserAuthenticationStateInput,
   type UpdateLocalUserCredentialStateInput,
+  type UpdatePatientDemographicsRepositoryInput,
   type UpdatePatientRepositoryInput,
   type Username,
   type UsernameIdentity

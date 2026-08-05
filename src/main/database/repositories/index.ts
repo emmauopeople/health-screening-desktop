@@ -131,6 +131,7 @@ export {
   type PatientDemographicAmendmentRecord,
   type PatientDemographicAmendmentRepository,
   type PatientDemographicAmendmentValue,
+  type PatientDemographicUpdateResultRecord,
   type PatientDetailRecord,
   type PatientDisplayName,
   type PatientDuplicateCandidateRecord,
@@ -144,5 +145,6 @@ export {
   type PatientSearchResultRecord,
   type PatientSummaryRecord,
   type PatientUpdateResultRecord,
+  type UpdatePatientDemographicsRepositoryInput,
   type UpdatePatientRepositoryInput
 } from './patient'

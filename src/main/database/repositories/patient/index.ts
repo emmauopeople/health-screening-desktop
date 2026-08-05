@@ -32,6 +32,7 @@ export type {
   MarkNotDuplicateInput,
   NormalizedPatientFields,
   PatientCode,
+  PatientDemographicUpdateResultRecord,
   PatientDetailRecord,
   PatientDisplayName,
   PatientDuplicateCandidateRecord,
@@ -45,6 +46,7 @@ export type {
   PatientSearchResultRecord,
   PatientSummaryRecord,
   PatientUpdateResultRecord,
+  UpdatePatientDemographicsRepositoryInput,
   UpdatePatientRepositoryInput
 } from './patient-types'
 export type {

@@ -190,6 +190,7 @@ export function createPatientRegistryService({
             aggregateId: patientId,
             operation: 'PATIENT_CREATED',
             createdAt: occurredAt,
+            payloadSchemaVersion: 'patient.registry.v1',
             payload: Object.freeze({
               patient_id: patientId,
               patient_code: patient.patientCode,
@@ -263,6 +264,7 @@ export function createPatientRegistryService({
             aggregateId: patientId,
             operation: 'PATIENT_UPDATED',
             createdAt: occurredAt,
+            payloadSchemaVersion: 'patient.registry.v1',
             payload: Object.freeze({
               patient_id: patientId,
               row_version: updateResult.patient.rowVersion
@@ -399,6 +401,7 @@ export function createPatientRegistryService({
             aggregateId: ordered.first.id,
             operation: 'DUPLICATE_REVIEWED',
             createdAt: reviewedAt,
+            payloadSchemaVersion: 'patient.registry.v1',
             payload: Object.freeze({
               pair_key: pairKey,
               patient_id_a: ordered.first.id,
