@@ -86,6 +86,11 @@ describe('shared IPC contracts', () => {
         get: 'health-screening:patient:get',
         create: 'health-screening:patient:create',
         update: 'health-screening:patient:update',
+        amendDemographics: 'health-screening:patient:amend-demographics',
+        listDemographicAmendmentHistory:
+          'health-screening:patient:list-demographic-amendment-history',
+        recordAcknowledgment: 'health-screening:patient:record-acknowledgment',
+        listAcknowledgmentHistory: 'health-screening:patient:list-acknowledgment-history',
         listRecent: 'health-screening:patient:list-recent',
         findDuplicates: 'health-screening:patient:find-duplicates',
         markNotDuplicate: 'health-screening:patient:mark-not-duplicate'
@@ -98,7 +103,7 @@ describe('shared IPC contracts', () => {
         ...Object.values(ipcChannels.auth),
         ...Object.values(ipcChannels.patient)
       ]).size
-    ).toBe(19)
+    ).toBe(23)
   })
 
   it('keeps patient requests strict and main-process-authored', () => {

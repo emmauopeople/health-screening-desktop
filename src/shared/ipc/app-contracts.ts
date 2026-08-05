@@ -19,16 +19,24 @@ import type {
   FirstRunInitializeResult as SharedFirstRunInitializeResult
 } from './first-run-contracts'
 import type {
+  PatientAmendDemographicsRequest,
+  PatientAmendDemographicsResult,
   PatientCreateRequest,
   PatientCreateResult,
   PatientFindDuplicatesRequest,
   PatientFindDuplicatesResult,
   PatientGetRequest,
   PatientGetResult,
+  PatientListAcknowledgmentHistoryRequest,
+  PatientListAcknowledgmentHistoryResult,
+  PatientListDemographicAmendmentHistoryRequest,
+  PatientListDemographicAmendmentHistoryResult,
   PatientListRecentRequest,
   PatientListRecentResult,
   PatientMarkNotDuplicateRequest,
   PatientMarkNotDuplicateResult,
+  PatientRecordAcknowledgmentRequest,
+  PatientRecordAcknowledgmentResult,
   PatientSearchRequest,
   PatientSearchResult,
   PatientUpdateRequest,
@@ -97,6 +105,18 @@ export interface HealthScreeningApi {
     get(request: PatientGetRequest): Promise<PatientGetResult>
     create(request: PatientCreateRequest): Promise<PatientCreateResult>
     update(request: PatientUpdateRequest): Promise<PatientUpdateResult>
+    amendDemographics?(
+      request: PatientAmendDemographicsRequest
+    ): Promise<PatientAmendDemographicsResult>
+    listDemographicAmendmentHistory?(
+      request: PatientListDemographicAmendmentHistoryRequest
+    ): Promise<PatientListDemographicAmendmentHistoryResult>
+    recordAcknowledgment?(
+      request: PatientRecordAcknowledgmentRequest
+    ): Promise<PatientRecordAcknowledgmentResult>
+    listAcknowledgmentHistory?(
+      request: PatientListAcknowledgmentHistoryRequest
+    ): Promise<PatientListAcknowledgmentHistoryResult>
     listRecent(request: PatientListRecentRequest): Promise<PatientListRecentResult>
     findDuplicates(request: PatientFindDuplicatesRequest): Promise<PatientFindDuplicatesResult>
     markNotDuplicate(
