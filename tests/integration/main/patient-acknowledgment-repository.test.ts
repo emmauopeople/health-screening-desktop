@@ -493,6 +493,51 @@ describe('patient acknowledgment repository', () => {
     }
   })
 
+  it('fails closed when history includes an acknowledgment with a missing actor', async () => {
+    await withAcknowledgmentRepository(({ connection, repository }) => {
+      insertRawUser(connection)
+      insertRawPatient(connection)
+      insertRawAcknowledgmentWithForeignKeysDisabled(connection, {
+        recordedBy: missingActorId
+      })
+
+      const error = captureError(() =>
+        repository.listByPatient({ patientId: parseEntityId(patientId), page: 1, pageSize: 25 })
+      )
+
+      expect(error).toBeInstanceOf(RepositoryDataIntegrityError)
+      expectSafeControlledError(error)
+    })
+  })
+
+  it('fails closed when the latest acknowledgment has a missing actor', async () => {
+    await withAcknowledgmentRepository(({ connection, repository }) => {
+      insertRawUser(connection)
+      insertRawPatient(connection)
+      insertRawAcknowledgment(connection, {
+        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        status: 'ACKNOWLEDGED',
+        recordedAt: now,
+        effectiveAt: now
+      })
+      insertRawAcknowledgmentWithForeignKeysDisabled(connection, {
+        id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        status: 'DECLINED',
+        recordedBy: missingActorId,
+        recordedAt: later,
+        effectiveAt: later,
+        priorRowVersion: 2,
+        resultingRowVersion: 3
+      })
+
+      const error = captureError(() => repository.getLatestByPatient(parseEntityId(patientId)))
+
+      expect(error).toBeInstanceOf(RepositoryDataIntegrityError)
+      expect(error).not.toMatchObject({ status: 'ACKNOWLEDGED' })
+      expectSafeControlledError(error)
+    })
+  })
+
   it('keeps existing patient detail latest acknowledgment tied by ID instead of rowid', async () => {
     await withAcknowledgmentRepository(({ connection }) => {
       insertRawUser(connection)
@@ -754,6 +799,18 @@ function insertRawAcknowledgment(
     if (overrides.ignoreChecks === true) {
       connection.pragma('ignore_check_constraints = OFF')
     }
+  }
+}
+
+function insertRawAcknowledgmentWithForeignKeysDisabled(
+  connection: Database.Database,
+  overrides: RawAcknowledgmentOverrides = {}
+): void {
+  connection.pragma('foreign_keys = OFF')
+  try {
+    insertRawAcknowledgment(connection, overrides)
+  } finally {
+    connection.pragma('foreign_keys = ON')
   }
 }
 

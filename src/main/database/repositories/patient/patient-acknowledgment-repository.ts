@@ -90,7 +90,8 @@ SELECT
   acknowledgment.patient_prior_row_version,
   acknowledgment.patient_resulting_row_version
 FROM consent_records acknowledgment
-JOIN users recorded_user ON recorded_user.id = acknowledgment.recorded_by
+LEFT JOIN users recorded_user
+  ON recorded_user.id = acknowledgment.recorded_by
 WHERE acknowledgment.patient_id = ?
   AND acknowledgment.consent_type = '${registryAcknowledgmentType}'
 ORDER BY acknowledgment.recorded_at DESC, acknowledgment.id DESC
@@ -112,7 +113,8 @@ SELECT
   acknowledgment.patient_prior_row_version,
   acknowledgment.patient_resulting_row_version
 FROM consent_records acknowledgment
-JOIN users recorded_user ON recorded_user.id = acknowledgment.recorded_by
+LEFT JOIN users recorded_user
+  ON recorded_user.id = acknowledgment.recorded_by
 WHERE acknowledgment.patient_id = ?
   AND acknowledgment.consent_type = '${registryAcknowledgmentType}'
 ORDER BY acknowledgment.recorded_at DESC, acknowledgment.id DESC
