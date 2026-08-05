@@ -45,6 +45,8 @@ const generatedIds = [
   'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
   'ffffffff-ffff-4fff-8fff-ffffffffffff'
 ] as const
+const proxyInspectionLeakText =
+  'transport proxy exploded at C:\\secret\\patient.sqlite3 SELECT Amina'
 
 const adminActor: PatientDemographicAmendmentServiceActor = {
   userId: parseEntityId(adminId),
@@ -371,6 +373,61 @@ describe('patient demographic amendment service', () => {
     })
   })
 
+  it('contains request, actor, and patch proxy inspection errors without writing rows', async () => {
+    await withAmendmentService(({ connection, service }) => {
+      seedCoreRecords(connection)
+
+      const baseRequest = {
+        patientId: parseEntityId(patientId),
+        expectedRowVersion: 1,
+        reasonCode: 'DATA_ENTRY_CORRECTION',
+        reasonNote: null,
+        patch: { village: 'Test Limbe' }
+      } satisfies Parameters<typeof service.amend>[0]
+
+      const invalidActions = [
+        () =>
+          service.amend(createInspectionThrowingProxy(baseRequest, 'getPrototypeOf'), adminActor),
+        () =>
+          service.amend(
+            baseRequest,
+            createInspectionThrowingProxy({ ...adminActor }, 'getPrototypeOf')
+          ),
+        () =>
+          service.amend(
+            {
+              ...baseRequest,
+              patch: createInspectionThrowingProxy({ village: 'Test Limbe' }, 'getPrototypeOf')
+            },
+            adminActor
+          ),
+        () => service.amend(createInspectionThrowingProxy(baseRequest, 'ownKeys'), adminActor),
+        () =>
+          service.amend(baseRequest, createInspectionThrowingProxy({ ...adminActor }, 'ownKeys')),
+        () =>
+          service.amend(
+            {
+              ...baseRequest,
+              patch: createInspectionThrowingProxy(
+                { village: 'Test Limbe' },
+                'getOwnPropertyDescriptor'
+              )
+            },
+            adminActor
+          )
+      ]
+
+      for (const action of invalidActions) {
+        const error = captureError(action)
+
+        expect(error).toBeInstanceOf(RepositoryValidationError)
+        expectSafeControlledError(error)
+        expect(JSON.stringify(error)).not.toContain(proxyInspectionLeakText)
+        expectNoAmendmentWrites(connection)
+      }
+    })
+  })
+
   it('records exact nullable field history without derived fields', async () => {
     await withAmendmentService(({ connection, service }) => {
       seedCoreRecords(connection)
@@ -604,6 +661,7 @@ interface AmendmentServiceHarness {
 }
 
 type FailureMode = 'after-patient-update' | 'after-amendment' | 'after-audit' | 'after-outbox'
+type InspectionTrap = 'getPrototypeOf' | 'ownKeys' | 'getOwnPropertyDescriptor'
 
 async function withAmendmentService(
   test: (harness: AmendmentServiceHarness) => void,
@@ -985,6 +1043,32 @@ function expectNoAmendmentWrites(connection: Database.Database): void {
   expect(readTableCount(connection, 'patient_demographic_amendment_changes')).toBe(0)
   expect(readTableCount(connection, 'audit_log')).toBe(0)
   expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+}
+
+function createInspectionThrowingProxy<T extends object>(target: T, trap: InspectionTrap): T {
+  return new Proxy(target, {
+    getPrototypeOf(value) {
+      if (trap === 'getPrototypeOf') {
+        throw new Error(proxyInspectionLeakText)
+      }
+
+      return Reflect.getPrototypeOf(value)
+    },
+    ownKeys(value) {
+      if (trap === 'ownKeys') {
+        throw new Error(proxyInspectionLeakText)
+      }
+
+      return Reflect.ownKeys(value)
+    },
+    getOwnPropertyDescriptor(value, property) {
+      if (trap === 'getOwnPropertyDescriptor') {
+        throw new Error(proxyInspectionLeakText)
+      }
+
+      return Reflect.getOwnPropertyDescriptor(value, property)
+    }
+  })
 }
 
 function captureError(action: () => void): unknown {

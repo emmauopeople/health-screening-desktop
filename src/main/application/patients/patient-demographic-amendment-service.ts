@@ -455,7 +455,13 @@ function readDataProperties(
     throw new RepositoryValidationError()
   }
 
-  const prototype = Object.getPrototypeOf(value)
+  let prototype: object | null
+
+  try {
+    prototype = Object.getPrototypeOf(value)
+  } catch {
+    throw new RepositoryValidationError()
+  }
 
   if (prototype !== Object.prototype && prototype !== null) {
     throw new RepositoryValidationError()
