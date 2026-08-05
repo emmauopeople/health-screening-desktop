@@ -1,5 +1,12 @@
+export { createPatientAcknowledgmentRepository } from './patient-acknowledgment-repository'
 export { createPatientDemographicAmendmentRepository } from './patient-demographic-amendment-repository'
 export { createPatientRepository } from './patient-repository'
+export {
+  normalizePatientAcknowledgmentNote,
+  parsePatientAcknowledgmentDecisionStatus,
+  parsePatientAcknowledgmentHistoryStatus,
+  parsePatientAcknowledgmentRowVersion
+} from './patient-acknowledgment-validation'
 export {
   comparePatientDemographicAmendmentFields,
   normalizePatientDemographicAmendmentReasonNote,
@@ -40,6 +47,16 @@ export type {
   PatientUpdateResultRecord,
   UpdatePatientRepositoryInput
 } from './patient-types'
+export type {
+  InsertPatientAcknowledgmentInput,
+  PatientAcknowledgmentDecisionStatus,
+  PatientAcknowledgmentHistoryInput,
+  PatientAcknowledgmentHistoryResult,
+  PatientAcknowledgmentHistoryStatus,
+  PatientAcknowledgmentRecord,
+  PatientAcknowledgmentRepository,
+  PatientAcknowledgmentSourceType
+} from './patient-acknowledgment-types'
 export type {
   InsertPatientDemographicAmendmentInput,
   PatientDemographicAmendmentChangeInput,

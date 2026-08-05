@@ -256,6 +256,7 @@ async function withPatientRegistry(test: (harness: PatientRegistryHarness) => vo
     insertUser(connection)
 
     const ids = [...generatedIds]
+    let clockTick = 0
     const service = createPatientRegistryService({
       installationRepository: createInstallationRepository(connection),
       patientRepository: createPatientRepository(connection),
@@ -271,7 +272,12 @@ async function withPatientRegistry(test: (harness: PatientRegistryHarness) => vo
 
           return nextId
         }),
-        clock: createUtcClock(() => now),
+        clock: createUtcClock(() => {
+          const timestamp = new Date(Date.parse(now) + clockTick).toISOString()
+          clockTick += 1
+
+          return timestamp
+        }),
         logger: { error: vi.fn() }
       })
     })

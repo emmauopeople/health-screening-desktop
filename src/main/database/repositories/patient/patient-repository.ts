@@ -92,7 +92,7 @@ LEFT JOIN consent_records latest_ack
     FROM consent_records cr
     WHERE cr.patient_id = p.id
       AND cr.consent_type = '${registryAcknowledgmentType}'
-    ORDER BY cr.recorded_at DESC, cr.rowid DESC
+    ORDER BY cr.recorded_at DESC, cr.id DESC
     LIMIT 1
   )
 LEFT JOIN users ack_user ON ack_user.id = latest_ack.recorded_by
