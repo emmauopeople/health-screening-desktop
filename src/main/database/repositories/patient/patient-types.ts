@@ -116,15 +116,22 @@ export interface UpdatePatientDemographicsRepositoryInput {
   readonly updatedAt: UtcTimestamp
 }
 
-export interface InsertPatientAuditOutboxInput {
+interface InsertPatientAuditOutboxInputBase {
   readonly id: EntityId
   readonly aggregateId: EntityId
-  readonly operation:
-    'PATIENT_CREATED' | 'PATIENT_UPDATED' | 'DUPLICATE_REVIEWED' | 'PATIENT_DEMOGRAPHICS_AMENDED'
   readonly createdAt: UtcTimestamp
-  readonly payloadSchemaVersion: 'patient.registry.v1' | 'patient.demographic-amendment.v1'
   readonly payload: Readonly<Record<string, unknown>>
 }
+
+export type InsertPatientAuditOutboxInput =
+  | (InsertPatientAuditOutboxInputBase & {
+      readonly operation: 'PATIENT_CREATED' | 'PATIENT_UPDATED' | 'DUPLICATE_REVIEWED'
+      readonly payloadSchemaVersion: 'patient.registry.v1'
+    })
+  | (InsertPatientAuditOutboxInputBase & {
+      readonly operation: 'PATIENT_DEMOGRAPHICS_AMENDED'
+      readonly payloadSchemaVersion: 'patient.demographic-amendment.v1'
+    })
 
 export interface MarkNotDuplicateInput {
   readonly id: EntityId

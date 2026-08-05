@@ -185,22 +185,33 @@ describe('patient demographic amendment service', () => {
     await withAmendmentService(({ connection, service }) => {
       seedCoreRecords(connection)
 
-      const forbidden = service.amend(
+      const forbiddenAttempts: readonly {
+        readonly reasonNote: string | null
+        readonly patch: unknown
+      }[] = [
+        { reasonNote: null, patch: { status: 'INACTIVE' } },
+        { reasonNote: null, patch: { status: 'NOT_A_STATUS' } },
         {
-          patientId: parseEntityId(patientId),
-          expectedRowVersion: 1,
-          reasonCode: 'STATUS_CHANGE',
-          reasonNote: 'Status changed after registry review.',
-          patch: { status: 'INACTIVE' }
-        },
-        screenerActor
-      )
+          reasonNote: 'Status change attempted with a residence update.',
+          patch: { status: 'INACTIVE', village: 'Test Limbe' }
+        }
+      ]
 
-      expect(forbidden).toEqual({ status: 'FORBIDDEN' })
-      expect(readPatient(connection, patientId)).toMatchObject({ status: 'ACTIVE', row_version: 1 })
-      expect(readTableCount(connection, 'patient_demographic_amendments')).toBe(0)
-      expect(readTableCount(connection, 'audit_log')).toBe(0)
-      expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+      for (const attempt of forbiddenAttempts) {
+        const forbidden = service.amend(
+          {
+            patientId: parseEntityId(patientId),
+            expectedRowVersion: 1,
+            reasonCode: 'STATUS_CHANGE',
+            reasonNote: attempt.reasonNote,
+            patch: attempt.patch
+          } as Parameters<typeof service.amend>[0],
+          screenerActor
+        )
+
+        expect(forbidden).toEqual({ status: 'FORBIDDEN' })
+        expectNoAmendmentWrites(connection)
+      }
     })
 
     for (const actor of [adminActor, nurseActor]) {
@@ -277,6 +288,12 @@ describe('patient demographic amendment service', () => {
         enumerable: true,
         get: () => 'Test Limbe'
       })
+      const inheritedStatusPatch = Object.assign(Object.create({ status: 'INACTIVE' }), {
+        village: 'Test Limbe'
+      })
+      const inheritedUnknownPatch = Object.assign(Object.create({ patientCode: 'PT-999999' }), {
+        village: 'Test Limbe'
+      })
 
       const invalidRequests: readonly {
         readonly reasonCode?: Parameters<typeof service.amend>[0]['reasonCode']
@@ -286,6 +303,8 @@ describe('patient demographic amendment service', () => {
         { patch: {} },
         { patch: { patientCode: 'PT-999999' } },
         { patch: getterPatch },
+        { patch: inheritedStatusPatch },
+        { patch: inheritedUnknownPatch },
         { patch: { sex: 'BAD' } },
         { patch: { village: 'Test Buea' } },
         { reasonCode: 'OTHER', reasonNote: null, patch: { village: 'Test Limbe' } },
@@ -314,8 +333,41 @@ describe('patient demographic amendment service', () => {
         expectSafeControlledError(error)
       }
 
-      expect(readPatient(connection, patientId)).toMatchObject({ row_version: 1 })
-      expect(readTableCount(connection, 'patient_demographic_amendments')).toBe(0)
+      const requestWithCustomPrototype = Object.assign(Object.create({ inherited: true }), {
+        patientId: parseEntityId(patientId),
+        expectedRowVersion: 1,
+        reasonCode: 'DATA_ENTRY_CORRECTION',
+        reasonNote: null,
+        patch: { village: 'Test Limbe' }
+      })
+      const actorWithCustomPrototype = Object.assign(Object.create({ inherited: true }), adminActor)
+      const customPrototypeErrors = [
+        captureError(() =>
+          service.amend(
+            requestWithCustomPrototype as Parameters<typeof service.amend>[0],
+            adminActor
+          )
+        ),
+        captureError(() =>
+          service.amend(
+            {
+              patientId: parseEntityId(patientId),
+              expectedRowVersion: 1,
+              reasonCode: 'DATA_ENTRY_CORRECTION',
+              reasonNote: null,
+              patch: { village: 'Test Limbe' }
+            },
+            actorWithCustomPrototype
+          )
+        )
+      ]
+
+      for (const error of customPrototypeErrors) {
+        expect(error).toBeInstanceOf(RepositoryValidationError)
+        expectSafeControlledError(error)
+      }
+
+      expectNoAmendmentWrites(connection)
     })
   })
 
@@ -394,6 +446,42 @@ describe('patient demographic amendment service', () => {
         }
       ])
     })
+  })
+
+  it('rejects mismatched outbox operation schema versions without writing rows', async () => {
+    const invalidPairings = [
+      {
+        operation: 'PATIENT_DEMOGRAPHICS_AMENDED',
+        payloadSchemaVersion: 'patient.registry.v1'
+      },
+      {
+        operation: 'PATIENT_UPDATED',
+        payloadSchemaVersion: 'patient.demographic-amendment.v1'
+      }
+    ] as const
+
+    for (const invalidPairing of invalidPairings) {
+      await withAmendmentService(({ connection, patientRepository, executor }) => {
+        seedCoreRecords(connection)
+
+        const error = captureError(() =>
+          executor.run((context) => {
+            patientRepository.insertOutbox(context.connection, {
+              id: parseEntityId(generatedIds[0]),
+              aggregateId: parseEntityId(patientId),
+              operation: invalidPairing.operation,
+              createdAt: parseUtcTimestamp(now),
+              payloadSchemaVersion: invalidPairing.payloadSchemaVersion,
+              payload: { patient_id: patientId, note: 'Outbox mismatch payload' }
+            } as Parameters<PatientRepository['insertOutbox']>[1])
+          })
+        )
+
+        expect(error).toBeInstanceOf(RepositoryValidationError)
+        expectSafeControlledError(error)
+        expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+      })
+    }
   })
 
   it('rolls back patient, history, audit, and outbox writes after each write boundary', async () => {
@@ -887,6 +975,18 @@ function readTableCount(connection: Database.Database, tableName: string): numbe
   return row.total
 }
 
+function expectNoAmendmentWrites(connection: Database.Database): void {
+  expect(readPatient(connection, patientId)).toMatchObject({
+    row_version: 1,
+    status: 'ACTIVE',
+    village: 'Test Buea'
+  })
+  expect(readTableCount(connection, 'patient_demographic_amendments')).toBe(0)
+  expect(readTableCount(connection, 'patient_demographic_amendment_changes')).toBe(0)
+  expect(readTableCount(connection, 'audit_log')).toBe(0)
+  expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+}
+
 function captureError(action: () => void): unknown {
   try {
     action()
@@ -903,8 +1003,10 @@ function expectSafeControlledError(error: unknown): void {
   expect(JSON.stringify(error)).not.toContain('SELECT')
   expect(JSON.stringify(error)).not.toContain('INSERT')
   expect(JSON.stringify(error)).not.toContain('Amina')
+  expect(JSON.stringify(error)).not.toContain(patientId)
   expect(JSON.stringify(error)).not.toContain('Rollback boundary test')
   expect(JSON.stringify(error)).not.toContain('Corrected from source worksheet')
+  expect(JSON.stringify(error)).not.toContain('Outbox mismatch payload')
   expect(JSON.stringify(error)).not.toContain('SQLITE')
   expect(JSON.stringify(error)).not.toContain('constraint failed')
   expect(JSON.stringify(error)).not.toContain('E:\\')

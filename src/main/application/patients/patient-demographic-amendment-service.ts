@@ -195,6 +195,13 @@ export function createPatientDemographicAmendmentService({
           })
         }
 
+        if (
+          patchAttemptsStatusChange(command.patch, current) &&
+          !statusChangeRoles.has(validatedActor.role)
+        ) {
+          return Object.freeze({ status: 'FORBIDDEN' as const })
+        }
+
         const nextFields = createNextNormalizedFields(current, command.patch)
         const changes = calculateChanges(current, nextFields)
 
@@ -206,10 +213,6 @@ export function createPatientDemographicAmendmentService({
 
         if (changesStatus && command.reasonNote === null) {
           throw new RepositoryValidationError()
-        }
-
-        if (changesStatus && !statusChangeRoles.has(validatedActor.role)) {
-          return Object.freeze({ status: 'FORBIDDEN' as const })
         }
 
         const occurredAt = context.nowUtc()
@@ -406,6 +409,17 @@ function createNextNormalizedFields(
   return normalizePatientEditableFields(editable, { today: new Date().toISOString().slice(0, 10) })
 }
 
+function patchAttemptsStatusChange(
+  patch: Partial<Record<PatchKey, unknown>>,
+  current: PatientDetailRecord
+): boolean {
+  if (!Object.prototype.hasOwnProperty.call(patch, 'status')) {
+    return false
+  }
+
+  return !Object.is(patch.status, current.status)
+}
+
 function calculateChanges(
   current: PatientDetailRecord,
   nextFields: NormalizedPatientFields
@@ -438,6 +452,12 @@ function readDataProperties(
   expectedKeys: readonly string[] | null
 ): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new RepositoryValidationError()
+  }
+
+  const prototype = Object.getPrototypeOf(value)
+
+  if (prototype !== Object.prototype && prototype !== null) {
     throw new RepositoryValidationError()
   }
 

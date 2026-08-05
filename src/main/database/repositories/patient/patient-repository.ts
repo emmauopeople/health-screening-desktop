@@ -53,6 +53,11 @@ interface SequenceRow {
 
 const maximumRecentPatientsPerUser = 25
 const registryAcknowledgmentType = 'PATIENT_REGISTRY_ACKNOWLEDGMENT'
+const registryOutboxOperations = new Set([
+  'PATIENT_CREATED',
+  'PATIENT_UPDATED',
+  'DUPLICATE_REVIEWED'
+])
 
 const patientSummaryColumns = `
   p.id,
@@ -954,6 +959,7 @@ export function createPatientRepository(connection: Database.Database): PatientR
       input: InsertPatientAuditOutboxInput
     ): void {
       assertActiveDatabaseTransactionConnection(scopedConnection)
+      validatePatientOutboxOperationSchema(input)
 
       try {
         scopedConnection
@@ -977,6 +983,37 @@ export function createPatientRepository(connection: Database.Database): PatientR
   })
 
   return repository
+}
+
+function validatePatientOutboxOperationSchema(input: InsertPatientAuditOutboxInput): void {
+  if (typeof input !== 'object' || input === null) {
+    throw new RepositoryValidationError()
+  }
+
+  const operation = (input as { readonly operation?: unknown }).operation
+  const payloadSchemaVersion = (input as { readonly payloadSchemaVersion?: unknown })
+    .payloadSchemaVersion
+
+  if (typeof operation !== 'string' || typeof payloadSchemaVersion !== 'string') {
+    throw new RepositoryValidationError()
+  }
+
+  if (registryOutboxOperations.has(operation)) {
+    if (payloadSchemaVersion !== 'patient.registry.v1') {
+      throw new RepositoryValidationError()
+    }
+
+    return
+  }
+
+  if (
+    operation === 'PATIENT_DEMOGRAPHICS_AMENDED' &&
+    payloadSchemaVersion === 'patient.demographic-amendment.v1'
+  ) {
+    return
+  }
+
+  throw new RepositoryValidationError()
 }
 
 function createScopedEntityId(connection: DatabaseTransactionConnection): EntityId {
