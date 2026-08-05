@@ -6,7 +6,9 @@ import {
   patientAmendDemographicsRequestSchema,
   patientAmendDemographicsResultSchema,
   patientAcknowledgmentDecisionStatusSchema,
+  patientListAcknowledgmentHistoryRequestSchema,
   patientListAcknowledgmentHistoryResultSchema,
+  patientListDemographicAmendmentHistoryRequestSchema,
   patientListDemographicAmendmentHistoryResultSchema,
   patientRecordAcknowledgmentRequestSchema,
   patientRecordAcknowledgmentResultSchema,
@@ -20,6 +22,7 @@ const actorId = '22222222-2222-4222-8222-222222222222'
 const amendmentId = '33333333-3333-4333-8333-333333333333'
 const acknowledgmentId = '44444444-4444-4444-8444-444444444444'
 const timestamp = '2026-07-29T12:34:56.789Z'
+const arrayProxyErrorText = 'array proxy leaked C:\\secret\\patient.sqlite3'
 
 const publicPatient = {
   id: patientId,
@@ -203,6 +206,9 @@ describe('HSD-026 patient IPC contracts', () => {
   })
 
   it('validates bounded amendment and acknowledgment note text safely', () => {
+    const astral500 = '\u{1f600}'.repeat(500)
+    const astral501 = '\u{1f600}'.repeat(501)
+
     expect(
       patientAmendDemographicsRequestSchema.safeParse({
         ...demographicRequest,
@@ -217,8 +223,22 @@ describe('HSD-026 patient IPC contracts', () => {
         note: 'a'.repeat(500)
       }).success
     ).toBe(true)
+    expect(
+      patientAmendDemographicsRequestSchema.safeParse({
+        ...demographicRequest,
+        reasonNote: astral500
+      }).success
+    ).toBe(true)
+    expect(
+      patientRecordAcknowledgmentRequestSchema.safeParse({
+        patientId,
+        expectedRowVersion: 1,
+        status: 'ACKNOWLEDGED',
+        note: astral500
+      }).success
+    ).toBe(true)
 
-    for (const note of ['a'.repeat(501), 'Unsafe\nnote', 'Unsafe\uD800note']) {
+    for (const note of ['a'.repeat(501), astral501, 'Unsafe\nnote', 'Unsafe\uD800note']) {
       expect(
         patientAmendDemographicsRequestSchema.safeParse({ ...demographicRequest, reasonNote: note })
           .success
@@ -231,6 +251,24 @@ describe('HSD-026 patient IPC contracts', () => {
           note
         }).success
       ).toBe(false)
+    }
+  })
+
+  it('validates list-history requests strictly', () => {
+    const request = { patientId, page: 1, pageSize: 25 } as const
+
+    expect(patientListDemographicAmendmentHistoryRequestSchema.parse(request)).toEqual(request)
+    expect(patientListAcknowledgmentHistoryRequestSchema.parse(request)).toEqual(request)
+
+    for (const value of [
+      { page: 1, pageSize: 25 },
+      { patientId, page: 1 },
+      { patientId, page: 1, pageSize: 25, extra: true }
+    ]) {
+      expect(patientListDemographicAmendmentHistoryRequestSchema.safeParse(value).success).toBe(
+        false
+      )
+      expect(patientListAcknowledgmentHistoryRequestSchema.safeParse(value).success).toBe(false)
     }
   })
 
@@ -366,6 +404,119 @@ describe('HSD-026 patient IPC contracts', () => {
     }
   })
 
+  it('rejects unsafe arrays in new history results without invoking accessors', () => {
+    let itemsAccessorInvoked = false
+    let changesAccessorInvoked = false
+    const itemsWithAccessor = [acknowledgmentRecord]
+
+    Object.defineProperty(itemsWithAccessor, '0', {
+      enumerable: true,
+      get() {
+        itemsAccessorInvoked = true
+        return acknowledgmentRecord
+      }
+    })
+
+    const changesWithAccessor: unknown[] = [...demographicRecord.changes]
+
+    Object.defineProperty(changesWithAccessor, '0', {
+      enumerable: true,
+      get() {
+        changesAccessorInvoked = true
+        return demographicRecord.changes[0]
+      }
+    })
+
+    const customPrototypeItems = [acknowledgmentRecord]
+    Object.setPrototypeOf(customPrototypeItems, { custom: true })
+
+    const symbolItems = [acknowledgmentRecord]
+    Object.defineProperty(symbolItems, Symbol('secret'), {
+      enumerable: true,
+      value: true
+    })
+
+    const namedPropertyItems = [acknowledgmentRecord]
+    Object.defineProperty(namedPropertyItems, 'extra', {
+      enumerable: true,
+      value: true
+    })
+
+    const sparseItems = new Array(1)
+    const getPrototypeThrowingItems = new Proxy([acknowledgmentRecord], {
+      getPrototypeOf() {
+        throw new Error(arrayProxyErrorText)
+      }
+    })
+    const ownKeysThrowingItems = new Proxy([acknowledgmentRecord], {
+      ownKeys() {
+        throw new Error(arrayProxyErrorText)
+      }
+    })
+    const descriptorThrowingItems = new Proxy([acknowledgmentRecord], {
+      getOwnPropertyDescriptor() {
+        throw new Error(arrayProxyErrorText)
+      }
+    })
+    const revoked = Proxy.revocable([acknowledgmentRecord], {})
+    revoked.revoke()
+
+    expect(
+      patientListAcknowledgmentHistoryResultSchema.safeParse(
+        createIpcSuccess({
+          items: [acknowledgmentRecord],
+          page: 1,
+          pageSize: 25,
+          total: 1
+        })
+      ).success
+    ).toBe(true)
+    expect(
+      patientListDemographicAmendmentHistoryResultSchema.safeParse(
+        createIpcSuccess({
+          items: [demographicRecord],
+          page: 1,
+          pageSize: 25,
+          total: 1
+        })
+      ).success
+    ).toBe(true)
+
+    for (const items of [
+      itemsWithAccessor,
+      customPrototypeItems,
+      symbolItems,
+      namedPropertyItems,
+      sparseItems,
+      getPrototypeThrowingItems,
+      ownKeysThrowingItems,
+      descriptorThrowingItems,
+      revoked.proxy
+    ]) {
+      expectSafeParseFailure(
+        patientListAcknowledgmentHistoryResultSchema,
+        createIpcSuccess({
+          items,
+          page: 1,
+          pageSize: 25,
+          total: 1
+        })
+      )
+    }
+
+    expectSafeParseFailure(
+      patientListDemographicAmendmentHistoryResultSchema,
+      createIpcSuccess({
+        items: [{ ...demographicRecord, changes: changesWithAccessor }],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    expect(itemsAccessorInvoked).toBe(false)
+    expect(changesAccessorInvoked).toBe(false)
+  })
+
   it('keeps legacy patient.update unchanged during E1', () => {
     const legacyUpdate = {
       patientId,
@@ -398,3 +549,17 @@ describe('HSD-026 patient IPC contracts', () => {
     ).toBe(false)
   })
 })
+
+interface SafeParseSchema {
+  safeParse(value: unknown): { readonly success: boolean }
+}
+
+function expectSafeParseFailure(schema: SafeParseSchema, value: unknown): void {
+  let result: { readonly success: boolean } | undefined
+
+  expect(() => {
+    result = schema.safeParse(value)
+  }).not.toThrow()
+  expect(result?.success).toBe(false)
+  expect(JSON.stringify(result)).not.toContain(arrayProxyErrorText)
+}

@@ -629,82 +629,156 @@ function copySafeTransportValue(value: unknown, active = new WeakSet<object>()):
     return null
   }
 
-  if (typeof value !== 'object') {
+  let valueType: string
+
+  try {
+    valueType = typeof value
+  } catch {
+    return unsafeTransportValue
+  }
+
+  if (valueType !== 'object') {
     return isRejectedPrimitive(value) ? unsafeTransportValue : value
   }
 
-  if (active.has(value)) {
+  const objectValue = value as object
+  let isArrayValue: boolean
+
+  try {
+    isArrayValue = Array.isArray(objectValue)
+  } catch {
     return unsafeTransportValue
   }
 
-  active.add(value)
+  if (active.has(objectValue)) {
+    return unsafeTransportValue
+  }
 
-  if (Array.isArray(value)) {
-    const items: unknown[] = []
+  active.add(objectValue)
 
-    for (const item of value) {
-      const copied = copySafeTransportValue(item, active)
+  if (isArrayValue) {
+    return copySafeTransportArray(objectValue, active)
+  }
 
-      if (copied === unsafeTransportValue) {
-        active.delete(value)
+  return copySafeTransportObject(objectValue, active)
+}
+
+function copySafeTransportArray(value: object, active: WeakSet<object>): unknown {
+  try {
+    let prototype: object | null
+    let descriptors: PropertyDescriptorMap
+
+    try {
+      prototype = Object.getPrototypeOf(value)
+      descriptors = Object.getOwnPropertyDescriptors(value)
+    } catch {
+      return unsafeTransportValue
+    }
+
+    if (prototype !== Array.prototype) {
+      return unsafeTransportValue
+    }
+
+    if (Object.getOwnPropertySymbols(descriptors).length > 0) {
+      return unsafeTransportValue
+    }
+
+    const lengthDescriptor = descriptors['length']
+
+    if (
+      lengthDescriptor === undefined ||
+      !Object.prototype.hasOwnProperty.call(lengthDescriptor, 'value') ||
+      typeof lengthDescriptor.value !== 'number' ||
+      !Number.isSafeInteger(lengthDescriptor.value) ||
+      lengthDescriptor.value < 0
+    ) {
+      return unsafeTransportValue
+    }
+
+    const length = lengthDescriptor.value
+    const allowedKeys = new Set<string>(['length'])
+
+    for (let index = 0; index < length; index += 1) {
+      allowedKeys.add(String(index))
+    }
+
+    for (const key of Object.getOwnPropertyNames(descriptors)) {
+      if (!allowedKeys.has(key)) {
+        return unsafeTransportValue
+      }
+    }
+
+    const copy: unknown[] = []
+
+    for (let index = 0; index < length; index += 1) {
+      const descriptor = descriptors[String(index)]
+
+      if (descriptor === undefined || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
         return unsafeTransportValue
       }
 
-      items.push(copied)
+      const copied = copySafeTransportValue(descriptor.value, active)
+
+      if (copied === unsafeTransportValue) {
+        return unsafeTransportValue
+      }
+
+      copy.push(copied)
     }
 
+    return copy
+  } finally {
     active.delete(value)
-    return items
   }
+}
 
-  let prototype: object | null
-  let descriptors: PropertyDescriptorMap
-
+function copySafeTransportObject(value: object, active: WeakSet<object>): unknown {
   try {
-    prototype = Object.getPrototypeOf(value)
-    descriptors = Object.getOwnPropertyDescriptors(value)
-  } catch {
-    active.delete(value)
-    return unsafeTransportValue
-  }
+    let prototype: object | null
+    let descriptors: PropertyDescriptorMap
 
-  if (prototype !== Object.prototype) {
-    active.delete(value)
-    return unsafeTransportValue
-  }
-
-  if (Object.getOwnPropertySymbols(descriptors).length > 0) {
-    active.delete(value)
-    return unsafeTransportValue
-  }
-
-  const copy: Record<string, unknown> = {}
-
-  for (const key of Object.getOwnPropertyNames(descriptors)) {
-    const descriptor = descriptors[key]
-
-    if (descriptor === undefined || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
-      active.delete(value)
+    try {
+      prototype = Object.getPrototypeOf(value)
+      descriptors = Object.getOwnPropertyDescriptors(value)
+    } catch {
       return unsafeTransportValue
     }
 
-    const copiedValue = copySafeTransportValue(descriptor.value, active)
-
-    if (copiedValue === unsafeTransportValue) {
-      active.delete(value)
+    if (prototype !== Object.prototype) {
       return unsafeTransportValue
     }
 
-    Object.defineProperty(copy, key, {
-      value: copiedValue,
-      enumerable: true,
-      writable: true,
-      configurable: true
-    })
-  }
+    if (Object.getOwnPropertySymbols(descriptors).length > 0) {
+      return unsafeTransportValue
+    }
 
-  active.delete(value)
-  return copy
+    const copy: Record<string, unknown> = {}
+
+    for (const key of Object.getOwnPropertyNames(descriptors)) {
+      const descriptor = descriptors[key]
+
+      if (descriptor === undefined || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+        return unsafeTransportValue
+      }
+
+      const copiedValue = copySafeTransportValue(descriptor.value, active)
+
+      if (copiedValue === unsafeTransportValue) {
+        return unsafeTransportValue
+      }
+
+      Object.defineProperty(copy, key, {
+        value: copiedValue,
+        enumerable: true,
+        writable: true,
+        configurable: true
+      })
+    }
+
+    return copy
+  } finally {
+    active.delete(value)
+  }
 }
 
 function isRejectedPrimitive(value: unknown): boolean {
