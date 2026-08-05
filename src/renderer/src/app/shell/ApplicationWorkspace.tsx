@@ -62,6 +62,7 @@ export function ApplicationWorkspace({
           commandId={route.commandId}
           headingId={workspaceHeadingId}
           headingRef={headingRef}
+          userRole={user.role}
           selectedPatient={selectedPatient}
           onSelectedPatientChange={setSelectedPatient}
           onPatientAuthenticationFailure={onPatientAuthenticationFailure}

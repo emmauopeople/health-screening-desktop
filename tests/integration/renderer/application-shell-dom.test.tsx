@@ -451,11 +451,11 @@ describe('application shell DOM integration', () => {
     const cancelCase = await mountDirtyPatientWorkspace(createPatientFailure('INTERNAL_ERROR'))
 
     await clickButton(cancelCase.mounted, 'Home')
-    expect(text(cancelCase.mounted)).toContain('Save or discard your edits before leaving.')
+    expect(text(cancelCase.mounted)).toContain('Save or discard the amendment before leaving.')
     await clickDialogButton(cancelCase.mounted, 'Cancel')
 
     expectWorkspaceHeading(cancelCase.mounted, 'Patient Search and Management')
-    expect(text(cancelCase.mounted)).toContain('Unsaved edits')
+    expect(text(cancelCase.mounted)).toContain('Draft amendment')
     expect(commandPanel(cancelCase.mounted)?.getAttribute('aria-label')).toBe('Patients commands')
 
     await cancelCase.mounted.unmount()
@@ -463,7 +463,7 @@ describe('application shell DOM integration', () => {
     const discardCase = await mountDirtyPatientWorkspace(createPatientFailure('INTERNAL_ERROR'))
 
     await clickButton(discardCase.mounted, 'Home')
-    await clickDialogButton(discardCase.mounted, 'Discard edits')
+    await clickDialogButton(discardCase.mounted, 'Discard amendment')
 
     expectWorkspaceHeading(discardCase.mounted, 'Welcome, Admin User')
     expect(commandPanel(discardCase.mounted)?.getAttribute('aria-label')).toBe('Home commands')
@@ -475,7 +475,8 @@ describe('application shell DOM integration', () => {
 
     const saveCase = await mountDirtyPatientWorkspace(
       createIpcSuccess({
-        status: 'UPDATED',
+        status: 'AMENDED',
+        amendmentId: '55555555-5555-4555-8555-555555555555',
         patient: shellPatientDetail({
           displayName: 'Protected Changed',
           givenName: 'Protected Changed',
@@ -485,9 +486,9 @@ describe('application shell DOM integration', () => {
     )
 
     await clickButton(saveCase.mounted, 'Screening')
-    await clickDialogButton(saveCase.mounted, 'Save changes')
+    await clickDialogButton(saveCase.mounted, 'Save amendment')
 
-    expect(saveCase.harness.api.patient.update).toHaveBeenCalledOnce()
+    expect(saveCase.harness.api.patient.amendDemographics).toHaveBeenCalledOnce()
     expectWorkspaceHeading(saveCase.mounted, 'Today\u2019s Session')
     expect(commandPanel(saveCase.mounted)?.getAttribute('aria-label')).toBe('Screening commands')
     expect(
@@ -499,9 +500,9 @@ describe('application shell DOM integration', () => {
     const failedSaveCase = await mountDirtyPatientWorkspace(createPatientFailure('INTERNAL_ERROR'))
 
     await clickButton(failedSaveCase.mounted, 'Reports')
-    await clickDialogButton(failedSaveCase.mounted, 'Save changes')
+    await clickDialogButton(failedSaveCase.mounted, 'Save amendment')
 
-    expect(failedSaveCase.harness.api.patient.update).toHaveBeenCalledOnce()
+    expect(failedSaveCase.harness.api.patient.amendDemographics).toHaveBeenCalledOnce()
     expectWorkspaceHeading(failedSaveCase.mounted, 'Patient Search and Management')
     expect(commandPanel(failedSaveCase.mounted)?.getAttribute('aria-label')).toBe(
       'Patients commands'
@@ -801,13 +802,14 @@ describe('application shell DOM integration', () => {
 
     expect(text(mounted)).toContain('Protected Patient')
 
-    await clickButton(mounted, 'Edit')
+    await clickButton(mounted, 'Amend demographics')
     await changeInput(patientFieldInput(mounted, 'Village'), 'Revision Village')
+    await changeSelect(patientFieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
     await emitSession(harness, activeSession(2))
 
     expectWorkspaceHeading(mounted, 'Patient Search and Management')
     expect(text(mounted)).toContain('PT-000001')
-    expect(text(mounted)).toContain('Unsaved edits')
+    expect(text(mounted)).toContain('Draft amendment')
     expect(patientFieldInput(mounted, 'Village').value).toBe('Revision Village')
 
     await mounted.unmount()
@@ -919,7 +921,7 @@ describe('application shell DOM integration', () => {
     harness.api.patient.get.mockResolvedValueOnce(
       createIpcSuccess(shellPatientDetail({ village: 'Original Village' }))
     )
-    harness.api.patient.update.mockResolvedValueOnce(
+    harness.api.patient.amendDemographics.mockResolvedValueOnce(
       createIpcSuccess({
         status: 'PATIENT_VERSION_CONFLICT',
         patient: shellPatientDetail({
@@ -932,18 +934,19 @@ describe('application shell DOM integration', () => {
     const mounted = await mountApp(harness.api)
 
     await clickButton(mounted, 'Patients')
-    await clickButton(mounted, 'Edit')
+    await clickButton(mounted, 'Amend demographics')
     await changeInput(patientFieldInput(mounted, 'Village'), 'Attempted Village')
-    await clickButton(mounted, 'Save changes')
+    await changeSelect(patientFieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
+    await clickButton(mounted, 'Save amendment')
 
-    expect(text(mounted)).toContain('Latest authoritative patient')
+    expect(text(mounted)).toContain('Patient changed before this amendment was saved')
 
     await emitSession(harness, activeSession(2))
 
-    expect(text(mounted)).toContain('Latest authoritative patient')
+    expect(text(mounted)).toContain('Patient changed before this amendment was saved')
     expect(text(mounted)).toContain('Latest Village')
     expect(patientFieldInput(mounted, 'Village').value).toBe('Attempted Village')
-    expect(text(mounted)).toContain('Unsaved edits')
+    expect(text(mounted)).toContain('Draft amendment')
 
     await mounted.unmount()
   })
@@ -1379,19 +1382,20 @@ async function emitSession(
 }
 
 async function mountDirtyPatientWorkspace(
-  updateResult: Awaited<ReturnType<HealthScreeningApi['patient']['update']>>
+  amendmentResult: Awaited<ReturnType<HealthScreeningApi['patient']['amendDemographics']>>
 ): Promise<{ readonly harness: AppApiHarness; readonly mounted: MountedApp }> {
   const harness = createAppApi(activeSession(1))
   harness.api.patient.search.mockResolvedValue(
     createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
   )
   harness.api.patient.get.mockResolvedValue(createIpcSuccess(shellPatientDetail()))
-  harness.api.patient.update.mockResolvedValue(updateResult)
+  harness.api.patient.amendDemographics.mockResolvedValue(amendmentResult)
   const mounted = await mountApp(harness.api)
 
   await clickButton(mounted, 'Patients')
-  await clickButton(mounted, 'Edit')
+  await clickButton(mounted, 'Amend demographics')
   await changeInput(patientFieldInput(mounted, 'Given name'), 'Protected Changed')
+  await changeSelect(patientFieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
 
   return { harness, mounted }
 }

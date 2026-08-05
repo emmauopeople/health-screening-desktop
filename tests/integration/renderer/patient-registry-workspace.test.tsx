@@ -11,6 +11,7 @@ import {
   createIpcSuccess,
   createPatientFailure,
   type HealthScreeningApi,
+  type LocalUserRole,
   type PatientErrorCode,
   type PublicPatientAcknowledgmentHistoryRecord,
   type PublicPatientDetail,
@@ -32,7 +33,9 @@ type PatientCommandId = Extract<
   | 'PATIENTS_RECENT_PATIENTS'
   | 'PATIENTS_POSSIBLE_DUPLICATES'
 >
-type PatientUpdateResult = Awaited<ReturnType<HealthScreeningApi['patient']['update']>>
+type PatientAmendDemographicsResult = Awaited<
+  ReturnType<HealthScreeningApi['patient']['amendDemographics']>
+>
 
 type MockedPatientApi = {
   search: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['search']>>
@@ -1061,7 +1064,7 @@ describe('patient registry workspace mounted regressions', () => {
 
     await changeInput(searchInput(discardMounted), 'No matches')
     await advanceTimersByTime(300)
-    await clickButtonWithin(dialog(discardMounted)!, 'Discard edits')
+    await clickButtonWithin(dialog(discardMounted)!, 'Discard amendment')
 
     expect(text(discardMounted)).toContain('No matching patients.')
     expect(discardMounted.getSelectedPatient()).toBeNull()
@@ -1074,9 +1077,10 @@ describe('patient registry workspace mounted regressions', () => {
     saveApi.patient.search.mockResolvedValueOnce(
       createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 })
     )
-    saveApi.patient.update.mockResolvedValueOnce(
+    saveApi.patient.amendDemographics.mockResolvedValueOnce(
       createIpcSuccess({
-        status: 'UPDATED',
+        status: 'AMENDED',
+        amendmentId,
         patient: patientDetail({ village: 'Dirty Village', rowVersion: 2 })
       })
     )
@@ -1084,11 +1088,13 @@ describe('patient registry workspace mounted regressions', () => {
 
     await changeInput(searchInput(saveMounted), 'No matches')
     await advanceTimersByTime(300)
-    await clickButtonWithin(dialog(saveMounted)!, 'Save changes')
+    await clickButtonWithin(dialog(saveMounted)!, 'Save amendment')
 
-    expect(saveApi.patient.update).toHaveBeenCalledWith({
+    expect(saveApi.patient.amendDemographics).toHaveBeenCalledWith({
       patientId: patientIdOne,
       expectedRowVersion: 1,
+      reasonCode: 'DATA_ENTRY_CORRECTION',
+      reasonNote: null,
       patch: expect.objectContaining({ village: 'Dirty Village' })
     })
     expect(text(saveMounted)).toContain('No matching patients.')
@@ -1144,24 +1150,26 @@ describe('patient registry workspace mounted regressions', () => {
       village: 'Latest Village',
       rowVersion: 2
     })
-    api.patient.update.mockResolvedValueOnce(
+    api.patient.amendDemographics.mockResolvedValueOnce(
       createIpcSuccess({ status: 'PATIENT_VERSION_CONFLICT', patient: latest })
     )
     api.patient.search.mockResolvedValueOnce(
       createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 })
     )
 
-    await clickButton(mounted, 'Save changes')
+    await clickButton(mounted, 'Save amendment')
 
-    expect(text(mounted)).toContain('Latest authoritative patient')
+    expect(text(mounted)).toContain('Patient changed before this amendment was saved')
     expect(text(mounted)).toContain('Latest Village')
 
     await changeInput(searchInput(mounted), 'No matches')
     await clickButton(mounted, 'Search')
 
     expect(dialog(mounted)).not.toBeNull()
-    expect(buttonByTextWithin(dialog(mounted)!, 'Save changes')).toBeInstanceOf(HTMLButtonElement)
-    expect(buttonByTextWithin(dialog(mounted)!, 'Discard edits')).toBeInstanceOf(HTMLButtonElement)
+    expect(buttonByTextWithin(dialog(mounted)!, 'Save amendment')).toBeInstanceOf(HTMLButtonElement)
+    expect(buttonByTextWithin(dialog(mounted)!, 'Discard amendment')).toBeInstanceOf(
+      HTMLButtonElement
+    )
     expect(buttonByTextWithin(dialog(mounted)!, 'Cancel')).toBeInstanceOf(HTMLButtonElement)
     expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
     expect(text(mounted)).not.toContain('No matching patients.')
@@ -1172,8 +1180,8 @@ describe('patient registry workspace mounted regressions', () => {
     expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
     expect(mounted.getSelectedPatient()?.id).toBe(patientIdOne)
     expect(fieldInput(mounted, 'Village').value).toBe('Dirty Village')
-    expect(text(mounted)).toContain('Latest authoritative patient')
-    expect(text(mounted)).toContain('Unsaved edits')
+    expect(text(mounted)).toContain('Patient changed before this amendment was saved')
+    expect(text(mounted)).toContain('Draft amendment')
     expect(text(mounted)).not.toContain('No matching patients.')
 
     await mounted.unmount()
@@ -1188,7 +1196,7 @@ describe('patient registry workspace mounted regressions', () => {
 
     await changeInput(searchInput(mounted), 'No matches')
     await clickButton(mounted, 'Search')
-    await clickButtonWithin(dialog(mounted)!, 'Discard edits')
+    await clickButtonWithin(dialog(mounted)!, 'Discard amendment')
 
     expect(dialog(mounted)).toBeNull()
     expect(text(mounted)).toContain('No matching patients.')
@@ -1205,20 +1213,23 @@ describe('patient registry workspace mounted regressions', () => {
     api.patient.search.mockResolvedValueOnce(
       createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 })
     )
-    api.patient.update.mockResolvedValueOnce(
+    api.patient.amendDemographics.mockResolvedValueOnce(
       createIpcSuccess({
-        status: 'UPDATED',
+        status: 'AMENDED',
+        amendmentId,
         patient: patientDetail({ village: 'Dirty Village', rowVersion: 2 })
       })
     )
 
     await changeInput(searchInput(mounted), 'No matches')
     await clickButton(mounted, 'Search')
-    await clickButtonWithin(dialog(mounted)!, 'Save changes')
+    await clickButtonWithin(dialog(mounted)!, 'Save amendment')
 
-    expect(api.patient.update).toHaveBeenCalledWith({
+    expect(api.patient.amendDemographics).toHaveBeenCalledWith({
       patientId: patientIdOne,
       expectedRowVersion: 1,
+      reasonCode: 'DATA_ENTRY_CORRECTION',
+      reasonNote: null,
       patch: expect.objectContaining({ village: 'Dirty Village' })
     })
     expect(dialog(mounted)).toBeNull()
@@ -1234,11 +1245,11 @@ describe('patient registry workspace mounted regressions', () => {
     api.patient.search.mockResolvedValueOnce(
       createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 })
     )
-    api.patient.update.mockResolvedValueOnce(createPatientFailure('INTERNAL_ERROR'))
+    api.patient.amendDemographics.mockResolvedValueOnce(createPatientFailure('INTERNAL_ERROR'))
 
     await changeInput(searchInput(mounted), 'No matches')
     await clickButton(mounted, 'Search')
-    await clickButtonWithin(dialog(mounted)!, 'Save changes')
+    await clickButtonWithin(dialog(mounted)!, 'Save amendment')
 
     expect(dialog(mounted)).not.toBeNull()
     expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
@@ -1320,7 +1331,7 @@ describe('patient registry workspace mounted regressions', () => {
 
     await changeInput(searchInput(mounted), 'Brice')
     await clickButton(mounted, 'Search')
-    await clickButtonWithin(dialog(mounted)!, 'Discard edits')
+    await clickButtonWithin(dialog(mounted)!, 'Discard amendment')
 
     expect(dialog(mounted)).toBeNull()
     expect(patientRowByCode(mounted, 'PT-000002').getAttribute('aria-selected')).toBe('true')
@@ -1417,7 +1428,7 @@ describe('patient registry workspace mounted regressions', () => {
     expect(dialog(mounted)).not.toBeNull()
     expect(text(mounted)).not.toContain('No matching patients.')
 
-    await clickButtonWithin(dialog(mounted)!, 'Discard edits')
+    await clickButtonWithin(dialog(mounted)!, 'Discard amendment')
 
     expect(patientRowByCode(mounted, 'PT-000002').getAttribute('aria-selected')).toBe('true')
     expect(text(mounted)).toContain('Current Patient')
@@ -1908,8 +1919,8 @@ describe('patient registry workspace mounted regressions', () => {
       createIpcSuccess({ items: [summary], page: 1, pageSize: 25, total: 1 })
     )
     api.patient.get.mockResolvedValueOnce(createIpcSuccess(selected))
-    api.patient.update.mockResolvedValueOnce(
-      createIpcSuccess({ status: 'UPDATED', patient: updated })
+    api.patient.amendDemographics.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'AMENDED', amendmentId, patient: updated })
     )
 
     const mounted = await mountWorkspace({ api })
@@ -1918,18 +1929,92 @@ describe('patient registry workspace mounted regressions', () => {
     expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
     expect(text(mounted)).toContain('PT-000001')
 
-    await clickButton(mounted, 'Edit')
+    await clickButton(mounted, 'Amend demographics')
     await changeInput(fieldInput(mounted, 'Given name'), 'Ada Edited')
-    await clickButton(mounted, 'Save changes')
+    await changeSelect(fieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
+    await clickButton(mounted, 'Save amendment')
 
-    expect(api.patient.update).toHaveBeenCalledWith({
+    expect(api.patient.amendDemographics).toHaveBeenCalledWith({
       patientId: patientIdOne,
       expectedRowVersion: 1,
-      patch: expect.objectContaining({ givenName: 'Ada Edited' })
+      reasonCode: 'DATA_ENTRY_CORRECTION',
+      reasonNote: null,
+      patch: { givenName: 'Ada Edited' }
     })
-    expect(text(mounted)).toContain('Changes saved.')
+    expect(text(mounted)).toContain('Demographic amendment recorded.')
     expect(text(mounted)).toContain('Ada Edited')
-    expect(text(mounted)).not.toContain('Unsaved edits')
+    expect(text(mounted)).not.toContain('Draft amendment')
+    expect(api.patient.update).not.toHaveBeenCalled()
+
+    await mounted.unmount()
+  })
+
+  it('validates demographic amendment fields before invoking IPC', async () => {
+    const api = createApi()
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    const mounted = await mountWorkspace({ api, selectedPatient: patientDetail() })
+
+    await clickButton(mounted, 'Amend demographics')
+    await clickButton(mounted, 'Save amendment')
+
+    expect(api.patient.amendDemographics).not.toHaveBeenCalled()
+    expect(text(mounted)).toContain('Change at least one demographic field before saving.')
+    expect(text(mounted)).toContain('Select a reason for this demographic amendment.')
+    expect(mounted.container.querySelector('[role="alert"]')?.textContent).toContain(
+      'Review the demographic amendment'
+    )
+
+    await changeInput(fieldInput(mounted, 'Village'), 'Bamenda')
+    await changeSelect(fieldSelect(mounted, 'Reason'), 'OTHER')
+    await clickButton(mounted, 'Save amendment')
+
+    expect(api.patient.amendDemographics).not.toHaveBeenCalled()
+    expect(text(mounted)).toContain('Enter a reason note when Other is selected.')
+
+    await mounted.unmount()
+  })
+
+  it('prevents trained screeners from changing status while allowing ordinary amendments', async () => {
+    const api = createApi()
+    const updated = patientDetail({ village: 'Screener Village', rowVersion: 2 })
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    api.patient.amendDemographics.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'AMENDED', amendmentId, patient: updated })
+    )
+    const mounted = await mountWorkspace({
+      api,
+      selectedPatient: patientDetail({ status: 'ACTIVE' }),
+      userRole: 'TRAINED_SCREENER'
+    })
+
+    await clickButton(mounted, 'Amend demographics')
+
+    const statusSelect = fieldSelect(mounted, 'Status')
+    expect(statusSelect.disabled).toBe(true)
+    expect(statusSelect.getAttribute('aria-describedby')).toContain(
+      'patient-amendment-status-restriction'
+    )
+    expect(text(mounted)).toContain(
+      'Only nurses and local administrators can change patient status.'
+    )
+
+    await changeSelect(statusSelect, 'INACTIVE')
+    await changeInput(fieldInput(mounted, 'Village'), 'Screener Village')
+    await changeSelect(fieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
+    await clickButton(mounted, 'Save amendment')
+
+    expect(api.patient.amendDemographics).toHaveBeenCalledWith({
+      patientId: patientIdOne,
+      expectedRowVersion: 1,
+      reasonCode: 'DATA_ENTRY_CORRECTION',
+      reasonNote: null,
+      patch: { village: 'Screener Village' }
+    })
+    expect(api.patient.update).not.toHaveBeenCalled()
 
     await mounted.unmount()
   })
@@ -2218,6 +2303,83 @@ describe('patient registry workspace mounted regressions', () => {
     await mounted.unmount()
   })
 
+  it('refreshes demographic history after a successful amendment and preserves acknowledgment history', async () => {
+    const api = createApi()
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    api.patient.listDemographicAmendmentHistory
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [demographicAmendmentRecord({ reasonNote: 'Before amendment.' })],
+          page: 1,
+          pageSize: 25,
+          total: 1
+        })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [
+            demographicAmendmentRecord({
+              priorRowVersion: 2,
+              resultingRowVersion: 3,
+              reasonNote: 'After amendment.'
+            })
+          ],
+          page: 1,
+          pageSize: 25,
+          total: 1
+        })
+      )
+    api.patient.listAcknowledgmentHistory.mockResolvedValueOnce(
+      createIpcSuccess({
+        items: [acknowledgmentHistoryRecord({ note: 'Acknowledgment stays cached.' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    api.patient.amendDemographics.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'AMENDED',
+        amendmentId,
+        patient: patientDetail({ village: 'Updated Village', rowVersion: 2 })
+      })
+    )
+    const mounted = await mountWorkspace({
+      api,
+      selectedPatient: patientDetail({ village: 'Old Village' })
+    })
+
+    await clickElement(tabByText(mounted, 'Demographic History'))
+    expect(activeTabPanel(mounted).textContent).toContain('Before amendment.')
+
+    await clickElement(tabByText(mounted, 'Acknowledgment History'))
+    expect(activeTabPanel(mounted).textContent).toContain('Acknowledgment stays cached.')
+
+    await clickElement(tabByText(mounted, 'Current Details'))
+    await clickButton(mounted, 'Amend demographics')
+    await changeInput(fieldInput(mounted, 'Village'), 'Updated Village')
+    await changeSelect(fieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
+    await clickButton(mounted, 'Save amendment')
+
+    expect(api.patient.listDemographicAmendmentHistory).toHaveBeenCalledOnce()
+    expect(api.patient.listAcknowledgmentHistory).toHaveBeenCalledOnce()
+
+    await clickElement(tabByText(mounted, 'Demographic History'))
+
+    expect(api.patient.listDemographicAmendmentHistory).toHaveBeenCalledTimes(2)
+    expect(api.patient.listDemographicAmendmentHistory).toHaveBeenLastCalledWith({
+      patientId: patientIdOne,
+      page: 1,
+      pageSize: 25
+    })
+    expect(activeTabPanel(mounted).textContent).toContain('After amendment.')
+    expect(api.patient.listAcknowledgmentHistory).toHaveBeenCalledOnce()
+
+    await mounted.unmount()
+  })
+
   it('ignores stale demographic history after selecting a different patient', async () => {
     const api = createApi()
     const staleHistory =
@@ -2371,7 +2533,7 @@ describe('patient registry workspace mounted regressions', () => {
     expect(fieldInput(cancelMounted, 'Village').value).toBe('Dirty Village')
 
     await clickElement(tabByText(cancelMounted, 'Demographic History'))
-    await clickButtonWithin(dialog(cancelMounted)!, 'Discard edits')
+    await clickButtonWithin(dialog(cancelMounted)!, 'Discard amendment')
 
     expect(tabByText(cancelMounted, 'Demographic History').getAttribute('aria-selected')).toBe(
       'true'
@@ -2384,19 +2546,22 @@ describe('patient registry workspace mounted regressions', () => {
 
     const saveApi = createApi()
     const saveMounted = await mountDirtyPatientSearchWorkspace({ api: saveApi })
-    saveApi.patient.update.mockResolvedValueOnce(
+    saveApi.patient.amendDemographics.mockResolvedValueOnce(
       createIpcSuccess({
-        status: 'UPDATED',
+        status: 'AMENDED',
+        amendmentId,
         patient: patientDetail({ village: 'Dirty Village', rowVersion: 2 })
       })
     )
 
     await clickElement(tabByText(saveMounted, 'Acknowledgment History'))
-    await clickButtonWithin(dialog(saveMounted)!, 'Save changes')
+    await clickButtonWithin(dialog(saveMounted)!, 'Save amendment')
 
-    expect(saveApi.patient.update).toHaveBeenCalledWith({
+    expect(saveApi.patient.amendDemographics).toHaveBeenCalledWith({
       patientId: patientIdOne,
       expectedRowVersion: 1,
+      reasonCode: 'DATA_ENTRY_CORRECTION',
+      reasonNote: null,
       patch: expect.objectContaining({ village: 'Dirty Village' })
     })
     expect(tabByText(saveMounted, 'Acknowledgment History').getAttribute('aria-selected')).toBe(
@@ -2412,10 +2577,12 @@ describe('patient registry workspace mounted regressions', () => {
 
     const failedSaveApi = createApi()
     const failedSaveMounted = await mountDirtyPatientSearchWorkspace({ api: failedSaveApi })
-    failedSaveApi.patient.update.mockResolvedValueOnce(createPatientFailure('INTERNAL_ERROR'))
+    failedSaveApi.patient.amendDemographics.mockResolvedValueOnce(
+      createPatientFailure('INTERNAL_ERROR')
+    )
 
     await clickElement(tabByText(failedSaveMounted, 'Demographic History'))
-    await clickButtonWithin(dialog(failedSaveMounted)!, 'Save changes')
+    await clickButtonWithin(dialog(failedSaveMounted)!, 'Save amendment')
 
     expect(tabByText(failedSaveMounted, 'Current Details').getAttribute('aria-selected')).toBe(
       'true'
@@ -2435,7 +2602,7 @@ describe('patient registry workspace mounted regressions', () => {
       rowVersion: 2,
       updatedByDisplayName: 'Second User'
     })
-    api.patient.update.mockResolvedValueOnce(
+    api.patient.amendDemographics.mockResolvedValueOnce(
       createIpcSuccess({ status: 'PATIENT_VERSION_CONFLICT', patient: latest })
     )
     api.patient.search.mockResolvedValueOnce(
@@ -2444,31 +2611,34 @@ describe('patient registry workspace mounted regressions', () => {
 
     const mounted = await mountWorkspace({ api, selectedPatient: original })
 
-    await clickButton(mounted, 'Edit')
+    await clickButton(mounted, 'Amend demographics')
     await changeInput(fieldInput(mounted, 'Village'), 'Attempted Village')
-    await clickButton(mounted, 'Save changes')
+    await changeSelect(fieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
+    await clickButton(mounted, 'Save amendment')
 
     expect(text(mounted)).toContain('The patient changed after you opened it.')
-    expect(text(mounted)).toContain('Latest authoritative patient')
+    expect(text(mounted)).toContain('Patient changed before this amendment was saved')
     expect(text(mounted)).toContain('Latest Village')
     expect(fieldInput(mounted, 'Village').value).toBe('Attempted Village')
-    expect(text(mounted)).toContain('Unsaved edits')
+    expect(text(mounted)).toContain('Draft amendment')
 
-    await clickButton(mounted, 'Continue editing')
+    await clickButton(mounted, 'Review rebased amendment')
 
     expect(fieldInput(mounted, 'Village').value).toBe('Attempted Village')
-    expect(text(mounted)).not.toContain('Latest authoritative patient')
+    expect(text(mounted)).not.toContain('Patient changed before this amendment was saved')
 
     await mounted.unmount()
   })
 
   it('guards dirty workspace navigation, traps dialog focus, blocks Escape while saving, and resumes after save', async () => {
     const api = createApi()
-    const failedSave = createDeferred<PatientUpdateResult>()
+    const failedSave = createDeferred<PatientAmendDemographicsResult>()
     const savedPatient = patientDetail({ village: 'Saved Village', rowVersion: 2 })
-    api.patient.update
+    api.patient.amendDemographics
       .mockReturnValueOnce(failedSave.promise)
-      .mockResolvedValueOnce(createIpcSuccess({ status: 'UPDATED', patient: savedPatient }))
+      .mockResolvedValueOnce(
+        createIpcSuccess({ status: 'AMENDED', amendmentId, patient: savedPatient })
+      )
     api.patient.search.mockResolvedValueOnce(
       createIpcSuccess({
         items: [patientSummary({ village: 'Original Village' })],
@@ -2483,9 +2653,10 @@ describe('patient registry workspace mounted regressions', () => {
       selectedPatient: patientDetail({ village: 'Original Village' })
     })
 
-    await clickButton(mounted, 'Edit')
+    await clickButton(mounted, 'Amend demographics')
     const villageInput = fieldInput(mounted, 'Village')
     await changeInput(villageInput, 'Dirty Village')
+    await changeSelect(fieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
     villageInput.focus()
 
     expect(await mounted.runNavigationGuard('HOME_DASHBOARD')).toBe(false)
@@ -2499,7 +2670,7 @@ describe('patient registry workspace mounted regressions', () => {
     expect(mounted.onSelectCommand).not.toHaveBeenCalled()
 
     expect(await mounted.runNavigationGuard('HOME_DASHBOARD')).toBe(false)
-    await clickButtonWithin(dialog(mounted)!, 'Save changes')
+    await clickButtonWithin(dialog(mounted)!, 'Save amendment')
     await dispatchKeyboard(dialog(mounted)!, 'Escape')
 
     expect(dialog(mounted)).not.toBeNull()
@@ -2511,11 +2682,11 @@ describe('patient registry workspace mounted regressions', () => {
     expect(mounted.onSelectCommand).not.toHaveBeenCalled()
     expect(text(mounted)).toContain('The application could not complete the request.')
 
-    await clickButtonWithin(dialog(mounted)!, 'Save changes')
+    await clickButtonWithin(dialog(mounted)!, 'Save amendment')
 
     expect(mounted.onSelectCommand).toHaveBeenCalledWith('HOME_DASHBOARD')
     expect(dialog(mounted)).toBeNull()
-    expect(text(mounted)).toContain('Changes saved.')
+    expect(text(mounted)).toContain('Demographic amendment recorded.')
 
     await mounted.unmount()
   })
@@ -2971,12 +3142,13 @@ describe('patient registry workspace mounted regressions', () => {
               total: 1
             })
           )
-          api.patient.update.mockResolvedValueOnce(createPatientFailure('IPC_FORBIDDEN'))
+          api.patient.amendDemographics.mockResolvedValueOnce(createPatientFailure('IPC_FORBIDDEN'))
         },
         run: async (mounted) => {
-          await clickButton(mounted, 'Edit')
+          await clickButton(mounted, 'Amend demographics')
           await changeInput(fieldInput(mounted, 'Given name'), 'Forbidden Edit')
-          await clickButton(mounted, 'Save changes')
+          await changeSelect(fieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
+          await clickButton(mounted, 'Save amendment')
         }
       },
       {
@@ -3086,12 +3258,14 @@ async function mountWorkspace({
   api = createApi(),
   commandId = 'PATIENTS_PATIENT_SEARCH',
   selectedPatient = null,
+  userRole = 'LOCAL_ADMIN',
   onAuthenticationFailure = vi.fn<(code: PatientErrorCode) => void>(),
   onSelectCommand = vi.fn<(commandId: ApplicationCommandId) => void>()
 }: {
   readonly api?: MockedHealthScreeningApi
   readonly commandId?: PatientCommandId
   readonly selectedPatient?: PublicPatientDetail | null
+  readonly userRole?: LocalUserRole
   readonly onAuthenticationFailure?: ReturnType<typeof vi.fn<(code: PatientErrorCode) => void>>
   readonly onSelectCommand?: ReturnType<typeof vi.fn<(commandId: ApplicationCommandId) => void>>
 } = {}): Promise<MountedWorkspace> {
@@ -3111,6 +3285,7 @@ async function mountWorkspace({
         commandId: currentCommandId,
         headingId: 'patient-registry-test-heading',
         headingRef,
+        userRole,
         selectedPatient: currentSelectedPatient,
         onSelectedPatientChange: (nextPatient) => {
           currentSelectedPatient = nextPatient
@@ -3215,8 +3390,9 @@ async function mountDirtyPatientSearchWorkspace({
     'true'
   )
 
-  await clickButton(mounted, 'Edit')
+  await clickButton(mounted, 'Amend demographics')
   await changeInput(fieldInput(mounted, 'Village'), draftVillage)
+  await changeSelect(fieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
 
   return mounted
 }
@@ -3485,6 +3661,16 @@ function fieldInput(mounted: MountedWorkspace, label: string): HTMLInputElement 
 
   if (field === null) {
     throw new Error(`Expected input field ${label} to be rendered.`)
+  }
+
+  return field
+}
+
+function fieldSelect(mounted: MountedWorkspace, label: string): HTMLSelectElement {
+  const field = fieldControl<HTMLSelectElement>(mounted, label, 'select')
+
+  if (field === null) {
+    throw new Error(`Expected select field ${label} to be rendered.`)
   }
 
   return field

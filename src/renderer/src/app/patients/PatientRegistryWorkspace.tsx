@@ -8,7 +8,9 @@ import type {
 
 import type {
   HealthScreeningApi,
+  LocalUserRole,
   PatientEditableFields,
+  PatientDemographicAmendmentReasonCode,
   PatientErrorCode,
   PublicPatientDetail,
   PublicPatientDuplicateCandidate,
@@ -21,7 +23,21 @@ import type {
   PatientWorkspaceNavigationGuard
 } from '../shell/application-shell-types'
 import { PatientCurrentDetailsPanel } from './PatientCurrentDetailsPanel'
+import {
+  PatientDemographicAmendmentForm,
+  type PatientDemographicAmendmentConflictView
+} from './PatientDemographicAmendmentForm'
 import { PatientDetailTabs, type PatientDetailTab } from './PatientDetailTabs'
+import {
+  applyPatientDemographicPatchToDraft,
+  createPatientDemographicDraft,
+  createPatientDemographicPatch,
+  getPatientDemographicConflictFields,
+  validatePatientDemographicAmendment,
+  type PatientDemographicAmendmentReasonSelection,
+  type PatientDemographicAmendmentValidationErrors,
+  type PatientDemographicDraft
+} from './patient-demographic-amendment'
 
 type PatientCommandId =
   | 'PATIENTS_PATIENT_SEARCH'
@@ -34,6 +50,7 @@ interface PatientRegistryWorkspaceProps {
   readonly commandId: PatientCommandId
   readonly headingId: string
   readonly headingRef: RefObject<HTMLHeadingElement | null>
+  readonly userRole: LocalUserRole
   readonly selectedPatient: PublicPatientDetail | null
   onSelectedPatientChange(patient: PublicPatientDetail | null): void
   onPatientAuthenticationFailure(code: PatientErrorCode): void
@@ -102,6 +119,7 @@ export function PatientRegistryWorkspace({
   commandId,
   headingId,
   headingRef,
+  userRole,
   selectedPatient,
   onSelectedPatientChange,
   onPatientAuthenticationFailure,
@@ -111,22 +129,43 @@ export function PatientRegistryWorkspace({
   const mountedRef = useMountedRef()
   const securityEpochRef = useRef(0)
   const patientStateInvalidatorsRef = useRef(new Set<PatientStateInvalidator>())
-  const [editMode, setEditMode] = useState(false)
-  const [draft, setDraft] = useState<PatientEditableFields>(emptyEditableFields)
-  const [editDirty, setEditDirty] = useState(false)
-  const [conflictPatient, setConflictPatient] = useState<PublicPatientDetail | null>(null)
+  const [amendmentMode, setAmendmentMode] = useState(false)
+  const [amendmentBase, setAmendmentBase] = useState<PublicPatientDetail | null>(null)
+  const [demographicDraft, setDemographicDraft] = useState<PatientDemographicDraft | null>(null)
+  const [amendmentReasonCode, setAmendmentReasonCode] =
+    useState<PatientDemographicAmendmentReasonSelection>('')
+  const [amendmentReasonNote, setAmendmentReasonNote] = useState('')
+  const [amendmentValidationErrors, setAmendmentValidationErrors] =
+    useState<PatientDemographicAmendmentValidationErrors>({})
+  const [amendmentConflict, setAmendmentConflict] =
+    useState<PatientDemographicAmendmentConflictView | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
+  const [amendmentSaving, setAmendmentSaving] = useState(false)
   const [showDirtyGuard, setShowDirtyGuard] = useState(false)
   const [preferredPatientReveal, setPreferredPatientReveal] =
     useState<PreferredPatientReveal | null>(null)
+  const [demographicHistoryRevision, setDemographicHistoryRevision] = useState(0)
   const pendingDirtyAction = useRef<(() => void) | null>(null)
   const pendingDirtyActionNeedsNavigationBypassRef = useRef(false)
   const allowResolvedDirtyNavigationRef = useRef(false)
   const patientLoadRequestRef = useRef(0)
+  const amendmentRequestRef = useRef(0)
+  const amendmentSubmissionPendingRef = useRef(false)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const messageRef = useRef<HTMLDivElement | null>(null)
   const [activeDetailTab, setActiveDetailTab] = useState<PatientDetailTab>('CURRENT_DETAILS')
   const previousSelectedPatientIdRef = useRef<string | null>(selectedPatient?.id ?? null)
+  const selectedPatientIdRef = useLatestRef(selectedPatient?.id ?? null)
+  const amendmentPatch =
+    amendmentMode && amendmentBase !== null && demographicDraft !== null
+      ? createPatientDemographicPatch(amendmentBase, demographicDraft)
+      : null
+  const amendmentDirty =
+    amendmentMode &&
+    (amendmentPatch !== null ||
+      amendmentReasonCode !== '' ||
+      amendmentReasonNote.length > 0 ||
+      amendmentConflict !== null)
 
   const invalidateProtectedPatientState = useCallback((): void => {
     securityEpochRef.current += 1
@@ -143,24 +182,41 @@ export function PatientRegistryWorkspace({
     []
   )
 
+  const clearAmendmentState = useCallback((): void => {
+    amendmentRequestRef.current += 1
+    amendmentSubmissionPendingRef.current = false
+    setAmendmentMode(false)
+    setAmendmentBase(null)
+    setDemographicDraft(null)
+    setAmendmentReasonCode('')
+    setAmendmentReasonNote('')
+    setAmendmentValidationErrors({})
+    setAmendmentConflict(null)
+    setAmendmentSaving(false)
+  }, [])
+
+  const focusMessage = useCallback((): void => {
+    queueMicrotask(() => {
+      if (mountedRef.current) {
+        messageRef.current?.focus({ preventScroll: true })
+      }
+    })
+  }, [mountedRef])
+
   const clearProtectedPatientState = useCallback((): void => {
     invalidateProtectedPatientState()
     for (const invalidatePatientState of Array.from(patientStateInvalidatorsRef.current)) {
       invalidatePatientState()
     }
+    clearAmendmentState()
     onSelectedPatientChange(null)
-    setDraft(emptyEditableFields)
-    setEditMode(false)
-    setEditDirty(false)
-    setConflictPatient(null)
-    setSaving(false)
     setPreferredPatientReveal(null)
     setActiveDetailTab('CURRENT_DETAILS')
     pendingDirtyAction.current = null
     pendingDirtyActionNeedsNavigationBypassRef.current = false
     allowResolvedDirtyNavigationRef.current = false
     setShowDirtyGuard(false)
-  }, [invalidateProtectedPatientState, onSelectedPatientChange])
+  }, [clearAmendmentState, invalidateProtectedPatientState, onSelectedPatientChange])
 
   const handlePatientFailure = useCallback(
     (code: PatientErrorCode, fallbackMessage: string): boolean => {
@@ -185,7 +241,7 @@ export function PatientRegistryWorkspace({
 
   const beginDirtyGuard = useCallback(
     (action: () => void): boolean => {
-      if (!editDirty) {
+      if (!amendmentDirty) {
         action()
         return true
       }
@@ -195,7 +251,7 @@ export function PatientRegistryWorkspace({
       setShowDirtyGuard(true)
       return false
     },
-    [editDirty]
+    [amendmentDirty]
   )
 
   useEffect(() => {
@@ -213,14 +269,14 @@ export function PatientRegistryWorkspace({
         return
       }
 
-      if (activeDetailTab === 'CURRENT_DETAILS' && editDirty) {
+      if (activeDetailTab === 'CURRENT_DETAILS' && amendmentDirty) {
         beginDirtyGuard(() => setActiveDetailTab(tab))
         return
       }
 
       setActiveDetailTab(tab)
     },
-    [activeDetailTab, beginDirtyGuard, editDirty]
+    [activeDetailTab, amendmentDirty, beginDirtyGuard]
   )
 
   useEffect(() => {
@@ -234,7 +290,7 @@ export function PatientRegistryWorkspace({
         return true
       }
 
-      if (!editDirty) {
+      if (!amendmentDirty) {
         return true
       }
 
@@ -249,7 +305,7 @@ export function PatientRegistryWorkspace({
     return () => {
       registerNavigationGuard(null)
     }
-  }, [commandId, editDirty, onSelectCommand, registerNavigationGuard])
+  }, [amendmentDirty, commandId, onSelectCommand, registerNavigationGuard])
 
   useEffect(() => {
     const listener = (event: KeyboardEvent): void => {
@@ -296,11 +352,8 @@ export function PatientRegistryWorkspace({
         }
 
         setActiveDetailTab('CURRENT_DETAILS')
+        clearAmendmentState()
         onSelectedPatientChange(result.data)
-        setDraft(detailToEditable(result.data))
-        setEditMode(false)
-        setEditDirty(false)
-        setConflictPatient(null)
         setMessage(null)
         return true
       } catch {
@@ -314,7 +367,7 @@ export function PatientRegistryWorkspace({
         return false
       }
     },
-    [api, handlePatientFailure, isCurrentOperation, onSelectedPatientChange]
+    [api, clearAmendmentState, handlePatientFailure, isCurrentOperation, onSelectedPatientChange]
   )
 
   const selectPatient = useCallback(
@@ -329,13 +382,9 @@ export function PatientRegistryWorkspace({
   const clearSelectedPatient = useCallback((): void => {
     patientLoadRequestRef.current += 1
     setActiveDetailTab('CURRENT_DETAILS')
+    clearAmendmentState()
     onSelectedPatientChange(null)
-    setDraft(emptyEditableFields)
-    setEditMode(false)
-    setEditDirty(false)
-    setConflictPatient(null)
-    setSaving(false)
-  }, [onSelectedPatientChange])
+  }, [clearAmendmentState, onSelectedPatientChange])
 
   const applyPatientSearchTarget = useCallback(
     (patientId: string | null): void => {
@@ -351,23 +400,73 @@ export function PatientRegistryWorkspace({
     [clearSelectedPatient, loadAndSelectPatient, selectedPatient?.id]
   )
 
-  const saveDraft = useCallback(async (): Promise<boolean> => {
-    if (selectedPatient === null || saving) {
+  const startDemographicAmendment = useCallback((): void => {
+    if (selectedPatient === null) {
+      return
+    }
+
+    amendmentRequestRef.current += 1
+    amendmentSubmissionPendingRef.current = false
+    setActiveDetailTab('CURRENT_DETAILS')
+    setAmendmentBase(selectedPatient)
+    setDemographicDraft(createPatientDemographicDraft(selectedPatient))
+    setAmendmentReasonCode('')
+    setAmendmentReasonNote('')
+    setAmendmentValidationErrors({})
+    setAmendmentConflict(null)
+    setAmendmentSaving(false)
+    setAmendmentMode(true)
+    setMessage(null)
+  }, [selectedPatient])
+
+  const submitAmendment = useCallback(async (): Promise<boolean> => {
+    if (
+      selectedPatient === null ||
+      amendmentBase === null ||
+      demographicDraft === null ||
+      amendmentSubmissionPendingRef.current
+    ) {
       return false
     }
 
+    const validation = validatePatientDemographicAmendment({
+      basePatient: amendmentBase,
+      draft: demographicDraft,
+      reasonCode: amendmentReasonCode,
+      reasonNote: amendmentReasonNote,
+      userRole,
+      today: getCurrentLocalDate()
+    })
+
+    setAmendmentValidationErrors(validation.errors)
+
+    if (validation.patch === null || validation.focusField !== null || amendmentReasonCode === '') {
+      return false
+    }
+
+    const requestReasonCode: PatientDemographicAmendmentReasonCode = amendmentReasonCode
+    const requestId = amendmentRequestRef.current + 1
+    amendmentRequestRef.current = requestId
+    amendmentSubmissionPendingRef.current = true
     const startedSecurityEpoch = securityEpochRef.current
-    setSaving(true)
+    const startedPatientId = selectedPatient.id
     setMessage(null)
+    setAmendmentSaving(true)
 
     try {
-      const result = await api.patient.update({
-        patientId: selectedPatient.id,
-        expectedRowVersion: selectedPatient.rowVersion,
-        patch: draft
+      const result = await api.patient.amendDemographics({
+        patientId: startedPatientId,
+        expectedRowVersion: amendmentBase.rowVersion,
+        reasonCode: requestReasonCode,
+        reasonNote: validation.normalizedReasonNote,
+        patch: validation.patch
       })
 
-      if (!isCurrentOperation(startedSecurityEpoch)) {
+      if (
+        !isCurrentOperation(startedSecurityEpoch) ||
+        amendmentRequestRef.current !== requestId ||
+        selectedPatientIdRef.current !== startedPatientId
+      ) {
         return false
       }
 
@@ -377,51 +476,76 @@ export function PatientRegistryWorkspace({
       }
 
       if (result.data.status === 'PATIENT_VERSION_CONFLICT') {
-        setConflictPatient(result.data.patient)
-        setEditMode(true)
-        setEditDirty(true)
+        const latestPatient = result.data.patient
+        const intendedPatch = validation.patch
+        const overlappingFields = getPatientDemographicConflictFields(
+          amendmentBase,
+          latestPatient,
+          intendedPatch
+        )
+
+        onSelectedPatientChange(latestPatient)
+        setAmendmentBase(latestPatient)
+        setDemographicDraft(
+          applyPatientDemographicPatchToDraft(latestPatient, intendedPatch, userRole)
+        )
+        setAmendmentConflict({
+          latestUpdatedAt: latestPatient.updatedAt,
+          latestUpdatedByDisplayName: latestPatient.updatedByDisplayName,
+          overlappingFields
+        })
+        setAmendmentValidationErrors({})
+        setAmendmentMode(true)
         setMessage('The patient changed after you opened it. Review the latest details.')
         return false
       }
 
       onSelectedPatientChange(result.data.patient)
-      setDraft(detailToEditable(result.data.patient))
-      setEditDirty(false)
-      setConflictPatient(null)
-      setEditMode(false)
-      setMessage('Changes saved.')
+      clearAmendmentState()
+      setActiveDetailTab('CURRENT_DETAILS')
+      setDemographicHistoryRevision((revision) => revision + 1)
+      setMessage('Demographic amendment recorded.')
+      focusMessage()
       return true
     } catch {
-      if (isCurrentOperation(startedSecurityEpoch)) {
+      if (
+        isCurrentOperation(startedSecurityEpoch) &&
+        selectedPatientIdRef.current === startedPatientId
+      ) {
         setMessage(transportFailureMessage)
       }
 
       return false
     } finally {
-      if (isCurrentOperation(startedSecurityEpoch)) {
-        setSaving(false)
+      if (
+        isCurrentOperation(startedSecurityEpoch) &&
+        amendmentRequestRef.current === requestId &&
+        selectedPatientIdRef.current === startedPatientId
+      ) {
+        amendmentSubmissionPendingRef.current = false
+        setAmendmentSaving(false)
       }
     }
   }, [
     api,
-    draft,
+    amendmentBase,
+    amendmentReasonCode,
+    amendmentReasonNote,
+    clearAmendmentState,
+    demographicDraft,
+    focusMessage,
     handlePatientFailure,
     isCurrentOperation,
     onSelectedPatientChange,
-    saving,
-    selectedPatient
+    selectedPatient,
+    selectedPatientIdRef,
+    userRole
   ])
 
-  const discardDraft = useCallback((): void => {
-    if (selectedPatient !== null) {
-      setDraft(detailToEditable(selectedPatient))
-    }
-
-    setEditDirty(false)
-    setConflictPatient(null)
-    setEditMode(false)
+  const discardAmendment = useCallback((): void => {
+    clearAmendmentState()
     setMessage(null)
-  }, [selectedPatient])
+  }, [clearAmendmentState])
 
   const completePendingDirtyAction = useCallback((): void => {
     const action = pendingDirtyAction.current
@@ -460,7 +584,7 @@ export function PatientRegistryWorkspace({
       </header>
 
       {message !== null ? (
-        <div className="patient-alert" role="status">
+        <div ref={messageRef} className="patient-alert" role="status" tabIndex={-1}>
           {message}
         </div>
       ) : null}
@@ -473,11 +597,8 @@ export function PatientRegistryWorkspace({
           onPatientFailure={handlePatientFailure}
           onPatientCreated={(patient) => {
             setActiveDetailTab('CURRENT_DETAILS')
+            clearAmendmentState()
             onSelectedPatientChange(patient)
-            setDraft(detailToEditable(patient))
-            setEditMode(false)
-            setEditDirty(false)
-            setConflictPatient(null)
             setPreferredPatientReveal({ patient })
             setMessage('Patient created.')
             onSelectCommand('PATIENTS_PATIENT_SEARCH')
@@ -537,64 +658,67 @@ export function PatientRegistryWorkspace({
           <PatientDetailPane
             api={api}
             patient={selectedPatient}
-            draft={draft}
-            editMode={editMode}
-            dirty={editDirty}
-            saving={saving}
-            conflictPatient={conflictPatient}
+            amendmentMode={amendmentMode}
+            amendmentBase={amendmentBase}
+            demographicDraft={demographicDraft}
+            amendmentReasonCode={amendmentReasonCode}
+            amendmentReasonNote={amendmentReasonNote}
+            amendmentValidationErrors={amendmentValidationErrors}
+            amendmentConflict={amendmentConflict}
+            amendmentSaving={amendmentSaving}
             activeTab={activeDetailTab}
+            userRole={userRole}
+            demographicHistoryRevision={demographicHistoryRevision}
             securityEpochRef={securityEpochRef}
             registerStateInvalidator={registerPatientStateInvalidator}
             onPatientFailure={handlePatientFailure}
             onSelectTab={selectDetailTab}
             onDraftChange={(nextDraft) => {
-              setDraft(nextDraft)
-              setEditDirty(true)
+              setDemographicDraft(nextDraft)
+              setAmendmentValidationErrors({})
             }}
-            onEdit={() => {
-              if (selectedPatient !== null) {
-                setDraft(detailToEditable(selectedPatient))
-                setEditMode(true)
-                setEditDirty(false)
-                setConflictPatient(null)
-              }
+            onReasonCodeChange={(nextReasonCode) => {
+              setAmendmentReasonCode(nextReasonCode)
+              setAmendmentValidationErrors({})
             }}
+            onReasonNoteChange={(nextReasonNote) => {
+              setAmendmentReasonNote(nextReasonNote)
+              setAmendmentValidationErrors({})
+            }}
+            onEdit={startDemographicAmendment}
             onSave={() => {
-              void saveDraft()
+              void submitAmendment()
             }}
             onCancel={() => {
-              beginDirtyGuard(discardDraft)
+              if (amendmentDirty) {
+                beginDirtyGuard(discardAmendment)
+                return
+              }
+
+              discardAmendment()
             }}
             onReload={() => {
               if (selectedPatient !== null) {
-                void loadAndSelectPatient(selectedPatient.id)
+                beginDirtyGuard(() => {
+                  void loadAndSelectPatient(selectedPatient.id)
+                })
               }
             }}
-            onReloadLatest={() => {
-              if (conflictPatient !== null) {
-                onSelectedPatientChange(conflictPatient)
-                setDraft(detailToEditable(conflictPatient))
-                setEditMode(false)
-                setEditDirty(false)
-                setConflictPatient(null)
-                setMessage('Loaded the latest patient details.')
-              }
+            onReviewConflict={() => {
+              setAmendmentConflict(null)
+              setMessage('Review the rebased amendment.')
             }}
-            onDiscardMyEdits={() => {
-              if (conflictPatient !== null) {
-                onSelectedPatientChange(conflictPatient)
-                setDraft(detailToEditable(conflictPatient))
-                setEditMode(false)
-                setEditDirty(false)
-                setConflictPatient(null)
-                setMessage('Discarded your edits.')
-              }
+            onRetryConflict={() => {
+              setAmendmentConflict(null)
+              void submitAmendment()
             }}
-            onContinueEditing={() => {
-              setConflictPatient(null)
-              setEditMode(true)
-              setEditDirty(true)
-              setMessage('Continue editing your unsaved changes.')
+            onDiscardConflict={() => {
+              discardAmendment()
+              setMessage('Loaded the latest patient details.')
+            }}
+            onCancelConflict={() => {
+              setAmendmentConflict(null)
+              setMessage('Continue editing your rebased amendment.')
             }}
           />
         </div>
@@ -602,8 +726,8 @@ export function PatientRegistryWorkspace({
 
       {showDirtyGuard ? (
         <PatientModalDialog
-          title="Unsaved patient changes"
-          pending={saving}
+          title="Unsaved patient amendment"
+          pending={amendmentSaving}
           onCancel={() => {
             pendingDirtyAction.current = null
             pendingDirtyActionNeedsNavigationBypassRef.current = false
@@ -611,37 +735,37 @@ export function PatientRegistryWorkspace({
             setShowDirtyGuard(false)
           }}
         >
-          <p className="patient-dialog-copy">Save or discard your edits before leaving.</p>
+          <p className="patient-dialog-copy">Save or discard the amendment before leaving.</p>
           <div className="patient-dialog-actions">
             <button
               type="button"
               className="button button-primary"
-              disabled={saving}
+              disabled={amendmentSaving}
               onClick={() => {
-                void saveDraft().then((saved) => {
+                void submitAmendment().then((saved) => {
                   if (saved) {
                     completePendingDirtyAction()
                   }
                 })
               }}
             >
-              Save changes
+              Save amendment
             </button>
             <button
               type="button"
               className="button button-secondary"
-              disabled={saving}
+              disabled={amendmentSaving}
               onClick={() => {
-                discardDraft()
+                discardAmendment()
                 completePendingDirtyAction()
               }}
             >
-              Discard edits
+              Discard amendment
             </button>
             <button
               type="button"
               className="button button-secondary"
-              disabled={saving}
+              disabled={amendmentSaving}
               onClick={() => {
                 pendingDirtyAction.current = null
                 pendingDirtyActionNeedsNavigationBypassRef.current = false
@@ -1841,129 +1965,92 @@ function PatientSummaryTable({
 function PatientDetailPane({
   api,
   patient,
-  draft,
-  editMode,
-  dirty,
-  saving,
-  conflictPatient,
+  amendmentMode,
+  amendmentBase,
+  demographicDraft,
+  amendmentReasonCode,
+  amendmentReasonNote,
+  amendmentValidationErrors,
+  amendmentConflict,
+  amendmentSaving,
   activeTab,
+  userRole,
+  demographicHistoryRevision,
   securityEpochRef,
   registerStateInvalidator,
   onPatientFailure,
   onSelectTab,
   onDraftChange,
+  onReasonCodeChange,
+  onReasonNoteChange,
   onEdit,
   onSave,
   onCancel,
   onReload,
-  onReloadLatest,
-  onDiscardMyEdits,
-  onContinueEditing
+  onReviewConflict,
+  onRetryConflict,
+  onDiscardConflict,
+  onCancelConflict
 }: {
   readonly api: HealthScreeningApi
   readonly patient: PublicPatientDetail | null
-  readonly draft: PatientEditableFields
-  readonly editMode: boolean
-  readonly dirty: boolean
-  readonly saving: boolean
-  readonly conflictPatient: PublicPatientDetail | null
+  readonly amendmentMode: boolean
+  readonly amendmentBase: PublicPatientDetail | null
+  readonly demographicDraft: PatientDemographicDraft | null
+  readonly amendmentReasonCode: PatientDemographicAmendmentReasonSelection
+  readonly amendmentReasonNote: string
+  readonly amendmentValidationErrors: PatientDemographicAmendmentValidationErrors
+  readonly amendmentConflict: PatientDemographicAmendmentConflictView | null
+  readonly amendmentSaving: boolean
   readonly activeTab: PatientDetailTab
+  readonly userRole: LocalUserRole
+  readonly demographicHistoryRevision: number
   readonly securityEpochRef: MutableRefObject<number>
   registerStateInvalidator: RegisterPatientStateInvalidator
   onPatientFailure(code: PatientErrorCode, message: string): boolean
   onSelectTab(tab: PatientDetailTab): void
-  onDraftChange(draft: PatientEditableFields): void
+  onDraftChange(draft: PatientDemographicDraft): void
+  onReasonCodeChange(reasonCode: PatientDemographicAmendmentReasonSelection): void
+  onReasonNoteChange(reasonNote: string): void
   onEdit(): void
   onSave(): void
   onCancel(): void
   onReload(): void
-  onReloadLatest(): void
-  onDiscardMyEdits(): void
-  onContinueEditing(): void
+  onReviewConflict(): void
+  onRetryConflict(): void
+  onDiscardConflict(): void
+  onCancelConflict(): void
 }): React.JSX.Element {
   const currentDetails =
     patient === null ? null : (
       <PatientCurrentDetailsPanel>
-        {editMode ? (
-          <>
-            <div className="patient-detail-header">
-              <h2>{patient.patientCode}</h2>
-              <span>{dirty ? 'Unsaved edits' : 'Editing'}</span>
-            </div>
-            {conflictPatient !== null ? (
-              <div className="patient-conflict-review" role="status">
-                <h3>Latest authoritative patient</h3>
-                <dl className="patient-detail-list">
-                  <DetailRow label="Name" value={conflictPatient.displayName} />
-                  <DetailRow label="Age / DOB" value={formatAgeDob(conflictPatient)} />
-                  <DetailRow
-                    label="Village / quarter"
-                    value={formatVillageQuarter(conflictPatient)}
-                  />
-                  <DetailRow
-                    label="Updated"
-                    value={`${conflictPatient.updatedAt} by ${conflictPatient.updatedByDisplayName}`}
-                  />
-                </dl>
-                <div className="patient-detail-actions">
-                  <button
-                    type="button"
-                    className="button button-secondary"
-                    onClick={onReloadLatest}
-                  >
-                    Reload latest
-                  </button>
-                  <button
-                    type="button"
-                    className="button button-secondary"
-                    onClick={onDiscardMyEdits}
-                  >
-                    Discard my edits
-                  </button>
-                  <button
-                    type="button"
-                    className="button button-primary"
-                    onClick={onContinueEditing}
-                  >
-                    Continue editing
-                  </button>
-                </div>
-              </div>
-            ) : null}
-            <PatientFieldsForm draft={draft} disabled={saving} onDraftChange={onDraftChange} />
-            <div className="patient-detail-actions">
-              <button
-                type="button"
-                className="button button-primary"
-                disabled={saving}
-                onClick={onSave}
-              >
-                Save changes
-              </button>
-              <button
-                type="button"
-                className="button button-secondary"
-                disabled={saving}
-                onClick={onCancel}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="button button-secondary"
-                disabled={saving}
-                onClick={onReload}
-              >
-                Reload
-              </button>
-            </div>
-          </>
+        {amendmentMode && amendmentBase !== null && demographicDraft !== null ? (
+          <PatientDemographicAmendmentForm
+            draft={demographicDraft}
+            reasonCode={amendmentReasonCode}
+            reasonNote={amendmentReasonNote}
+            validationErrors={amendmentValidationErrors}
+            conflict={amendmentConflict}
+            pending={amendmentSaving}
+            userRole={userRole}
+            today={getCurrentLocalDate()}
+            onDraftChange={onDraftChange}
+            onReasonCodeChange={onReasonCodeChange}
+            onReasonNoteChange={onReasonNoteChange}
+            onSubmit={onSave}
+            onCancel={onCancel}
+            onReload={onReload}
+            onReviewConflict={onReviewConflict}
+            onRetryConflict={onRetryConflict}
+            onDiscardConflict={onDiscardConflict}
+            onCancelConflict={onCancelConflict}
+          />
         ) : (
           <>
             <div className="patient-detail-header">
               <h2>{patient.patientCode}</h2>
               <button type="button" className="button button-secondary" onClick={onEdit}>
-                Edit
+                Amend demographics
               </button>
             </div>
             <dl className="patient-detail-list">
@@ -1995,6 +2082,7 @@ function PatientDetailPane({
       patient={patient}
       activeTab={activeTab}
       currentDetails={currentDetails}
+      demographicHistoryRevision={demographicHistoryRevision}
       securityEpochRef={securityEpochRef}
       registerStateInvalidator={registerStateInvalidator}
       onPatientFailure={onPatientFailure}
@@ -2559,26 +2647,6 @@ function DetailRow({
       <dd>{value}</dd>
     </div>
   )
-}
-
-function detailToEditable(patient: PublicPatientDetail): PatientEditableFields {
-  return {
-    givenName: patient.givenName,
-    familyName: patient.familyName,
-    otherNames: patient.otherNames,
-    dateOfBirth: patient.dateOfBirth,
-    approximateAgeYears: patient.approximateAgeYears,
-    ageAsOfDate: patient.ageAsOfDate,
-    sex: patient.sex,
-    village: patient.village,
-    quarter: patient.quarter,
-    phone: patient.phone,
-    alternateContactName: patient.alternateContactName,
-    alternateContactPhone: patient.alternateContactPhone,
-    residenceNotes: patient.residenceNotes,
-    status: patient.status,
-    acknowledgmentStatus: patient.acknowledgment.status
-  }
 }
 
 function updateRegistrationDraftField<TKey extends keyof PatientEditableFields>(
