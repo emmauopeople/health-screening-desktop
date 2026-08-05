@@ -18,6 +18,8 @@ import { ipcChannels, type AppHealth, type AppInfo } from '@shared/ipc'
 import type {
   FirstRunBootstrapService,
   LocalAuthenticationSessionService,
+  PatientAcknowledgmentService,
+  PatientDemographicAmendmentService,
   PatientRegistryService
 } from '@main/application'
 
@@ -149,7 +151,7 @@ describe('application IPC handler registration', () => {
 
     const dispose = registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(18)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(22)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
@@ -162,11 +164,15 @@ describe('application IPC handler registration', () => {
       'health-screening:auth:unlock',
       'health-screening:first-run:get-state',
       'health-screening:first-run:initialize',
+      'health-screening:patient:amend-demographics',
       'health-screening:patient:create',
       'health-screening:patient:find-duplicates',
       'health-screening:patient:get',
+      'health-screening:patient:list-acknowledgment-history',
+      'health-screening:patient:list-demographic-amendment-history',
       'health-screening:patient:list-recent',
       'health-screening:patient:mark-not-duplicate',
+      'health-screening:patient:record-acknowledgment',
       'health-screening:patient:search',
       'health-screening:patient:update',
       'unrelated:channel'
@@ -184,7 +190,7 @@ describe('application IPC handler registration', () => {
     registerApplicationIpcHandlers(ipcMain, createDependencies())
     registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(36)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(44)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getHealth)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
@@ -201,11 +207,15 @@ describe('application IPC handler registration', () => {
       'health-screening:auth:unlock',
       'health-screening:first-run:get-state',
       'health-screening:first-run:initialize',
+      'health-screening:patient:amend-demographics',
       'health-screening:patient:create',
       'health-screening:patient:find-duplicates',
       'health-screening:patient:get',
+      'health-screening:patient:list-acknowledgment-history',
+      'health-screening:patient:list-demographic-amendment-history',
       'health-screening:patient:list-recent',
       'health-screening:patient:mark-not-duplicate',
+      'health-screening:patient:record-acknowledgment',
       'health-screening:patient:search',
       'health-screening:patient:update',
       'unrelated:channel'
@@ -230,6 +240,10 @@ describe('application IPC handler registration', () => {
     ipcMain.handlers.set(ipcChannels.patient.get, vi.fn())
     ipcMain.handlers.set(ipcChannels.patient.create, vi.fn())
     ipcMain.handlers.set(ipcChannels.patient.update, vi.fn())
+    ipcMain.handlers.set(ipcChannels.patient.amendDemographics, vi.fn())
+    ipcMain.handlers.set(ipcChannels.patient.listDemographicAmendmentHistory, vi.fn())
+    ipcMain.handlers.set(ipcChannels.patient.recordAcknowledgment, vi.fn())
+    ipcMain.handlers.set(ipcChannels.patient.listAcknowledgmentHistory, vi.fn())
     ipcMain.handlers.set(ipcChannels.patient.listRecent, vi.fn())
     ipcMain.handlers.set(ipcChannels.patient.findDuplicates, vi.fn())
     ipcMain.handlers.set(ipcChannels.patient.markNotDuplicate, vi.fn())
@@ -289,6 +303,8 @@ function createDependencies(): ApplicationIpcHandlerDependencies {
       navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
       authenticationSessionService: createAuthenticationSessionService(),
       patientRegistryService: createPatientRegistryService(),
+      patientDemographicAmendmentService: createPatientDemographicAmendmentService(),
+      patientAcknowledgmentService: createPatientAcknowledgmentService(),
       logger: createLogger()
     },
     logger: createLogger()
@@ -326,6 +342,20 @@ function createPatientRegistryService(): PatientRegistryService {
     findDuplicates: vi.fn(),
     markNotDuplicate: vi.fn()
   } as unknown as PatientRegistryService
+}
+
+function createPatientDemographicAmendmentService(): PatientDemographicAmendmentService {
+  return {
+    amend: vi.fn(),
+    listHistory: vi.fn()
+  } as unknown as PatientDemographicAmendmentService
+}
+
+function createPatientAcknowledgmentService(): PatientAcknowledgmentService {
+  return {
+    record: vi.fn(),
+    listHistory: vi.fn()
+  } as unknown as PatientAcknowledgmentService
 }
 
 function createApplicationInfoProvider(): ApplicationInfoProvider {

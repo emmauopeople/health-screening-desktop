@@ -11,7 +11,6 @@ import {
   type NormalizedPatientFields,
   type PatientDetailRecord,
   type PatientDuplicateCandidateRecord,
-  type PatientDuplicatePairRecord,
   type PatientSummaryRecord
 } from '@main/database'
 import {
@@ -30,13 +29,15 @@ import {
   type PatientSearchRequest,
   type PatientSearchResult,
   type PatientUpdateRequest,
-  type PatientUpdateResult,
-  type PublicPatientDetail,
-  type PublicPatientDuplicateCandidate,
-  type PublicPatientDuplicatePair,
-  type PublicPatientSummary
+  type PatientUpdateResult
 } from '@shared/ipc'
 
+import {
+  toPublicPatientDetail as toPublicDetail,
+  toPublicPatientDuplicateCandidate as toPublicCandidate,
+  toPublicPatientDuplicatePair as toPublicPair,
+  toPublicPatientSummary as toPublicSummary
+} from './patient-public-mapping'
 import type {
   PatientRegistryService,
   PatientRegistryServiceDependencies,
@@ -464,67 +465,6 @@ export function createPatientRegistryService({
         duplicateReviewTokens.delete(token)
       }
     }
-  }
-}
-
-function toPublicSummary(record: PatientSummaryRecord): PublicPatientSummary {
-  return {
-    id: record.id,
-    patientCode: record.patientCode,
-    displayName: record.displayName,
-    givenName: record.givenName,
-    familyName: record.familyName,
-    otherNames: record.otherNames,
-    dateOfBirth: record.dateOfBirth,
-    approximateAgeYears: record.approximateAgeYears,
-    ageAsOfDate: record.ageAsOfDate,
-    sex: record.sex,
-    village: record.village,
-    quarter: record.quarter,
-    phone: record.phone,
-    status: record.status,
-    rowVersion: record.rowVersion,
-    updatedAt: record.updatedAt
-  }
-}
-
-function toPublicDetail(record: PatientDetailRecord): PublicPatientDetail {
-  return {
-    ...toPublicSummary(record),
-    alternateContactName: record.alternateContactName,
-    alternateContactPhone: record.alternateContactPhone,
-    residenceNotes: record.residenceNotes,
-    acknowledgment: {
-      status: record.acknowledgmentStatus,
-      recordedAt: record.acknowledgmentRecordedAt,
-      recordedByDisplayName: record.acknowledgmentRecordedByDisplayName
-    },
-    createdAt: record.createdAt,
-    createdByDisplayName: record.createdByDisplayName,
-    updatedByDisplayName: record.updatedByDisplayName,
-    clinicalStatus: 'NOT_AVAILABLE'
-  }
-}
-
-function toPublicCandidate(
-  record: PatientDuplicateCandidateRecord
-): PublicPatientDuplicateCandidate {
-  return {
-    patient: toPublicSummary(record.patient),
-    matchedOn: [...record.matchedOn],
-    score: record.score,
-    status: 'POSSIBLE_DUPLICATE'
-  }
-}
-
-function toPublicPair(record: PatientDuplicatePairRecord): PublicPatientDuplicatePair {
-  return {
-    pairKey: record.pairKey,
-    first: toPublicSummary(record.first),
-    second: toPublicSummary(record.second),
-    matchedOn: [...record.matchedOn],
-    score: record.score,
-    status: 'POSSIBLE_DUPLICATE'
   }
 }
 

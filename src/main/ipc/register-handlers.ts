@@ -47,6 +47,22 @@ export function registerApplicationIpcHandlers(
   applicationIpcMain.handle(ipcChannels.patient.get, patientHandlers.get)
   applicationIpcMain.handle(ipcChannels.patient.create, patientHandlers.create)
   applicationIpcMain.handle(ipcChannels.patient.update, patientHandlers.update)
+  applicationIpcMain.handle(
+    ipcChannels.patient.amendDemographics,
+    patientHandlers.amendDemographics
+  )
+  applicationIpcMain.handle(
+    ipcChannels.patient.listDemographicAmendmentHistory,
+    patientHandlers.listDemographicAmendmentHistory
+  )
+  applicationIpcMain.handle(
+    ipcChannels.patient.recordAcknowledgment,
+    patientHandlers.recordAcknowledgment
+  )
+  applicationIpcMain.handle(
+    ipcChannels.patient.listAcknowledgmentHistory,
+    patientHandlers.listAcknowledgmentHistory
+  )
   applicationIpcMain.handle(ipcChannels.patient.listRecent, patientHandlers.listRecent)
   applicationIpcMain.handle(ipcChannels.patient.findDuplicates, patientHandlers.findDuplicates)
   applicationIpcMain.handle(ipcChannels.patient.markNotDuplicate, patientHandlers.markNotDuplicate)
@@ -73,6 +89,10 @@ export function disposeApplicationIpcHandlers(applicationIpcMain: ApplicationIpc
   applicationIpcMain.removeHandler(ipcChannels.patient.get)
   applicationIpcMain.removeHandler(ipcChannels.patient.create)
   applicationIpcMain.removeHandler(ipcChannels.patient.update)
+  applicationIpcMain.removeHandler(ipcChannels.patient.amendDemographics)
+  applicationIpcMain.removeHandler(ipcChannels.patient.listDemographicAmendmentHistory)
+  applicationIpcMain.removeHandler(ipcChannels.patient.recordAcknowledgment)
+  applicationIpcMain.removeHandler(ipcChannels.patient.listAcknowledgmentHistory)
   applicationIpcMain.removeHandler(ipcChannels.patient.listRecent)
   applicationIpcMain.removeHandler(ipcChannels.patient.findDuplicates)
   applicationIpcMain.removeHandler(ipcChannels.patient.markNotDuplicate)

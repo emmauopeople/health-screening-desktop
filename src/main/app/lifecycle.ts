@@ -14,6 +14,8 @@ import { registerApplicationShutdown } from '@main/app/shutdown'
 import {
   createProductionFirstRunBootstrapService,
   createProductionLocalAuthenticationSessionService,
+  createProductionPatientAcknowledgmentService,
+  createProductionPatientDemographicAmendmentService,
   createProductionPatientRegistryService
 } from '@main/application'
 import {
@@ -82,6 +84,16 @@ export function startApplicationLifecycle(): void {
         connection: databaseRuntime.getConnection(),
         logger: console
       })
+      const patientDemographicAmendmentService = createProductionPatientDemographicAmendmentService(
+        {
+          connection: databaseRuntime.getConnection(),
+          logger: console
+        }
+      )
+      const patientAcknowledgmentService = createProductionPatientAcknowledgmentService({
+        connection: databaseRuntime.getConnection(),
+        logger: console
+      })
       const authenticationSessionPublisher = createAuthenticationSessionPublisher({
         navigationPolicy,
         getWebContents: getMainWindowWebContents
@@ -105,6 +117,8 @@ export function startApplicationLifecycle(): void {
           navigationPolicy,
           authenticationSessionService,
           patientRegistryService,
+          patientDemographicAmendmentService,
+          patientAcknowledgmentService,
           logger: console
         },
         logger: console

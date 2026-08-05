@@ -26,6 +26,38 @@ describe('first-run IPC lifecycle and scope', () => {
     expect(lifecycle).not.toMatch(/firstRunBootstrapService\.(getState|initialize)\(/u)
   })
 
+  it('composes all patient IPC services from the initialized database runtime', () => {
+    const lifecycle = readSource('src/main/app/lifecycle.ts')
+    const registrationStatement = 'const disposeIpcHandlers = registerApplicationIpcHandlers'
+    const registryStatement =
+      'const patientRegistryService = createProductionPatientRegistryService'
+    const demographicStatement =
+      'const patientDemographicAmendmentService =\n        createProductionPatientDemographicAmendmentService'
+    const acknowledgmentStatement =
+      'const patientAcknowledgmentService = createProductionPatientAcknowledgmentService'
+
+    expect(lifecycle.match(/createDatabaseRuntime\(/gu)?.length).toBe(1)
+    expect(lifecycle).toContain('createProductionPatientRegistryService')
+    expect(lifecycle).toContain('createProductionPatientDemographicAmendmentService')
+    expect(lifecycle).toContain('createProductionPatientAcknowledgmentService')
+    expect(lifecycle.indexOf('databaseRuntime.initialize()')).toBeLessThan(
+      lifecycle.indexOf(registryStatement)
+    )
+    expect(lifecycle.indexOf(registryStatement)).toBeLessThan(
+      lifecycle.indexOf(registrationStatement)
+    )
+    expect(lifecycle.indexOf(demographicStatement)).toBeLessThan(
+      lifecycle.indexOf(registrationStatement)
+    )
+    expect(lifecycle.indexOf(acknowledgmentStatement)).toBeLessThan(
+      lifecycle.indexOf(registrationStatement)
+    )
+    expect(lifecycle).toContain('patientRegistryService,')
+    expect(lifecycle).toContain('patientDemographicAmendmentService,')
+    expect(lifecycle).toContain('patientAcknowledgmentService,')
+    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(5)
+  })
+
   it('keeps renderer first-run consumption scoped to the fixed preload API and preserves shell status text', () => {
     const rendererSource = readAllSource('src/renderer')
 

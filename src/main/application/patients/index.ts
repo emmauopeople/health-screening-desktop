@@ -1,5 +1,13 @@
 export { createPatientAcknowledgmentService } from './patient-acknowledgment-service'
 export { createPatientDemographicAmendmentService } from './patient-demographic-amendment-service'
+export {
+  toPublicAcknowledgmentHistoryRecord,
+  toPublicDemographicAmendmentRecord,
+  toPublicPatientDetail,
+  toPublicPatientDuplicateCandidate,
+  toPublicPatientDuplicatePair,
+  toPublicPatientSummary
+} from './patient-public-mapping'
 export { createPatientRegistryService } from './patient-service'
 export {
   createProductionPatientAcknowledgmentService,
