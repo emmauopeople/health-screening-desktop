@@ -168,6 +168,7 @@ export {
   parseScreeningSessionReopenReason,
   parseScreeningSessionRowVersion,
   parseScreeningSessionStatus,
+  parseScreeningSessionTransitionRowVersion,
   type CloseScreeningSessionInput,
   type CloseScreeningSessionWriteResult,
   type InsertScreeningSessionInput,

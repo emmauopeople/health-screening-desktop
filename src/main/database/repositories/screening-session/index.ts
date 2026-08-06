@@ -9,7 +9,8 @@ export {
   parseScreeningSessionNote,
   parseScreeningSessionReopenReason,
   parseScreeningSessionRowVersion,
-  parseScreeningSessionStatus
+  parseScreeningSessionStatus,
+  parseScreeningSessionTransitionRowVersion
 } from './screening-session-validation'
 export type {
   CloseScreeningSessionInput,

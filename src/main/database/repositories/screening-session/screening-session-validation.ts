@@ -123,7 +123,7 @@ export function parseCloseScreeningSessionInput(
     return Object.freeze({
       id: parseEntityId(data.id),
       lifecycleHistoryId: parseEntityId(data.lifecycleHistoryId),
-      expectedRowVersion: parseScreeningSessionRowVersion(data.expectedRowVersion),
+      expectedRowVersion: parseScreeningSessionTransitionRowVersion(data.expectedRowVersion),
       closedBy: parseEntityId(data.closedBy),
       closedAt: parseUtcTimestamp(data.closedAt),
       reason: parseScreeningSessionCloseReason(data.reason)
@@ -142,7 +142,7 @@ export function parseReopenScreeningSessionInput(
     return Object.freeze({
       id: parseEntityId(data.id),
       lifecycleHistoryId: parseEntityId(data.lifecycleHistoryId),
-      expectedRowVersion: parseScreeningSessionRowVersion(data.expectedRowVersion),
+      expectedRowVersion: parseScreeningSessionTransitionRowVersion(data.expectedRowVersion),
       reopenedBy: parseEntityId(data.reopenedBy),
       reopenedAt: parseUtcTimestamp(data.reopenedAt),
       reason: parseScreeningSessionReopenReason(data.reason)
@@ -225,6 +225,17 @@ export function parseScreeningSessionRowVersion(value: unknown): number {
   }
 
   return value
+}
+
+export function parseScreeningSessionTransitionRowVersion(value: unknown): number {
+  const rowVersion = parseScreeningSessionRowVersion(value)
+  const resultingRowVersion = rowVersion + 1
+
+  if (!Number.isSafeInteger(resultingRowVersion) || resultingRowVersion < 1) {
+    throw new RepositoryValidationError()
+  }
+
+  return rowVersion
 }
 
 export function parseScreeningSessionNote(value: unknown): string | null {

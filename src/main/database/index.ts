@@ -102,6 +102,7 @@ export {
   parseScreeningSessionReopenReason,
   parseScreeningSessionRowVersion,
   parseScreeningSessionStatus,
+  parseScreeningSessionTransitionRowVersion,
   parseUpdateLocalUserAuthenticationStateInput,
   parseUserDisplayName,
   parseUsername,

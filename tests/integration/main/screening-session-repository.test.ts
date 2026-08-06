@@ -14,9 +14,11 @@ import {
   RepositoryWriteError,
   ScreeningSessionAlreadyExistsError,
   parseScreeningSessionDate,
+  type CloseScreeningSessionInput,
   type DatabaseTransactionConnection,
   type DatabaseTransactionExecutor,
   type InsertScreeningSessionInput,
+  type ReopenScreeningSessionInput,
   type ScreeningSessionRecord,
   type ScreeningSessionRepository
 } from '@main/database'
@@ -26,13 +28,17 @@ import { createUtcClock, parseUtcTimestamp, type UtcClock } from '@main/foundati
 const now = '2026-07-29T12:34:56.789Z'
 const later = '2026-07-29T13:34:56.789Z'
 const secondLater = '2026-07-29T14:34:56.789Z'
+const thirdLater = '2026-07-29T15:34:56.789Z'
 const userId = '11111111-1111-4111-8111-111111111111'
 const secondUserId = '22222222-2222-4222-8222-222222222222'
 const locationId = '33333333-3333-4333-8333-333333333333'
 const secondLocationId = '44444444-4444-4444-8444-444444444444'
+const thirdLocationId = '12121212-1212-4212-8212-121212121212'
 const protocolVersionId = '55555555-5555-4555-8555-555555555555'
 const sessionId = '66666666-6666-4666-8666-666666666666'
 const secondSessionId = '77777777-7777-4777-8777-777777777777'
+const thirdSessionId = '13131313-1313-4313-8313-131313131313'
+const fourthSessionId = '14141414-1414-4414-8414-141414141414'
 const lifecycleHistoryId = '88888888-8888-4888-8888-888888888888'
 const secondLifecycleHistoryId = '99999999-9999-4999-8999-999999999999'
 const thirdLifecycleHistoryId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -70,6 +76,130 @@ describe('screening session repository', () => {
       expect(readTableCount(connection, 'screening_sessions')).toBe(1)
       expect(readTableCount(connection, 'screening_session_lifecycle_history')).toBe(1)
     })
+  })
+
+  it('accepts transition row versions only when the resulting version remains safe', async () => {
+    await withScreeningSessionRepository(({ connection, repository, executor }) => {
+      insertReferences(connection)
+      insertRawSession(connection, { row_version: Number.MAX_SAFE_INTEGER - 1 })
+      insertRawLifecycleHistory(connection, {
+        id: lifecycleHistoryId,
+        resulting_row_version: 1
+      })
+
+      const accepted = executor.run((context) =>
+        repository.close(context.connection, {
+          id: parseEntityId(sessionId),
+          lifecycleHistoryId: parseEntityId(secondLifecycleHistoryId),
+          expectedRowVersion: Number.MAX_SAFE_INTEGER - 1,
+          closedBy: parseEntityId(userId),
+          closedAt: parseUtcTimestamp(later),
+          reason: null
+        })
+      )
+
+      expect(accepted).toMatchObject({
+        status: 'CLOSED',
+        session: {
+          rowVersion: Number.MAX_SAFE_INTEGER,
+          status: 'CLOSED'
+        }
+      })
+    })
+  })
+
+  it('rejects unsafe close and reopen transition row versions without mutation', async () => {
+    await withScreeningSessionRepository(({ connection, repository, executor }) => {
+      insertReferences(connection)
+      insertRawSession(connection, { row_version: Number.MAX_SAFE_INTEGER })
+      insertRawLifecycleHistory(connection, {
+        id: lifecycleHistoryId,
+        resulting_row_version: 1
+      })
+      const originalRow = readRawSession(connection, sessionId)
+      const originalHistory = readRawLifecycleHistory(connection, sessionId)
+
+      const closeError = captureError(() =>
+        executor.run((context) =>
+          repository.close(context.connection, {
+            id: parseEntityId(sessionId),
+            lifecycleHistoryId: parseEntityId(secondLifecycleHistoryId),
+            expectedRowVersion: Number.MAX_SAFE_INTEGER,
+            closedBy: parseEntityId(userId),
+            closedAt: parseUtcTimestamp(later),
+            reason: null
+          })
+        )
+      )
+
+      expect(closeError).toBeInstanceOf(RepositoryValidationError)
+      expect(readRawSession(connection, sessionId)).toEqual(originalRow)
+      expect(readRawLifecycleHistory(connection, sessionId)).toEqual(originalHistory)
+
+      updateRawSession(connection, {
+        status: 'CLOSED',
+        closed_by: userId,
+        closed_at: later,
+        updated_by: userId,
+        updated_at: later,
+        row_version: Number.MAX_SAFE_INTEGER
+      })
+      const closedRow = readRawSession(connection, sessionId)
+      const historyAfterCloseRejection = readRawLifecycleHistory(connection, sessionId)
+
+      const reopenError = captureError(() =>
+        executor.run((context) =>
+          repository.reopen(context.connection, {
+            id: parseEntityId(sessionId),
+            lifecycleHistoryId: parseEntityId(thirdLifecycleHistoryId),
+            expectedRowVersion: Number.MAX_SAFE_INTEGER,
+            reopenedBy: parseEntityId(userId),
+            reopenedAt: parseUtcTimestamp(secondLater),
+            reason: 'Reopen'
+          })
+        )
+      )
+
+      expect(reopenError).toBeInstanceOf(RepositoryValidationError)
+      expect(readRawSession(connection, sessionId)).toEqual(closedRow)
+      expect(readRawLifecycleHistory(connection, sessionId)).toEqual(historyAfterCloseRejection)
+    })
+  })
+
+  it('rejects unsafe transition row versions before preparing update SQL', () => {
+    const fakeConnection = createFakeExecutorConnection()
+    const fakeRepository = createScreeningSessionRepository(
+      fakeConnection as unknown as Database.Database
+    )
+    const fakeExecutor = createExecutorForConnection(fakeConnection as unknown as Database.Database)
+
+    expect(() =>
+      fakeExecutor.run((context) =>
+        fakeRepository.close(context.connection, {
+          id: parseEntityId(sessionId),
+          lifecycleHistoryId: parseEntityId(lifecycleHistoryId),
+          expectedRowVersion: Number.MAX_SAFE_INTEGER,
+          closedBy: parseEntityId(userId),
+          closedAt: parseUtcTimestamp(now),
+          reason: null
+        })
+      )
+    ).toThrow(RepositoryValidationError)
+    expect(fakeConnection.preparedSql).toEqual([])
+
+    expect(() =>
+      fakeExecutor.run((context) =>
+        fakeRepository.reopen(context.connection, {
+          id: parseEntityId(sessionId),
+          lifecycleHistoryId: parseEntityId(secondLifecycleHistoryId),
+          expectedRowVersion: Number.MAX_SAFE_INTEGER,
+          reopenedBy: parseEntityId(userId),
+          reopenedAt: parseUtcTimestamp(now),
+          reason: 'Reopen'
+        })
+      )
+    ).toThrow(RepositoryValidationError)
+    expect(fakeConnection.preparedSql).toEqual([])
   })
 
   it('classifies only location/date uniqueness as ScreeningSessionAlreadyExistsError', async () => {
@@ -224,6 +354,138 @@ describe('screening session repository', () => {
     })
   })
 
+  it('lists sessions with bounded page sizes, individual filters, totals, and overflow protection', async () => {
+    await withScreeningSessionRepository(({ connection, repository }) => {
+      seedListRows(connection)
+
+      for (const pageSize of [25, 50, 100] as const) {
+        const result = repository.list({
+          locationId: null,
+          status: null,
+          dateFrom: null,
+          dateTo: null,
+          page: 1,
+          pageSize
+        })
+
+        expect(result.pageSize).toBe(pageSize)
+        expect(result.total).toBe(4)
+      }
+
+      expect(
+        repository
+          .list({
+            locationId: null,
+            status: null,
+            dateFrom: null,
+            dateTo: null,
+            page: 1,
+            pageSize: 25
+          })
+          .items.map((item) => item.id)
+      ).toEqual([secondSessionId, thirdSessionId, sessionId, fourthSessionId])
+      expect(
+        repository
+          .list({
+            locationId: parseEntityId(secondLocationId),
+            status: null,
+            dateFrom: null,
+            dateTo: null,
+            page: 1,
+            pageSize: 25
+          })
+          .items.map((item) => item.id)
+      ).toEqual([secondSessionId])
+      expect(
+        repository
+          .list({
+            locationId: null,
+            status: 'CLOSED',
+            dateFrom: null,
+            dateTo: null,
+            page: 1,
+            pageSize: 25
+          })
+          .items.map((item) => item.id)
+      ).toEqual([thirdSessionId, fourthSessionId])
+      expect(
+        repository
+          .list({
+            locationId: null,
+            status: null,
+            dateFrom: parseScreeningSessionDate('2026-07-29'),
+            dateTo: null,
+            page: 1,
+            pageSize: 25
+          })
+          .items.map((item) => item.id)
+      ).toEqual([secondSessionId, thirdSessionId, sessionId])
+      expect(
+        repository
+          .list({
+            locationId: null,
+            status: null,
+            dateFrom: null,
+            dateTo: parseScreeningSessionDate('2026-07-29'),
+            page: 1,
+            pageSize: 25
+          })
+          .items.map((item) => item.id)
+      ).toEqual([sessionId, fourthSessionId])
+      expect(
+        repository
+          .list({
+            locationId: parseEntityId(secondLocationId),
+            status: 'OPEN',
+            dateFrom: parseScreeningSessionDate('2026-07-30'),
+            dateTo: parseScreeningSessionDate('2026-07-30'),
+            page: 1,
+            pageSize: 25
+          })
+          .items.map((item) => item.id)
+      ).toEqual([secondSessionId])
+
+      const emptyPage = repository.list({
+        locationId: null,
+        status: null,
+        dateFrom: null,
+        dateTo: null,
+        page: 2,
+        pageSize: 25
+      })
+      expect(emptyPage.items).toEqual([])
+      expect(emptyPage.total).toBe(4)
+
+      expect(() =>
+        repository.list({
+          locationId: null,
+          status: null,
+          dateFrom: parseScreeningSessionDate('2026-07-31'),
+          dateTo: parseScreeningSessionDate('2026-07-30'),
+          page: 1,
+          pageSize: 25
+        })
+      ).toThrow(RepositoryValidationError)
+    })
+
+    const fakeConnection = createFakeExecutorConnection()
+    const fakeRepository = createScreeningSessionRepository(
+      fakeConnection as unknown as Database.Database
+    )
+
+    expect(() =>
+      fakeRepository.list({
+        locationId: null,
+        status: null,
+        dateFrom: null,
+        dateTo: null,
+        page: Number.MAX_SAFE_INTEGER,
+        pageSize: 100
+      })
+    ).toThrow(RepositoryValidationError)
+    expect(fakeConnection.preparedSql).toEqual([])
+  })
+
   it('closes sessions with compare-and-set semantics and appends lifecycle history only on success', async () => {
     await withScreeningSessionRepository(({ connection, repository, executor }) => {
       insertReferences(connection)
@@ -300,6 +562,38 @@ describe('screening session repository', () => {
     })
   })
 
+  it('rolls back close state changes when lifecycle history insertion fails', async () => {
+    await withScreeningSessionRepository(({ connection, repository, executor }) => {
+      insertReferences(connection)
+      executor.run((context) => repository.insert(context.connection, createInsertInput()))
+
+      const error = captureError(() =>
+        executor.run((context) =>
+          repository.close(context.connection, {
+            id: parseEntityId(sessionId),
+            lifecycleHistoryId: parseEntityId(lifecycleHistoryId),
+            expectedRowVersion: 1,
+            closedBy: parseEntityId(secondUserId),
+            closedAt: parseUtcTimestamp(later),
+            reason: 'Close collision'
+          })
+        )
+      )
+
+      expect(error).toBeInstanceOf(RepositoryWriteError)
+      expect(error).not.toBeInstanceOf(ScreeningSessionAlreadyExistsError)
+      expect(readRawSession(connection, sessionId)).toMatchObject({
+        status: 'OPEN',
+        closed_by: null,
+        closed_at: null,
+        row_version: 1
+      })
+      expect(
+        readRawLifecycleHistory(connection, sessionId).map((row) => row.transition_type)
+      ).toEqual(['CREATED'])
+    })
+  })
+
   it('reopens sessions with required reasons and repeated lifecycle row versions', async () => {
     await withScreeningSessionRepository(({ connection, repository, executor }) => {
       insertReferences(connection)
@@ -311,7 +605,7 @@ describe('screening session repository', () => {
           expectedRowVersion: 1,
           closedBy: parseEntityId(userId),
           closedAt: parseUtcTimestamp(later),
-          reason: null
+          reason: '  Initial close  '
         })
       )
 
@@ -374,13 +668,161 @@ describe('screening session repository', () => {
           lifecycleHistoryId: parseEntityId(fourthLifecycleHistoryId),
           expectedRowVersion: 3,
           closedBy: parseEntityId(userId),
-          closedAt: parseUtcTimestamp('2026-07-29T15:34:56.789Z'),
+          closedAt: parseUtcTimestamp(thirdLater),
           reason: 'Final close'
         })
       )
+      expect(readRawSession(connection, sessionId)).toMatchObject({
+        status: 'CLOSED',
+        row_version: 4
+      })
+      expect(readRawLifecycleHistory(connection, sessionId)).toEqual([
+        {
+          id: lifecycleHistoryId,
+          screening_session_id: sessionId,
+          transition_type: 'CREATED',
+          from_status: null,
+          to_status: 'OPEN',
+          reason: null,
+          changed_by: userId,
+          changed_at: now,
+          prior_row_version: null,
+          resulting_row_version: 1
+        },
+        {
+          id: secondLifecycleHistoryId,
+          screening_session_id: sessionId,
+          transition_type: 'CLOSED',
+          from_status: 'OPEN',
+          to_status: 'CLOSED',
+          reason: '  Initial close  ',
+          changed_by: userId,
+          changed_at: later,
+          prior_row_version: 1,
+          resulting_row_version: 2
+        },
+        {
+          id: thirdLifecycleHistoryId,
+          screening_session_id: sessionId,
+          transition_type: 'REOPENED',
+          from_status: 'CLOSED',
+          to_status: 'OPEN',
+          reason: '  Continued registration  ',
+          changed_by: secondUserId,
+          changed_at: secondLater,
+          prior_row_version: 2,
+          resulting_row_version: 3
+        },
+        {
+          id: fourthLifecycleHistoryId,
+          screening_session_id: sessionId,
+          transition_type: 'CLOSED',
+          from_status: 'OPEN',
+          to_status: 'CLOSED',
+          reason: 'Final close',
+          changed_by: userId,
+          changed_at: thirdLater,
+          prior_row_version: 3,
+          resulting_row_version: 4
+        }
+      ])
+    })
+  })
+
+  it('returns reopen conflict and not-found results without changing state or history', async () => {
+    await withScreeningSessionRepository(({ connection, repository, executor }) => {
+      insertReferences(connection)
+      executor.run((context) => repository.insert(context.connection, createInsertInput()))
+      executor.run((context) =>
+        repository.close(context.connection, {
+          id: parseEntityId(sessionId),
+          lifecycleHistoryId: parseEntityId(secondLifecycleHistoryId),
+          expectedRowVersion: 1,
+          closedBy: parseEntityId(userId),
+          closedAt: parseUtcTimestamp(later),
+          reason: null
+        })
+      )
+      const closedRow = readRawSession(connection, sessionId)
+      const closedHistory = readRawLifecycleHistory(connection, sessionId)
+
+      const conflict = executor.run((context) =>
+        repository.reopen(context.connection, {
+          id: parseEntityId(sessionId),
+          lifecycleHistoryId: parseEntityId(thirdLifecycleHistoryId),
+          expectedRowVersion: 1,
+          reopenedBy: parseEntityId(secondUserId),
+          reopenedAt: parseUtcTimestamp(secondLater),
+          reason: 'Retry after conflict'
+        })
+      )
+
+      expect(conflict).toMatchObject({
+        status: 'SESSION_VERSION_CONFLICT',
+        session: { id: sessionId, rowVersion: 2, status: 'CLOSED' }
+      })
+      if (conflict.status === 'SESSION_VERSION_CONFLICT') {
+        expect(Object.isFrozen(conflict.session)).toBe(true)
+      }
+      expect(readRawSession(connection, sessionId)).toEqual(closedRow)
+      expect(readRawLifecycleHistory(connection, sessionId)).toEqual(closedHistory)
+
+      const notFound = executor.run((context) =>
+        repository.reopen(context.connection, {
+          id: parseEntityId('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'),
+          lifecycleHistoryId: parseEntityId(thirdLifecycleHistoryId),
+          expectedRowVersion: 1,
+          reopenedBy: parseEntityId(secondUserId),
+          reopenedAt: parseUtcTimestamp(secondLater),
+          reason: 'Missing session'
+        })
+      )
+
+      expect(notFound).toEqual({ status: 'NOT_FOUND' })
+      expect(readRawSession(connection, sessionId)).toEqual(closedRow)
+      expect(readRawLifecycleHistory(connection, sessionId)).toEqual(closedHistory)
+    })
+  })
+
+  it('rolls back reopen state changes when lifecycle history insertion fails', async () => {
+    await withScreeningSessionRepository(({ connection, repository, executor }) => {
+      insertReferences(connection)
+      executor.run((context) => repository.insert(context.connection, createInsertInput()))
+      executor.run((context) =>
+        repository.close(context.connection, {
+          id: parseEntityId(sessionId),
+          lifecycleHistoryId: parseEntityId(secondLifecycleHistoryId),
+          expectedRowVersion: 1,
+          closedBy: parseEntityId(secondUserId),
+          closedAt: parseUtcTimestamp(later),
+          reason: 'Original close'
+        })
+      )
+
+      const error = captureError(() =>
+        executor.run((context) =>
+          repository.reopen(context.connection, {
+            id: parseEntityId(sessionId),
+            lifecycleHistoryId: parseEntityId(secondLifecycleHistoryId),
+            expectedRowVersion: 2,
+            reopenedBy: parseEntityId(userId),
+            reopenedAt: parseUtcTimestamp(secondLater),
+            reason: 'Reopen collision'
+          })
+        )
+      )
+
+      expect(error).toBeInstanceOf(RepositoryWriteError)
+      expect(error).not.toBeInstanceOf(ScreeningSessionAlreadyExistsError)
+      expect(readRawSession(connection, sessionId)).toMatchObject({
+        status: 'CLOSED',
+        closed_by: secondUserId,
+        closed_at: later,
+        row_version: 2
+      })
       expect(
         readRawLifecycleHistory(connection, sessionId).map((row) => row.transition_type)
-      ).toEqual(['CREATED', 'CLOSED', 'REOPENED', 'CLOSED'])
+      ).toEqual(['CREATED', 'CLOSED'])
     })
   })
 
@@ -423,58 +865,137 @@ describe('screening session repository', () => {
     await withScreeningSessionRepository(({ connection, repository, executor }) => {
       insertReferences(connection)
 
-      connection.exec('BEGIN IMMEDIATE')
-      try {
-        const error = captureError(() =>
-          repository.insert(
-            connection as unknown as DatabaseTransactionConnection,
-            createHostileInsertInput()
-          )
-        )
-
-        expect(error).toBeInstanceOf(DatabaseTransactionStateError)
-        expect(error).not.toBeInstanceOf(RepositoryValidationError)
-        expectSafeControlledError(error)
-      } finally {
-        if (connection.inTransaction) {
-          connection.exec('ROLLBACK')
-        }
-      }
-
-      const fabricatedError = captureError(() =>
-        repository.insert(createFabricatedScopedConnection(connection), createHostileInsertInput())
-      )
-      expect(fabricatedError).toBeInstanceOf(DatabaseTransactionStateError)
-
       let retained: DatabaseTransactionConnection | undefined
       executor.run((context) => {
         retained = context.connection
         return undefined
       })
 
-      const expiredError = captureError(() =>
-        repository.getByIdForWrite(retained!, parseEntityId(sessionId))
-      )
-      expect(expiredError).toBeInstanceOf(DatabaseTransactionStateError)
-      expect(expiredError).not.toBeInstanceOf(RepositoryValidationError)
+      for (const operation of createCapabilityFirstOperations(repository)) {
+        const rawHostile = operation.createHostileInput()
+        connection.exec('BEGIN IMMEDIATE')
+        try {
+          const error = captureError(() =>
+            operation.run(connection as unknown as DatabaseTransactionConnection, rawHostile.value)
+          )
+
+          expect(error, `${operation.name} raw`).toBeInstanceOf(DatabaseTransactionStateError)
+          expect(error, `${operation.name} raw`).not.toBeInstanceOf(RepositoryValidationError)
+          expect(rawHostile.wasInspected(), `${operation.name} raw`).toBe(false)
+          expectSafeControlledError(error)
+        } finally {
+          if (connection.inTransaction) {
+            connection.exec('ROLLBACK')
+          }
+        }
+
+        const fabricatedHostile = operation.createHostileInput()
+        const fabricatedError = captureError(() =>
+          operation.run(createFabricatedScopedConnection(connection), fabricatedHostile.value)
+        )
+        expect(fabricatedError, `${operation.name} fabricated`).toBeInstanceOf(
+          DatabaseTransactionStateError
+        )
+        expect(fabricatedError, `${operation.name} fabricated`).not.toBeInstanceOf(
+          RepositoryValidationError
+        )
+        expect(fabricatedHostile.wasInspected(), `${operation.name} fabricated`).toBe(false)
+
+        const expiredHostile = operation.createHostileInput()
+        const expiredError = captureError(() => operation.run(retained!, expiredHostile.value))
+        expect(expiredError, `${operation.name} expired`).toBeInstanceOf(
+          DatabaseTransactionStateError
+        )
+        expect(expiredError, `${operation.name} expired`).not.toBeInstanceOf(
+          RepositoryValidationError
+        )
+        expect(expiredHostile.wasInspected(), `${operation.name} expired`).toBe(false)
+      }
     })
   })
 
   it('fails closed when persisted current-state rows violate repository invariants', async () => {
-    await withScreeningSessionRepository(({ connection, repository }) => {
-      insertReferences(connection)
-      connection.pragma('ignore_check_constraints = ON')
-      try {
-        insertRawSession(connection, { status: 'BROKEN' })
-      } finally {
-        connection.pragma('ignore_check_constraints = OFF')
+    const scenarios: ReadonlyArray<{
+      readonly name: string
+      readonly override: Partial<RawSessionRow>
+      readonly ignoreChecks?: boolean
+      readonly disableForeignKeys?: boolean
+      readonly readWithList?: boolean
+    }> = [
+      {
+        name: 'malformed session ID',
+        override: { id: 'not-a-uuid' },
+        readWithList: true
+      },
+      {
+        name: 'malformed location ID',
+        override: { location_id: 'not-a-uuid' },
+        disableForeignKeys: true
+      },
+      {
+        name: 'malformed protocol ID',
+        override: { protocol_version_id: 'not-a-uuid' },
+        disableForeignKeys: true
+      },
+      {
+        name: 'malformed UTC timestamp',
+        override: { opened_at: 'not-a-timestamp' }
+      },
+      {
+        name: 'OPEN with close metadata',
+        override: { closed_by: userId, closed_at: later },
+        ignoreChecks: true
+      },
+      {
+        name: 'CLOSED missing close metadata',
+        override: { status: 'CLOSED' },
+        ignoreChecks: true
+      },
+      {
+        name: 'rowVersion zero',
+        override: { row_version: 0 },
+        ignoreChecks: true
+      },
+      {
+        name: 'rowVersion above safe integer',
+        override: { row_version: Number.MAX_SAFE_INTEGER + 1 }
+      },
+      {
+        name: 'blank notes',
+        override: { notes: '   ' }
+      },
+      {
+        name: 'invalid status',
+        override: { status: 'BROKEN' },
+        ignoreChecks: true
       }
+    ]
 
-      const error = captureError(() => repository.getById(parseEntityId(sessionId)))
+    for (const scenario of scenarios) {
+      await withScreeningSessionRepository(({ connection, repository }) => {
+        insertReferences(connection)
+        insertMalformedSessionFixture(connection, scenario)
 
-      expect(error).toBeInstanceOf(RepositoryDataIntegrityError)
-      expectSafeControlledError(error)
-    })
+        const error = captureError(() => {
+          if (scenario.readWithList === true) {
+            repository.list({
+              locationId: null,
+              status: null,
+              dateFrom: null,
+              dateTo: null,
+              page: 1,
+              pageSize: 25
+            })
+            return
+          }
+
+          repository.getById(parseEntityId(sessionId))
+        })
+
+        expect(error, scenario.name).toBeInstanceOf(RepositoryDataIntegrityError)
+        expectSafeControlledError(error)
+      })
+    }
   })
 })
 
@@ -572,16 +1093,6 @@ function createInsertInput(
   }
 }
 
-function createHostileInsertInput(): InsertScreeningSessionInput {
-  const input = { ...createInsertInput() }
-
-  return new Proxy(input, {
-    getPrototypeOf() {
-      throw new Error('C:\\secret\\input-prototype.txt')
-    }
-  }) as InsertScreeningSessionInput
-}
-
 function createExpectedSession(
   override: Partial<Record<keyof ScreeningSessionRecord, unknown>> = {}
 ): ScreeningSessionRecord {
@@ -603,6 +1114,124 @@ function createExpectedSession(
     rowVersion: 1,
     ...override
   } as ScreeningSessionRecord
+}
+
+interface HostileInput<T> {
+  readonly value: T
+  wasInspected(): boolean
+}
+
+interface CapabilityFirstOperation {
+  readonly name: string
+  createHostileInput(): HostileInput<unknown>
+  run(connection: DatabaseTransactionConnection, value: unknown): void
+}
+
+function createCapabilityFirstOperations(
+  repository: ScreeningSessionRepository
+): readonly CapabilityFirstOperation[] {
+  return Object.freeze([
+    {
+      name: 'insert',
+      createHostileInput: () => createHostileInput(createInsertInput()),
+      run: (connection, value) => {
+        repository.insert(connection, value as InsertScreeningSessionInput)
+      }
+    },
+    {
+      name: 'close',
+      createHostileInput: () => createHostileInput(createCloseInput()),
+      run: (connection, value) => {
+        repository.close(connection, value as CloseScreeningSessionInput)
+      }
+    },
+    {
+      name: 'reopen',
+      createHostileInput: () => createHostileInput(createReopenInput()),
+      run: (connection, value) => {
+        repository.reopen(connection, value as ReopenScreeningSessionInput)
+      }
+    },
+    {
+      name: 'getByIdForWrite',
+      createHostileInput: () => createHostileInput({ id: sessionId }),
+      run: (connection, value) => {
+        repository.getByIdForWrite(connection, value as never)
+      }
+    }
+  ])
+}
+
+function createHostileInput<T extends object>(input: T): HostileInput<T> {
+  let inspected = false
+
+  return Object.freeze({
+    value: new Proxy(input, {
+      getPrototypeOf() {
+        inspected = true
+        throw new Error('C:\\secret\\input-prototype.txt')
+      },
+      ownKeys() {
+        inspected = true
+        throw new Error('C:\\secret\\input-ownKeys.txt')
+      },
+      getOwnPropertyDescriptor() {
+        inspected = true
+        throw new Error('C:\\secret\\input-descriptor.txt')
+      },
+      get() {
+        inspected = true
+        throw new Error('C:\\secret\\input-get.txt')
+      }
+    }),
+    wasInspected: () => inspected
+  })
+}
+
+function createCloseInput(
+  override: Partial<Record<keyof CloseScreeningSessionInput, unknown>> = {}
+): CloseScreeningSessionInput {
+  const raw = {
+    id: sessionId,
+    lifecycleHistoryId: secondLifecycleHistoryId,
+    expectedRowVersion: 1,
+    closedBy: userId,
+    closedAt: later,
+    reason: null,
+    ...override
+  }
+
+  return {
+    id: parseEntityId(raw.id),
+    lifecycleHistoryId: parseEntityId(raw.lifecycleHistoryId),
+    expectedRowVersion: raw.expectedRowVersion as number,
+    closedBy: parseEntityId(raw.closedBy),
+    closedAt: parseUtcTimestamp(raw.closedAt),
+    reason: raw.reason as string | null
+  }
+}
+
+function createReopenInput(
+  override: Partial<Record<keyof ReopenScreeningSessionInput, unknown>> = {}
+): ReopenScreeningSessionInput {
+  const raw = {
+    id: sessionId,
+    lifecycleHistoryId: thirdLifecycleHistoryId,
+    expectedRowVersion: 2,
+    reopenedBy: userId,
+    reopenedAt: secondLater,
+    reason: 'Reopen',
+    ...override
+  }
+
+  return {
+    id: parseEntityId(raw.id),
+    lifecycleHistoryId: parseEntityId(raw.lifecycleHistoryId),
+    expectedRowVersion: raw.expectedRowVersion as number,
+    reopenedBy: parseEntityId(raw.reopenedBy),
+    reopenedAt: parseUtcTimestamp(raw.reopenedAt),
+    reason: raw.reason as string
+  }
 }
 
 function insertReferences(connection: Database.Database): void {
@@ -763,6 +1392,190 @@ function insertRawSession(
     )
 }
 
+function updateRawSession(
+  connection: Database.Database,
+  override: Partial<RawSessionRow> = {}
+): void {
+  const existing = readRawSession(connection, override.id ?? sessionId)
+
+  if (existing === undefined) {
+    throw new Error('Expected raw session fixture')
+  }
+
+  const row = { ...existing, ...override }
+
+  connection
+    .prepare(
+      `UPDATE screening_sessions
+      SET location_id = ?,
+        protocol_version_id = ?,
+        session_date = ?,
+        status = ?,
+        notes = ?,
+        opened_by = ?,
+        opened_at = ?,
+        closed_by = ?,
+        closed_at = ?,
+        created_by = ?,
+        created_at = ?,
+        updated_by = ?,
+        updated_at = ?,
+        row_version = ?
+      WHERE id = ?`
+    )
+    .run(
+      row.location_id,
+      row.protocol_version_id,
+      row.session_date,
+      row.status,
+      row.notes,
+      row.opened_by,
+      row.opened_at,
+      row.closed_by,
+      row.closed_at,
+      row.created_by,
+      row.created_at,
+      row.updated_by,
+      row.updated_at,
+      row.row_version,
+      row.id
+    )
+}
+
+function readRawSession(connection: Database.Database, id: string): RawSessionRow | undefined {
+  return connection
+    .prepare(
+      `SELECT
+        id,
+        location_id,
+        protocol_version_id,
+        session_date,
+        status,
+        notes,
+        opened_by,
+        opened_at,
+        closed_by,
+        closed_at,
+        created_by,
+        created_at,
+        updated_by,
+        updated_at,
+        row_version
+      FROM screening_sessions
+      WHERE id = ?`
+    )
+    .get(id) as RawSessionRow | undefined
+}
+
+function insertRawLifecycleHistory(
+  connection: Database.Database,
+  override: Partial<RawLifecycleHistoryRow> = {}
+): void {
+  const row: RawLifecycleHistoryRow = {
+    id: lifecycleHistoryId,
+    screening_session_id: sessionId,
+    transition_type: 'CREATED',
+    from_status: null,
+    to_status: 'OPEN',
+    reason: null,
+    changed_by: userId,
+    changed_at: now,
+    prior_row_version: null,
+    resulting_row_version: 1,
+    ...override
+  }
+
+  connection
+    .prepare(
+      `INSERT INTO screening_session_lifecycle_history (
+        id,
+        screening_session_id,
+        transition_type,
+        from_status,
+        to_status,
+        reason,
+        changed_by,
+        changed_at,
+        prior_row_version,
+        resulting_row_version
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      row.id,
+      row.screening_session_id,
+      row.transition_type,
+      row.from_status,
+      row.to_status,
+      row.reason,
+      row.changed_by,
+      row.changed_at,
+      row.prior_row_version,
+      row.resulting_row_version
+    )
+}
+
+function seedListRows(connection: Database.Database): void {
+  insertReferences(connection)
+  insertRawLocation(connection, { id: secondLocationId, name: 'Second Site' })
+  insertRawLocation(connection, { id: thirdLocationId, name: 'Third Site' })
+  insertRawSession(connection, { id: sessionId, session_date: '2026-07-29' })
+  insertRawSession(connection, {
+    id: secondSessionId,
+    location_id: secondLocationId,
+    session_date: '2026-07-30'
+  })
+  insertRawSession(connection, {
+    id: thirdSessionId,
+    location_id: thirdLocationId,
+    session_date: '2026-07-30',
+    status: 'CLOSED',
+    closed_by: secondUserId,
+    closed_at: later,
+    updated_by: secondUserId,
+    updated_at: later,
+    row_version: 2
+  })
+  insertRawSession(connection, {
+    id: fourthSessionId,
+    session_date: '2026-07-28',
+    status: 'CLOSED',
+    closed_by: userId,
+    closed_at: later,
+    updated_by: userId,
+    updated_at: later,
+    row_version: 2
+  })
+}
+
+function insertMalformedSessionFixture(
+  connection: Database.Database,
+  scenario: {
+    readonly override: Partial<RawSessionRow>
+    readonly ignoreChecks?: boolean
+    readonly disableForeignKeys?: boolean
+  }
+): void {
+  const originalIgnoreChecks = connection.pragma('ignore_check_constraints', {
+    simple: true
+  }) as number
+  const originalForeignKeys = connection.pragma('foreign_keys', { simple: true }) as number
+
+  try {
+    if (scenario.ignoreChecks === true) {
+      connection.pragma('ignore_check_constraints = ON')
+    }
+
+    if (scenario.disableForeignKeys === true) {
+      connection.pragma('foreign_keys = OFF')
+    }
+
+    insertRawSession(connection, scenario.override)
+  } finally {
+    connection.pragma(`ignore_check_constraints = ${originalIgnoreChecks === 1 ? 'ON' : 'OFF'}`)
+    connection.pragma(`foreign_keys = ${originalForeignKeys === 1 ? 'ON' : 'OFF'}`)
+  }
+}
+
 function readRawLifecycleHistory(
   connection: Database.Database,
   id: string
@@ -793,6 +1606,47 @@ function readTableCount(connection: Database.Database, tableName: string): numbe
     .get() as { count: number }
 
   return row.count
+}
+
+interface FakeExecutorConnection extends Database.Database {
+  readonly preparedSql: readonly string[]
+}
+
+function createFakeExecutorConnection(): FakeExecutorConnection {
+  const preparedSql: string[] = []
+  let inTransaction = false
+
+  return {
+    get open(): boolean {
+      return true
+    },
+    get inTransaction(): boolean {
+      return inTransaction
+    },
+    exec(sql: string): Database.Database {
+      if (sql === 'BEGIN IMMEDIATE') {
+        inTransaction = true
+        return this as unknown as Database.Database
+      }
+
+      if (sql === 'COMMIT' || sql === 'ROLLBACK') {
+        inTransaction = false
+        return this as unknown as Database.Database
+      }
+
+      return this as unknown as Database.Database
+    },
+    prepare(sql: string): Database.Statement {
+      preparedSql.push(sql)
+
+      return {
+        run: vi.fn(() => ({ changes: 1, lastInsertRowid: 1 })),
+        get: vi.fn(() => undefined),
+        all: vi.fn(() => [])
+      } as unknown as Database.Statement
+    },
+    preparedSql
+  } as unknown as FakeExecutorConnection
 }
 
 function createExecutorForConnection(connection: Database.Database): DatabaseTransactionExecutor {

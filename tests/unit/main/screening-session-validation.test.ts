@@ -5,8 +5,10 @@ import {
   parseInsertScreeningSessionInput,
   parseReopenScreeningSessionInput,
   parseScreeningSessionDate,
+  parseScreeningSessionListInput,
   parseScreeningSessionNote,
   parseScreeningSessionReopenReason,
+  parseScreeningSessionTransitionRowVersion,
   RepositoryValidationError,
   type InsertScreeningSessionInput
 } from '@main/database'
@@ -171,6 +173,48 @@ describe('screening session validation', () => {
         reopenedBy: userId,
         reopenedAt: now,
         reason: null as unknown as string
+      })
+    ).toThrow(RepositoryValidationError)
+  })
+
+  it('requires transition row versions to have a safe resulting version', () => {
+    expect(parseScreeningSessionTransitionRowVersion(Number.MAX_SAFE_INTEGER - 1)).toBe(
+      Number.MAX_SAFE_INTEGER - 1
+    )
+    expect(() => parseScreeningSessionTransitionRowVersion(Number.MAX_SAFE_INTEGER)).toThrow(
+      RepositoryValidationError
+    )
+    expect(() =>
+      parseCloseScreeningSessionInput({
+        id: sessionId,
+        lifecycleHistoryId,
+        expectedRowVersion: Number.MAX_SAFE_INTEGER,
+        closedBy: userId,
+        closedAt: now,
+        reason: null
+      })
+    ).toThrow(RepositoryValidationError)
+    expect(() =>
+      parseReopenScreeningSessionInput({
+        id: sessionId,
+        lifecycleHistoryId,
+        expectedRowVersion: Number.MAX_SAFE_INTEGER,
+        reopenedBy: userId,
+        reopenedAt: now,
+        reason: 'Reopen'
+      })
+    ).toThrow(RepositoryValidationError)
+  })
+
+  it('rejects list offset overflow before repository SQL is needed', () => {
+    expect(() =>
+      parseScreeningSessionListInput({
+        locationId: null,
+        status: null,
+        dateFrom: null,
+        dateTo: null,
+        page: Number.MAX_SAFE_INTEGER,
+        pageSize: 100
       })
     ).toThrow(RepositoryValidationError)
   })
