@@ -309,6 +309,11 @@ function applyMigration(
     phase = 'execute'
     connection.exec(migration.sql)
 
+    if (disablesForeignKeys) {
+      phase = 'foreign_key_check'
+      assertForeignKeyIntegrity(connection)
+    }
+
     phase = 'schema'
     options.schemaValidator?.(connection, 'execution')
 

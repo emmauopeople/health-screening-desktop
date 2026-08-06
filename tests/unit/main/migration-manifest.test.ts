@@ -51,7 +51,7 @@ describe('migration manifest', () => {
       '00c008d071bcdc98a41ec7170a2350ba6602a5accc4262b4a05595a35aa490f1'
     )
     expect(resolved[3]?.checksum).toBe(
-      '7041153a75bbd4f622358465b00991cc8514e77ae78e2e1999b9802bb5775abd'
+      'b6f3824713e45f568e3e4935f80517b193752684f67e5ec4f393d1f537817b4f'
     )
   })
 

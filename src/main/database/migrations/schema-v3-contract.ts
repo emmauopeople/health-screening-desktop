@@ -317,6 +317,18 @@ function isSchemaVersion3Valid(connection: MigrationConnection): boolean {
       hasExactTriggerNames(connection) &&
       hasExactColumns(connection) &&
       hasExactSchemaMigrationsSql(connection) &&
+      hasRequiredSchemaVersion3PatientAmendmentInvariants(connection)
+    )
+  } catch {
+    return false
+  }
+}
+
+export function hasRequiredSchemaVersion3PatientAmendmentInvariants(
+  connection: MigrationConnection
+): boolean {
+  try {
+    return (
       hasRequiredForeignKeys(connection) &&
       hasRequiredUniqueConstraint(connection) &&
       hasRequiredIndexDefinitions(connection) &&

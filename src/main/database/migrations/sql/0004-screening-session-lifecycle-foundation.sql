@@ -1,5 +1,3 @@
-PRAGMA legacy_alter_table = ON;
-
 CREATE TEMP TABLE hsd027_screening_session_migration_guard (
   value INTEGER NOT NULL CONSTRAINT ck_hsd027_screening_session_migration_guard CHECK (value = 0)
 ) STRICT;
@@ -64,13 +62,7 @@ WHERE EXISTS (
 
 DROP TABLE hsd027_screening_session_migration_guard;
 
-ALTER TABLE screening_sessions RENAME TO screening_sessions_v3;
-
-PRAGMA legacy_alter_table = OFF;
-
-DROP INDEX ux_screening_sessions_location_date;
-
-CREATE TABLE screening_sessions (
+CREATE TABLE screening_sessions_v4 (
   id TEXT PRIMARY KEY,
   location_id TEXT NOT NULL,
   protocol_version_id TEXT NOT NULL,
@@ -112,6 +104,45 @@ CREATE TABLE screening_sessions (
   CONSTRAINT fk_screening_sessions_updated_by FOREIGN KEY (updated_by)
     REFERENCES users (id) ON UPDATE RESTRICT ON DELETE RESTRICT
 ) STRICT;
+
+INSERT INTO screening_sessions_v4 (
+  id,
+  location_id,
+  protocol_version_id,
+  session_date,
+  status,
+  notes,
+  opened_by,
+  opened_at,
+  closed_by,
+  closed_at,
+  created_by,
+  created_at,
+  updated_by,
+  updated_at,
+  row_version
+)
+SELECT
+  id,
+  location_id,
+  protocol_version_id,
+  session_date,
+  status,
+  NULL,
+  created_by,
+  opened_at,
+  CASE status WHEN 'CLOSED' THEN closed_by ELSE NULL END,
+  CASE status WHEN 'CLOSED' THEN closed_at ELSE NULL END,
+  created_by,
+  created_at,
+  CASE status WHEN 'CLOSED' THEN closed_by ELSE created_by END,
+  updated_at,
+  CASE status WHEN 'CLOSED' THEN 2 ELSE 1 END
+FROM screening_sessions;
+
+DROP TABLE screening_sessions;
+
+ALTER TABLE screening_sessions_v4 RENAME TO screening_sessions;
 
 CREATE TABLE screening_session_lifecycle_history (
   id TEXT PRIMARY KEY,
@@ -163,41 +194,6 @@ CREATE TABLE screening_session_lifecycle_history (
     REFERENCES users (id) ON UPDATE RESTRICT ON DELETE RESTRICT
 ) STRICT;
 
-INSERT INTO screening_sessions (
-  id,
-  location_id,
-  protocol_version_id,
-  session_date,
-  status,
-  notes,
-  opened_by,
-  opened_at,
-  closed_by,
-  closed_at,
-  created_by,
-  created_at,
-  updated_by,
-  updated_at,
-  row_version
-)
-SELECT
-  id,
-  location_id,
-  protocol_version_id,
-  session_date,
-  status,
-  NULL,
-  created_by,
-  opened_at,
-  CASE status WHEN 'CLOSED' THEN closed_by ELSE NULL END,
-  CASE status WHEN 'CLOSED' THEN closed_at ELSE NULL END,
-  created_by,
-  created_at,
-  CASE status WHEN 'CLOSED' THEN closed_by ELSE created_by END,
-  updated_at,
-  CASE status WHEN 'CLOSED' THEN 2 ELSE 1 END
-FROM screening_sessions_v3;
-
 INSERT INTO screening_session_lifecycle_history (
   id,
   screening_session_id,
@@ -211,7 +207,14 @@ INSERT INTO screening_session_lifecycle_history (
   resulting_row_version
 )
 SELECT
-  'migration-v4-created-' || id,
+  lower(
+    hex(randomblob(4)) || '-' ||
+    hex(randomblob(2)) || '-4' ||
+    substr(hex(randomblob(2)), 2) || '-' ||
+    substr('89ab', 1 + abs(random() % 4), 1) ||
+    substr(hex(randomblob(2)), 2) || '-' ||
+    hex(randomblob(6))
+  ),
   id,
   'CREATED',
   NULL,
@@ -221,7 +224,7 @@ SELECT
   opened_at,
   NULL,
   1
-FROM screening_sessions_v3;
+FROM screening_sessions;
 
 INSERT INTO screening_session_lifecycle_history (
   id,
@@ -236,7 +239,14 @@ INSERT INTO screening_session_lifecycle_history (
   resulting_row_version
 )
 SELECT
-  'migration-v4-closed-' || id,
+  lower(
+    hex(randomblob(4)) || '-' ||
+    hex(randomblob(2)) || '-4' ||
+    substr(hex(randomblob(2)), 2) || '-' ||
+    substr('89ab', 1 + abs(random() % 4), 1) ||
+    substr(hex(randomblob(2)), 2) || '-' ||
+    hex(randomblob(6))
+  ),
   id,
   'CLOSED',
   'OPEN',
@@ -246,7 +256,7 @@ SELECT
   closed_at,
   1,
   2
-FROM screening_sessions_v3
+FROM screening_sessions
 WHERE status = 'CLOSED';
 
 CREATE UNIQUE INDEX ux_screening_sessions_location_date
@@ -263,5 +273,3 @@ CREATE INDEX ix_screening_session_lifecycle_history_session_time
 
 CREATE INDEX ix_screening_session_lifecycle_history_changed_at
   ON screening_session_lifecycle_history (changed_at DESC, id DESC);
-
-DROP TABLE screening_sessions_v3;

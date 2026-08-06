@@ -10,6 +10,7 @@ import {
   type SchemaVersion1TableContract
 } from './schema-v1-contract'
 import {
+  hasRequiredSchemaVersion3PatientAmendmentInvariants,
   schemaVersion3NamedIndexes,
   schemaVersion3TableContracts,
   schemaVersion3TriggerNames
@@ -155,22 +156,6 @@ const requiredForeignKeys = Object.freeze([
 ])
 
 const requiredIndexDefinitions = Object.freeze([
-  indexContract(
-    'ix_patient_demographic_amendments_patient_time',
-    'patient_demographic_amendments',
-    [indexColumn('patient_id', false), indexColumn('amended_at', true), indexColumn('id', true)]
-  ),
-  indexContract(
-    'ix_patient_demographic_amendment_changes_field',
-    'patient_demographic_amendment_changes',
-    [indexColumn('field_name', false), indexColumn('amendment_id', false)]
-  ),
-  indexContract('ix_consent_records_registry_ack_history', 'consent_records', [
-    indexColumn('patient_id', false),
-    indexColumn('consent_type', false),
-    indexColumn('recorded_at', true),
-    indexColumn('id', true)
-  ]),
   indexContract(
     'ux_screening_sessions_location_date',
     'screening_sessions',
@@ -327,6 +312,7 @@ function isSchemaVersion4Valid(
       hasExactTriggerNames(connection) &&
       hasExactColumns(connection) &&
       hasExactSchemaMigrationsSql(connection) &&
+      hasRequiredSchemaVersion3PatientAmendmentInvariants(connection) &&
       hasRequiredForeignKeys(connection) &&
       hasRequiredIndexDefinitions(connection) &&
       hasNoGlobalOpenSessionUniqueIndex(connection) &&

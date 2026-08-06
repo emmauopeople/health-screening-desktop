@@ -48,6 +48,10 @@ Existing valid `CLOSED` rows migrate as:
 - one `CREATED` lifecycle-history row with `resulting_row_version = 1`
 - one `CLOSED` lifecycle-history row with prior/resulting versions `1 -> 2`
 
+Migrated lifecycle-history rows receive migration-generated canonical lowercase
+UUID v4 identifiers. The migration does not use patient/session values inside
+free-form ID prefixes.
+
 Malformed legacy rows fail the migration atomically instead of being coerced
 into misleading lifecycle state.
 

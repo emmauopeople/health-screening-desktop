@@ -13,9 +13,20 @@ import { databaseMigrations } from '@main/database/migrations/migration-manifest
 import { runDatabaseMigrations } from '@main/database/migrations/migration-runner'
 import type { DatabaseMigration } from '@main/database/migrations/migration-types'
 import { validateSchemaVersion4 } from '@main/database/migrations'
+import { parseEntityId } from '@main/foundation/entity-id'
 
 const now = '2026-07-29T08:00:00.000Z'
 const closedAt = '2026-07-29T16:30:00.000Z'
+const userOpenId = testEntityId(1)
+const userCloseId = testEntityId(2)
+const locationOneId = testEntityId(3)
+const locationTwoId = testEntityId(4)
+const protocolId = testEntityId(5)
+const openSessionId = testEntityId(6)
+const closedSessionId = testEntityId(7)
+const patientId = testEntityId(8)
+const missingSessionId = testEntityId(9)
+const orphanEncounterId = testEntityId(10)
 
 type MockLogMethod = ReturnType<typeof vi.fn<(message: string) => void>>
 
@@ -29,22 +40,22 @@ describe('screening session lifecycle migration', () => {
     await withVersion3Database((connection) => {
       insertLegacyGraph(connection)
       insertLegacySession(connection, {
-        id: 'session-open',
-        locationId: 'location-1',
+        id: openSessionId,
+        locationId: locationOneId,
         date: '2026-07-29',
         status: 'OPEN',
-        createdBy: 'user-open',
+        createdBy: userOpenId,
         openedAt: now,
         updatedAt: now
       })
       insertLegacySession(connection, {
-        id: 'session-closed',
-        locationId: 'location-1',
+        id: closedSessionId,
+        locationId: locationOneId,
         date: '2026-07-30',
         status: 'CLOSED',
-        createdBy: 'user-open',
+        createdBy: userOpenId,
         openedAt: now,
-        closedBy: 'user-close',
+        closedBy: userCloseId,
         closedAt,
         updatedAt: closedAt
       })
@@ -52,81 +63,89 @@ describe('screening session lifecycle migration', () => {
       migrateToVersion4(connection)
 
       expect(readUserVersion(connection)).toBe(4)
-      expect(readScreeningSession(connection, 'session-open')).toEqual({
-        id: 'session-open',
-        location_id: 'location-1',
-        protocol_version_id: 'protocol-1',
+      expect(readScreeningSession(connection, openSessionId)).toEqual({
+        id: openSessionId,
+        location_id: locationOneId,
+        protocol_version_id: protocolId,
         session_date: '2026-07-29',
         status: 'OPEN',
         notes: null,
-        opened_by: 'user-open',
+        opened_by: userOpenId,
         opened_at: now,
         closed_by: null,
         closed_at: null,
-        created_by: 'user-open',
+        created_by: userOpenId,
         created_at: now,
-        updated_by: 'user-open',
+        updated_by: userOpenId,
         updated_at: now,
         row_version: 1
       })
-      expect(readScreeningSession(connection, 'session-closed')).toEqual({
-        id: 'session-closed',
-        location_id: 'location-1',
-        protocol_version_id: 'protocol-1',
+      expect(readScreeningSession(connection, closedSessionId)).toEqual({
+        id: closedSessionId,
+        location_id: locationOneId,
+        protocol_version_id: protocolId,
         session_date: '2026-07-30',
         status: 'CLOSED',
         notes: null,
-        opened_by: 'user-open',
+        opened_by: userOpenId,
         opened_at: now,
-        closed_by: 'user-close',
+        closed_by: userCloseId,
         closed_at: closedAt,
-        created_by: 'user-open',
+        created_by: userOpenId,
         created_at: now,
-        updated_by: 'user-close',
+        updated_by: userCloseId,
         updated_at: closedAt,
         row_version: 2
       })
-      expect(readLifecycleHistory(connection, 'session-open')).toEqual([
+      const openHistory = readLifecycleHistory(connection, openSessionId)
+      const closedHistory = readLifecycleHistory(connection, closedSessionId)
+
+      expect(openHistory).toHaveLength(1)
+      expect(closedHistory).toHaveLength(2)
+      expectMigratedHistoryId(openHistory[0]?.id)
+      expectMigratedHistoryId(closedHistory[0]?.id)
+      expectMigratedHistoryId(closedHistory[1]?.id)
+      expect(closedHistory[0]?.id).not.toBe(closedHistory[1]?.id)
+      expect(stripHistoryId(openHistory[0])).toEqual({
+        screening_session_id: openSessionId,
+        transition_type: 'CREATED',
+        from_status: null,
+        to_status: 'OPEN',
+        reason: null,
+        changed_by: userOpenId,
+        changed_at: now,
+        prior_row_version: null,
+        resulting_row_version: 1
+      })
+      expect(closedHistory.map(stripHistoryId)).toEqual([
         {
-          id: 'migration-v4-created-session-open',
-          screening_session_id: 'session-open',
+          screening_session_id: closedSessionId,
           transition_type: 'CREATED',
           from_status: null,
           to_status: 'OPEN',
           reason: null,
-          changed_by: 'user-open',
-          changed_at: now,
-          prior_row_version: null,
-          resulting_row_version: 1
-        }
-      ])
-      expect(readLifecycleHistory(connection, 'session-closed')).toEqual([
-        {
-          id: 'migration-v4-created-session-closed',
-          screening_session_id: 'session-closed',
-          transition_type: 'CREATED',
-          from_status: null,
-          to_status: 'OPEN',
-          reason: null,
-          changed_by: 'user-open',
+          changed_by: userOpenId,
           changed_at: now,
           prior_row_version: null,
           resulting_row_version: 1
         },
         {
-          id: 'migration-v4-closed-session-closed',
-          screening_session_id: 'session-closed',
+          screening_session_id: closedSessionId,
           transition_type: 'CLOSED',
           from_status: 'OPEN',
           to_status: 'CLOSED',
           reason: null,
-          changed_by: 'user-close',
+          changed_by: userCloseId,
           changed_at: closedAt,
           prior_row_version: 1,
           resulting_row_version: 2
         }
       ])
       expect(connection.pragma('foreign_key_check')).toEqual([])
+      expect(readForeignKeyEnforcement(connection)).toBe(1)
+      expect(readForeignKeyTarget(connection, 'screening_encounters', 'screening_session_id')).toBe(
+        'screening_sessions'
+      )
     })
   })
 
@@ -140,11 +159,11 @@ describe('screening session lifecycle migration', () => {
         seed: (connection) => {
           connection.pragma('ignore_check_constraints = ON')
           insertLegacySession(connection, {
-            id: 'session-bad-status',
-            locationId: 'location-1',
+            id: testEntityId(20),
+            locationId: locationOneId,
             date: '2026-07-29',
             status: 'PAUSED',
-            createdBy: 'user-open',
+            createdBy: userOpenId,
             openedAt: now,
             updatedAt: now
           })
@@ -155,11 +174,11 @@ describe('screening session lifecycle migration', () => {
         label: 'closed without metadata',
         seed: (connection) =>
           insertLegacySession(connection, {
-            id: 'session-closed-bad',
-            locationId: 'location-1',
+            id: testEntityId(21),
+            locationId: locationOneId,
             date: '2026-07-29',
             status: 'CLOSED',
-            createdBy: 'user-open',
+            createdBy: userOpenId,
             openedAt: now,
             updatedAt: now
           })
@@ -169,11 +188,11 @@ describe('screening session lifecycle migration', () => {
         seed: (connection) => {
           connection.pragma('foreign_keys = OFF')
           insertLegacySession(connection, {
-            id: 'session-missing-location',
-            locationId: 'missing-location',
+            id: testEntityId(22),
+            locationId: testEntityId(23),
             date: '2026-07-29',
             status: 'OPEN',
-            createdBy: 'user-open',
+            createdBy: userOpenId,
             openedAt: now,
             updatedAt: now
           })
@@ -195,23 +214,97 @@ describe('screening session lifecycle migration', () => {
         expect(hasTable(connection, 'screening_sessions_v3')).toBe(false)
         expect(hasTable(connection, 'screening_session_lifecycle_history')).toBe(false)
         expect(readScreeningSessionColumns(connection)).not.toContain('row_version')
+        expect(readForeignKeyEnforcement(connection)).toBe(1)
       })
     }
+  })
+
+  it('checks inbound foreign-key integrity before committing migration 4', async () => {
+    await withVersion3Database((connection) => {
+      insertLegacyGraph(connection)
+      insertPatient(connection)
+      insertLegacySession(connection, {
+        id: openSessionId,
+        locationId: locationOneId,
+        date: '2026-07-29',
+        status: 'OPEN',
+        createdBy: userOpenId,
+        openedAt: now,
+        updatedAt: now
+      })
+      connection.pragma('foreign_keys = OFF')
+      insertScreeningEncounter(connection, {
+        id: orphanEncounterId,
+        sessionId: missingSessionId
+      })
+      connection.pragma('foreign_keys = ON')
+
+      expect(() => migrateToVersion4(connection)).toThrow(MigrationExecutionError)
+      expect(readUserVersion(connection)).toBe(3)
+      expect(readSchemaMigrationVersions(connection)).not.toContain(4)
+      expect(hasTable(connection, 'screening_sessions')).toBe(true)
+      expect(readScreeningSessionColumns(connection)).not.toContain('row_version')
+      expect(hasTable(connection, 'screening_session_lifecycle_history')).toBe(false)
+      expect(readForeignKeyEnforcement(connection)).toBe(1)
+    })
+  })
+
+  it('preserves foreign_keys and legacy_alter_table pragmas after success and failure', async () => {
+    await withVersion3Database((connection) => {
+      insertLegacyGraph(connection)
+      insertLegacySession(connection, {
+        id: openSessionId,
+        locationId: locationOneId,
+        date: '2026-07-29',
+        status: 'OPEN',
+        createdBy: userOpenId,
+        openedAt: now,
+        updatedAt: now
+      })
+      connection.pragma('legacy_alter_table = ON')
+
+      migrateToVersion4(connection)
+
+      expect(readForeignKeyEnforcement(connection)).toBe(1)
+      expect(readLegacyAlterTable(connection)).toBe(1)
+    })
+
+    await withVersion3Database((connection) => {
+      insertLegacyGraph(connection)
+      connection.pragma('ignore_check_constraints = ON')
+      insertLegacySession(connection, {
+        id: testEntityId(24),
+        locationId: locationOneId,
+        date: '2026-07-29',
+        status: 'PAUSED',
+        createdBy: userOpenId,
+        openedAt: now,
+        updatedAt: now
+      })
+      connection.pragma('ignore_check_constraints = OFF')
+      connection.pragma('legacy_alter_table = ON')
+
+      expect(() => migrateToVersion4(connection)).toThrow(MigrationExecutionError)
+
+      expect(readForeignKeyEnforcement(connection)).toBe(1)
+      expect(readLegacyAlterTable(connection)).toBe(1)
+      expect(readUserVersion(connection)).toBe(3)
+    })
   })
 
   it('enforces lifecycle-ready screening session and history constraints', async () => {
     await withMigratedDatabase((connection) => {
       insertVersion4Graph(connection)
       insertScreeningSessionV4(connection, {
-        id: 'session-1',
-        locationId: 'location-1',
+        id: testEntityId(30),
+        locationId: locationOneId,
         date: '2026-07-29',
         status: 'OPEN',
         rowVersion: 1
       })
       insertScreeningSessionV4(connection, {
-        id: 'session-2',
-        locationId: 'location-2',
+        id: testEntityId(31),
+        locationId: locationTwoId,
         date: '2026-07-29',
         status: 'OPEN',
         rowVersion: 1
@@ -219,8 +312,8 @@ describe('screening session lifecycle migration', () => {
 
       expect(() =>
         insertScreeningSessionV4(connection, {
-          id: 'session-duplicate',
-          locationId: 'location-1',
+          id: testEntityId(32),
+          locationId: locationOneId,
           date: '2026-07-29',
           status: 'OPEN',
           rowVersion: 1
@@ -228,19 +321,19 @@ describe('screening session lifecycle migration', () => {
       ).toThrow()
       expect(() =>
         insertScreeningSessionV4(connection, {
-          id: 'session-open-with-close',
-          locationId: 'location-1',
+          id: testEntityId(33),
+          locationId: locationOneId,
           date: '2026-07-30',
           status: 'OPEN',
-          closedBy: 'user-open',
+          closedBy: userOpenId,
           closedAt,
           rowVersion: 1
         })
       ).toThrow()
       expect(() =>
         insertScreeningSessionV4(connection, {
-          id: 'session-closed-without-close',
-          locationId: 'location-1',
+          id: testEntityId(34),
+          locationId: locationOneId,
           date: '2026-07-31',
           status: 'CLOSED',
           rowVersion: 2
@@ -248,8 +341,8 @@ describe('screening session lifecycle migration', () => {
       ).toThrow()
       expect(() =>
         insertScreeningSessionV4(connection, {
-          id: 'session-bad-version',
-          locationId: 'location-1',
+          id: testEntityId(35),
+          locationId: locationOneId,
           date: '2026-08-01',
           status: 'OPEN',
           rowVersion: 0
@@ -258,78 +351,78 @@ describe('screening session lifecycle migration', () => {
 
       expect(() =>
         insertLifecycleHistory(connection, {
-          id: 'history-created',
-          sessionId: 'session-1',
+          id: testEntityId(40),
+          sessionId: testEntityId(30),
           transitionType: 'CREATED',
           fromStatus: null,
           toStatus: 'OPEN',
           reason: null,
-          changedBy: 'user-open',
+          changedBy: userOpenId,
           priorRowVersion: null,
           resultingRowVersion: 1
         })
       ).not.toThrow()
       expect(() =>
         insertLifecycleHistory(connection, {
-          id: 'history-reopened-no-reason',
-          sessionId: 'session-1',
+          id: testEntityId(41),
+          sessionId: testEntityId(30),
           transitionType: 'REOPENED',
           fromStatus: 'CLOSED',
           toStatus: 'OPEN',
           reason: null,
-          changedBy: 'user-open',
+          changedBy: userOpenId,
           priorRowVersion: 2,
           resultingRowVersion: 3
         })
       ).toThrow()
       expect(() =>
         insertLifecycleHistory(connection, {
-          id: 'history-reopened-blank-reason',
-          sessionId: 'session-1',
+          id: testEntityId(42),
+          sessionId: testEntityId(30),
           transitionType: 'REOPENED',
           fromStatus: 'CLOSED',
           toStatus: 'OPEN',
           reason: '   ',
-          changedBy: 'user-open',
+          changedBy: userOpenId,
           priorRowVersion: 2,
           resultingRowVersion: 3
         })
       ).toThrow()
       expect(() =>
         insertLifecycleHistory(connection, {
-          id: 'history-nonconsecutive',
-          sessionId: 'session-1',
+          id: testEntityId(43),
+          sessionId: testEntityId(30),
           transitionType: 'CLOSED',
           fromStatus: 'OPEN',
           toStatus: 'CLOSED',
           reason: null,
-          changedBy: 'user-open',
+          changedBy: userOpenId,
           priorRowVersion: 2,
           resultingRowVersion: 4
         })
       ).toThrow()
       expect(() =>
         insertLifecycleHistory(connection, {
-          id: 'history-missing-session',
-          sessionId: 'missing-session',
+          id: testEntityId(44),
+          sessionId: missingSessionId,
           transitionType: 'CREATED',
           fromStatus: null,
           toStatus: 'OPEN',
           reason: null,
-          changedBy: 'user-open',
+          changedBy: userOpenId,
           priorRowVersion: null,
           resultingRowVersion: 1
         })
       ).toThrow()
       expect(() =>
         insertLifecycleHistory(connection, {
-          id: 'history-missing-user',
-          sessionId: 'session-1',
+          id: testEntityId(45),
+          sessionId: testEntityId(30),
           transitionType: 'CREATED',
           fromStatus: null,
           toStatus: 'OPEN',
           reason: null,
-          changedBy: 'missing-user',
+          changedBy: testEntityId(46),
           priorRowVersion: null,
           resultingRowVersion: 1
         })
@@ -439,6 +532,45 @@ describe('screening session lifecycle migration', () => {
     )
   })
 
+  it('preserves version 3 patient amendment invariants in the version 4 contract', async () => {
+    await expectVersion4Drift(
+      (connection) =>
+        connection.exec(
+          `DROP TRIGGER tr_patient_demographic_amendments_no_update;
+           CREATE TRIGGER tr_patient_demographic_amendments_no_update
+           BEFORE UPDATE ON patient_demographic_amendments
+           BEGIN
+             SELECT 1;
+           END;`
+        ),
+      'changed version 3 trigger body'
+    )
+    await expectVersion3InvariantMigrationDrift(
+      '  CONSTRAINT ux_patient_demographic_amendments_patient_resulting_row_version\n    UNIQUE (patient_id, resulting_row_version),\n',
+      '',
+      'missing amendment patient/resulting-version uniqueness'
+    )
+    await expectVersion3InvariantMigrationDrift(
+      '  CONSTRAINT fk_patient_demographic_amendments_patient FOREIGN KEY (patient_id)\n    REFERENCES patients (id) ON UPDATE RESTRICT ON DELETE RESTRICT,\n',
+      '',
+      'missing amendment patient foreign key'
+    )
+    await expectVersion3InvariantMigrationDrift(
+      "  CONSTRAINT ck_patient_demographic_amendments_other_note\n    CHECK (\n      reason_code <> 'OTHER'\n      OR (reason_note IS NOT NULL AND length(trim(reason_note)) > 0)\n    ),\n",
+      '',
+      'missing amendment table check'
+    )
+    await expectVersion4Drift(
+      (connection) =>
+        connection.exec(
+          `DROP INDEX ix_patient_demographic_amendments_patient_time;
+           CREATE INDEX ix_patient_demographic_amendments_patient_time
+             ON patient_demographic_amendments (patient_id, amended_at, id DESC);`
+        ),
+      'changed version 3 index direction'
+    )
+  })
+
   it('persists migrated lifecycle rows after reopening the database', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'hsd027-reopen-'))
     const databasePath = join(directory, 'health-screening.sqlite3')
@@ -449,11 +581,11 @@ describe('screening session lifecycle migration', () => {
       runToVersion3(connection)
       insertLegacyGraph(connection)
       insertLegacySession(connection, {
-        id: 'session-open',
-        locationId: 'location-1',
+        id: openSessionId,
+        locationId: locationOneId,
         date: '2026-07-29',
         status: 'OPEN',
-        createdBy: 'user-open',
+        createdBy: userOpenId,
         openedAt: now,
         updatedAt: now
       })
@@ -467,8 +599,8 @@ describe('screening session lifecycle migration', () => {
     try {
       configurePragmas(reopened)
       expect(readUserVersion(reopened)).toBe(4)
-      expect(readScreeningSession(reopened, 'session-open')?.row_version).toBe(1)
-      expect(readLifecycleHistory(reopened, 'session-open')).toHaveLength(1)
+      expect(readScreeningSession(reopened, openSessionId)?.row_version).toBe(1)
+      expect(readLifecycleHistory(reopened, openSessionId)).toHaveLength(1)
     } finally {
       reopened.close()
       await rm(directory, { recursive: true, force: true })
@@ -479,11 +611,11 @@ describe('screening session lifecycle migration', () => {
     await withVersion3Database((connection) => {
       insertLegacyGraph(connection)
       insertLegacySession(connection, {
-        id: 'session-open',
-        locationId: 'location-1',
+        id: openSessionId,
+        locationId: locationOneId,
         date: '2026-07-29',
         status: 'OPEN',
-        createdBy: 'user-open',
+        createdBy: userOpenId,
         openedAt: now,
         updatedAt: now
       })
@@ -525,6 +657,30 @@ describe('screening session lifecycle migration', () => {
 
 const fixedClock = {
   now: () => now
+}
+
+function testEntityId(sequence: number): string {
+  return `aaaaaaaa-aaaa-4aaa-8aaa-${String(sequence).padStart(12, '0')}`
+}
+
+function expectMigratedHistoryId(value: unknown): void {
+  expect(typeof value).toBe('string')
+
+  const id = String(value)
+
+  expect(() => parseEntityId(id)).not.toThrow()
+  expect(id).not.toContain('migration-v4')
+}
+
+function stripHistoryId(row: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (row === undefined) {
+    throw new Error('Expected migrated lifecycle-history row')
+  }
+
+  const copy = { ...row }
+  delete copy.id
+
+  return copy
 }
 
 async function withMigratedDatabase(test: (connection: Database.Database) => void): Promise<void> {
@@ -594,10 +750,10 @@ function createLogger(): TestLogger {
 }
 
 function insertLegacyGraph(connection: Database.Database): void {
-  insertUser(connection, 'user-open')
-  insertUser(connection, 'user-close')
-  insertLocation(connection, 'location-1')
-  insertLocation(connection, 'location-2')
+  insertUser(connection, userOpenId)
+  insertUser(connection, userCloseId)
+  insertLocation(connection, locationOneId)
+  insertLocation(connection, locationTwoId)
   insertProtocol(connection)
 }
 
@@ -641,7 +797,7 @@ function insertLocation(connection: Database.Database, id: string): void {
         updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(id, id, id, 'COMMUNITY', 1, 'user-open', now, 'user-open', now)
+    .run(id, id, id, 'COMMUNITY', 1, userOpenId, now, userOpenId, now)
 }
 
 function insertProtocol(connection: Database.Database): void {
@@ -662,15 +818,93 @@ function insertProtocol(connection: Database.Database): void {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
-      'protocol-1',
+      protocolId,
       'bp-screening',
       'v1',
       'ACTIVE',
       '{}',
       'checksum',
-      'user-open',
+      userOpenId,
       now,
-      'user-open',
+      userOpenId,
+      now,
+      now
+    )
+}
+
+function insertPatient(connection: Database.Database): void {
+  connection
+    .prepare(
+      `INSERT INTO patients (
+        id,
+        patient_code,
+        display_name,
+        given_name,
+        family_name,
+        name_normalized,
+        sex,
+        date_of_birth,
+        status,
+        created_by,
+        created_at,
+        updated_by,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      patientId,
+      'P-TEST-000001',
+      'Test Screening Patient',
+      'Test',
+      'Patient',
+      'test patient',
+      'UNKNOWN',
+      '1990-01-01',
+      'ACTIVE',
+      userOpenId,
+      now,
+      userOpenId,
+      now
+    )
+}
+
+function insertScreeningEncounter(
+  connection: Database.Database,
+  input: {
+    id: string
+    sessionId: string
+  }
+): void {
+  connection
+    .prepare(
+      `INSERT INTO screening_encounters (
+        id,
+        patient_id,
+        screening_session_id,
+        location_id,
+        protocol_version_id,
+        status,
+        started_at,
+        completed_at,
+        source_type,
+        recorded_by,
+        record_version,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      input.id,
+      patientId,
+      input.sessionId,
+      locationOneId,
+      protocolId,
+      'DRAFT',
+      now,
+      null,
+      'LOCAL',
+      userOpenId,
+      1,
       now,
       now
     )
@@ -709,7 +943,7 @@ function insertLegacySession(
     .run(
       input.id,
       input.locationId,
-      'protocol-1',
+      protocolId,
       input.date,
       input.status,
       input.createdBy,
@@ -755,16 +989,16 @@ function insertScreeningSessionV4(
     .run(
       input.id,
       input.locationId,
-      'protocol-1',
+      protocolId,
       input.date,
       input.status,
-      'user-open',
+      userOpenId,
       now,
       input.closedBy ?? null,
       input.closedAt ?? null,
-      'user-open',
+      userOpenId,
       now,
-      input.closedBy ?? 'user-open',
+      input.closedBy ?? userOpenId,
       input.closedAt ?? now,
       input.rowVersion
     )
@@ -837,6 +1071,41 @@ function readLifecycleHistory(
 
 function readUserVersion(connection: Database.Database): number {
   return connection.pragma('user_version', { simple: true }) as number
+}
+
+function readForeignKeyEnforcement(connection: Database.Database): number {
+  return connection.pragma('foreign_keys', { simple: true }) as number
+}
+
+function readLegacyAlterTable(connection: Database.Database): number {
+  return connection.pragma('legacy_alter_table', { simple: true }) as number
+}
+
+function readSchemaMigrationVersions(connection: Database.Database): readonly number[] {
+  return (
+    connection
+      .prepare(
+        `SELECT version
+         FROM schema_migrations
+         ORDER BY version`
+      )
+      .all() as Array<{ version: number }>
+  ).map((row) => row.version)
+}
+
+function readForeignKeyTarget(
+  connection: Database.Database,
+  tableName: string,
+  fromColumn: string
+): string | null {
+  const row = (
+    connection.prepare(`PRAGMA foreign_key_list(${quoteIdentifier(tableName)})`).all() as Array<{
+      from: string
+      table: string
+    }>
+  ).find((candidate) => candidate.from === fromColumn)
+
+  return row?.table ?? null
 }
 
 function hasTable(connection: Database.Database, tableName: string): boolean {
@@ -943,6 +1212,46 @@ async function expectVersion4MigrationDrift(
             ...version4,
             sql: version4.sql.replace(search, replacement)
           }
+        ],
+        applicationVersion: '1.0.0',
+        logger: createLogger(),
+        clock: fixedClock,
+        expectedHighestVersion: 4,
+        schemaValidators: new Map([[4, validateSchemaVersion4]])
+      })
+    ).toThrow(MigrationExecutionError)
+  })
+}
+
+async function expectVersion3InvariantMigrationDrift(
+  search: string,
+  replacement: string,
+  label: string
+): Promise<void> {
+  const version3 = databaseMigrations[2]
+  const version4 = databaseMigrations[3]
+
+  if (version3 === undefined || version4 === undefined) {
+    throw new Error('Missing version 3 or version 4 migration')
+  }
+
+  const normalizedVersion3Sql = version3.sql.replaceAll('\r\n', '\n')
+
+  if (!normalizedVersion3Sql.includes(search)) {
+    throw new Error(`Missing version 3 drift search target for ${label}`)
+  }
+
+  await withDatabase((connection) => {
+    expect(() =>
+      runDatabaseMigrations({
+        connection,
+        migrations: [
+          ...databaseMigrations.slice(0, 2),
+          {
+            ...version3,
+            sql: normalizedVersion3Sql.replace(search, replacement)
+          },
+          version4
         ],
         applicationVersion: '1.0.0',
         logger: createLogger(),
