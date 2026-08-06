@@ -970,6 +970,7 @@ export function PatientRegistryWorkspace({
             onDiscardAcknowledgmentConflict={() => {
               discardAcknowledgmentDecision()
               setMessage('Loaded the latest patient details.')
+              focusMessage()
             }}
             onCancelAcknowledgmentConflict={() => {
               setAcknowledgmentConflict(null)

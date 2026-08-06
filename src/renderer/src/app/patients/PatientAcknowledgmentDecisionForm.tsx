@@ -55,8 +55,16 @@ export function PatientAcknowledgmentDecisionForm({
 }: PatientAcknowledgmentDecisionFormProps): React.JSX.Element {
   const headingRef = useRef<HTMLHeadingElement | null>(null)
   const summaryRef = useRef<HTMLDivElement | null>(null)
+  const conflictSummaryRef = useRef<HTMLDivElement | null>(null)
+  const conflictWasVisibleRef = useRef(false)
   const decisionInvalid = validationErrors.decision !== undefined
   const noteInvalid = validationErrors.note !== undefined
+  const decisionDescriptionIds = decisionInvalid
+    ? 'patient-ack-decision-help patient-ack-decision-error'
+    : 'patient-ack-decision-help'
+  const noteDescriptionIds = noteInvalid
+    ? 'patient-ack-note-count patient-ack-note-error'
+    : 'patient-ack-note-count'
 
   useEffect(() => {
     headingRef.current?.focus({ preventScroll: true })
@@ -67,6 +75,16 @@ export function PatientAcknowledgmentDecisionForm({
       summaryRef.current?.focus({ preventScroll: true })
     }
   }, [validationErrors])
+
+  useEffect(() => {
+    const conflictVisible = conflict !== null
+
+    if (conflictVisible && !conflictWasVisibleRef.current) {
+      conflictSummaryRef.current?.focus({ preventScroll: true })
+    }
+
+    conflictWasVisibleRef.current = conflictVisible
+  }, [conflict])
 
   return (
     <section className="patient-amendment-form" aria-labelledby="patient-ack-form-heading">
@@ -91,7 +109,12 @@ export function PatientAcknowledgmentDecisionForm({
       ) : null}
 
       {conflict !== null ? (
-        <div className="patient-conflict-review" role="alert">
+        <div
+          ref={conflictSummaryRef}
+          className="patient-conflict-review"
+          role="alert"
+          tabIndex={-1}
+        >
           <h4>Review latest acknowledgment state</h4>
           <p>No Participation/Data-Use Acknowledgment decision was recorded.</p>
           <dl className="patient-conflict-list">
@@ -152,16 +175,22 @@ export function PatientAcknowledgmentDecisionForm({
       ) : null}
 
       <fieldset className="patient-field-group" disabled={pending}>
-        <legend>
-          Decision <span aria-hidden="true">*</span>
+        <legend id="patient-ack-decision-legend">
+          Decision{' '}
+          <span className="patient-required-indicator">
+            <span aria-hidden="true">*</span>
+            <span className="visually-hidden"> required</span>
+          </span>
         </legend>
         <p id="patient-ack-decision-help" className="patient-field-help">
           Select Acknowledged or Declined. Not requested is only an initial state.
         </p>
         <div
-          role="group"
-          aria-describedby="patient-ack-decision-help patient-ack-decision-error"
+          role="radiogroup"
+          aria-labelledby="patient-ack-decision-legend"
+          aria-describedby={decisionDescriptionIds}
           aria-invalid={decisionInvalid || undefined}
+          aria-required="true"
         >
           <label className="patient-radio-option">
             <input
@@ -196,8 +225,9 @@ export function PatientAcknowledgmentDecisionForm({
         <textarea
           value={note}
           disabled={pending}
+          maxLength={1000}
           aria-invalid={noteInvalid || undefined}
-          aria-describedby="patient-ack-note-count patient-ack-note-error"
+          aria-describedby={noteDescriptionIds}
           onChange={(event) => onNoteChange(event.target.value)}
         />
       </label>

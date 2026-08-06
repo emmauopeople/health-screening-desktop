@@ -2511,6 +2511,49 @@ describe('patient registry workspace mounted regressions', () => {
     await mounted.unmount()
   })
 
+  it('exposes acknowledgment decision accessibility metadata without stale descriptions', async () => {
+    const api = createApi()
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    const mounted = await mountWorkspace({ api, selectedPatient: patientDetail() })
+
+    await clickButton(mounted, 'Record acknowledgment decision')
+
+    const decisionGroup = acknowledgmentDecisionGroup(mounted)
+    const decisionFieldset = decisionGroup.closest('fieldset')
+    const note = fieldTextarea(mounted, 'Decision note')
+
+    expect(decisionGroup.getAttribute('aria-required')).toBe('true')
+    expect(decisionFieldset?.textContent).toContain('required')
+    expect(decisionGroup.getAttribute('aria-describedby')).toBe('patient-ack-decision-help')
+    expect(note.getAttribute('aria-describedby')).toBe('patient-ack-note-count')
+    expect(note.maxLength).toBe(1000)
+    expect(
+      mounted.container.querySelector(
+        'input[name="patient-acknowledgment-decision"][value="NOT_REQUESTED"]'
+      )
+    ).toBeNull()
+
+    await clickButton(mounted, 'Save decision')
+
+    expect(decisionGroup.getAttribute('aria-describedby')).toBe(
+      'patient-ack-decision-help patient-ack-decision-error'
+    )
+    expect(document.activeElement).toBe(validationSummary(mounted))
+
+    await clickRadio(decisionRadio(mounted, 'DECLINED'))
+    await changeTextarea(note, 'Unsafe\u2028separator')
+    await clickButton(mounted, 'Save decision')
+
+    expect(fieldTextarea(mounted, 'Decision note').getAttribute('aria-describedby')).toBe(
+      'patient-ack-note-count patient-ack-note-error'
+    )
+    expect(api.patient.recordAcknowledgment).not.toHaveBeenCalled()
+
+    await mounted.unmount()
+  })
+
   it('treats duplicate acknowledgment decisions as informational success', async () => {
     const api = createApi()
     api.patient.search.mockResolvedValueOnce(
@@ -2552,6 +2595,96 @@ describe('patient registry workspace mounted regressions', () => {
     expect(buttonByText(mounted, 'Record acknowledgment decision')).toBeInstanceOf(
       HTMLButtonElement
     )
+
+    await mounted.unmount()
+  })
+
+  it('refreshes acknowledgment history and preserves demographic history on duplicate decisions', async () => {
+    const api = createApi()
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    api.patient.listDemographicAmendmentHistory.mockResolvedValueOnce(
+      createIpcSuccess({
+        items: [demographicAmendmentRecord({ reasonNote: 'Cached demographic history.' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    api.patient.listAcknowledgmentHistory
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [acknowledgmentHistoryRecord({ note: 'Acknowledgment before duplicate.' })],
+          page: 1,
+          pageSize: 25,
+          total: 1
+        })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [acknowledgmentHistoryRecord({ note: 'Acknowledgment after duplicate.' })],
+          page: 1,
+          pageSize: 25,
+          total: 1
+        })
+      )
+    api.patient.recordAcknowledgment.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'DUPLICATE_DECISION',
+        patient: patientDetail({
+          acknowledgment: {
+            status: 'ACKNOWLEDGED',
+            recordedAt: baseTimestamp,
+            recordedByDisplayName: 'Admin User'
+          }
+        }),
+        acknowledgment: acknowledgmentHistoryRecord({ status: 'ACKNOWLEDGED' })
+      })
+    )
+    const mounted = await mountWorkspace({
+      api,
+      selectedPatient: patientDetail({
+        acknowledgment: {
+          status: 'ACKNOWLEDGED',
+          recordedAt: baseTimestamp,
+          recordedByDisplayName: 'Admin User'
+        }
+      })
+    })
+
+    await clickElement(tabByText(mounted, 'Demographic History'))
+    expect(activeTabPanel(mounted).textContent).toContain('Cached demographic history.')
+    await clickElement(tabByText(mounted, 'Acknowledgment History'))
+    expect(activeTabPanel(mounted).textContent).toContain('Acknowledgment before duplicate.')
+    await clickElement(tabByText(mounted, 'Current Details'))
+    await clickButton(mounted, 'Record acknowledgment decision')
+    await clickRadio(decisionRadio(mounted, 'ACKNOWLEDGED'))
+    await clickButton(mounted, 'Save decision')
+
+    const status = statusMessage(mounted)
+
+    expect(status?.textContent).toContain(
+      'This Participation/Data-Use Acknowledgment decision is already recorded.'
+    )
+    expect(status?.getAttribute('role')).toBe('status')
+    expect(mounted.container.querySelector('[role="alert"]')).toBeNull()
+    expect(buttonByText(mounted, 'Record acknowledgment decision')).toBeInstanceOf(
+      HTMLButtonElement
+    )
+    expect(text(mounted)).not.toContain(acknowledgmentId)
+    expect(api.patient.listDemographicAmendmentHistory).toHaveBeenCalledOnce()
+
+    await clickElement(tabByText(mounted, 'Acknowledgment History'))
+
+    expect(api.patient.listAcknowledgmentHistory).toHaveBeenCalledTimes(2)
+    expect(activeTabPanel(mounted).textContent).toContain('Acknowledgment after duplicate.')
+    expect(api.patient.listDemographicAmendmentHistory).toHaveBeenCalledOnce()
+
+    await clickElement(tabByText(mounted, 'Demographic History'))
+
+    expect(activeTabPanel(mounted).textContent).toContain('Cached demographic history.')
+    expect(api.patient.listDemographicAmendmentHistory).toHaveBeenCalledOnce()
 
     await mounted.unmount()
   })
@@ -2618,6 +2751,101 @@ describe('patient registry workspace mounted regressions', () => {
     await mounted.unmount()
   })
 
+  it('rebases repeated acknowledgment conflicts without automatic retry', async () => {
+    const api = createApi()
+    const original = patientDetail({ rowVersion: 1 })
+    const rowTwo = patientDetail({
+      rowVersion: 2,
+      updatedAt: '2026-07-29T12:35:00.000Z',
+      updatedByDisplayName: 'Nurse User',
+      acknowledgment: {
+        status: 'ACKNOWLEDGED',
+        recordedAt: '2026-07-29T12:35:00.000Z',
+        recordedByDisplayName: 'Nurse User'
+      }
+    })
+    const rowThree = patientDetail({
+      rowVersion: 3,
+      updatedAt: '2026-07-29T12:36:00.000Z',
+      updatedByDisplayName: 'Local Admin',
+      acknowledgment: {
+        status: 'ACKNOWLEDGED',
+        recordedAt: '2026-07-29T12:36:00.000Z',
+        recordedByDisplayName: 'Local Admin'
+      }
+    })
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary(original)], page: 1, pageSize: 25, total: 1 })
+    )
+    api.patient.recordAcknowledgment
+      .mockResolvedValueOnce(
+        createIpcSuccess({ status: 'PATIENT_VERSION_CONFLICT', patient: rowTwo })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({ status: 'PATIENT_VERSION_CONFLICT', patient: rowThree })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          status: 'RECORDED',
+          acknowledgmentId,
+          patient: patientDetail({
+            rowVersion: 4,
+            acknowledgment: {
+              status: 'DECLINED',
+              recordedAt: '2026-07-29T12:37:00.000Z',
+              recordedByDisplayName: 'Admin User'
+            }
+          })
+        })
+      )
+    const mounted = await mountWorkspace({ api, selectedPatient: original })
+
+    await clickButton(mounted, 'Record acknowledgment decision')
+    await clickRadio(decisionRadio(mounted, 'DECLINED'))
+    await changeTextarea(fieldTextarea(mounted, 'Decision note'), 'Patient declined after review.')
+    await clickButton(mounted, 'Save decision')
+
+    expect(api.patient.recordAcknowledgment).toHaveBeenCalledOnce()
+    expect(api.patient.recordAcknowledgment).toHaveBeenLastCalledWith({
+      patientId: patientIdOne,
+      expectedRowVersion: 1,
+      status: 'DECLINED',
+      note: 'Patient declined after review.'
+    })
+    expect(document.activeElement).toBe(conflictSummary(mounted))
+    expect(fieldTextarea(mounted, 'Decision note').value).toBe('Patient declined after review.')
+    expect(decisionRadio(mounted, 'DECLINED').checked).toBe(true)
+    expect(mounted.getSelectedPatient()).toEqual(rowTwo)
+
+    await clickButton(mounted, 'Retry decision')
+
+    expect(api.patient.recordAcknowledgment).toHaveBeenCalledTimes(2)
+    expect(api.patient.recordAcknowledgment).toHaveBeenLastCalledWith({
+      patientId: patientIdOne,
+      expectedRowVersion: 2,
+      status: 'DECLINED',
+      note: 'Patient declined after review.'
+    })
+    expect(api.patient.recordAcknowledgment).toHaveBeenCalledTimes(2)
+    expect(fieldTextarea(mounted, 'Decision note').value).toBe('Patient declined after review.')
+    expect(decisionRadio(mounted, 'DECLINED').checked).toBe(true)
+    expect(mounted.getSelectedPatient()).toEqual(rowThree)
+    expect(text(mounted)).toContain('Latest current state')
+    expect(text(mounted)).toContain('Acknowledged')
+
+    await clickButton(mounted, 'Retry decision')
+
+    expect(api.patient.recordAcknowledgment).toHaveBeenCalledTimes(3)
+    expect(api.patient.recordAcknowledgment).toHaveBeenLastCalledWith({
+      patientId: patientIdOne,
+      expectedRowVersion: 3,
+      status: 'DECLINED',
+      note: 'Patient declined after review.'
+    })
+
+    await mounted.unmount()
+  })
+
   it('discards acknowledgment conflict drafts without sending another request', async () => {
     const api = createApi()
     api.patient.search.mockResolvedValueOnce(
@@ -2642,12 +2870,19 @@ describe('patient registry workspace mounted regressions', () => {
     await clickRadio(decisionRadio(mounted, 'ACKNOWLEDGED'))
     await changeTextarea(fieldTextarea(mounted, 'Decision note'), 'Sensitive note to clear.')
     await clickButton(mounted, 'Save decision')
+
+    expect(document.activeElement).toBe(conflictSummary(mounted))
+
     await clickButton(mounted, 'Discard decision and load latest')
 
     expect(api.patient.recordAcknowledgment).toHaveBeenCalledOnce()
     expect(text(mounted)).toContain('Loaded the latest patient details.')
+    expect(document.activeElement).toBe(statusMessage(mounted))
     expect(text(mounted)).toContain('Declined')
     expect(text(mounted)).not.toContain('Sensitive note to clear.')
+    expect(text(mounted)).not.toContain(
+      'No Participation/Data-Use Acknowledgment decision was recorded.'
+    )
     expect(buttonByText(mounted, 'Record acknowledgment decision')).toBeInstanceOf(
       HTMLButtonElement
     )
@@ -2698,6 +2933,255 @@ describe('patient registry workspace mounted regressions', () => {
     expect(mounted.onSelectCommand).toHaveBeenCalledWith('HOME_DASHBOARD')
 
     await mounted.unmount()
+  })
+
+  it('guards dirty acknowledgment tab and reload transitions', async () => {
+    const api = createApi()
+    const latest = patientDetail({
+      rowVersion: 2,
+      updatedAt: '2026-07-29T12:35:00.000Z',
+      updatedByDisplayName: 'Nurse User',
+      acknowledgment: {
+        status: 'ACKNOWLEDGED',
+        recordedAt: '2026-07-29T12:35:00.000Z',
+        recordedByDisplayName: 'Nurse User'
+      }
+    })
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    api.patient.recordAcknowledgment.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'PATIENT_VERSION_CONFLICT', patient: latest })
+    )
+    api.patient.get.mockResolvedValueOnce(createIpcSuccess(latest))
+    const mounted = await mountWorkspace({ api, selectedPatient: patientDetail() })
+
+    await clickButton(mounted, 'Record acknowledgment decision')
+    await clickRadio(decisionRadio(mounted, 'DECLINED'))
+    await changeTextarea(fieldTextarea(mounted, 'Decision note'), 'Decision note for tab.')
+    await clickElement(tabByText(mounted, 'Demographic History'))
+
+    expect(dialog(mounted)?.textContent).toContain('Save decision')
+
+    await clickButtonWithin(dialog(mounted)!, 'Cancel')
+
+    expect(tabByText(mounted, 'Current Details').getAttribute('aria-selected')).toBe('true')
+    expect(fieldTextarea(mounted, 'Decision note').value).toBe('Decision note for tab.')
+
+    await clickElement(tabByText(mounted, 'Demographic History'))
+    await clickButtonWithin(dialog(mounted)!, 'Discard decision')
+
+    expect(tabByText(mounted, 'Demographic History').getAttribute('aria-selected')).toBe('true')
+    expect(text(mounted)).not.toContain('Decision note for tab.')
+
+    await clickElement(tabByText(mounted, 'Current Details'))
+    await clickButton(mounted, 'Record acknowledgment decision')
+    await clickRadio(decisionRadio(mounted, 'ACKNOWLEDGED'))
+    await changeTextarea(fieldTextarea(mounted, 'Decision note'), 'Decision note for reload.')
+    await clickButton(mounted, 'Reload patient')
+    await clickButtonWithin(dialog(mounted)!, 'Save decision')
+
+    expect(api.patient.recordAcknowledgment).toHaveBeenCalledOnce()
+    expect(tabByText(mounted, 'Current Details').getAttribute('aria-selected')).toBe('true')
+    expect(dialog(mounted)).not.toBeNull()
+    expect(text(mounted)).toContain(
+      'No Participation/Data-Use Acknowledgment decision was recorded.'
+    )
+    expect(fieldTextarea(mounted, 'Decision note').value).toBe('Decision note for reload.')
+
+    await clickButtonWithin(dialog(mounted)!, 'Discard decision')
+
+    expect(api.patient.get).toHaveBeenCalledWith({ patientId: patientIdOne })
+    expect(mounted.getSelectedPatient()).toEqual(latest)
+    expect(text(mounted)).not.toContain('Decision note for reload.')
+
+    await mounted.unmount()
+  })
+
+  it('guards dirty acknowledgment patient selection and search clearing transitions', async () => {
+    const first = patientDetail()
+    const second = patientDetail({
+      id: patientIdTwo,
+      patientCode: 'PT-000002',
+      displayName: 'Brice Muna',
+      givenName: 'Brice',
+      familyName: 'Muna'
+    })
+    const api = createApi()
+    api.patient.search
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          items: [patientSummary(first), patientSummary(second)],
+          page: 1,
+          pageSize: 25,
+          total: 2
+        })
+      )
+      .mockResolvedValueOnce(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+      .mockResolvedValueOnce(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+    api.patient.get.mockResolvedValueOnce(createIpcSuccess(second))
+    const mounted = await mountWorkspace({ api, selectedPatient: first })
+
+    await clickButton(mounted, 'Record acknowledgment decision')
+    await clickRadio(decisionRadio(mounted, 'DECLINED'))
+    await changeTextarea(fieldTextarea(mounted, 'Decision note'), 'Selection guard note.')
+    await clickButtonWithin(patientRowByCode(mounted, 'PT-000002'), 'Select')
+
+    expect(dialog(mounted)?.textContent).toContain('Save decision')
+
+    await clickButtonWithin(dialog(mounted)!, 'Cancel')
+
+    expect(mounted.getSelectedPatient()).toEqual(first)
+    expect(fieldTextarea(mounted, 'Decision note').value).toBe('Selection guard note.')
+
+    await clickButtonWithin(patientRowByCode(mounted, 'PT-000002'), 'Select')
+    await clickButtonWithin(dialog(mounted)!, 'Discard decision')
+
+    expect(mounted.getSelectedPatient()).toEqual(second)
+    expect(text(mounted)).toContain('Brice Muna')
+
+    await clickButton(mounted, 'Record acknowledgment decision')
+    await clickRadio(decisionRadio(mounted, 'ACKNOWLEDGED'))
+    await changeTextarea(fieldTextarea(mounted, 'Decision note'), 'Search guard note.')
+    await clickButton(mounted, 'Search')
+
+    expect(dialog(mounted)?.textContent).toContain('Save decision')
+
+    await clickButtonWithin(dialog(mounted)!, 'Cancel')
+
+    expect(mounted.getSelectedPatient()).toEqual(second)
+    expect(fieldTextarea(mounted, 'Decision note').value).toBe('Search guard note.')
+
+    await clickButton(mounted, 'Search')
+    await clickButtonWithin(dialog(mounted)!, 'Discard decision')
+
+    expect(mounted.getSelectedPatient()).toBeNull()
+    expect(text(mounted)).toContain('No registered patients. Register New is available.')
+    expect(text(mounted)).not.toContain('Search guard note.')
+
+    await mounted.unmount()
+  })
+
+  it('prevents rapid duplicate acknowledgment submissions while pending', async () => {
+    const api = createApi()
+    const pending =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['recordAcknowledgment']>>>()
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    api.patient.recordAcknowledgment.mockReturnValueOnce(pending.promise)
+    const mounted = await mountWorkspace({ api, selectedPatient: patientDetail() })
+
+    await clickButton(mounted, 'Record acknowledgment decision')
+    await clickRadio(decisionRadio(mounted, 'ACKNOWLEDGED'))
+    await clickElementTwice(buttonByText(mounted, 'Save decision'))
+
+    expect(api.patient.recordAcknowledgment).toHaveBeenCalledOnce()
+    expect(buttonByText(mounted, 'Save decision').disabled).toBe(true)
+    expect(decisionRadio(mounted, 'ACKNOWLEDGED').closest('fieldset')?.disabled).toBe(true)
+
+    pending.resolve(
+      createIpcSuccess({
+        status: 'RECORDED',
+        acknowledgmentId,
+        patient: patientDetail({
+          rowVersion: 2,
+          acknowledgment: {
+            status: 'ACKNOWLEDGED',
+            recordedAt: baseTimestamp,
+            recordedByDisplayName: 'Admin User'
+          }
+        })
+      })
+    )
+    await flushReact()
+
+    expect(buttonByText(mounted, 'Record acknowledgment decision')).toBeInstanceOf(
+      HTMLButtonElement
+    )
+
+    await mounted.unmount()
+  })
+
+  it('ignores stale acknowledgment save results after protected invalidation and unmount', async () => {
+    const protectedApi = createApi()
+    const protectedSave =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['recordAcknowledgment']>>>()
+    protectedApi.patient.search
+      .mockResolvedValueOnce(
+        createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+      )
+      .mockResolvedValueOnce(createPatientFailure('IPC_FORBIDDEN'))
+    protectedApi.patient.recordAcknowledgment.mockReturnValueOnce(protectedSave.promise)
+    const protectedMounted = await mountWorkspace({
+      api: protectedApi,
+      selectedPatient: patientDetail()
+    })
+
+    await clickButton(protectedMounted, 'Record acknowledgment decision')
+    await clickRadio(decisionRadio(protectedMounted, 'DECLINED'))
+    await changeTextarea(fieldTextarea(protectedMounted, 'Decision note'), 'Do not restore note.')
+    await clickButton(protectedMounted, 'Save decision')
+    await clickButton(protectedMounted, 'Search')
+
+    protectedSave.resolve(
+      createIpcSuccess({
+        status: 'RECORDED',
+        acknowledgmentId,
+        patient: patientDetail({
+          rowVersion: 2,
+          displayName: 'Stale Patient',
+          acknowledgment: {
+            status: 'DECLINED',
+            recordedAt: baseTimestamp,
+            recordedByDisplayName: 'Admin User'
+          }
+        })
+      })
+    )
+    await flushReact()
+
+    expect(protectedMounted.onAuthenticationFailure).toHaveBeenCalledWith('IPC_FORBIDDEN')
+    expect(protectedMounted.getSelectedPatient()).toBeNull()
+    expect(text(protectedMounted)).toContain('Select a patient to view or update details.')
+    expect(text(protectedMounted)).not.toContain('Participation/Data-Use Acknowledgment recorded.')
+    expect(text(protectedMounted)).not.toContain('Do not restore note.')
+    expect(text(protectedMounted)).not.toContain('Stale Patient')
+
+    await protectedMounted.unmount()
+
+    const unmountedApi = createApi()
+    const unmountedSave =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['recordAcknowledgment']>>>()
+    unmountedApi.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    unmountedApi.patient.recordAcknowledgment.mockReturnValueOnce(unmountedSave.promise)
+    const unmounted = await mountWorkspace({ api: unmountedApi, selectedPatient: patientDetail() })
+
+    await clickButton(unmounted, 'Record acknowledgment decision')
+    await clickRadio(decisionRadio(unmounted, 'ACKNOWLEDGED'))
+    await clickButton(unmounted, 'Save decision')
+    await unmounted.unmount()
+
+    unmountedSave.resolve(
+      createIpcSuccess({
+        status: 'RECORDED',
+        acknowledgmentId,
+        patient: patientDetail({
+          rowVersion: 2,
+          displayName: 'Unmounted Stale Patient',
+          acknowledgment: {
+            status: 'ACKNOWLEDGED',
+            recordedAt: baseTimestamp,
+            recordedByDisplayName: 'Admin User'
+          }
+        })
+      })
+    )
+    await flushReact()
+
+    expect(unmountedApi.patient.recordAcknowledgment).toHaveBeenCalledOnce()
   })
 
   it('ignores stale demographic history after selecting a different patient', async () => {
@@ -3679,6 +4163,29 @@ describe('patient registry workspace mounted regressions', () => {
         }
       },
       {
+        name: 'recordAcknowledgment',
+        commandId: 'PATIENTS_PATIENT_SEARCH',
+        configure: (api) => {
+          api.patient.search.mockResolvedValueOnce(
+            createIpcSuccess({
+              items: [patientSummary({ patientCode: 'PT-000099', displayName: 'Protected Name' })],
+              page: 1,
+              pageSize: 25,
+              total: 1
+            })
+          )
+          api.patient.recordAcknowledgment.mockResolvedValueOnce(
+            createPatientFailure('IPC_FORBIDDEN')
+          )
+        },
+        run: async (mounted) => {
+          await clickButton(mounted, 'Record acknowledgment decision')
+          await clickRadio(decisionRadio(mounted, 'ACKNOWLEDGED'))
+          await changeTextarea(fieldTextarea(mounted, 'Decision note'), 'Protected note.')
+          await clickButton(mounted, 'Save decision')
+        }
+      },
+      {
         name: 'listRecent',
         commandId: 'PATIENTS_RECENT_PATIENTS',
         configure: (api) => {
@@ -3729,6 +4236,60 @@ describe('patient registry workspace mounted regressions', () => {
 
       await mounted.unmount()
     }
+  })
+
+  it('clears acknowledgment drafts, histories, and pending dirty actions on protected save failure', async () => {
+    const api = createApi()
+    api.patient.search.mockResolvedValueOnce(
+      createIpcSuccess({ items: [patientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
+    api.patient.listDemographicAmendmentHistory.mockResolvedValueOnce(
+      createIpcSuccess({
+        items: [demographicAmendmentRecord({ reasonNote: 'Protected demographic history.' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    api.patient.listAcknowledgmentHistory.mockResolvedValueOnce(
+      createIpcSuccess({
+        items: [acknowledgmentHistoryRecord({ note: 'Protected acknowledgment history.' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    api.patient.recordAcknowledgment.mockResolvedValueOnce(createPatientFailure('IPC_FORBIDDEN'))
+    const mounted = await mountWorkspace({
+      api,
+      selectedPatient: patientDetail({ displayName: 'Protected Name' })
+    })
+
+    await clickElement(tabByText(mounted, 'Demographic History'))
+    expect(activeTabPanel(mounted).textContent).toContain('Protected demographic history.')
+    await clickElement(tabByText(mounted, 'Acknowledgment History'))
+    expect(activeTabPanel(mounted).textContent).toContain('Protected acknowledgment history.')
+    await clickElement(tabByText(mounted, 'Current Details'))
+    await clickButton(mounted, 'Record acknowledgment decision')
+    await clickRadio(decisionRadio(mounted, 'DECLINED'))
+    await changeTextarea(fieldTextarea(mounted, 'Decision note'), 'Sensitive protected note.')
+    await clickElement(tabByText(mounted, 'Demographic History'))
+
+    expect(dialog(mounted)?.textContent).toContain('Save decision')
+
+    await clickButtonWithin(dialog(mounted)!, 'Save decision')
+
+    expect(mounted.onAuthenticationFailure).toHaveBeenCalledWith('IPC_FORBIDDEN')
+    expect(mounted.getSelectedPatient()).toBeNull()
+    expect(dialog(mounted)).toBeNull()
+    expect(detailTabs(mounted)).toEqual([])
+    expect(text(mounted)).toContain('Select a patient to view or update details.')
+    expect(text(mounted)).not.toContain('Protected Name')
+    expect(text(mounted)).not.toContain('Sensitive protected note.')
+    expect(text(mounted)).not.toContain('Protected demographic history.')
+    expect(text(mounted)).not.toContain('Protected acknowledgment history.')
+
+    await mounted.unmount()
   })
 
   it('reconciles authentication patient failures and suppresses stale loads after protected-state invalidation', async () => {
@@ -4225,6 +4786,30 @@ function decisionRadio(
   }
 
   return radio
+}
+
+function acknowledgmentDecisionGroup(mounted: MountedWorkspace): HTMLElement {
+  const group = mounted.container.querySelector<HTMLElement>(
+    '[role="radiogroup"][aria-labelledby="patient-ack-decision-legend"]'
+  )
+
+  if (group === null) {
+    throw new Error('Expected acknowledgment decision radio group to be rendered.')
+  }
+
+  return group
+}
+
+function validationSummary(mounted: MountedWorkspace): HTMLElement | null {
+  return mounted.container.querySelector<HTMLElement>('.patient-validation-summary[role="alert"]')
+}
+
+function conflictSummary(mounted: MountedWorkspace): HTMLElement | null {
+  return mounted.container.querySelector<HTMLElement>('.patient-conflict-review[role="alert"]')
+}
+
+function statusMessage(mounted: MountedWorkspace): HTMLElement | null {
+  return mounted.container.querySelector<HTMLElement>('.patient-alert[role="status"]')
 }
 
 function fieldLabel(mounted: MountedWorkspace, label: string): HTMLLabelElement {
