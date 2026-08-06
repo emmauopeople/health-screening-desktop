@@ -23,6 +23,15 @@ INSERT INTO hsd027_screening_session_migration_guard (value)
 SELECT 1
 WHERE EXISTS (
   SELECT 1
+  FROM screening_sessions
+  WHERE status = 'OPEN'
+    AND (closed_by IS NOT NULL OR closed_at IS NOT NULL)
+);
+
+INSERT INTO hsd027_screening_session_migration_guard (value)
+SELECT 1
+WHERE EXISTS (
+  SELECT 1
   FROM screening_sessions AS session
   LEFT JOIN locations AS location
     ON location.id = session.location_id

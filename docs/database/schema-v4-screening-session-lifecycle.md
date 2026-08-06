@@ -38,6 +38,10 @@ Existing valid `OPEN` rows migrate as:
 - `row_version = 1`
 - one `CREATED` lifecycle-history row with `resulting_row_version = 1`
 
+Legacy `OPEN` rows with either `closed_by` or `closed_at` populated are
+malformed and rejected. The migration does not clear or reinterpret close
+metadata on an `OPEN` session.
+
 Existing valid `CLOSED` rows migrate as:
 
 - `opened_by = created_by`

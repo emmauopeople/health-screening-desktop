@@ -249,6 +249,69 @@ describe('screening session lifecycle migration', () => {
     })
   })
 
+  it('rejects legacy OPEN sessions containing close metadata without coercion', async () => {
+    const cases: ReadonlyArray<{
+      label: string
+      id: string
+      closedBy?: string
+      closedAt?: string
+    }> = [
+      {
+        label: 'closed_by only',
+        id: testEntityId(25),
+        closedBy: userCloseId
+      },
+      {
+        label: 'closed_at only',
+        id: testEntityId(26),
+        closedAt
+      },
+      {
+        label: 'closed_by and closed_at',
+        id: testEntityId(27),
+        closedBy: userCloseId,
+        closedAt
+      }
+    ]
+
+    for (const migrationCase of cases) {
+      await withVersion3Database((connection) => {
+        insertLegacyGraph(connection)
+        insertLegacySession(connection, {
+          id: migrationCase.id,
+          locationId: locationOneId,
+          date: '2026-08-01',
+          status: 'OPEN',
+          createdBy: userOpenId,
+          openedAt: now,
+          closedBy: migrationCase.closedBy,
+          closedAt: migrationCase.closedAt,
+          updatedAt: now
+        })
+        connection.pragma('legacy_alter_table = ON')
+        const originalLegacyAlterTable = readLegacyAlterTable(connection)
+
+        expect(() => migrateToVersion4(connection), migrationCase.label).toThrow(
+          MigrationExecutionError
+        )
+
+        expect(readUserVersion(connection)).toBe(3)
+        expect(readSchemaMigrationVersions(connection)).not.toContain(4)
+        expect(hasTable(connection, 'screening_sessions')).toBe(true)
+        expect(readScreeningSessionColumns(connection)).not.toContain('row_version')
+        expect(readScreeningSession(connection, migrationCase.id)).toMatchObject({
+          id: migrationCase.id,
+          status: 'OPEN',
+          closed_by: migrationCase.closedBy ?? null,
+          closed_at: migrationCase.closedAt ?? null
+        })
+        expect(hasTable(connection, 'screening_session_lifecycle_history')).toBe(false)
+        expect(readForeignKeyEnforcement(connection)).toBe(1)
+        expect(readLegacyAlterTable(connection)).toBe(originalLegacyAlterTable)
+      })
+    }
+  })
+
   it('preserves foreign_keys and legacy_alter_table pragmas after success and failure', async () => {
     await withVersion3Database((connection) => {
       insertLegacyGraph(connection)
