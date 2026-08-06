@@ -27,7 +27,7 @@ const fixedClock = {
 }
 
 describe('migration runner integration', () => {
-  it('upgrades a fresh HSD-006 database to schema version 3 and is idempotent', async () => {
+  it('upgrades a fresh HSD-006 database to schema version 4 and is idempotent', async () => {
     await withDatabase((connection) => {
       const logger = createLogger()
       const migrate = createProductionDatabaseMigrationRunner({
@@ -42,10 +42,10 @@ describe('migration runner integration', () => {
 
       expect(firstSummary).toEqual({
         previousVersion: 0,
-        currentVersion: 3,
-        appliedVersions: [1, 2, 3]
+        currentVersion: 4,
+        appliedVersions: [1, 2, 3, 4]
       })
-      expect(readUserVersion(connection)).toBe(3)
+      expect(readUserVersion(connection)).toBe(4)
       expect(readLedgerRows(connection)).toEqual(
         databaseMigrations.map((migration) => ({
           version: migration.version,
@@ -59,30 +59,30 @@ describe('migration runner integration', () => {
       const secondSummary = migrate(connection)
 
       expect(secondSummary).toEqual({
-        previousVersion: 3,
-        currentVersion: 3,
+        previousVersion: 4,
+        currentVersion: 4,
         appliedVersions: []
       })
-      expect(readLedgerRows(connection)).toHaveLength(3)
+      expect(readLedgerRows(connection)).toHaveLength(4)
       expect(logger.info.mock.calls.flat()).toContain(
-        'Database migrations current; schemaVersion=3'
+        'Database migrations current; schemaVersion=4'
       )
     })
   })
 
-  it('upgrades an existing schema version 2 database to schema version 3', async () => {
+  it('upgrades an existing schema version 3 database to schema version 4', async () => {
     await withDatabase((connection) => {
       runDatabaseMigrations({
         connection,
-        migrations: databaseMigrations.slice(0, 2),
+        migrations: databaseMigrations.slice(0, 3),
         applicationVersion: '1.0.0',
         logger: createLogger(),
         clock: fixedClock,
-        expectedHighestVersion: 2
+        expectedHighestVersion: 3
       })
 
-      expect(readUserVersion(connection)).toBe(2)
-      expect(readLedgerRows(connection).map((row) => row.version)).toEqual([1, 2])
+      expect(readUserVersion(connection)).toBe(3)
+      expect(readLedgerRows(connection).map((row) => row.version)).toEqual([1, 2, 3])
 
       const summary = createProductionDatabaseMigrationRunner({
         applicationVersion: '1.0.0',
@@ -91,12 +91,12 @@ describe('migration runner integration', () => {
       })(connection)
 
       expect(summary).toEqual({
-        previousVersion: 2,
-        currentVersion: 3,
-        appliedVersions: [3]
+        previousVersion: 3,
+        currentVersion: 4,
+        appliedVersions: [4]
       })
-      expect(readUserVersion(connection)).toBe(3)
-      expect(readLedgerRows(connection).map((row) => row.version)).toEqual([1, 2, 3])
+      expect(readUserVersion(connection)).toBe(4)
+      expect(readLedgerRows(connection).map((row) => row.version)).toEqual([1, 2, 3, 4])
     })
   })
 
@@ -120,8 +120,8 @@ describe('migration runner integration', () => {
       const secondSummary = secondRunner(connection)
 
       expect(secondSummary).toEqual({
-        previousVersion: 3,
-        currentVersion: 3,
+        previousVersion: 4,
+        currentVersion: 4,
         appliedVersions: []
       })
       expect(readLedgerRows(connection)).toEqual(originalLedger)
@@ -418,7 +418,7 @@ describe('migration runner integration', () => {
       connection.exec('DROP TABLE app_settings')
 
       expect(() => migrate(connection)).toThrow(MigrationCompatibilityError)
-      expect(readUserVersion(connection)).toBe(3)
+      expect(readUserVersion(connection)).toBe(4)
       expect(readLedgerRows(connection)).toEqual(originalLedger)
     })
   })
@@ -436,14 +436,14 @@ describe('migration runner integration', () => {
       connection.exec('DROP INDEX ix_locations_name_normalized')
 
       expect(() => migrate(connection)).toThrow(MigrationCompatibilityError)
-      expect(readUserVersion(connection)).toBe(3)
+      expect(readUserVersion(connection)).toBe(4)
       expect(readLedgerRows(connection)).toEqual(originalLedger)
     })
   })
 
   it('refuses newer and inconsistent migration metadata without repair', async () => {
     await withDatabase((connection) => {
-      connection.exec('PRAGMA user_version = 4')
+      connection.exec('PRAGMA user_version = 5')
 
       expect(() =>
         runDatabaseMigrations({
@@ -452,11 +452,11 @@ describe('migration runner integration', () => {
           applicationVersion: '1.0.0',
           logger: createLogger(),
           clock: fixedClock,
-          expectedHighestVersion: 3
+          expectedHighestVersion: 4
         })
       ).toThrow(MigrationCompatibilityError)
 
-      expect(readUserVersion(connection)).toBe(4)
+      expect(readUserVersion(connection)).toBe(5)
       expect(hasTable(connection, 'schema_migrations')).toBe(false)
     })
 
@@ -499,7 +499,7 @@ describe('migration runner integration', () => {
             application_version
           ) VALUES (?, ?, ?, ?, ?)`
         )
-        .run(4, 'extra', 'a'.repeat(64), fixedClock.now(), '1.0.0')
+        .run(5, 'extra', 'a'.repeat(64), fixedClock.now(), '1.0.0')
 
       expectProductionMigrationCompatibilityFailure(connection)
     })
@@ -536,7 +536,7 @@ function expectProductionMigrationCompatibilityFailure(connection: Database.Data
       applicationVersion: '1.0.0',
       logger: createLogger(),
       clock: fixedClock,
-      expectedHighestVersion: 3
+      expectedHighestVersion: 4
     })
   ).toThrow(MigrationCompatibilityError)
 }

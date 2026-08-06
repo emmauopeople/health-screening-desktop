@@ -3,8 +3,9 @@ import type { DatabaseMigration, ResolvedDatabaseMigration } from './migration-t
 import initialSchemaSql from './sql/0001-initial-schema.sql?raw'
 import patientRegistryManagementSql from './sql/0002-patient-registry-management.sql?raw'
 import patientDemographicAmendmentHistorySql from './sql/0003-patient-demographic-amendment-history.sql?raw'
+import screeningSessionLifecycleFoundationSql from './sql/0004-screening-session-lifecycle-foundation.sql?raw'
 
-export const targetSchemaVersion = 3
+export const targetSchemaVersion = 4
 
 const initialSchemaMigration = Object.freeze({
   version: 1,
@@ -24,10 +25,18 @@ const patientDemographicAmendmentHistoryMigration = Object.freeze({
   sql: patientDemographicAmendmentHistorySql
 } satisfies DatabaseMigration)
 
+const screeningSessionLifecycleFoundationMigration = Object.freeze({
+  version: 4,
+  name: 'screening-session-lifecycle-foundation',
+  sql: screeningSessionLifecycleFoundationSql,
+  foreignKeyMode: 'disabled-during-transaction'
+} satisfies DatabaseMigration)
+
 export const databaseMigrations = Object.freeze([
   initialSchemaMigration,
   patientRegistryManagementMigration,
-  patientDemographicAmendmentHistoryMigration
+  patientDemographicAmendmentHistoryMigration,
+  screeningSessionLifecycleFoundationMigration
 ] as const)
 
 export function resolveDatabaseMigrations(

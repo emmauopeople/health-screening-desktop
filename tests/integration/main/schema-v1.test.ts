@@ -16,11 +16,12 @@ import {
   type SchemaVersion1ColumnContract
 } from '@main/database/migrations/schema-v1-contract'
 import {
-  schemaVersion3NamedIndexes,
-  schemaVersion3TableContracts,
-  schemaVersion3TableNames,
-  schemaVersion3TriggerNames,
-  validateSchemaVersion3
+  validateSchemaVersion3,
+  schemaVersion4NamedIndexes,
+  schemaVersion4TableContracts,
+  schemaVersion4TableNames,
+  schemaVersion4TriggerNames,
+  validateSchemaVersion4
 } from '@main/database/migrations'
 
 const now = '2026-07-29T00:00:00Z'
@@ -58,25 +59,25 @@ const prohibitedDemographicAmendmentFields = Object.freeze([
   'row_version'
 ] as const)
 
-describe('schema version 3', () => {
+describe('schema version 4', () => {
   it('creates exactly the required empty strict tables and named indexes', async () => {
     await withMigratedDatabase((connection) => {
-      expect(readUserVersion(connection)).toBe(3)
-      expect(readTableNames(connection)).toEqual([...schemaVersion3TableNames])
-      expect(readNamedIndexNames(connection)).toEqual([...schemaVersion3NamedIndexes])
-      expect(readTriggerNames(connection)).toEqual([...schemaVersion3TriggerNames])
+      expect(readUserVersion(connection)).toBe(4)
+      expect(readTableNames(connection)).toEqual([...schemaVersion4TableNames])
+      expect(readNamedIndexNames(connection)).toEqual([...schemaVersion4NamedIndexes])
+      expect(readTriggerNames(connection)).toEqual([...schemaVersion4TriggerNames])
 
       const strictByTable = readStrictByTable(connection)
 
-      for (const tableName of schemaVersion3TableNames) {
+      for (const tableName of schemaVersion4TableNames) {
         expect(strictByTable.get(tableName)).toBe(1)
       }
 
-      for (const tableName of schemaVersion3TableNames) {
+      for (const tableName of schemaVersion4TableNames) {
         const rowCount = readTableCount(connection, tableName)
 
         expect(rowCount).toBe(
-          tableName === 'schema_migrations' ? 3 : tableName === 'patient_local_sequence' ? 1 : 0
+          tableName === 'schema_migrations' ? 4 : tableName === 'patient_local_sequence' ? 1 : 0
         )
       }
     })
@@ -84,7 +85,7 @@ describe('schema version 3', () => {
 
   it('matches exact ordered table_xinfo metadata for every required table', async () => {
     await withMigratedDatabase((connection) => {
-      for (const tableContract of schemaVersion3TableContracts) {
+      for (const tableContract of schemaVersion4TableContracts) {
         expect(readTableXInfo(connection, tableContract.name)).toEqual(tableContract.columns)
       }
     })
@@ -277,11 +278,14 @@ describe('schema version 3', () => {
               protocol_version_id,
               session_date,
               status,
+              opened_by,
+              opened_at,
               created_by,
               created_at,
-              opened_at,
-              updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              updated_by,
+              updated_at,
+              row_version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .run(
             'session-2',
@@ -291,8 +295,11 @@ describe('schema version 3', () => {
             'OPEN',
             'user-1',
             now,
+            'user-1',
             now,
-            now
+            'user-1',
+            now,
+            1
           )
       ).toThrow()
       expect(() =>
@@ -590,31 +597,31 @@ describe('schema version 3', () => {
     })
   })
 
-  it('accepts the exact schema version 3 contract and rejects required object drift', async () => {
+  it('accepts the exact schema version 4 contract and rejects required object drift', async () => {
     await withMigratedDatabase((connection) => {
-      expect(() => validateSchemaVersion3(connection, 'compatibility')).not.toThrow()
+      expect(() => validateSchemaVersion4(connection, 'compatibility')).not.toThrow()
     })
 
-    await expectSchemaVersion3Drift(
+    await expectSchemaVersion4Drift(
       (connection) => connection.exec('DROP TABLE patient_demographic_amendment_changes'),
       'missing table'
     )
-    await expectSchemaVersion3MigrationDrift('  amended_at TEXT NOT NULL,\n', '', 'missing column')
-    await expectSchemaVersion3Drift(
+    await expectSchemaVersion4MigrationDrift('  amended_at TEXT NOT NULL,\n', '', 'missing column')
+    await expectSchemaVersion4Drift(
       (connection) => connection.exec('DROP INDEX ix_patient_demographic_amendments_patient_time'),
       'missing index'
     )
-    await expectSchemaVersion3MigrationDrift(
+    await expectSchemaVersion4MigrationDrift(
       '  CONSTRAINT fk_patient_demographic_amendments_patient FOREIGN KEY (patient_id)\n    REFERENCES patients (id) ON UPDATE RESTRICT ON DELETE RESTRICT,\n',
       '',
       'missing foreign key'
     )
-    await expectSchemaVersion3MigrationDrift("      'STATUS_CHANGE',\n", '', 'missing constraint')
-    await expectSchemaVersion3Drift(
+    await expectSchemaVersion4MigrationDrift("      'STATUS_CHANGE',\n", '', 'missing constraint')
+    await expectSchemaVersion4Drift(
       (connection) => connection.exec('DROP TRIGGER tr_patient_demographic_amendments_no_update'),
       'missing trigger'
     )
-    await expectSchemaVersion3MigrationDrift(
+    await expectSchemaVersion4MigrationDrift(
       "WHEN OLD.consent_type = 'PATIENT_REGISTRY_ACKNOWLEDGMENT'\n  OR NEW.consent_type = 'PATIENT_REGISTRY_ACKNOWLEDGMENT'",
       "WHEN OLD.consent_type = 'PATIENT_REGISTRY_ACKNOWLEDGMENT'",
       'missing registry acknowledgment NEW trigger condition'
@@ -705,7 +712,7 @@ describe('schema version 3', () => {
 
     for (const { indexName, cases } of malformedIndexDefinitions) {
       for (const malformedCase of cases) {
-        await expectSchemaVersion3IndexDrift(
+        await expectSchemaVersion4IndexDrift(
           indexName,
           malformedCase.sql,
           `${indexName} ${malformedCase.label}`
@@ -968,20 +975,8 @@ function insertValidGraph(connection: Database.Database): void {
     .run('identifier-1', 'patient-1', 'LOCAL', 'HSD', 'P-001', 1, 'user-1', now)
 
   connection
-    .prepare(
-      `INSERT INTO screening_sessions (
-        id,
-        location_id,
-        protocol_version_id,
-        session_date,
-        status,
-        created_by,
-        created_at,
-        opened_at,
-        updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run('session-1', 'location-1', 'protocol-1', '2026-07-29', 'OPEN', 'user-1', now, now, now)
+    .prepare(createScreeningSessionInsertSql(connection))
+    .run(...createScreeningSessionInsertValues(connection, 'session-1', '2026-07-29'))
 
   connection
     .prepare(
@@ -1089,6 +1084,70 @@ function insertPatient(connection: Database.Database, id: string, patientCode: s
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(id, patientCode, 'Patient One', `patient ${id}`, 'ACTIVE', 'user-1', now, 'user-1', now)
+}
+
+function createScreeningSessionInsertSql(connection: Database.Database): string {
+  if (hasColumn(connection, 'screening_sessions', 'row_version')) {
+    return `INSERT INTO screening_sessions (
+      id,
+      location_id,
+      protocol_version_id,
+      session_date,
+      status,
+      opened_by,
+      opened_at,
+      created_by,
+      created_at,
+      updated_by,
+      updated_at,
+      row_version
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  }
+
+  return `INSERT INTO screening_sessions (
+    id,
+    location_id,
+    protocol_version_id,
+    session_date,
+    status,
+    created_by,
+    created_at,
+    opened_at,
+    updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+}
+
+function createScreeningSessionInsertValues(
+  connection: Database.Database,
+  id: string,
+  sessionDate: string
+): readonly unknown[] {
+  if (hasColumn(connection, 'screening_sessions', 'row_version')) {
+    return [
+      id,
+      'location-1',
+      'protocol-1',
+      sessionDate,
+      'OPEN',
+      'user-1',
+      now,
+      'user-1',
+      now,
+      'user-1',
+      now,
+      1
+    ]
+  }
+
+  return [id, 'location-1', 'protocol-1', sessionDate, 'OPEN', 'user-1', now, now, now]
+}
+
+function hasColumn(connection: Database.Database, tableName: string, columnName: string): boolean {
+  return (
+    connection.prepare(`PRAGMA table_xinfo(${quoteIdentifier(tableName)})`).all() as Array<{
+      name: string
+    }>
+  ).some((row) => row.name === columnName)
 }
 
 function insertValidAmendment(
@@ -1227,28 +1286,29 @@ function insertConsentRecordVersion3(
     )
 }
 
-async function expectSchemaVersion3Drift(
+async function expectSchemaVersion4Drift(
   mutate: (connection: Database.Database) => void,
   label: string
 ): Promise<void> {
   await withMigratedDatabase((connection) => {
     mutate(connection)
 
-    expect(() => validateSchemaVersion3(connection, 'compatibility'), label).toThrow(
+    expect(() => validateSchemaVersion4(connection, 'compatibility'), label).toThrow(
       MigrationCompatibilityError
     )
   })
 }
 
-async function expectSchemaVersion3MigrationDrift(
+async function expectSchemaVersion4MigrationDrift(
   search: string,
   replacement: string,
   label: string
 ): Promise<void> {
   const version3Migration = databaseMigrations[2]
+  const version4Migration = databaseMigrations[3]
 
-  if (version3Migration === undefined) {
-    throw new Error('Missing version 3 migration')
+  if (version3Migration === undefined || version4Migration === undefined) {
+    throw new Error('Missing version 3 or version 4 migration')
   }
 
   const normalizedSql = version3Migration.sql.replaceAll('\r\n', '\n')
@@ -1267,7 +1327,8 @@ async function expectSchemaVersion3MigrationDrift(
             {
               ...version3Migration,
               sql: normalizedSql.replace(search, replacement)
-            }
+            },
+            version4Migration
           ],
           applicationVersion: '1.0.0',
           logger: {
@@ -1275,20 +1336,23 @@ async function expectSchemaVersion3MigrationDrift(
             error: vi.fn<(message: string) => void>()
           },
           clock: { now: () => '2026-07-29T00:00:00.000Z' },
-          expectedHighestVersion: 3,
-          schemaValidators: new Map([[3, validateSchemaVersion3]])
+          expectedHighestVersion: 4,
+          schemaValidators: new Map([
+            [3, validateSchemaVersion3],
+            [4, validateSchemaVersion4]
+          ])
         }),
       label
     ).toThrow(MigrationExecutionError)
   })
 }
 
-async function expectSchemaVersion3IndexDrift(
+async function expectSchemaVersion4IndexDrift(
   indexName: string,
   replacementSql: string,
   label: string
 ): Promise<void> {
-  await expectSchemaVersion3Drift((connection) => {
+  await expectSchemaVersion4Drift((connection) => {
     connection.exec(`DROP INDEX ${quoteIdentifier(indexName)}; ${replacementSql}`)
   }, label)
 }

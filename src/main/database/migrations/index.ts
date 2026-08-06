@@ -3,12 +3,14 @@ import { runDatabaseMigrations } from './migration-runner'
 import { validateSchemaVersion1 } from './schema-v1-contract'
 import { validateSchemaVersion2 } from './schema-v2-contract'
 import { validateSchemaVersion3 } from './schema-v3-contract'
+import { validateSchemaVersion4 } from './schema-v4-contract'
 import type { DatabaseMigrationContext, DatabaseMigrationRunner } from './migration-types'
 
 const productionSchemaValidators = new Map([
   [1, validateSchemaVersion1],
   [2, validateSchemaVersion2],
-  [3, validateSchemaVersion3]
+  [3, validateSchemaVersion3],
+  [4, validateSchemaVersion4]
 ])
 
 export {
@@ -33,6 +35,13 @@ export {
   schemaVersion3TriggerNames,
   validateSchemaVersion3
 } from './schema-v3-contract'
+export {
+  schemaVersion4NamedIndexes,
+  schemaVersion4TableContracts,
+  schemaVersion4TableNames,
+  schemaVersion4TriggerNames,
+  validateSchemaVersion4
+} from './schema-v4-contract'
 
 export function createProductionDatabaseMigrationRunner({
   applicationVersion,

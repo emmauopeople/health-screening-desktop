@@ -280,6 +280,7 @@ function applyMigration(
 ): void {
   let transactionStarted = false
   let phase = 'begin'
+  const disablesForeignKeys = migration.foreignKeyMode === 'disabled-during-transaction'
   const failureContext = {
     version: migration.version,
     name: migration.name,
@@ -291,6 +292,12 @@ function applyMigration(
   )
 
   try {
+    if (disablesForeignKeys) {
+      phase = 'foreign_keys_off'
+      setForeignKeyEnforcement(connection, false)
+    }
+
+    phase = 'begin'
     connection.exec('BEGIN IMMEDIATE')
     transactionStarted = true
 
@@ -319,6 +326,17 @@ function applyMigration(
     connection.exec('COMMIT')
     transactionStarted = false
 
+    if (disablesForeignKeys) {
+      phase = 'foreign_keys_on'
+      setForeignKeyEnforcement(connection, true)
+
+      phase = 'foreign_key_check'
+      assertForeignKeyIntegrity(connection)
+
+      phase = 'schema'
+      options.schemaValidator?.(connection, 'compatibility')
+    }
+
     options.logger.info(
       `Database migration applied; version=${migration.version}; name=${migration.name}`
     )
@@ -331,6 +349,16 @@ function applyMigration(
       } catch (rollbackError) {
         options.logger.error(
           `Database migration rollback failed; version=${migration.version}; name=${migration.name}; phase=rollback; errorType=${getErrorType(rollbackError)}`
+        )
+      }
+    }
+
+    if (disablesForeignKeys) {
+      try {
+        setForeignKeyEnforcement(connection, true)
+      } catch (foreignKeyRestoreError) {
+        options.logger.error(
+          `Database migration foreign-key restore failed; version=${migration.version}; name=${migration.name}; phase=foreign_keys_on; errorType=${getErrorType(foreignKeyRestoreError)}`
         )
       }
     }
@@ -362,6 +390,22 @@ function assertUserVersion(connection: MigrationConnection, expectedVersion: num
   const actualVersion = readUserVersion(connection)
 
   if (actualVersion !== expectedVersion) {
+    throw new MigrationExecutionError()
+  }
+}
+
+function setForeignKeyEnforcement(connection: MigrationConnection, enabled: boolean): void {
+  connection.pragma(`foreign_keys = ${enabled ? 'ON' : 'OFF'}`)
+
+  if (connection.pragma('foreign_keys', { simple: true }) !== (enabled ? 1 : 0)) {
+    throw new MigrationExecutionError()
+  }
+}
+
+function assertForeignKeyIntegrity(connection: MigrationConnection): void {
+  const violations = connection.pragma('foreign_key_check') as unknown[]
+
+  if (violations.length > 0) {
     throw new MigrationExecutionError()
   }
 }

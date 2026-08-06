@@ -21,7 +21,7 @@ const validMigration: DatabaseMigration = {
 }
 
 describe('migration manifest', () => {
-  it('defines the exact immutable production catalog through HSD-026 checkpoint A', () => {
+  it('defines the exact immutable production catalog through HSD-027 checkpoint A', () => {
     const resolved = validateMigrationManifest(databaseMigrations, {
       expectedHighestVersion: targetSchemaVersion
     })
@@ -37,14 +37,21 @@ describe('migration manifest', () => {
     ).toEqual([
       { version: 1, name: 'initial-schema', checksumLength: 64 },
       { version: 2, name: 'patient-registry-management', checksumLength: 64 },
-      { version: 3, name: 'patient-demographic-amendment-history', checksumLength: 64 }
+      { version: 3, name: 'patient-demographic-amendment-history', checksumLength: 64 },
+      { version: 4, name: 'screening-session-lifecycle-foundation', checksumLength: 64 }
     ])
-    expect(targetSchemaVersion).toBe(3)
+    expect(targetSchemaVersion).toBe(4)
     expect(resolved[0]?.checksum).toBe(
       '36bb5114185c0a691c8ba8dc1fdfc749a6f5a7069cbcb5efb88a6b55dd6e5fed'
     )
     expect(resolved[1]?.checksum).toBe(
       '4ea2aa2d257825ae7b0544726a85bdb4da7b45bedb6afd3cc131afad38bb0e15'
+    )
+    expect(resolved[2]?.checksum).toBe(
+      '00c008d071bcdc98a41ec7170a2350ba6602a5accc4262b4a05595a35aa490f1'
+    )
+    expect(resolved[3]?.checksum).toBe(
+      '7041153a75bbd4f622358465b00991cc8514e77ae78e2e1999b9802bb5775abd'
     )
   })
 

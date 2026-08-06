@@ -6,6 +6,7 @@ export interface DatabaseMigration {
   version: number
   name: string
   sql: string
+  foreignKeyMode?: 'disabled-during-transaction'
 }
 
 export interface ResolvedDatabaseMigration extends DatabaseMigration {
