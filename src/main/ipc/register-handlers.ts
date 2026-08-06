@@ -15,6 +15,9 @@ import { ipcChannels, type ScreeningSessionIpcChannel } from '@shared/ipc'
 export type ApplicationIpcMain = Pick<IpcMain, 'handle' | 'removeHandler'>
 export type ApplicationIpcDisposer = () => void
 type ApplicationIpcListener = Parameters<ApplicationIpcMain['handle']>[1]
+interface ScreeningSessionRegistrationOwnership {
+  readonly id: symbol
+}
 
 export class ApplicationIpcRegistrationError extends Error {
   constructor() {
@@ -32,7 +35,10 @@ const screeningSessionIpcChannels: readonly ScreeningSessionIpcChannel[] = Objec
   ipcChannels.screeningSessions.getById,
   ipcChannels.screeningSessions.list
 ])
-const activeScreeningSessionRegistrations = new WeakSet<ApplicationIpcMain>()
+const activeScreeningSessionRegistrations = new WeakMap<
+  ApplicationIpcMain,
+  ScreeningSessionRegistrationOwnership
+>()
 
 export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependencies {
   readonly firstRun: FirstRunIpcHandlerDependencies
@@ -104,6 +110,9 @@ export function registerScreeningSessionIpcHandlers(
     throw new ApplicationIpcRegistrationError()
   }
 
+  const ownership: ScreeningSessionRegistrationOwnership = Object.freeze({
+    id: Symbol('screening-session-ipc-registration')
+  })
   const screeningSessionHandlers = createScreeningSessionIpcHandlers(dependencies)
   const registrations: ReadonlyArray<
     readonly [ScreeningSessionIpcChannel, ApplicationIpcListener]
@@ -133,9 +142,9 @@ export function registerScreeningSessionIpcHandlers(
     throw new ApplicationIpcRegistrationError()
   }
 
-  activeScreeningSessionRegistrations.add(applicationIpcMain)
+  activeScreeningSessionRegistrations.set(applicationIpcMain, ownership)
 
-  return () => disposeScreeningSessionIpcHandlers(applicationIpcMain)
+  return () => disposeScreeningSessionRegistration(applicationIpcMain, ownership)
 }
 
 export function disposeApplicationIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
@@ -169,4 +178,15 @@ export function disposeScreeningSessionIpcHandlers(applicationIpcMain: Applicati
   }
 
   activeScreeningSessionRegistrations.delete(applicationIpcMain)
+}
+
+function disposeScreeningSessionRegistration(
+  applicationIpcMain: ApplicationIpcMain,
+  ownership: ScreeningSessionRegistrationOwnership
+): void {
+  if (activeScreeningSessionRegistrations.get(applicationIpcMain) !== ownership) {
+    return
+  }
+
+  disposeScreeningSessionIpcHandlers(applicationIpcMain)
 }

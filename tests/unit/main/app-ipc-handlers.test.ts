@@ -10,7 +10,6 @@ import {
 import {
   ApplicationIpcRegistrationError,
   disposeApplicationIpcHandlers,
-  disposeScreeningSessionIpcHandlers,
   registerApplicationIpcHandlers,
   registerScreeningSessionIpcHandlers,
   type ApplicationIpcHandlerDependencies,
@@ -284,10 +283,12 @@ describe('application IPC handler registration', () => {
       ipcMain,
       createDependencies().screeningSessions
     )
+    const firstHandlers = new Map(ipcMain.handlers)
 
     expect(ipcMain.handle).toHaveBeenCalledTimes(6)
     expect(ipcMain.handlers.has(ipcChannels.screeningSessions.create)).toBe(true)
     expect(ipcMain.handlers.has(ipcChannels.patient.search)).toBe(true)
+    expect(firstHandlers.has(ipcChannels.screeningSessions.getWorkspaceContext)).toBe(true)
 
     dispose()
 
@@ -298,7 +299,27 @@ describe('application IPC handler registration', () => {
       'health-screening:patient:search'
     ])
 
-    disposeScreeningSessionIpcHandlers(ipcMain)
+    dispose()
+
+    const secondDispose = registerScreeningSessionIpcHandlers(
+      ipcMain,
+      createDependencies().screeningSessions
+    )
+    const secondHandlers = new Map(ipcMain.handlers)
+
+    expect(ipcMain.handlers.has(ipcChannels.screeningSessions.create)).toBe(true)
+
+    dispose()
+
+    for (const [channel, handler] of secondHandlers) {
+      expect(ipcMain.handlers.get(channel)).toBe(handler)
+    }
+
+    expect(() =>
+      registerScreeningSessionIpcHandlers(ipcMain, createDependencies().screeningSessions)
+    ).toThrow(ApplicationIpcRegistrationError)
+
+    secondDispose()
 
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-info',
@@ -307,9 +328,23 @@ describe('application IPC handler registration', () => {
       'health-screening:patient:search'
     ])
 
-    registerScreeningSessionIpcHandlers(ipcMain, createDependencies().screeningSessions)
+    secondDispose()
 
-    expect(ipcMain.handlers.has(ipcChannels.screeningSessions.create)).toBe(true)
+    expect([...ipcMain.handlers.keys()].sort()).toEqual([
+      'health-screening:app:get-info',
+      'health-screening:auth:login',
+      'health-screening:first-run:get-state',
+      'health-screening:patient:search'
+    ])
+
+    const thirdDispose = registerScreeningSessionIpcHandlers(
+      ipcMain,
+      createDependencies().screeningSessions
+    )
+
+    expect(ipcMain.handlers.has(ipcChannels.screeningSessions.list)).toBe(true)
+
+    thirdDispose()
   })
 
   it('rejects duplicate screening-session registration without replacing original handlers', () => {
@@ -363,6 +398,17 @@ describe('application IPC handler registration', () => {
     expect(ipcMain.handlers.has(ipcChannels.screeningSessions.close)).toBe(false)
     expect(ipcMain.handlers.has(ipcChannels.screeningSessions.getById)).toBe(false)
     expect(ipcMain.handlers.has(ipcChannels.screeningSessions.list)).toBe(false)
+
+    ipcMain.setThrowOnHandleChannel(undefined)
+
+    const dispose = registerScreeningSessionIpcHandlers(
+      ipcMain,
+      createDependencies().screeningSessions
+    )
+
+    expect(ipcMain.handlers.has(ipcChannels.screeningSessions.getWorkspaceContext)).toBe(true)
+
+    dispose()
   })
 })
 
@@ -534,13 +580,15 @@ function createMockIpcMain({
   handlers: Map<string, unknown>
   handle: ReturnType<typeof vi.fn>
   removeHandler: ReturnType<typeof vi.fn>
+  setThrowOnHandleChannel(channel: string | undefined): void
 } {
   const handlers = new Map<string, unknown>()
+  let failingChannel = throwOnHandleChannel
 
   return {
     handlers,
     handle: vi.fn((channel: string, listener: unknown) => {
-      if (channel === throwOnHandleChannel) {
+      if (channel === failingChannel) {
         throw new Error('secret duplicate handler failure')
       }
 
@@ -548,6 +596,9 @@ function createMockIpcMain({
     }),
     removeHandler: vi.fn((channel: string) => {
       handlers.delete(channel)
-    })
+    }),
+    setThrowOnHandleChannel(channel: string | undefined): void {
+      failingChannel = channel
+    }
   }
 }
