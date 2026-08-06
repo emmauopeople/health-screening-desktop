@@ -798,11 +798,15 @@ function runToVersion3(connection: Database.Database): void {
 }
 
 function migrateToVersion4(connection: Database.Database): void {
-  createProductionDatabaseMigrationRunner({
+  runDatabaseMigrations({
+    connection,
+    migrations: databaseMigrations.slice(0, 4),
     applicationVersion: '1.0.0',
     logger: createLogger(),
-    clock: fixedClock
-  })(connection)
+    clock: fixedClock,
+    expectedHighestVersion: 4,
+    schemaValidators: new Map([[4, validateSchemaVersion4]])
+  })
 }
 
 function createLogger(): TestLogger {

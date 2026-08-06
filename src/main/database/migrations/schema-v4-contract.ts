@@ -299,16 +299,19 @@ export function validateSchemaVersion4(
   }
 }
 
-function isSchemaVersion4Valid(
+export function hasRequiredSchemaVersion4Invariants(
   connection: MigrationConnection,
-  options: { requireForeignKeyEnforcement: boolean }
+  options: {
+    readonly requireForeignKeyEnforcement: boolean
+    readonly namedIndexes?: readonly string[]
+  }
 ): boolean {
   try {
     return (
       (!options.requireForeignKeyEnforcement || isForeignKeyEnforcementEnabled(connection)) &&
       hasExactTableNames(connection) &&
       hasExactStrictTables(connection) &&
-      hasExactNamedIndexes(connection) &&
+      hasExactNamedIndexes(connection, options.namedIndexes ?? schemaVersion4NamedIndexes) &&
       hasExactTriggerNames(connection) &&
       hasExactColumns(connection) &&
       hasExactSchemaMigrationsSql(connection) &&
@@ -321,6 +324,13 @@ function isSchemaVersion4Valid(
   } catch {
     return false
   }
+}
+
+function isSchemaVersion4Valid(
+  connection: MigrationConnection,
+  options: { requireForeignKeyEnforcement: boolean }
+): boolean {
+  return hasRequiredSchemaVersion4Invariants(connection, options)
 }
 
 function hasExactTableNames(connection: MigrationConnection): boolean {
@@ -337,8 +347,11 @@ function hasExactStrictTables(connection: MigrationConnection): boolean {
   return schemaVersion4TableNames.every((tableName) => strictTables.get(tableName) === 1)
 }
 
-function hasExactNamedIndexes(connection: MigrationConnection): boolean {
-  return arraysEqual(readNamedIndexNames(connection), schemaVersion4NamedIndexes)
+function hasExactNamedIndexes(
+  connection: MigrationConnection,
+  expectedNames: readonly string[]
+): boolean {
+  return arraysEqual(readNamedIndexNames(connection), expectedNames)
 }
 
 function hasExactTriggerNames(connection: MigrationConnection): boolean {

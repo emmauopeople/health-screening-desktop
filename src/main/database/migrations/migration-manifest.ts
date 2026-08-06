@@ -4,8 +4,9 @@ import initialSchemaSql from './sql/0001-initial-schema.sql?raw'
 import patientRegistryManagementSql from './sql/0002-patient-registry-management.sql?raw'
 import patientDemographicAmendmentHistorySql from './sql/0003-patient-demographic-amendment-history.sql?raw'
 import screeningSessionLifecycleFoundationSql from './sql/0004-screening-session-lifecycle-foundation.sql?raw'
+import screeningEncounterIdentitySql from './sql/0005-screening-encounter-identity.sql?raw'
 
-export const targetSchemaVersion = 4
+export const targetSchemaVersion = 5
 
 const initialSchemaMigration = Object.freeze({
   version: 1,
@@ -32,11 +33,18 @@ const screeningSessionLifecycleFoundationMigration = Object.freeze({
   foreignKeyMode: 'disabled-during-transaction'
 } satisfies DatabaseMigration)
 
+const screeningEncounterIdentityMigration = Object.freeze({
+  version: 5,
+  name: 'screening-encounter-identity',
+  sql: screeningEncounterIdentitySql
+} satisfies DatabaseMigration)
+
 export const databaseMigrations = Object.freeze([
   initialSchemaMigration,
   patientRegistryManagementMigration,
   patientDemographicAmendmentHistoryMigration,
-  screeningSessionLifecycleFoundationMigration
+  screeningSessionLifecycleFoundationMigration,
+  screeningEncounterIdentityMigration
 ] as const)
 
 export function resolveDatabaseMigrations(

@@ -11,7 +11,9 @@ under `src/main/database/migrations/sql/`.
 - Use positive integer versions beginning at `1` with no gaps.
 - Use stable lowercase kebab-case names.
 - Import SQL with `?raw` so the text is bundled into the Electron main output.
-- HSD-007 production contains only version `1`, `initial-schema`.
+- The current production target is schema version `5`.
+- Version `5`, `screening-encounter-identity`, adds the root encounter identity
+  constraint `ux_screening_encounters_root_session_patient`.
 - Do not export raw SQL through preload, renderer, or shared contracts.
 
 ## Checksums
@@ -77,7 +79,7 @@ index set, exact table column metadata, `schema_migrations` structure, and
 The application never downgrades, deletes, resets, replaces, or auto-repairs an
 incompatible production database.
 
-## Adding `0002`
+## Adding A Migration
 
 For a future reviewed task:
 
