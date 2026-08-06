@@ -191,3 +191,24 @@ export {
   type ScreeningSessionStatus,
   type InsertScreeningSessionOutboxInput
 } from './screening-session'
+export {
+  createScreeningEncounterOutboxRepository,
+  createScreeningEncounterRepository,
+  parseInsertCanonicalRootScreeningEncounterInput,
+  parseNullableScreeningEncounterText,
+  parseScreeningEncounterRecordVersion,
+  parseScreeningEncounterStatus,
+  type InsertCanonicalRootScreeningEncounterInput,
+  type InsertCanonicalRootScreeningEncounterResult,
+  type InsertScreeningEncounterOutboxInput,
+  type ScreeningEncounterOutboxOperation,
+  type ScreeningEncounterOutboxPayload,
+  type ScreeningEncounterOutboxPayloadScalar,
+  type ScreeningEncounterOutboxPayloadSchemaVersion,
+  type ScreeningEncounterOutboxPayloadValue,
+  type ScreeningEncounterOutboxRepository,
+  type ScreeningEncounterRecord,
+  type ScreeningEncounterRepository,
+  type ScreeningEncounterSourceType,
+  type ScreeningEncounterStatus
+} from './screening-encounter'

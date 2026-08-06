@@ -27,4 +27,5 @@ export {
 } from './first-run'
 export * from './authentication'
 export * from './patients'
+export * from './screening-encounters'
 export * from './screening-sessions'

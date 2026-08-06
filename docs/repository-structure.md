@@ -35,6 +35,12 @@ without adding IPC, preload, renderer code, migrations, or persistent sessions.
 HSD-022 exposes that service through `src/main/ipc/authentication`, which owns
 authenticated handler mapping, safe auth IPC errors, a scoped session publisher,
 and the main-only authorization adapter for future protected business handlers.
+HSD-029A adds `application/screening-encounters`, a main-process-only start
+service that creates or retrieves the canonical root `DRAFT` encounter for an
+eligible patient in an eligible current open screening session. It coordinates
+patient/session/location eligibility, authorization, audit, and sync-outbox
+writes in one transaction without adding IPC, preload, renderer, measurement,
+completion, amendment, referral, reporting, or sync-transport behavior.
 
 `src/main/foundation` owns main-process-only primitives for local data writes,
 including validated UUID v4 entity IDs and UTC timestamps. These providers are
@@ -73,6 +79,12 @@ location repository over the existing schema-v1 `locations` table. HSD-013 adds
 the typed append-only audit-event repository over the existing schema-v1
 `audit_log` table. Repositories own exact SQL and row decoding, while writes
 use caller-owned transaction-scoped capabilities.
+HSD-029A adds a focused screening-encounter repository boundary over
+`screening_encounters` plus a minimal screening-encounter outbox writer. It can
+read by encounter ID, find the canonical root by patient/session, and insert a
+root `DRAFT` encounter using the schema-version-5 identity constraint as the
+final concurrency safeguard. It does not add generic updates, reporting,
+measurement, amendment, completion, void, IPC, preload, or renderer behavior.
 
 `src/main/security/password` owns the HSD-010 local password credential
 primitive. It validates exact plaintext password input, serializes strict
