@@ -4,6 +4,7 @@ export {
   LocalUserAuthenticationStateConflictError,
   LocalUserCredentialStateConflictError,
   LocationAlreadyExistsError,
+  ScreeningSessionAlreadyExistsError,
   RepositoryDataIntegrityError,
   LocalUserAlreadyExistsError,
   LocalUserNotFoundError,
@@ -86,6 +87,12 @@ export {
   type NormalizedLocationName
 } from './location'
 export {
+  createProtocolVersionRepository,
+  type ProtocolVersionReferenceRecord,
+  type ProtocolVersionReferenceStatus,
+  type ProtocolVersionRepository
+} from './protocol-version'
+export {
   createPatientAcknowledgmentRepository,
   createPatientDemographicAmendmentRepository,
   createPatientRepository,
@@ -149,3 +156,29 @@ export {
   type PatientRegistrationInput,
   type UpdatePatientDemographicsRepositoryInput
 } from './patient'
+export {
+  createScreeningSessionRepository,
+  parseCloseScreeningSessionInput,
+  parseInsertScreeningSessionInput,
+  parseReopenScreeningSessionInput,
+  parseScreeningSessionCloseReason,
+  parseScreeningSessionDate,
+  parseScreeningSessionListInput,
+  parseScreeningSessionNote,
+  parseScreeningSessionReopenReason,
+  parseScreeningSessionRowVersion,
+  parseScreeningSessionStatus,
+  type CloseScreeningSessionInput,
+  type CloseScreeningSessionWriteResult,
+  type InsertScreeningSessionInput,
+  type ReopenScreeningSessionInput,
+  type ReopenScreeningSessionWriteResult,
+  type ScreeningSessionDate,
+  type ScreeningSessionLifecycleRecord,
+  type ScreeningSessionLifecycleTransition,
+  type ScreeningSessionListInput,
+  type ScreeningSessionListResult,
+  type ScreeningSessionRecord,
+  type ScreeningSessionRepository,
+  type ScreeningSessionStatus
+} from './screening-session'

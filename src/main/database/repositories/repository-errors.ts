@@ -11,6 +11,7 @@ export type RepositoryErrorCode =
   | 'LOCAL_USER_AUTHENTICATION_STATE_CONFLICT'
   | 'LOCAL_USER_CREDENTIAL_STATE_CONFLICT'
   | 'LOCATION_ALREADY_EXISTS'
+  | 'SCREENING_SESSION_ALREADY_EXISTS'
   | 'AUDIT_EVENT_ALREADY_EXISTS'
 
 type RepositoryErrorName =
@@ -24,6 +25,7 @@ type RepositoryErrorName =
   | 'LocalUserAuthenticationStateConflictError'
   | 'LocalUserCredentialStateConflictError'
   | 'LocationAlreadyExistsError'
+  | 'ScreeningSessionAlreadyExistsError'
   | 'AuditEventAlreadyExistsError'
 
 class ControlledRepositoryError extends Error {
@@ -149,6 +151,17 @@ export class LocationAlreadyExistsError extends ControlledRepositoryError {
   }
 }
 
+export class ScreeningSessionAlreadyExistsError extends ControlledRepositoryError {
+  constructor(errorType?: string) {
+    super(
+      'ScreeningSessionAlreadyExistsError',
+      'SCREENING_SESSION_ALREADY_EXISTS',
+      'Screening session already exists.',
+      errorType
+    )
+  }
+}
+
 export class AuditEventAlreadyExistsError extends ControlledRepositoryError {
   constructor(errorType?: string) {
     super(
@@ -171,6 +184,7 @@ export type RepositoryError =
   | LocalUserAuthenticationStateConflictError
   | LocalUserCredentialStateConflictError
   | LocationAlreadyExistsError
+  | ScreeningSessionAlreadyExistsError
   | AuditEventAlreadyExistsError
 
 export function isRepositoryError(error: unknown): error is RepositoryError {
@@ -185,6 +199,7 @@ export function isRepositoryError(error: unknown): error is RepositoryError {
     error instanceof LocalUserAuthenticationStateConflictError ||
     error instanceof LocalUserCredentialStateConflictError ||
     error instanceof LocationAlreadyExistsError ||
+    error instanceof ScreeningSessionAlreadyExistsError ||
     error instanceof AuditEventAlreadyExistsError
   )
 }
@@ -228,6 +243,10 @@ export function rebuildRepositoryError(error: RepositoryError): RepositoryError 
 
   if (error instanceof LocationAlreadyExistsError) {
     return new LocationAlreadyExistsError(error.errorType)
+  }
+
+  if (error instanceof ScreeningSessionAlreadyExistsError) {
+    return new ScreeningSessionAlreadyExistsError(error.errorType)
   }
 
   return new AuditEventAlreadyExistsError(error.errorType)

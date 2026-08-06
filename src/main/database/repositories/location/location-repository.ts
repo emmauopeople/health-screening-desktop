@@ -158,6 +158,39 @@ export function createLocationRepository(connection: Database.Database): Locatio
     return row === undefined ? null : decodeLocationRow(row)
   }
 
+  const getByIdForWrite = (
+    scopedConnection: DatabaseTransactionConnection,
+    id: CreateLocationInput['id']
+  ): LocationRecord | null => {
+    assertActiveDatabaseTransactionConnection(scopedConnection)
+
+    try {
+      const parsedId = parseReadEntityId(id)
+      const row = readLocationRow(
+        scopedConnection,
+        selectLocationByIdSql,
+        [parsedId],
+        (error) => new RepositoryReadError(error)
+      )
+
+      return row === undefined ? null : decodeLocationRow(row)
+    } catch (error) {
+      if (error instanceof DatabaseTransactionStateError) {
+        throw new DatabaseTransactionStateError(error.errorType)
+      }
+
+      if (error instanceof RepositoryValidationError) {
+        throw new RepositoryValidationError(error.errorType)
+      }
+
+      if (error instanceof RepositoryDataIntegrityError) {
+        throw new RepositoryDataIntegrityError(error.errorType)
+      }
+
+      throw new RepositoryReadError(getRepositoryErrorType(error))
+    }
+  }
+
   const listAll = (): readonly LocationRecord[] => {
     return decodeLocationRows(
       readLocationRows(connection, selectAllLocationsSql, (error) => new RepositoryReadError(error))
@@ -242,6 +275,7 @@ export function createLocationRepository(connection: Database.Database): Locatio
   return Object.freeze({
     hasAny,
     getById,
+    getByIdForWrite,
     listAll,
     listActive,
     insert

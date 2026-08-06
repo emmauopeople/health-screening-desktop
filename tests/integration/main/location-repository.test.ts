@@ -194,6 +194,50 @@ describe('location repository', () => {
     })
   })
 
+  it('reads locations through a guarded transaction connection', async () => {
+    await withMigratedDatabase(({ connection, repository, executor }) => {
+      insertRawUser(connection)
+      insertRawLocation(connection)
+
+      const active = executor.run((context) =>
+        repository.getByIdForWrite(context.connection, parseEntityId(locationId))
+      )
+
+      expect(active).toEqual(createExpectedLocation())
+      expect(Object.isFrozen(active)).toBe(true)
+
+      updateRawLocation(connection, { is_active: 0 })
+
+      const inactive = executor.run((context) =>
+        repository.getByIdForWrite(context.connection, parseEntityId(locationId))
+      )
+      const missing = executor.run((context) =>
+        repository.getByIdForWrite(context.connection, parseEntityId(missingUserId))
+      )
+
+      expect(inactive).toEqual({ ...createExpectedLocation(), isActive: false })
+      expect(missing).toBeNull()
+
+      connection.exec('BEGIN IMMEDIATE')
+      try {
+        const rawConnectionError = captureError(() =>
+          repository.getByIdForWrite(
+            connection as unknown as DatabaseTransactionConnection,
+            'not-a-uuid' as never
+          )
+        )
+
+        expect(rawConnectionError).toBeInstanceOf(DatabaseTransactionStateError)
+        expect(rawConnectionError).not.toBeInstanceOf(RepositoryValidationError)
+        expectSafeControlledError(rawConnectionError)
+      } finally {
+        if (connection.inTransaction) {
+          connection.exec('ROLLBACK')
+        }
+      }
+    })
+  })
+
   it('orders all and active locations by normalized name then ID and permits duplicate names', async () => {
     await withMigratedDatabase(({ connection, repository, executor }) => {
       insertRawUser(connection)
