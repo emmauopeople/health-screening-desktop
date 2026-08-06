@@ -50,6 +50,28 @@ for the same patient/session identity cannot both commit.
 Different patients may have encounters in the same screening session, and the
 same patient may have encounters in different screening sessions.
 
+## Constraint Classification
+
+The database layer exposes
+`classifyScreeningEncounterIdentityConstraintError` for the future
+screening-encounter repository. It inspects stable `better-sqlite3` error
+properties inside the persistence boundary and returns a closed internal
+classification:
+
+- `SCREENING_ENCOUNTER_IDENTITY_CONFLICT`
+- `SCREENING_ENCOUNTER_ID_CONFLICT`
+- `OTHER_UNIQUE_CONSTRAINT`
+- `NOT_A_UNIQUE_CONSTRAINT`
+
+The canonical identity conflict is recognized from the exact constrained
+columns reported by SQLite:
+
+- `screening_encounters.screening_session_id`
+- `screening_encounters.patient_id`
+
+Raw SQLite errors, paths, messages, and stack traces are not returned across the
+repository boundary.
+
 ## Existing Data Validation
 
 Before creating the index, migration 5 checks for incompatible duplicate root

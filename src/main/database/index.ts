@@ -22,6 +22,10 @@ export {
   type SqliteRuntimeOptions
 } from './sqlite-runtime'
 export {
+  classifyScreeningEncounterIdentityConstraintError,
+  type ScreeningEncounterIdentityConstraintClassification
+} from './sqlite-constraint-classification'
+export {
   createDatabaseTransactionExecutor,
   DatabaseTransactionAsyncWorkError,
   DatabaseTransactionExecutionError,

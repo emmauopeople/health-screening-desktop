@@ -5,6 +5,7 @@ import Database from 'better-sqlite3'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  classifyScreeningEncounterIdentityConstraintError,
   createProductionDatabaseMigrationRunner,
   MigrationCompatibilityError,
   MigrationExecutionError
@@ -61,6 +62,9 @@ const otherPatientEncounterId = testEntityId(13)
 const otherSessionEncounterId = testEntityId(14)
 const voidEncounterId = testEntityId(15)
 const voidDuplicateEncounterId = testEntityId(16)
+const competingConnectionEncounterId = testEntityId(17)
+const idCollisionEncounterId = testEntityId(18)
+const unrelatedUserId = testEntityId(19)
 
 describe('screening encounter identity migration', () => {
   it('applies schema version 5 on a fresh database with the exact root identity index', async () => {
@@ -100,7 +104,9 @@ describe('screening encounter identity migration', () => {
         insertEncounter(connection, { id: duplicateEncounterId })
       )
 
-      expect(readSqliteErrorCode(duplicateError)).toBe('SQLITE_CONSTRAINT_UNIQUE')
+      expect(classifyScreeningEncounterIdentityConstraintError(duplicateError)).toBe(
+        'SCREENING_ENCOUNTER_IDENTITY_CONFLICT'
+      )
       expect(readEncounterDiagnostics(connection)).toEqual([
         {
           id: rootEncounterId,
@@ -131,6 +137,65 @@ describe('screening encounter identity migration', () => {
         otherPatientEncounterId,
         otherSessionEncounterId
       ])
+    })
+  })
+
+  it('uses two connections to prove competing root inserts cannot both commit', async () => {
+    await withDatabaseFile(({ connection: firstConnection, databasePath }) => {
+      migrateToCurrent(firstConnection)
+      insertReferenceGraph(firstConnection)
+      insertScreeningSession(firstConnection, { id: sessionOneId, locationId: locationOneId })
+      const secondConnection = new Database(databasePath)
+
+      try {
+        configurePragmas(secondConnection)
+        expect(readMainDatabasePath(firstConnection)).toBe(databasePath)
+        expect(readMainDatabasePath(secondConnection)).toBe(databasePath)
+        expect(readReferenceCounts(firstConnection)).toEqual({
+          patients: 2,
+          sessions: 1,
+          encounters: 0
+        })
+
+        runExplicitTransaction(firstConnection, () => {
+          insertEncounter(firstConnection, { id: rootEncounterId })
+        })
+
+        const competingError = captureError(() =>
+          runExplicitTransaction(secondConnection, () => {
+            insertEncounter(secondConnection, { id: competingConnectionEncounterId })
+          })
+        )
+
+        expect(classifyScreeningEncounterIdentityConstraintError(competingError)).toBe(
+          'SCREENING_ENCOUNTER_IDENTITY_CONFLICT'
+        )
+        expect(readReferenceCounts(firstConnection)).toEqual({
+          patients: 2,
+          sessions: 1,
+          encounters: 1
+        })
+        expect(readReferenceCounts(secondConnection)).toEqual({
+          patients: 2,
+          sessions: 1,
+          encounters: 1
+        })
+        expect(readEncounterDiagnostics(firstConnection)).toEqual([
+          {
+            id: rootEncounterId,
+            screening_session_id: sessionOneId,
+            patient_id: patientOneId,
+            status: 'DRAFT',
+            amendment_of_encounter_id: null,
+            started_at: fixedTimestamp,
+            created_at: fixedTimestamp,
+            record_version: 1
+          }
+        ])
+      } finally {
+        rollbackIfNeeded(secondConnection)
+        secondConnection.close()
+      }
     })
   })
 
@@ -176,7 +241,72 @@ describe('screening encounter identity migration', () => {
         })
       )
 
-      expect(readSqliteErrorCode(voidDuplicateError)).toBe('SQLITE_CONSTRAINT_UNIQUE')
+      expect(classifyScreeningEncounterIdentityConstraintError(voidDuplicateError)).toBe(
+        'SCREENING_ENCOUNTER_IDENTITY_CONFLICT'
+      )
+    })
+  })
+
+  it('classifies identity, ID, unrelated unique, non-unique, and malformed failures safely', async () => {
+    await withVersion5Graph((connection) => {
+      insertEncounter(connection, { id: rootEncounterId })
+
+      const identityError = captureError(() =>
+        insertEncounter(connection, { id: duplicateEncounterId })
+      )
+      const idCollisionError = captureError(() =>
+        insertEncounter(connection, {
+          id: rootEncounterId,
+          patientId: patientTwoId,
+          sessionId: sessionOneId
+        })
+      )
+      const unrelatedUniqueError = captureError(() =>
+        insertUserWithDuplicateUsername(connection, unrelatedUserId)
+      )
+      const nonUniqueConstraintError = captureError(() =>
+        insertEncounter(connection, { id: idCollisionEncounterId, status: 'STARTED' as never })
+      )
+
+      expect(classifyScreeningEncounterIdentityConstraintError(identityError)).toBe(
+        'SCREENING_ENCOUNTER_IDENTITY_CONFLICT'
+      )
+      expect(classifyScreeningEncounterIdentityConstraintError(idCollisionError)).toBe(
+        'SCREENING_ENCOUNTER_ID_CONFLICT'
+      )
+      expect(classifyScreeningEncounterIdentityConstraintError(unrelatedUniqueError)).toBe(
+        'OTHER_UNIQUE_CONSTRAINT'
+      )
+      expect(classifyScreeningEncounterIdentityConstraintError(nonUniqueConstraintError)).toBe(
+        'NOT_A_UNIQUE_CONSTRAINT'
+      )
+      expect(
+        classifyScreeningEncounterIdentityConstraintError(new Error('C:\\secret\\database.sqlite3'))
+      ).toBe('NOT_A_UNIQUE_CONSTRAINT')
+      expect(classifyScreeningEncounterIdentityConstraintError('SQLITE_CONSTRAINT_UNIQUE')).toBe(
+        'NOT_A_UNIQUE_CONSTRAINT'
+      )
+      expect(classifyScreeningEncounterIdentityConstraintError(createAccessorBackedError())).toBe(
+        'NOT_A_UNIQUE_CONSTRAINT'
+      )
+      expect(classifyScreeningEncounterIdentityConstraintError(createProxyBackedError())).toBe(
+        'NOT_A_UNIQUE_CONSTRAINT'
+      )
+      expect(
+        JSON.stringify(classifyScreeningEncounterIdentityConstraintError(identityError))
+      ).not.toContain('screening_encounters')
+      expect(readEncounterDiagnostics(connection)).toEqual([
+        {
+          id: rootEncounterId,
+          screening_session_id: sessionOneId,
+          patient_id: patientOneId,
+          status: 'DRAFT',
+          amendment_of_encounter_id: null,
+          started_at: fixedTimestamp,
+          created_at: fixedTimestamp,
+          record_version: 1
+        }
+      ])
     })
   })
 
@@ -281,14 +411,23 @@ describe('screening encounter identity migration', () => {
 })
 
 async function withDatabase(test: (connection: Database.Database) => void): Promise<void> {
+  await withDatabaseFile(({ connection }) => {
+    test(connection)
+  })
+}
+
+async function withDatabaseFile(
+  test: (context: { readonly connection: Database.Database; readonly databasePath: string }) => void
+): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), 'hsd029-encounter-identity-'))
   const databasePath = join(directory, 'health-screening.sqlite3')
   const connection = new Database(databasePath)
 
   try {
     configurePragmas(connection)
-    test(connection)
+    test({ connection, databasePath })
   } finally {
+    rollbackIfNeeded(connection)
     connection.close()
     await rm(directory, { recursive: true, force: true })
   }
@@ -366,6 +505,40 @@ function insertUser(connection: Database.Database): void {
       'screening.admin',
       'screening.admin',
       'Screening Admin',
+      'hash',
+      'salt',
+      'LOCAL_ADMIN',
+      1,
+      0,
+      0,
+      fixedTimestamp,
+      fixedTimestamp
+    )
+}
+
+function insertUserWithDuplicateUsername(connection: Database.Database, id: string): void {
+  connection
+    .prepare(
+      `INSERT INTO users (
+        id,
+        username,
+        username_normalized,
+        display_name,
+        password_hash,
+        password_salt,
+        role,
+        is_active,
+        must_change_password,
+        failed_login_count,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      id,
+      'screening.admin.duplicate',
+      'screening.admin',
+      'Duplicate Username',
       'hash',
       'salt',
       'LOCAL_ADMIN',
@@ -575,6 +748,26 @@ function readEncounterDiagnostics(connection: Database.Database): EncounterDiagn
     .all() as EncounterDiagnosticRow[]
 }
 
+function readReferenceCounts(connection: Database.Database): {
+  readonly patients: number
+  readonly sessions: number
+  readonly encounters: number
+} {
+  return {
+    patients: readTableCount(connection, 'patients'),
+    sessions: readTableCount(connection, 'screening_sessions'),
+    encounters: readTableCount(connection, 'screening_encounters')
+  }
+}
+
+function readTableCount(connection: Database.Database, tableName: string): number {
+  const row = connection
+    .prepare(`SELECT COUNT(*) AS total FROM ${quoteIdentifier(tableName)}`)
+    .get() as { total: number }
+
+  return row.total
+}
+
 function readDuplicateRootEncounterDiagnostics(
   connection: Database.Database
 ): EncounterDiagnosticRow[] {
@@ -683,12 +876,6 @@ function readUserVersion(connection: Database.Database): number {
   return connection.pragma('user_version', { simple: true }) as number
 }
 
-function readSqliteErrorCode(error: unknown): unknown {
-  return typeof error === 'object' && error !== null && 'code' in error
-    ? (error as { readonly code?: unknown }).code
-    : undefined
-}
-
 function captureError(action: () => void): unknown {
   try {
     action()
@@ -697,6 +884,66 @@ function captureError(action: () => void): unknown {
   }
 
   return undefined
+}
+
+function runExplicitTransaction(connection: Database.Database, action: () => void): void {
+  connection.exec('BEGIN IMMEDIATE')
+
+  try {
+    action()
+    connection.exec('COMMIT')
+  } catch (error) {
+    rollbackIfNeeded(connection)
+    throw error
+  }
+}
+
+function rollbackIfNeeded(connection: Database.Database): void {
+  if (!connection.inTransaction) {
+    return
+  }
+
+  connection.exec('ROLLBACK')
+}
+
+function readMainDatabasePath(connection: Database.Database): string {
+  const row = connection
+    .prepare("SELECT file FROM pragma_database_list WHERE name = 'main'")
+    .get() as { file: string } | undefined
+
+  return row?.file ?? ''
+}
+
+function createAccessorBackedError(): unknown {
+  const error: Record<string, unknown> = {}
+
+  Object.defineProperty(error, 'code', {
+    get() {
+      throw new Error('C:\\secret\\code.sqlite3')
+    }
+  })
+
+  Object.defineProperty(error, 'message', {
+    value:
+      'UNIQUE constraint failed: screening_encounters.screening_session_id, screening_encounters.patient_id'
+  })
+
+  return error
+}
+
+function createProxyBackedError(): unknown {
+  return new Proxy(
+    {
+      code: 'SQLITE_CONSTRAINT_UNIQUE',
+      message:
+        'UNIQUE constraint failed: screening_encounters.screening_session_id, screening_encounters.patient_id'
+    },
+    {
+      getOwnPropertyDescriptor() {
+        throw new Error('C:\\secret\\proxy.sqlite3')
+      }
+    }
+  )
 }
 
 function isForeignKeyEnforcementEnabled(connection: Database.Database): boolean {
