@@ -17,11 +17,12 @@ import {
 } from '@main/database/migrations/schema-v1-contract'
 import {
   validateSchemaVersion3,
-  schemaVersion4NamedIndexes,
-  schemaVersion4TableContracts,
-  schemaVersion4TableNames,
-  schemaVersion4TriggerNames,
-  validateSchemaVersion4
+  schemaVersion5NamedIndexes,
+  schemaVersion5TableContracts,
+  schemaVersion5TableNames,
+  schemaVersion5TriggerNames,
+  validateSchemaVersion4,
+  validateSchemaVersion5
 } from '@main/database/migrations'
 
 const now = '2026-07-29T00:00:00Z'
@@ -59,25 +60,25 @@ const prohibitedDemographicAmendmentFields = Object.freeze([
   'row_version'
 ] as const)
 
-describe('schema version 4', () => {
+describe('schema version 5', () => {
   it('creates exactly the required empty strict tables and named indexes', async () => {
     await withMigratedDatabase((connection) => {
-      expect(readUserVersion(connection)).toBe(4)
-      expect(readTableNames(connection)).toEqual([...schemaVersion4TableNames])
-      expect(readNamedIndexNames(connection)).toEqual([...schemaVersion4NamedIndexes])
-      expect(readTriggerNames(connection)).toEqual([...schemaVersion4TriggerNames])
+      expect(readUserVersion(connection)).toBe(5)
+      expect(readTableNames(connection)).toEqual([...schemaVersion5TableNames])
+      expect(readNamedIndexNames(connection)).toEqual([...schemaVersion5NamedIndexes])
+      expect(readTriggerNames(connection)).toEqual([...schemaVersion5TriggerNames])
 
       const strictByTable = readStrictByTable(connection)
 
-      for (const tableName of schemaVersion4TableNames) {
+      for (const tableName of schemaVersion5TableNames) {
         expect(strictByTable.get(tableName)).toBe(1)
       }
 
-      for (const tableName of schemaVersion4TableNames) {
+      for (const tableName of schemaVersion5TableNames) {
         const rowCount = readTableCount(connection, tableName)
 
         expect(rowCount).toBe(
-          tableName === 'schema_migrations' ? 4 : tableName === 'patient_local_sequence' ? 1 : 0
+          tableName === 'schema_migrations' ? 5 : tableName === 'patient_local_sequence' ? 1 : 0
         )
       }
     })
@@ -85,7 +86,7 @@ describe('schema version 4', () => {
 
   it('matches exact ordered table_xinfo metadata for every required table', async () => {
     await withMigratedDatabase((connection) => {
-      for (const tableContract of schemaVersion4TableContracts) {
+      for (const tableContract of schemaVersion5TableContracts) {
         expect(readTableXInfo(connection, tableContract.name)).toEqual(tableContract.columns)
       }
     })
@@ -597,31 +598,31 @@ describe('schema version 4', () => {
     })
   })
 
-  it('accepts the exact schema version 4 contract and rejects required object drift', async () => {
+  it('accepts the exact schema version 5 contract and rejects required object drift', async () => {
     await withMigratedDatabase((connection) => {
-      expect(() => validateSchemaVersion4(connection, 'compatibility')).not.toThrow()
+      expect(() => validateSchemaVersion5(connection, 'compatibility')).not.toThrow()
     })
 
-    await expectSchemaVersion4Drift(
+    await expectCurrentSchemaDrift(
       (connection) => connection.exec('DROP TABLE patient_demographic_amendment_changes'),
       'missing table'
     )
-    await expectSchemaVersion4MigrationDrift('  amended_at TEXT NOT NULL,\n', '', 'missing column')
-    await expectSchemaVersion4Drift(
+    await expectCurrentSchemaMigrationDrift('  amended_at TEXT NOT NULL,\n', '', 'missing column')
+    await expectCurrentSchemaDrift(
       (connection) => connection.exec('DROP INDEX ix_patient_demographic_amendments_patient_time'),
       'missing index'
     )
-    await expectSchemaVersion4MigrationDrift(
+    await expectCurrentSchemaMigrationDrift(
       '  CONSTRAINT fk_patient_demographic_amendments_patient FOREIGN KEY (patient_id)\n    REFERENCES patients (id) ON UPDATE RESTRICT ON DELETE RESTRICT,\n',
       '',
       'missing foreign key'
     )
-    await expectSchemaVersion4MigrationDrift("      'STATUS_CHANGE',\n", '', 'missing constraint')
-    await expectSchemaVersion4Drift(
+    await expectCurrentSchemaMigrationDrift("      'STATUS_CHANGE',\n", '', 'missing constraint')
+    await expectCurrentSchemaDrift(
       (connection) => connection.exec('DROP TRIGGER tr_patient_demographic_amendments_no_update'),
       'missing trigger'
     )
-    await expectSchemaVersion4MigrationDrift(
+    await expectCurrentSchemaMigrationDrift(
       "WHEN OLD.consent_type = 'PATIENT_REGISTRY_ACKNOWLEDGMENT'\n  OR NEW.consent_type = 'PATIENT_REGISTRY_ACKNOWLEDGMENT'",
       "WHEN OLD.consent_type = 'PATIENT_REGISTRY_ACKNOWLEDGMENT'",
       'missing registry acknowledgment NEW trigger condition'
@@ -1286,20 +1287,20 @@ function insertConsentRecordVersion3(
     )
 }
 
-async function expectSchemaVersion4Drift(
+async function expectCurrentSchemaDrift(
   mutate: (connection: Database.Database) => void,
   label: string
 ): Promise<void> {
   await withMigratedDatabase((connection) => {
     mutate(connection)
 
-    expect(() => validateSchemaVersion4(connection, 'compatibility'), label).toThrow(
+    expect(() => validateSchemaVersion5(connection, 'compatibility'), label).toThrow(
       MigrationCompatibilityError
     )
   })
 }
 
-async function expectSchemaVersion4MigrationDrift(
+async function expectCurrentSchemaMigrationDrift(
   search: string,
   replacement: string,
   label: string
@@ -1352,7 +1353,7 @@ async function expectSchemaVersion4IndexDrift(
   replacementSql: string,
   label: string
 ): Promise<void> {
-  await expectSchemaVersion4Drift((connection) => {
+  await expectCurrentSchemaDrift((connection) => {
     connection.exec(`DROP INDEX ${quoteIdentifier(indexName)}; ${replacementSql}`)
   }, label)
 }

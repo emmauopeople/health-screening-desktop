@@ -50,6 +50,10 @@ paths to shared, preload, or renderer code.
 contracts, checksum canonicalization, manifest validation, production migration
 runner, and `sql/` directory. SQL files are imported as raw bundled assets; the
 application must not discover migrations by scanning runtime directories.
+HSD-029A-DB adds schema version 5, which enforces one root screening encounter
+per patient per screening session through
+`ux_screening_encounters_root_session_patient` while preserving future
+amendment rows that reference a root encounter.
 
 `src/main/database/transaction` contains the synchronous write transaction
 executor. Future repositories must use this boundary for `BEGIN IMMEDIATE`,
