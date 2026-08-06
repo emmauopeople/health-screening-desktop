@@ -93,8 +93,9 @@ export {
   formatPatientCode,
   normalizePatientAcknowledgmentNote,
   normalizeDuplicateReasonCodes,
-  normalizePatientEditableFields,
+  normalizePatientDemographicFields,
   normalizePatientDemographicAmendmentReasonNote,
+  normalizePatientRegistrationFields,
   parsePatientAcknowledgmentDecisionStatus,
   parsePatientAcknowledgmentHistoryStatus,
   parsePatientAcknowledgmentRowVersion,
@@ -138,7 +139,6 @@ export {
   type PatientDisplayName,
   type PatientDuplicateCandidateRecord,
   type PatientDuplicatePairRecord,
-  type PatientEditableInput,
   type PatientNormalizationOptions,
   type PatientNormalizedName,
   type PatientPhoneDigits,
@@ -146,7 +146,6 @@ export {
   type PatientSearchInput,
   type PatientSearchResultRecord,
   type PatientSummaryRecord,
-  type PatientUpdateResultRecord,
-  type UpdatePatientDemographicsRepositoryInput,
-  type UpdatePatientRepositoryInput
+  type PatientRegistrationInput,
+  type UpdatePatientDemographicsRepositoryInput
 } from './patient'

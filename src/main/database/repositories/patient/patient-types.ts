@@ -3,7 +3,7 @@ import type { EntityId } from '@main/foundation/entity-id'
 import type { UtcTimestamp } from '@main/foundation/utc-clock'
 import type {
   PatientAcknowledgmentStatus,
-  PatientEditableFields,
+  PatientRegistrationFields,
   PatientSex,
   PatientStatus
 } from '@shared/ipc'
@@ -100,14 +100,6 @@ export interface CreatePatientRepositoryInput {
   readonly createdAt: UtcTimestamp
 }
 
-export interface UpdatePatientRepositoryInput {
-  readonly id: EntityId
-  readonly expectedRowVersion: number
-  readonly fields: NormalizedPatientFields
-  readonly updatedBy: EntityId
-  readonly updatedAt: UtcTimestamp
-}
-
 export interface UpdatePatientDemographicsRepositoryInput {
   readonly id: EntityId
   readonly expectedRowVersion: number
@@ -132,7 +124,7 @@ interface InsertPatientAuditOutboxInputBase {
 
 export type InsertPatientAuditOutboxInput =
   | (InsertPatientAuditOutboxInputBase & {
-      readonly operation: 'PATIENT_CREATED' | 'PATIENT_UPDATED' | 'DUPLICATE_REVIEWED'
+      readonly operation: 'PATIENT_CREATED' | 'DUPLICATE_REVIEWED'
       readonly payloadSchemaVersion: 'patient.registry.v1'
     })
   | (InsertPatientAuditOutboxInputBase & {
@@ -158,11 +150,6 @@ export interface MarkNotDuplicateInput {
   readonly reviewedAt: UtcTimestamp
 }
 
-export type PatientUpdateResultRecord =
-  | { readonly status: 'UPDATED'; readonly patient: PatientDetailRecord }
-  | { readonly status: 'PATIENT_VERSION_CONFLICT'; readonly patient: PatientDetailRecord }
-  | { readonly status: 'NOT_FOUND' }
-
 export type PatientDemographicUpdateResultRecord =
   | { readonly status: 'UPDATED'; readonly patient: PatientDetailRecord }
   | { readonly status: 'PATIENT_VERSION_CONFLICT'; readonly patient: PatientDetailRecord }
@@ -185,10 +172,6 @@ export interface PatientRepository {
     connection: DatabaseTransactionConnection,
     input: CreatePatientRepositoryInput
   ): PatientDetailRecord
-  update(
-    connection: DatabaseTransactionConnection,
-    input: UpdatePatientRepositoryInput
-  ): PatientUpdateResultRecord
   updateDemographics(
     connection: DatabaseTransactionConnection,
     input: UpdatePatientDemographicsRepositoryInput
@@ -220,4 +203,4 @@ export interface PatientNormalizationOptions {
   readonly today: string
 }
 
-export type PatientEditableInput = PatientEditableFields
+export type PatientRegistrationInput = PatientRegistrationFields

@@ -734,7 +734,7 @@ describe('patient acknowledgment service', () => {
         {
           id: parseEntityId(generatedIds[0]),
           aggregateId: parseEntityId(patientId),
-          operation: 'PATIENT_UPDATED',
+          operation: 'PATIENT_CREATED',
           createdAt: parseUtcTimestamp(now),
           payloadSchemaVersion: 'patient.acknowledgment.v1',
           payload: { patient_id: patientId, note: unsafeNote }
@@ -770,7 +770,7 @@ describe('patient acknowledgment service', () => {
         patientRepository.insertOutbox(context.connection, {
           id: parseEntityId(generatedIds[1]),
           aggregateId: parseEntityId(patientId),
-          operation: 'PATIENT_UPDATED',
+          operation: 'PATIENT_CREATED',
           createdAt: parseUtcTimestamp(now),
           payloadSchemaVersion: 'patient.registry.v1',
           payload: { patient_id: patientId }

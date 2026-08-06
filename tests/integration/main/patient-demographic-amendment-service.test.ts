@@ -488,7 +488,7 @@ describe('patient demographic amendment service', () => {
         patientRepository.insertOutbox(context.connection, {
           id: parseEntityId(generatedIds[0]),
           aggregateId: parseEntityId(patientId),
-          operation: 'PATIENT_UPDATED',
+          operation: 'PATIENT_CREATED',
           createdAt: parseUtcTimestamp(now),
           payloadSchemaVersion: 'patient.registry.v1',
           payload: { patient_id: patientId, row_version: 1 }
@@ -497,7 +497,7 @@ describe('patient demographic amendment service', () => {
 
       expect(readOutboxRows(connection)).toEqual([
         {
-          operation: 'PATIENT_UPDATED',
+          operation: 'PATIENT_CREATED',
           payload_schema_version: 'patient.registry.v1',
           payload_json: JSON.stringify({ patient_id: patientId, row_version: 1 })
         }
@@ -512,7 +512,7 @@ describe('patient demographic amendment service', () => {
         payloadSchemaVersion: 'patient.registry.v1'
       },
       {
-        operation: 'PATIENT_UPDATED',
+        operation: 'PATIENT_CREATED',
         payloadSchemaVersion: 'patient.demographic-amendment.v1'
       }
     ] as const

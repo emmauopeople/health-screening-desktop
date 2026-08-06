@@ -21,7 +21,6 @@ export const ipcChannels = {
     search: 'health-screening:patient:search',
     get: 'health-screening:patient:get',
     create: 'health-screening:patient:create',
-    update: 'health-screening:patient:update',
     amendDemographics: 'health-screening:patient:amend-demographics',
     listDemographicAmendmentHistory: 'health-screening:patient:list-demographic-amendment-history',
     recordAcknowledgment: 'health-screening:patient:record-acknowledgment',

@@ -1,5 +1,5 @@
 import {
-  normalizePatientEditableFields,
+  normalizePatientDemographicFields,
   normalizePatientDemographicAmendmentReasonNote,
   parseAuditActionCode,
   parseAuditEntityType,
@@ -15,7 +15,7 @@ import {
   type PatientDetailRecord
 } from '@main/database'
 import { parseEntityId, type EntityId } from '@main/foundation/entity-id'
-import type { PatientAcknowledgmentStatus, PatientEditableFields } from '@shared/ipc'
+import type { PatientRegistrationFields } from '@shared/ipc'
 
 import type {
   AmendPatientDemographicsRequest,
@@ -382,7 +382,7 @@ function createNextNormalizedFields(
   current: PatientDetailRecord,
   patch: Partial<Record<PatchKey, unknown>>
 ): NormalizedPatientFields {
-  const editable: PatientEditableFields = {
+  const editable: PatientRegistrationFields = {
     givenName: current.givenName,
     familyName: current.familyName,
     otherNames: current.otherNames,
@@ -396,8 +396,7 @@ function createNextNormalizedFields(
     alternateContactName: current.alternateContactName,
     alternateContactPhone: current.alternateContactPhone,
     residenceNotes: current.residenceNotes,
-    status: current.status,
-    acknowledgmentStatus: current.acknowledgmentStatus as PatientAcknowledgmentStatus
+    status: current.status
   }
 
   const mutableEditable = editable as Record<PatchKey, unknown>
@@ -406,7 +405,9 @@ function createNextNormalizedFields(
     mutableEditable[key] = patch[key]
   }
 
-  return normalizePatientEditableFields(editable, { today: new Date().toISOString().slice(0, 10) })
+  return normalizePatientDemographicFields(editable, current.acknowledgmentStatus, {
+    today: new Date().toISOString().slice(0, 10)
+  })
 }
 
 function patchAttemptsStatusChange(

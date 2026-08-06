@@ -40,9 +40,7 @@ import type {
   PatientSearchInput,
   PatientSearchResultRecord,
   PatientSummaryRecord,
-  PatientUpdateResultRecord,
-  UpdatePatientDemographicsRepositoryInput,
-  UpdatePatientRepositoryInput
+  UpdatePatientDemographicsRepositoryInput
 } from './patient-types'
 
 interface CountRow {
@@ -55,11 +53,7 @@ interface SequenceRow {
 
 const maximumRecentPatientsPerUser = 25
 const registryAcknowledgmentType = 'PATIENT_REGISTRY_ACKNOWLEDGMENT'
-const registryOutboxOperations = new Set([
-  'PATIENT_CREATED',
-  'PATIENT_UPDATED',
-  'DUPLICATE_REVIEWED'
-])
+const registryOutboxOperations = new Set(['PATIENT_CREATED', 'DUPLICATE_REVIEWED'])
 
 const patientSummaryColumns = `
   p.id,
@@ -541,6 +535,10 @@ export function createPatientRepository(connection: Database.Database): PatientR
       assertActiveDatabaseTransactionConnection(scopedConnection)
 
       try {
+        if (input.fields.acknowledgmentStatus !== 'NOT_REQUESTED') {
+          throw new RepositoryValidationError()
+        }
+
         scopedConnection
           .prepare<
             [
@@ -608,7 +606,7 @@ export function createPatientRepository(connection: Database.Database): PatientR
         insertAcknowledgment(scopedConnection, {
           id: createScopedEntityId(scopedConnection),
           patientId: input.id,
-          status: input.fields.acknowledgmentStatus,
+          status: 'NOT_REQUESTED',
           recordedBy: input.createdBy,
           recordedAt: input.createdAt
         })
@@ -631,109 +629,6 @@ export function createPatientRepository(connection: Database.Database): PatientR
 
         if (error instanceof RepositoryValidationError) {
           throw new RepositoryValidationError(error.errorType)
-        }
-
-        throw new RepositoryWriteError(getRepositoryErrorType(error))
-      }
-    },
-
-    update(
-      scopedConnection: DatabaseTransactionConnection,
-      input: UpdatePatientRepositoryInput
-    ): PatientUpdateResultRecord {
-      assertActiveDatabaseTransactionConnection(scopedConnection)
-
-      try {
-        const current = readPatientAfterWrite(scopedConnection, input.id)
-
-        if (current === null) {
-          return Object.freeze({ status: 'NOT_FOUND' as const })
-        }
-
-        const result = scopedConnection
-          .prepare<
-            [
-              string,
-              string | null,
-              string | null,
-              string | null,
-              string,
-              string,
-              string | null,
-              number | null,
-              string | null,
-              string | null,
-              string | null,
-              string | null,
-              string | null,
-              string | null,
-              string | null,
-              string | null,
-              string,
-              string,
-              string,
-              string,
-              number
-            ]
-          >(updatePatientSql)
-          .run(
-            input.fields.displayName,
-            input.fields.givenName,
-            input.fields.familyName,
-            input.fields.otherNames,
-            input.fields.nameNormalized,
-            input.fields.sex,
-            input.fields.dateOfBirth,
-            input.fields.approximateAgeYears,
-            input.fields.ageAsOfDate,
-            input.fields.phone,
-            input.fields.phoneNormalized,
-            input.fields.alternateContactName,
-            input.fields.alternateContactPhone,
-            input.fields.village,
-            input.fields.quarter,
-            input.fields.residenceNotes,
-            input.fields.status,
-            input.updatedBy,
-            input.updatedAt,
-            input.id,
-            input.expectedRowVersion
-          )
-
-        if (result.changes === 0) {
-          return Object.freeze({
-            status: 'PATIENT_VERSION_CONFLICT' as const,
-            patient: current
-          })
-        }
-
-        if (input.fields.acknowledgmentStatus !== current.acknowledgmentStatus) {
-          insertAcknowledgment(scopedConnection, {
-            id: createScopedEntityId(scopedConnection),
-            patientId: input.id,
-            status: input.fields.acknowledgmentStatus,
-            recordedBy: input.updatedBy,
-            recordedAt: input.updatedAt
-          })
-        }
-
-        const updated = readPatientAfterWrite(scopedConnection, input.id)
-
-        if (updated === null) {
-          throw new RepositoryWriteError()
-        }
-
-        return Object.freeze({
-          status: 'UPDATED' as const,
-          patient: updated
-        })
-      } catch (error) {
-        if (error instanceof DatabaseTransactionStateError) {
-          throw new DatabaseTransactionStateError(error.errorType)
-        }
-
-        if (error instanceof RepositoryWriteError) {
-          throw new RepositoryWriteError(error.errorType)
         }
 
         throw new RepositoryWriteError(getRepositoryErrorType(error))

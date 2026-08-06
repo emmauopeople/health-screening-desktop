@@ -21,8 +21,6 @@ import {
   patientRecordAcknowledgmentResultSchema,
   patientSearchRequestSchema,
   patientSearchResultSchema,
-  patientUpdateRequestSchema,
-  patientUpdateResultSchema,
   type PatientAmendDemographicsRequest,
   type PatientAmendDemographicsResult,
   type PatientCreateRequest,
@@ -42,9 +40,7 @@ import {
   type PatientRecordAcknowledgmentRequest,
   type PatientRecordAcknowledgmentResult,
   type PatientSearchRequest,
-  type PatientSearchResult,
-  type PatientUpdateRequest,
-  type PatientUpdateResult
+  type PatientSearchResult
 } from '@shared/ipc'
 
 import type { IpcInvoke } from './authentication-api'
@@ -53,7 +49,6 @@ export interface PatientApi {
   search(request: PatientSearchRequest): Promise<PatientSearchResult>
   get(request: PatientGetRequest): Promise<PatientGetResult>
   create(request: PatientCreateRequest): Promise<PatientCreateResult>
-  update(request: PatientUpdateRequest): Promise<PatientUpdateResult>
   amendDemographics(
     request: PatientAmendDemographicsRequest
   ): Promise<PatientAmendDemographicsResult>
@@ -102,16 +97,6 @@ export function createPatientApi(invoke: IpcInvoke): PatientApi {
         resultSchema: patientCreateResultSchema,
         validationFailure: createPatientFailure('VALIDATION_FAILED') as PatientCreateResult,
         unavailableFailure: createPatientFailure('IPC_UNAVAILABLE') as PatientCreateResult
-      }),
-    update: (request: PatientUpdateRequest) =>
-      invokePatient({
-        invoke,
-        channel: ipcChannels.patient.update,
-        request,
-        requestSchema: patientUpdateRequestSchema,
-        resultSchema: patientUpdateResultSchema,
-        validationFailure: createPatientFailure('VALIDATION_FAILED') as PatientUpdateResult,
-        unavailableFailure: createPatientFailure('IPC_UNAVAILABLE') as PatientUpdateResult
       }),
     amendDemographics: (request: PatientAmendDemographicsRequest) =>
       invokePatient({

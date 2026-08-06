@@ -46,7 +46,6 @@ export function registerApplicationIpcHandlers(
   applicationIpcMain.handle(ipcChannels.patient.search, patientHandlers.search)
   applicationIpcMain.handle(ipcChannels.patient.get, patientHandlers.get)
   applicationIpcMain.handle(ipcChannels.patient.create, patientHandlers.create)
-  applicationIpcMain.handle(ipcChannels.patient.update, patientHandlers.update)
   applicationIpcMain.handle(
     ipcChannels.patient.amendDemographics,
     patientHandlers.amendDemographics
@@ -88,7 +87,6 @@ export function disposeApplicationIpcHandlers(applicationIpcMain: ApplicationIpc
   applicationIpcMain.removeHandler(ipcChannels.patient.search)
   applicationIpcMain.removeHandler(ipcChannels.patient.get)
   applicationIpcMain.removeHandler(ipcChannels.patient.create)
-  applicationIpcMain.removeHandler(ipcChannels.patient.update)
   applicationIpcMain.removeHandler(ipcChannels.patient.amendDemographics)
   applicationIpcMain.removeHandler(ipcChannels.patient.listDemographicAmendmentHistory)
   applicationIpcMain.removeHandler(ipcChannels.patient.recordAcknowledgment)

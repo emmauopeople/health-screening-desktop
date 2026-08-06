@@ -12,7 +12,7 @@ import {
   patientListDemographicAmendmentHistoryResultSchema,
   patientRecordAcknowledgmentRequestSchema,
   patientRecordAcknowledgmentResultSchema,
-  patientUpdateRequestSchema,
+  patientCreateRequestSchema,
   type PublicPatientAcknowledgmentHistoryRecord,
   publicPatientAcknowledgmentHistoryRecordSchema,
   publicPatientDemographicAmendmentRecordSchema
@@ -572,34 +572,30 @@ describe('HSD-026 patient IPC contracts', () => {
     expect(changesAccessorInvoked).toBe(false)
   })
 
-  it('keeps legacy patient.update unchanged during E1', () => {
-    const legacyUpdate = {
-      patientId,
-      expectedRowVersion: 1,
-      patch: {
-        givenName: 'Test',
-        familyName: 'Patient',
-        otherNames: null,
-        dateOfBirth: '1990-01-01',
-        approximateAgeYears: null,
-        ageAsOfDate: null,
-        sex: 'FEMALE',
-        village: 'Test Buea',
-        quarter: null,
-        phone: null,
-        alternateContactName: null,
-        alternateContactPhone: null,
-        residenceNotes: null,
-        status: 'ACTIVE',
-        acknowledgmentStatus: 'ACKNOWLEDGED'
-      }
+  it('keeps registration requests demographic-only', () => {
+    const registrationRequest = {
+      givenName: 'Test',
+      familyName: 'Patient',
+      otherNames: null,
+      dateOfBirth: '1990-01-01',
+      approximateAgeYears: null,
+      ageAsOfDate: null,
+      sex: 'FEMALE',
+      village: 'Test Buea',
+      quarter: null,
+      phone: null,
+      alternateContactName: null,
+      alternateContactPhone: null,
+      residenceNotes: null,
+      status: 'ACTIVE',
+      duplicateReviewToken: null
     } as const
 
-    expect(patientUpdateRequestSchema.parse(legacyUpdate)).toEqual(legacyUpdate)
+    expect(patientCreateRequestSchema.parse(registrationRequest)).toEqual(registrationRequest)
     expect(
-      patientUpdateRequestSchema.safeParse({
-        ...legacyUpdate,
-        patch: { ...legacyUpdate.patch, patientCode: 'PT-000001' }
+      patientCreateRequestSchema.safeParse({
+        ...registrationRequest,
+        patientCode: 'PT-000001'
       }).success
     ).toBe(false)
   })

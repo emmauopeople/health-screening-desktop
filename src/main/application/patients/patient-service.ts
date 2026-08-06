@@ -2,11 +2,10 @@ import { randomUUID } from 'node:crypto'
 
 import {
   normalizeDuplicateReasonCodes,
-  normalizePatientEditableFields,
+  normalizePatientRegistrationFields,
   parseAuditActionCode,
   parseAuditEntityType,
   parsePatientEntityId,
-  parsePatientRowVersion,
   RepositoryValidationError,
   type NormalizedPatientFields,
   type PatientDetailRecord,
@@ -27,9 +26,7 @@ import {
   type PatientMarkNotDuplicateRequest,
   type PatientMarkNotDuplicateResult,
   type PatientSearchRequest,
-  type PatientSearchResult,
-  type PatientUpdateRequest,
-  type PatientUpdateResult
+  type PatientSearchResult
 } from '@shared/ipc'
 
 import {
@@ -45,7 +42,6 @@ import type {
 } from './patient-service-types'
 
 const patientCreatedAction = parseAuditActionCode('PATIENT_CREATED')
-const patientUpdatedAction = parseAuditActionCode('PATIENT_UPDATED')
 const duplicateReviewedAction = parseAuditActionCode('DUPLICATE_REVIEWED')
 const patientEntityType = parseAuditEntityType('PATIENT')
 const duplicateReviewEntityType = parseAuditEntityType('PATIENT_DUPLICATE_REVIEW')
@@ -122,7 +118,7 @@ export function createPatientRegistryService({
     create(request: PatientCreateRequest, actor: PatientServiceActor): PatientCreateResult {
       try {
         const now = new Date().toISOString().slice(0, 10)
-        const fields = normalizePatientEditableFields(request, { today: now })
+        const fields = normalizePatientRegistrationFields(request, { today: now })
         const candidates = patientRepository.findDuplicateCandidates(fields, {
           excludePatientId: null,
           limit: 10
@@ -221,80 +217,6 @@ export function createPatientRegistryService({
       }
     },
 
-    update(request: PatientUpdateRequest, actor: PatientServiceActor): PatientUpdateResult {
-      try {
-        const expectedRowVersion = parsePatientRowVersion(request.expectedRowVersion)
-        const patientId = parsePatientEntityId(request.patientId)
-        const now = new Date().toISOString().slice(0, 10)
-        const fields = normalizePatientEditableFields(request.patch, { today: now })
-        const result = transactionExecutor.run((context) => {
-          const installation = installationRepository.get()
-
-          if (installation === null) {
-            throw new RepositoryValidationError()
-          }
-
-          const occurredAt = context.nowUtc()
-          const updateResult = patientRepository.update(context.connection, {
-            id: patientId,
-            expectedRowVersion,
-            fields,
-            updatedBy: actor.userId,
-            updatedAt: occurredAt
-          })
-
-          if (updateResult.status !== 'UPDATED') {
-            return updateResult
-          }
-
-          auditEventRepository.insert(context.connection, {
-            id: context.newEntityId(),
-            installationId: installation.id,
-            userId: actor.userId,
-            action: patientUpdatedAction,
-            entityType: patientEntityType,
-            entityId: patientId,
-            occurredAt,
-            metadata: Object.freeze({
-              previous_row_version: expectedRowVersion,
-              row_version: updateResult.patient.rowVersion
-            })
-          })
-          patientRepository.insertOutbox(context.connection, {
-            id: context.newEntityId(),
-            aggregateId: patientId,
-            operation: 'PATIENT_UPDATED',
-            createdAt: occurredAt,
-            payloadSchemaVersion: 'patient.registry.v1',
-            payload: Object.freeze({
-              patient_id: patientId,
-              row_version: updateResult.patient.rowVersion
-            })
-          })
-
-          return updateResult
-        })
-
-        if (result.status === 'NOT_FOUND') {
-          return createPatientFailure('VALIDATION_FAILED') as PatientUpdateResult
-        }
-
-        if (result.status === 'PATIENT_VERSION_CONFLICT') {
-          return createIpcSuccess({
-            status: 'PATIENT_VERSION_CONFLICT',
-            patient: toPublicDetail(result.patient)
-          }) as PatientUpdateResult
-        }
-
-        return createIpcSuccess({
-          status: 'UPDATED',
-          patient: toPublicDetail(result.patient)
-        }) as PatientUpdateResult
-      } catch (error) {
-        return toPatientFailure(error) as PatientUpdateResult
-      }
-    },
-
     listRecent(
       request: PatientListRecentRequest,
       actor: PatientServiceActor
@@ -328,7 +250,7 @@ export function createPatientRegistryService({
         }
 
         const today = new Date().toISOString().slice(0, 10)
-        const fields = normalizePatientEditableFields(request.identity, { today })
+        const fields = normalizePatientRegistrationFields(request.identity, { today })
         const candidates = patientRepository.findDuplicateCandidates(fields, {
           excludePatientId:
             request.patientId === null ? null : parsePatientEntityId(request.patientId),
@@ -546,7 +468,6 @@ function toPatientFailure(
   | PatientSearchResult
   | PatientGetResult
   | PatientCreateResult
-  | PatientUpdateResult
   | PatientListRecentResult
   | PatientFindDuplicatesResult
   | PatientMarkNotDuplicateResult {

@@ -13,7 +13,7 @@ import {
   createProductionDatabaseMigrationRunner
 } from '@main/database'
 import { createEntityIdGenerator, createUtcClock, parseEntityId } from '@main/foundation'
-import type { PatientEditableFields } from '@shared/ipc'
+import type { PatientRegistrationFields } from '@shared/ipc'
 
 const now = '2026-07-29T12:34:56.789Z'
 const installationId = '11111111-1111-4111-8111-111111111111'
@@ -79,48 +79,14 @@ describe('patient registry service integration', () => {
       expect(search.data.total).toBe(1)
 
       const loaded = service.get({ patientId: created.data.patient.id }, actor)
-      if (!loaded.ok) {
-        throw new Error('Expected patient get to succeed.')
-      }
+      expect(loaded.ok).toBe(true)
       const recent = service.listRecent({ limit: 25 }, actor)
       if (!recent.ok) {
         throw new Error('Expected recent patient list to succeed.')
       }
       expect(recent.data.map((patient) => patient.id)).toEqual([created.data.patient.id])
-
-      const updated = service.update(
-        {
-          patientId: created.data.patient.id,
-          expectedRowVersion: created.data.patient.rowVersion,
-          patch: {
-            ...detailToEditable(loaded.data),
-            village: 'Bastos',
-            acknowledgmentStatus: 'ACKNOWLEDGED'
-          }
-        },
-        actor
-      )
-      if (!updated.ok || updated.data.status !== 'UPDATED') {
-        throw new Error('Expected patient update to succeed.')
-      }
-      expect(updated.data.patient.rowVersion).toBe(2)
-      expect(updated.data.patient.village).toBe('Bastos')
-      expect(updated.data.patient.acknowledgment.status).toBe('ACKNOWLEDGED')
-
-      const conflict = service.update(
-        {
-          patientId: created.data.patient.id,
-          expectedRowVersion: created.data.patient.rowVersion,
-          patch: detailToEditable(updated.data.patient)
-        },
-        actor
-      )
-      if (!conflict.ok || conflict.data.status !== 'PATIENT_VERSION_CONFLICT') {
-        throw new Error('Expected stale update to return a version conflict.')
-      }
-      expect(conflict.data.patient.rowVersion).toBe(2)
-      expect(readAuditActions(connection)).toEqual(['PATIENT_CREATED', 'PATIENT_UPDATED'])
-      expect(readOutboxOperations(connection)).toEqual(['PATIENT_CREATED', 'PATIENT_UPDATED'])
+      expect(readAuditActions(connection)).toEqual(['PATIENT_CREATED'])
+      expect(readOutboxOperations(connection)).toEqual(['PATIENT_CREATED'])
     })
   })
 
@@ -201,21 +167,6 @@ describe('patient registry service integration', () => {
       }
       expect(suppressed.data.pairs).toEqual([])
 
-      const nonIdentityUpdate = service.update(
-        {
-          patientId: first.data.patient.id,
-          expectedRowVersion: first.data.patient.rowVersion,
-          patch: {
-            ...detailToEditable(first.data.patient),
-            residenceNotes: 'Reviewed by registry staff'
-          }
-        },
-        actor
-      )
-      if (!nonIdentityUpdate.ok || nonIdentityUpdate.data.status !== 'UPDATED') {
-        throw new Error('Expected non-identity update to succeed.')
-      }
-
       const stillSuppressed = service.findDuplicates(
         { identity: null, patientId: null, limit: 25 },
         actor
@@ -227,8 +178,7 @@ describe('patient registry service integration', () => {
       expect(readOutboxOperations(connection)).toEqual([
         'PATIENT_CREATED',
         'PATIENT_CREATED',
-        'DUPLICATE_REVIEWED',
-        'PATIENT_UPDATED'
+        'DUPLICATE_REVIEWED'
       ])
     })
   })
@@ -335,7 +285,9 @@ function insertUser(connection: Database.Database): void {
     .run(userId, 'Admin.User', 'admin.user', 'Admin User', 'hash', 'salt', 'LOCAL_ADMIN', now, now)
 }
 
-function createFields(overrides: Partial<PatientEditableFields> = {}): PatientEditableFields {
+function createFields(
+  overrides: Partial<PatientRegistrationFields> = {}
+): PatientRegistrationFields {
   return {
     givenName: 'Ada',
     familyName: 'Biko',
@@ -351,44 +303,7 @@ function createFields(overrides: Partial<PatientEditableFields> = {}): PatientEd
     alternateContactPhone: null,
     residenceNotes: null,
     status: 'ACTIVE',
-    acknowledgmentStatus: 'NOT_REQUESTED',
     ...overrides
-  }
-}
-
-function detailToEditable(patient: {
-  readonly givenName: string | null
-  readonly familyName: string | null
-  readonly otherNames: string | null
-  readonly dateOfBirth: string | null
-  readonly approximateAgeYears: number | null
-  readonly ageAsOfDate: string | null
-  readonly sex: PatientEditableFields['sex']
-  readonly village: string | null
-  readonly quarter: string | null
-  readonly phone: string | null
-  readonly alternateContactName: string | null
-  readonly alternateContactPhone: string | null
-  readonly residenceNotes: string | null
-  readonly status: PatientEditableFields['status']
-  readonly acknowledgment: { readonly status: PatientEditableFields['acknowledgmentStatus'] }
-}): PatientEditableFields {
-  return {
-    givenName: patient.givenName,
-    familyName: patient.familyName,
-    otherNames: patient.otherNames,
-    dateOfBirth: patient.dateOfBirth,
-    approximateAgeYears: patient.approximateAgeYears,
-    ageAsOfDate: patient.ageAsOfDate,
-    sex: patient.sex,
-    village: patient.village,
-    quarter: patient.quarter,
-    phone: patient.phone,
-    alternateContactName: patient.alternateContactName,
-    alternateContactPhone: patient.alternateContactPhone,
-    residenceNotes: patient.residenceNotes,
-    status: patient.status,
-    acknowledgmentStatus: patient.acknowledgment.status
   }
 }
 

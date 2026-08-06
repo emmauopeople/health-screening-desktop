@@ -47,8 +47,6 @@ import {
   patientRecordAcknowledgmentResultSchema,
   patientSearchRequestSchema,
   patientSearchResultSchema,
-  patientUpdateRequestSchema,
-  patientUpdateResultSchema,
   type AuthenticationFailure,
   type PatientAmendDemographicsResult,
   type PatientCreateResult,
@@ -61,8 +59,7 @@ import {
   type PatientListRecentResult,
   type PatientMarkNotDuplicateResult,
   type PatientRecordAcknowledgmentResult,
-  type PatientSearchResult,
-  type PatientUpdateResult
+  type PatientSearchResult
 } from '@shared/ipc'
 
 export interface PatientIpcOperationalLogger {
@@ -83,7 +80,6 @@ export interface PatientIpcHandlers {
   search(event: IpcSenderValidationEvent, request: unknown): Promise<PatientSearchResult>
   get(event: IpcSenderValidationEvent, request: unknown): Promise<PatientGetResult>
   create(event: IpcSenderValidationEvent, request: unknown): Promise<PatientCreateResult>
-  update(event: IpcSenderValidationEvent, request: unknown): Promise<PatientUpdateResult>
   amendDemographics(
     event: IpcSenderValidationEvent,
     request: unknown
@@ -159,17 +155,6 @@ export function createPatientIpcHandlers({
         logger,
         authorize: () => authorization.requireAnyRole(event, allLocalRoles),
         invoke: (data, actor) => patientRegistryService.create(data, actor)
-      })
-    },
-    async update(event: IpcSenderValidationEvent, request: unknown): Promise<PatientUpdateResult> {
-      return handlePatientRequest({
-        channel: ipcChannels.patient.update,
-        request,
-        requestSchema: patientUpdateRequestSchema,
-        resultSchema: patientUpdateResultSchema,
-        logger,
-        authorize: () => authorization.requireAnyRole(event, allLocalRoles),
-        invoke: (data, actor) => patientRegistryService.update(data, actor)
       })
     },
     async amendDemographics(

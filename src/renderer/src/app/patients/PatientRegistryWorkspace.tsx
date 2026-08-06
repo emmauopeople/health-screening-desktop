@@ -9,7 +9,7 @@ import type {
 import type {
   HealthScreeningApi,
   LocalUserRole,
-  PatientEditableFields,
+  PatientRegistrationFields,
   PatientDemographicAmendmentReasonCode,
   PatientErrorCode,
   PublicPatientDetail,
@@ -22,6 +22,10 @@ import type {
   ApplicationCommandId,
   PatientWorkspaceNavigationGuard
 } from '../shell/application-shell-types'
+import {
+  PatientAcknowledgmentDecisionForm,
+  type PatientAcknowledgmentDecisionConflictView
+} from './PatientAcknowledgmentDecisionForm'
 import { PatientCurrentDetailsPanel } from './PatientCurrentDetailsPanel'
 import {
   PatientDemographicAmendmentForm,
@@ -38,6 +42,12 @@ import {
   type PatientDemographicAmendmentValidationErrors,
   type PatientDemographicDraft
 } from './patient-demographic-amendment'
+import {
+  validatePatientAcknowledgmentDecision,
+  type PatientAcknowledgmentDecisionSelection,
+  type PatientAcknowledgmentDecisionValidationErrors
+} from './patient-acknowledgment-decision'
+import { formatAcknowledgmentStatusLabel } from './patient-history-formatting'
 
 type PatientCommandId =
   | 'PATIENTS_PATIENT_SEARCH'
@@ -96,7 +106,7 @@ const transportFailureMessage = 'The desktop service is unavailable.'
 const patientSearchDebounceMs = 300
 const localDatePattern = /^\d{4}-\d{2}-\d{2}$/u
 
-const emptyEditableFields: PatientEditableFields = Object.freeze({
+const emptyRegistrationFields: PatientRegistrationFields = Object.freeze({
   givenName: null,
   familyName: null,
   otherNames: null,
@@ -110,8 +120,7 @@ const emptyEditableFields: PatientEditableFields = Object.freeze({
   alternateContactName: null,
   alternateContactPhone: null,
   residenceNotes: null,
-  status: 'ACTIVE',
-  acknowledgmentStatus: 'NOT_REQUESTED'
+  status: 'ACTIVE'
 })
 
 export function PatientRegistryWorkspace({
@@ -139,18 +148,31 @@ export function PatientRegistryWorkspace({
     useState<PatientDemographicAmendmentValidationErrors>({})
   const [amendmentConflict, setAmendmentConflict] =
     useState<PatientDemographicAmendmentConflictView | null>(null)
+  const [acknowledgmentMode, setAcknowledgmentMode] = useState(false)
+  const [acknowledgmentBase, setAcknowledgmentBase] = useState<PublicPatientDetail | null>(null)
+  const [acknowledgmentDecision, setAcknowledgmentDecision] =
+    useState<PatientAcknowledgmentDecisionSelection>('')
+  const [acknowledgmentNote, setAcknowledgmentNote] = useState('')
+  const [acknowledgmentValidationErrors, setAcknowledgmentValidationErrors] =
+    useState<PatientAcknowledgmentDecisionValidationErrors>({})
+  const [acknowledgmentConflict, setAcknowledgmentConflict] =
+    useState<PatientAcknowledgmentDecisionConflictView | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [amendmentSaving, setAmendmentSaving] = useState(false)
+  const [acknowledgmentSaving, setAcknowledgmentSaving] = useState(false)
   const [showDirtyGuard, setShowDirtyGuard] = useState(false)
   const [preferredPatientReveal, setPreferredPatientReveal] =
     useState<PreferredPatientReveal | null>(null)
   const [demographicHistoryRevision, setDemographicHistoryRevision] = useState(0)
+  const [acknowledgmentHistoryRevision, setAcknowledgmentHistoryRevision] = useState(0)
   const pendingDirtyAction = useRef<(() => void) | null>(null)
   const pendingDirtyActionNeedsNavigationBypassRef = useRef(false)
   const allowResolvedDirtyNavigationRef = useRef(false)
   const patientLoadRequestRef = useRef(0)
   const amendmentRequestRef = useRef(0)
   const amendmentSubmissionPendingRef = useRef(false)
+  const acknowledgmentRequestRef = useRef(0)
+  const acknowledgmentSubmissionPendingRef = useRef(false)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const messageRef = useRef<HTMLDivElement | null>(null)
   const [activeDetailTab, setActiveDetailTab] = useState<PatientDetailTab>('CURRENT_DETAILS')
@@ -166,6 +188,16 @@ export function PatientRegistryWorkspace({
       amendmentReasonCode !== '' ||
       amendmentReasonNote.length > 0 ||
       amendmentConflict !== null)
+  const acknowledgmentDirty =
+    acknowledgmentMode &&
+    (acknowledgmentDecision !== '' ||
+      acknowledgmentNote.length > 0 ||
+      acknowledgmentConflict !== null)
+  const dirtyWorkflow = amendmentDirty
+    ? 'DEMOGRAPHIC'
+    : acknowledgmentDirty
+      ? 'ACKNOWLEDGMENT'
+      : null
 
   const invalidateProtectedPatientState = useCallback((): void => {
     securityEpochRef.current += 1
@@ -195,6 +227,18 @@ export function PatientRegistryWorkspace({
     setAmendmentSaving(false)
   }, [])
 
+  const clearAcknowledgmentState = useCallback((): void => {
+    acknowledgmentRequestRef.current += 1
+    acknowledgmentSubmissionPendingRef.current = false
+    setAcknowledgmentMode(false)
+    setAcknowledgmentBase(null)
+    setAcknowledgmentDecision('')
+    setAcknowledgmentNote('')
+    setAcknowledgmentValidationErrors({})
+    setAcknowledgmentConflict(null)
+    setAcknowledgmentSaving(false)
+  }, [])
+
   const focusMessage = useCallback((): void => {
     queueMicrotask(() => {
       if (mountedRef.current) {
@@ -209,6 +253,7 @@ export function PatientRegistryWorkspace({
       invalidatePatientState()
     }
     clearAmendmentState()
+    clearAcknowledgmentState()
     onSelectedPatientChange(null)
     setPreferredPatientReveal(null)
     setActiveDetailTab('CURRENT_DETAILS')
@@ -216,7 +261,12 @@ export function PatientRegistryWorkspace({
     pendingDirtyActionNeedsNavigationBypassRef.current = false
     allowResolvedDirtyNavigationRef.current = false
     setShowDirtyGuard(false)
-  }, [clearAmendmentState, invalidateProtectedPatientState, onSelectedPatientChange])
+  }, [
+    clearAcknowledgmentState,
+    clearAmendmentState,
+    invalidateProtectedPatientState,
+    onSelectedPatientChange
+  ])
 
   const handlePatientFailure = useCallback(
     (code: PatientErrorCode, fallbackMessage: string): boolean => {
@@ -241,7 +291,7 @@ export function PatientRegistryWorkspace({
 
   const beginDirtyGuard = useCallback(
     (action: () => void): boolean => {
-      if (!amendmentDirty) {
+      if (dirtyWorkflow === null) {
         action()
         return true
       }
@@ -251,7 +301,7 @@ export function PatientRegistryWorkspace({
       setShowDirtyGuard(true)
       return false
     },
-    [amendmentDirty]
+    [dirtyWorkflow]
   )
 
   useEffect(() => {
@@ -269,14 +319,14 @@ export function PatientRegistryWorkspace({
         return
       }
 
-      if (activeDetailTab === 'CURRENT_DETAILS' && amendmentDirty) {
+      if (activeDetailTab === 'CURRENT_DETAILS' && dirtyWorkflow !== null) {
         beginDirtyGuard(() => setActiveDetailTab(tab))
         return
       }
 
       setActiveDetailTab(tab)
     },
-    [activeDetailTab, amendmentDirty, beginDirtyGuard]
+    [activeDetailTab, beginDirtyGuard, dirtyWorkflow]
   )
 
   useEffect(() => {
@@ -290,7 +340,7 @@ export function PatientRegistryWorkspace({
         return true
       }
 
-      if (!amendmentDirty) {
+      if (dirtyWorkflow === null) {
         return true
       }
 
@@ -305,7 +355,7 @@ export function PatientRegistryWorkspace({
     return () => {
       registerNavigationGuard(null)
     }
-  }, [amendmentDirty, commandId, onSelectCommand, registerNavigationGuard])
+  }, [commandId, dirtyWorkflow, onSelectCommand, registerNavigationGuard])
 
   useEffect(() => {
     const listener = (event: KeyboardEvent): void => {
@@ -353,6 +403,7 @@ export function PatientRegistryWorkspace({
 
         setActiveDetailTab('CURRENT_DETAILS')
         clearAmendmentState()
+        clearAcknowledgmentState()
         onSelectedPatientChange(result.data)
         setMessage(null)
         return true
@@ -367,7 +418,14 @@ export function PatientRegistryWorkspace({
         return false
       }
     },
-    [api, clearAmendmentState, handlePatientFailure, isCurrentOperation, onSelectedPatientChange]
+    [
+      api,
+      clearAcknowledgmentState,
+      clearAmendmentState,
+      handlePatientFailure,
+      isCurrentOperation,
+      onSelectedPatientChange
+    ]
   )
 
   const selectPatient = useCallback(
@@ -383,8 +441,9 @@ export function PatientRegistryWorkspace({
     patientLoadRequestRef.current += 1
     setActiveDetailTab('CURRENT_DETAILS')
     clearAmendmentState()
+    clearAcknowledgmentState()
     onSelectedPatientChange(null)
-  }, [clearAmendmentState, onSelectedPatientChange])
+  }, [clearAcknowledgmentState, clearAmendmentState, onSelectedPatientChange])
 
   const applyPatientSearchTarget = useCallback(
     (patientId: string | null): void => {
@@ -400,7 +459,7 @@ export function PatientRegistryWorkspace({
     [clearSelectedPatient, loadAndSelectPatient, selectedPatient?.id]
   )
 
-  const startDemographicAmendment = useCallback((): void => {
+  const openDemographicAmendment = useCallback((): void => {
     if (selectedPatient === null) {
       return
     }
@@ -418,6 +477,15 @@ export function PatientRegistryWorkspace({
     setAmendmentMode(true)
     setMessage(null)
   }, [selectedPatient])
+
+  const startDemographicAmendment = useCallback((): void => {
+    if (acknowledgmentDirty) {
+      beginDirtyGuard(openDemographicAmendment)
+      return
+    }
+
+    openDemographicAmendment()
+  }, [acknowledgmentDirty, beginDirtyGuard, openDemographicAmendment])
 
   const submitAmendment = useCallback(async (): Promise<boolean> => {
     if (
@@ -542,10 +610,152 @@ export function PatientRegistryWorkspace({
     userRole
   ])
 
+  const openAcknowledgmentDecision = useCallback((): void => {
+    if (selectedPatient === null) {
+      return
+    }
+
+    acknowledgmentRequestRef.current += 1
+    acknowledgmentSubmissionPendingRef.current = false
+    setActiveDetailTab('CURRENT_DETAILS')
+    setAcknowledgmentBase(selectedPatient)
+    setAcknowledgmentDecision('')
+    setAcknowledgmentNote('')
+    setAcknowledgmentValidationErrors({})
+    setAcknowledgmentConflict(null)
+    setAcknowledgmentSaving(false)
+    setAcknowledgmentMode(true)
+    setMessage(null)
+  }, [selectedPatient])
+
+  const startAcknowledgmentDecision = useCallback((): void => {
+    if (amendmentDirty) {
+      beginDirtyGuard(openAcknowledgmentDecision)
+      return
+    }
+
+    openAcknowledgmentDecision()
+  }, [amendmentDirty, beginDirtyGuard, openAcknowledgmentDecision])
+
+  const submitAcknowledgmentDecision = useCallback(async (): Promise<boolean> => {
+    if (
+      selectedPatient === null ||
+      acknowledgmentBase === null ||
+      acknowledgmentSubmissionPendingRef.current
+    ) {
+      return false
+    }
+
+    const validation = validatePatientAcknowledgmentDecision({
+      decision: acknowledgmentDecision,
+      note: acknowledgmentNote
+    })
+
+    setAcknowledgmentValidationErrors(validation.errors)
+
+    if (validation.status === null || validation.focusField !== null) {
+      return false
+    }
+
+    const requestId = acknowledgmentRequestRef.current + 1
+    acknowledgmentRequestRef.current = requestId
+    acknowledgmentSubmissionPendingRef.current = true
+    const startedSecurityEpoch = securityEpochRef.current
+    const startedPatientId = selectedPatient.id
+    setMessage(null)
+    setAcknowledgmentSaving(true)
+
+    try {
+      const result = await api.patient.recordAcknowledgment({
+        patientId: startedPatientId,
+        expectedRowVersion: acknowledgmentBase.rowVersion,
+        status: validation.status,
+        note: validation.normalizedNote
+      })
+
+      if (
+        !isCurrentOperation(startedSecurityEpoch) ||
+        acknowledgmentRequestRef.current !== requestId ||
+        selectedPatientIdRef.current !== startedPatientId
+      ) {
+        return false
+      }
+
+      if (!result.ok) {
+        handlePatientFailure(result.error.code, result.error.message)
+        return false
+      }
+
+      if (result.data.status === 'PATIENT_VERSION_CONFLICT') {
+        const latestPatient = result.data.patient
+
+        onSelectedPatientChange(latestPatient)
+        setAcknowledgmentBase(latestPatient)
+        setAcknowledgmentConflict({
+          latestStatus: latestPatient.acknowledgment.status,
+          latestUpdatedAt: latestPatient.updatedAt,
+          latestUpdatedByDisplayName: latestPatient.updatedByDisplayName,
+          intendedDecision: acknowledgmentDecision
+        })
+        setAcknowledgmentValidationErrors({})
+        setAcknowledgmentMode(true)
+        setMessage('The patient changed after you opened it. Review the latest details.')
+        return false
+      }
+
+      onSelectedPatientChange(result.data.patient)
+      clearAcknowledgmentState()
+      setActiveDetailTab('CURRENT_DETAILS')
+      setAcknowledgmentHistoryRevision((revision) => revision + 1)
+      setMessage(
+        result.data.status === 'DUPLICATE_DECISION'
+          ? 'This Participation/Data-Use Acknowledgment decision is already recorded.'
+          : 'Participation/Data-Use Acknowledgment recorded.'
+      )
+      focusMessage()
+      return true
+    } catch {
+      if (
+        isCurrentOperation(startedSecurityEpoch) &&
+        selectedPatientIdRef.current === startedPatientId
+      ) {
+        setMessage(transportFailureMessage)
+      }
+
+      return false
+    } finally {
+      if (
+        isCurrentOperation(startedSecurityEpoch) &&
+        acknowledgmentRequestRef.current === requestId &&
+        selectedPatientIdRef.current === startedPatientId
+      ) {
+        acknowledgmentSubmissionPendingRef.current = false
+        setAcknowledgmentSaving(false)
+      }
+    }
+  }, [
+    acknowledgmentBase,
+    acknowledgmentDecision,
+    acknowledgmentNote,
+    api,
+    clearAcknowledgmentState,
+    focusMessage,
+    handlePatientFailure,
+    isCurrentOperation,
+    onSelectedPatientChange,
+    selectedPatient,
+    selectedPatientIdRef
+  ])
+
   const discardAmendment = useCallback((): void => {
     clearAmendmentState()
     setMessage(null)
   }, [clearAmendmentState])
+
+  const discardAcknowledgmentDecision = useCallback((): void => {
+    clearAcknowledgmentState()
+    setMessage(null)
+  }, [clearAcknowledgmentState])
 
   const completePendingDirtyAction = useCallback((): void => {
     const action = pendingDirtyAction.current
@@ -598,6 +808,7 @@ export function PatientRegistryWorkspace({
           onPatientCreated={(patient) => {
             setActiveDetailTab('CURRENT_DETAILS')
             clearAmendmentState()
+            clearAcknowledgmentState()
             onSelectedPatientChange(patient)
             setPreferredPatientReveal({ patient })
             setMessage('Patient created.')
@@ -666,9 +877,17 @@ export function PatientRegistryWorkspace({
             amendmentValidationErrors={amendmentValidationErrors}
             amendmentConflict={amendmentConflict}
             amendmentSaving={amendmentSaving}
+            acknowledgmentMode={acknowledgmentMode}
+            acknowledgmentBase={acknowledgmentBase}
+            acknowledgmentDecision={acknowledgmentDecision}
+            acknowledgmentNote={acknowledgmentNote}
+            acknowledgmentValidationErrors={acknowledgmentValidationErrors}
+            acknowledgmentConflict={acknowledgmentConflict}
+            acknowledgmentSaving={acknowledgmentSaving}
             activeTab={activeDetailTab}
             userRole={userRole}
             demographicHistoryRevision={demographicHistoryRevision}
+            acknowledgmentHistoryRevision={acknowledgmentHistoryRevision}
             securityEpochRef={securityEpochRef}
             registerStateInvalidator={registerPatientStateInvalidator}
             onPatientFailure={handlePatientFailure}
@@ -686,8 +905,20 @@ export function PatientRegistryWorkspace({
               setAmendmentValidationErrors({})
             }}
             onEdit={startDemographicAmendment}
+            onRecordAcknowledgment={startAcknowledgmentDecision}
             onSave={() => {
               void submitAmendment()
+            }}
+            onAcknowledgmentDecisionChange={(nextDecision) => {
+              setAcknowledgmentDecision(nextDecision)
+              setAcknowledgmentValidationErrors({})
+            }}
+            onAcknowledgmentNoteChange={(nextNote) => {
+              setAcknowledgmentNote(nextNote)
+              setAcknowledgmentValidationErrors({})
+            }}
+            onSaveAcknowledgment={() => {
+              void submitAcknowledgmentDecision()
             }}
             onCancel={() => {
               if (amendmentDirty) {
@@ -696,6 +927,14 @@ export function PatientRegistryWorkspace({
               }
 
               discardAmendment()
+            }}
+            onCancelAcknowledgment={() => {
+              if (acknowledgmentDirty) {
+                beginDirtyGuard(discardAcknowledgmentDecision)
+                return
+              }
+
+              discardAcknowledgmentDecision()
             }}
             onReload={() => {
               if (selectedPatient !== null) {
@@ -720,14 +959,34 @@ export function PatientRegistryWorkspace({
               setAmendmentConflict(null)
               setMessage('Continue editing your rebased amendment.')
             }}
+            onReviewAcknowledgmentConflict={() => {
+              setAcknowledgmentConflict(null)
+              setMessage('Review the acknowledgment decision.')
+            }}
+            onRetryAcknowledgmentConflict={() => {
+              setAcknowledgmentConflict(null)
+              void submitAcknowledgmentDecision()
+            }}
+            onDiscardAcknowledgmentConflict={() => {
+              discardAcknowledgmentDecision()
+              setMessage('Loaded the latest patient details.')
+            }}
+            onCancelAcknowledgmentConflict={() => {
+              setAcknowledgmentConflict(null)
+              setMessage('Continue editing your acknowledgment decision.')
+            }}
           />
         </div>
       )}
 
       {showDirtyGuard ? (
         <PatientModalDialog
-          title="Unsaved patient amendment"
-          pending={amendmentSaving}
+          title={
+            dirtyWorkflow === 'ACKNOWLEDGMENT'
+              ? 'Unsaved acknowledgment decision'
+              : 'Unsaved patient amendment'
+          }
+          pending={amendmentSaving || acknowledgmentSaving}
           onCancel={() => {
             pendingDirtyAction.current = null
             pendingDirtyActionNeedsNavigationBypassRef.current = false
@@ -735,37 +994,50 @@ export function PatientRegistryWorkspace({
             setShowDirtyGuard(false)
           }}
         >
-          <p className="patient-dialog-copy">Save or discard the amendment before leaving.</p>
+          <p className="patient-dialog-copy">
+            {dirtyWorkflow === 'ACKNOWLEDGMENT'
+              ? 'Save or discard the acknowledgment decision before leaving.'
+              : 'Save or discard the amendment before leaving.'}
+          </p>
           <div className="patient-dialog-actions">
             <button
               type="button"
               className="button button-primary"
-              disabled={amendmentSaving}
+              disabled={amendmentSaving || acknowledgmentSaving}
               onClick={() => {
-                void submitAmendment().then((saved) => {
+                const save =
+                  dirtyWorkflow === 'ACKNOWLEDGMENT'
+                    ? submitAcknowledgmentDecision
+                    : submitAmendment
+
+                void save().then((saved) => {
                   if (saved) {
                     completePendingDirtyAction()
                   }
                 })
               }}
             >
-              Save amendment
+              {dirtyWorkflow === 'ACKNOWLEDGMENT' ? 'Save decision' : 'Save amendment'}
             </button>
             <button
               type="button"
               className="button button-secondary"
-              disabled={amendmentSaving}
+              disabled={amendmentSaving || acknowledgmentSaving}
               onClick={() => {
-                discardAmendment()
+                if (dirtyWorkflow === 'ACKNOWLEDGMENT') {
+                  discardAcknowledgmentDecision()
+                } else {
+                  discardAmendment()
+                }
                 completePendingDirtyAction()
               }}
             >
-              Discard amendment
+              {dirtyWorkflow === 'ACKNOWLEDGMENT' ? 'Discard decision' : 'Discard amendment'}
             </button>
             <button
               type="button"
               className="button button-secondary"
-              disabled={amendmentSaving}
+              disabled={amendmentSaving || acknowledgmentSaving}
               onClick={() => {
                 pendingDirtyAction.current = null
                 pendingDirtyActionNeedsNavigationBypassRef.current = false
@@ -1567,7 +1839,7 @@ function PatientRegistrationWorkspace({
   const duplicateRequestRef = useRef(0)
   const duplicateCheckPendingRef = useRef(false)
   const createPendingRef = useRef(false)
-  const [draft, setDraft] = useState<PatientEditableFields>(emptyEditableFields)
+  const [draft, setDraft] = useState<PatientRegistrationFields>(emptyRegistrationFields)
   const [candidates, setCandidates] = useState<readonly PublicPatientDuplicateCandidate[]>([])
   const [duplicateReviewToken, setDuplicateReviewToken] = useState<string | null>(null)
   const [confirmContinue, setConfirmContinue] = useState(false)
@@ -1586,7 +1858,7 @@ function PatientRegistrationWorkspace({
     createRequestRef.current += 1
     duplicateCheckPendingRef.current = false
     createPendingRef.current = false
-    setDraft(emptyEditableFields)
+    setDraft(emptyRegistrationFields)
     setCandidates([])
     setDuplicateReviewToken(null)
     setConfirmContinue(false)
@@ -1600,7 +1872,7 @@ function PatientRegistrationWorkspace({
     [invalidateLocalState, registerStateInvalidator]
   )
 
-  const updateDraft = (nextDraft: PatientEditableFields): void => {
+  const updateDraft = (nextDraft: PatientRegistrationFields): void => {
     setDraft(nextDraft)
     setValidationErrors({})
     setCandidates([])
@@ -1623,7 +1895,7 @@ function PatientRegistrationWorkspace({
     }
   }
 
-  const getValidatedRegistrationDraft = (): PatientEditableFields | null => {
+  const getValidatedRegistrationDraft = (): PatientRegistrationFields | null => {
     const submitDraft = normalizeAgeEntryForSubmit(draft)
     const validation = validateRegistrationDraft(submitDraft)
 
@@ -1973,9 +2245,17 @@ function PatientDetailPane({
   amendmentValidationErrors,
   amendmentConflict,
   amendmentSaving,
+  acknowledgmentMode,
+  acknowledgmentBase,
+  acknowledgmentDecision,
+  acknowledgmentNote,
+  acknowledgmentValidationErrors,
+  acknowledgmentConflict,
+  acknowledgmentSaving,
   activeTab,
   userRole,
   demographicHistoryRevision,
+  acknowledgmentHistoryRevision,
   securityEpochRef,
   registerStateInvalidator,
   onPatientFailure,
@@ -1984,13 +2264,22 @@ function PatientDetailPane({
   onReasonCodeChange,
   onReasonNoteChange,
   onEdit,
+  onRecordAcknowledgment,
   onSave,
+  onAcknowledgmentDecisionChange,
+  onAcknowledgmentNoteChange,
+  onSaveAcknowledgment,
   onCancel,
+  onCancelAcknowledgment,
   onReload,
   onReviewConflict,
   onRetryConflict,
   onDiscardConflict,
-  onCancelConflict
+  onCancelConflict,
+  onReviewAcknowledgmentConflict,
+  onRetryAcknowledgmentConflict,
+  onDiscardAcknowledgmentConflict,
+  onCancelAcknowledgmentConflict
 }: {
   readonly api: HealthScreeningApi
   readonly patient: PublicPatientDetail | null
@@ -2002,9 +2291,17 @@ function PatientDetailPane({
   readonly amendmentValidationErrors: PatientDemographicAmendmentValidationErrors
   readonly amendmentConflict: PatientDemographicAmendmentConflictView | null
   readonly amendmentSaving: boolean
+  readonly acknowledgmentMode: boolean
+  readonly acknowledgmentBase: PublicPatientDetail | null
+  readonly acknowledgmentDecision: PatientAcknowledgmentDecisionSelection
+  readonly acknowledgmentNote: string
+  readonly acknowledgmentValidationErrors: PatientAcknowledgmentDecisionValidationErrors
+  readonly acknowledgmentConflict: PatientAcknowledgmentDecisionConflictView | null
+  readonly acknowledgmentSaving: boolean
   readonly activeTab: PatientDetailTab
   readonly userRole: LocalUserRole
   readonly demographicHistoryRevision: number
+  readonly acknowledgmentHistoryRevision: number
   readonly securityEpochRef: MutableRefObject<number>
   registerStateInvalidator: RegisterPatientStateInvalidator
   onPatientFailure(code: PatientErrorCode, message: string): boolean
@@ -2013,13 +2310,22 @@ function PatientDetailPane({
   onReasonCodeChange(reasonCode: PatientDemographicAmendmentReasonSelection): void
   onReasonNoteChange(reasonNote: string): void
   onEdit(): void
+  onRecordAcknowledgment(): void
   onSave(): void
+  onAcknowledgmentDecisionChange(decision: PatientAcknowledgmentDecisionSelection): void
+  onAcknowledgmentNoteChange(note: string): void
+  onSaveAcknowledgment(): void
   onCancel(): void
+  onCancelAcknowledgment(): void
   onReload(): void
   onReviewConflict(): void
   onRetryConflict(): void
   onDiscardConflict(): void
   onCancelConflict(): void
+  onReviewAcknowledgmentConflict(): void
+  onRetryAcknowledgmentConflict(): void
+  onDiscardAcknowledgmentConflict(): void
+  onCancelAcknowledgmentConflict(): void
 }): React.JSX.Element {
   const currentDetails =
     patient === null ? null : (
@@ -2045,13 +2351,40 @@ function PatientDetailPane({
             onDiscardConflict={onDiscardConflict}
             onCancelConflict={onCancelConflict}
           />
+        ) : acknowledgmentMode && acknowledgmentBase !== null ? (
+          <PatientAcknowledgmentDecisionForm
+            patient={acknowledgmentBase}
+            decision={acknowledgmentDecision}
+            note={acknowledgmentNote}
+            validationErrors={acknowledgmentValidationErrors}
+            conflict={acknowledgmentConflict}
+            pending={acknowledgmentSaving}
+            onDecisionChange={onAcknowledgmentDecisionChange}
+            onNoteChange={onAcknowledgmentNoteChange}
+            onSubmit={onSaveAcknowledgment}
+            onCancel={onCancelAcknowledgment}
+            onReload={onReload}
+            onReviewConflict={onReviewAcknowledgmentConflict}
+            onRetryConflict={onRetryAcknowledgmentConflict}
+            onDiscardConflict={onDiscardAcknowledgmentConflict}
+            onCancelConflict={onCancelAcknowledgmentConflict}
+          />
         ) : (
           <>
             <div className="patient-detail-header">
               <h2>{patient.patientCode}</h2>
-              <button type="button" className="button button-secondary" onClick={onEdit}>
-                Amend demographics
-              </button>
+              <div className="patient-detail-actions">
+                <button type="button" className="button button-secondary" onClick={onEdit}>
+                  Amend demographics
+                </button>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={onRecordAcknowledgment}
+                >
+                  Record acknowledgment decision
+                </button>
+              </div>
             </div>
             <dl className="patient-detail-list">
               <DetailRow label="Name" value={patient.displayName} />
@@ -2059,7 +2392,10 @@ function PatientDetailPane({
               <DetailRow label="Sex" value={patient.sex} />
               <DetailRow label="Village / quarter" value={formatVillageQuarter(patient)} />
               <DetailRow label="Phone" value={patient.phone ?? 'Not recorded'} />
-              <DetailRow label="Acknowledgment" value={patient.acknowledgment.status} />
+              <DetailRow
+                label="Participation/Data-Use Acknowledgment"
+                value={formatCurrentAcknowledgment(patient)}
+              />
               <DetailRow label="Clinical" value="Not available" />
               <DetailRow
                 label="Created"
@@ -2083,6 +2419,7 @@ function PatientDetailPane({
       activeTab={activeTab}
       currentDetails={currentDetails}
       demographicHistoryRevision={demographicHistoryRevision}
+      acknowledgmentHistoryRevision={acknowledgmentHistoryRevision}
       securityEpochRef={securityEpochRef}
       registerStateInvalidator={registerStateInvalidator}
       onPatientFailure={onPatientFailure}
@@ -2099,7 +2436,7 @@ function PatientFieldsForm({
   inputRefs,
   onDraftChange
 }: {
-  readonly draft: PatientEditableFields
+  readonly draft: PatientRegistrationFields
   readonly disabled?: boolean
   readonly mode?: 'standard' | 'registration'
   readonly validationErrors?: RegistrationValidationErrors
@@ -2109,7 +2446,7 @@ function PatientFieldsForm({
     readonly approximateAgeYears?: MutableRefObject<HTMLInputElement | null>
     readonly ageAsOfDate?: MutableRefObject<HTMLInputElement | null>
   }
-  onDraftChange(draft: PatientEditableFields): void
+  onDraftChange(draft: PatientRegistrationFields): void
 }): React.JSX.Element {
   const isRegistration = mode === 'registration'
   const exactDobActive = isRegistration && draft.dateOfBirth !== null
@@ -2122,9 +2459,9 @@ function PatientFieldsForm({
     ? 'patient-registration-exact-dob-disabled-note'
     : undefined
 
-  const update = <TKey extends keyof PatientEditableFields>(
+  const update = <TKey extends keyof PatientRegistrationFields>(
     key: TKey,
-    value: PatientEditableFields[TKey]
+    value: PatientRegistrationFields[TKey]
   ): void => {
     if (!isRegistration) {
       onDraftChange({ ...draft, [key]: value })
@@ -2318,7 +2655,9 @@ function PatientFieldsForm({
         <span className="patient-field-label-text">Sex</span>
         <select
           value={draft.sex}
-          onChange={(event) => update('sex', event.target.value as PatientEditableFields['sex'])}
+          onChange={(event) =>
+            update('sex', event.target.value as PatientRegistrationFields['sex'])
+          }
         >
           <option value="UNKNOWN">Unknown</option>
           <option value="FEMALE">Female</option>
@@ -2359,29 +2698,18 @@ function PatientFieldsForm({
         <select
           value={draft.status}
           onChange={(event) =>
-            update('status', event.target.value as PatientEditableFields['status'])
+            update('status', event.target.value as PatientRegistrationFields['status'])
           }
         >
           <option value="ACTIVE">Active</option>
           <option value="INACTIVE">Inactive</option>
         </select>
       </label>
-      <label>
-        <span className="patient-field-label-text">Acknowledgment</span>
-        <select
-          value={draft.acknowledgmentStatus}
-          onChange={(event) =>
-            update(
-              'acknowledgmentStatus',
-              event.target.value as PatientEditableFields['acknowledgmentStatus']
-            )
-          }
-        >
-          <option value="NOT_REQUESTED">Not requested</option>
-          <option value="ACKNOWLEDGED">Acknowledged</option>
-          <option value="DECLINED">Declined</option>
-        </select>
-      </label>
+      {isRegistration ? (
+        <p className="patient-field-help patient-field-wide">
+          Participation/Data-Use Acknowledgment can be recorded after patient registration.
+        </p>
+      ) : null}
     </fieldset>
   )
 }
@@ -2649,12 +2977,25 @@ function DetailRow({
   )
 }
 
-function updateRegistrationDraftField<TKey extends keyof PatientEditableFields>(
-  draft: PatientEditableFields,
+function formatCurrentAcknowledgment(patient: PublicPatientDetail): string {
+  const status = formatAcknowledgmentStatusLabel(patient.acknowledgment.status)
+
+  if (
+    patient.acknowledgment.recordedAt === null ||
+    patient.acknowledgment.recordedByDisplayName === null
+  ) {
+    return status
+  }
+
+  return `${status}; ${patient.acknowledgment.recordedAt} by ${patient.acknowledgment.recordedByDisplayName}`
+}
+
+function updateRegistrationDraftField<TKey extends keyof PatientRegistrationFields>(
+  draft: PatientRegistrationFields,
   key: TKey,
-  value: PatientEditableFields[TKey]
-): PatientEditableFields {
-  const nextDraft: PatientEditableFields = { ...draft, [key]: value }
+  value: PatientRegistrationFields[TKey]
+): PatientRegistrationFields {
+  const nextDraft: PatientRegistrationFields = { ...draft, [key]: value }
 
   if (key === 'dateOfBirth' && typeof value === 'string' && isValidLocalDate(value)) {
     return {
@@ -2682,7 +3023,7 @@ function updateRegistrationDraftField<TKey extends keyof PatientEditableFields>(
   return nextDraft
 }
 
-function normalizeAgeEntryForSubmit(draft: PatientEditableFields): PatientEditableFields {
+function normalizeAgeEntryForSubmit(draft: PatientRegistrationFields): PatientRegistrationFields {
   if (draft.dateOfBirth !== null) {
     return {
       ...draft,
@@ -2704,7 +3045,7 @@ function normalizeAgeEntryForSubmit(draft: PatientEditableFields): PatientEditab
   }
 }
 
-function validateRegistrationDraft(draft: PatientEditableFields): {
+function validateRegistrationDraft(draft: PatientRegistrationFields): {
   readonly errors: RegistrationValidationErrors
   readonly focusField: RegistrationFocusField | null
 } {

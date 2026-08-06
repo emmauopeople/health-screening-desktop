@@ -1118,7 +1118,6 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
     search: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['search']>>
     get: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['get']>>
     create: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['create']>>
-    update: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['update']>>
     amendDemographics: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['amendDemographics']>>
     listDemographicAmendmentHistory: ReturnType<
       typeof vi.fn<HealthScreeningApi['patient']['listDemographicAmendmentHistory']>
@@ -1230,7 +1229,6 @@ function createAppApi(initialSession: PublicAuthenticationSession): AppApiHarnes
       ),
       get: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE'))),
       create: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE'))),
-      update: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE'))),
       amendDemographics: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE'))),
       listDemographicAmendmentHistory: vi.fn(() =>
         Promise.resolve(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))

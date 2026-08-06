@@ -18,8 +18,8 @@ import {
   firstRunSafeErrorMessages,
   ipcChannels,
   ipcFailureResultSchema,
+  patientCreateRequestSchema,
   patientSearchRequestSchema,
-  patientUpdateRequestSchema,
   type AppGetHealthResult,
   type AppGetInfoResult,
   type AppHealth,
@@ -85,7 +85,6 @@ describe('shared IPC contracts', () => {
         search: 'health-screening:patient:search',
         get: 'health-screening:patient:get',
         create: 'health-screening:patient:create',
-        update: 'health-screening:patient:update',
         amendDemographics: 'health-screening:patient:amend-demographics',
         listDemographicAmendmentHistory:
           'health-screening:patient:list-demographic-amendment-history',
@@ -103,7 +102,7 @@ describe('shared IPC contracts', () => {
         ...Object.values(ipcChannels.auth),
         ...Object.values(ipcChannels.patient)
       ]).size
-    ).toBe(23)
+    ).toBe(22)
   })
 
   it('keeps patient requests strict and main-process-authored', () => {
@@ -119,26 +118,22 @@ describe('shared IPC contracts', () => {
       pageSize: 25
     })
     expect(
-      patientUpdateRequestSchema.safeParse({
-        patientId: '11111111-1111-4111-8111-111111111111',
-        expectedRowVersion: 1,
-        patch: {
-          givenName: 'Ada',
-          familyName: 'M.',
-          otherNames: null,
-          dateOfBirth: '1980-01-01',
-          approximateAgeYears: null,
-          ageAsOfDate: null,
-          sex: 'FEMALE',
-          village: 'Messa',
-          quarter: null,
-          phone: null,
-          alternateContactName: null,
-          alternateContactPhone: null,
-          residenceNotes: null,
-          status: 'ACTIVE',
-          acknowledgmentStatus: 'ACKNOWLEDGED'
-        },
+      patientCreateRequestSchema.safeParse({
+        givenName: 'Ada',
+        familyName: 'M.',
+        otherNames: null,
+        dateOfBirth: '1980-01-01',
+        approximateAgeYears: null,
+        ageAsOfDate: null,
+        sex: 'FEMALE',
+        village: 'Messa',
+        quarter: null,
+        phone: null,
+        alternateContactName: null,
+        alternateContactPhone: null,
+        residenceNotes: null,
+        status: 'ACTIVE',
+        duplicateReviewToken: null,
         patientCode: 'PT-000001',
         updatedBy: '11111111-1111-4111-8111-111111111111'
       }).success

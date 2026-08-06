@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest'
 import {
   formatPatientCode,
   normalizeDuplicateReasonCodes,
-  normalizePatientEditableFields,
+  normalizePatientRegistrationFields,
   RepositoryValidationError
 } from '@main/database'
-import type { PatientEditableFields } from '@shared/ipc'
+import type { PatientRegistrationFields } from '@shared/ipc'
 
 const today = '2026-08-03'
 
@@ -19,7 +19,7 @@ describe('patient registry validation', () => {
   })
 
   it('trims names, preserves phone display, and stores normalized phone digits', () => {
-    const normalized = normalizePatientEditableFields(
+    const normalized = normalizePatientRegistrationFields(
       createFields({
         givenName: '  Ada\tMarie  ',
         familyName: '  Biko  ',
@@ -46,7 +46,7 @@ describe('patient registry validation', () => {
       createFields({ dateOfBirth: '1990-01-01', approximateAgeYears: 36, ageAsOfDate: today }),
       createFields({ dateOfBirth: null, approximateAgeYears: null, ageAsOfDate: null })
     ]) {
-      expect(() => normalizePatientEditableFields(fields, { today })).toThrow(
+      expect(() => normalizePatientRegistrationFields(fields, { today })).toThrow(
         RepositoryValidationError
       )
     }
@@ -59,7 +59,9 @@ describe('patient registry validation', () => {
   })
 })
 
-function createFields(overrides: Partial<PatientEditableFields> = {}): PatientEditableFields {
+function createFields(
+  overrides: Partial<PatientRegistrationFields> = {}
+): PatientRegistrationFields {
   return {
     givenName: 'Ada',
     familyName: 'Biko',
@@ -75,7 +77,6 @@ function createFields(overrides: Partial<PatientEditableFields> = {}): PatientEd
     alternateContactPhone: null,
     residenceNotes: null,
     status: 'ACTIVE',
-    acknowledgmentStatus: 'NOT_REQUESTED',
     ...overrides
   }
 }

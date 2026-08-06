@@ -112,7 +112,7 @@ export const publicPatientDetailSchema = publicPatientSummarySchema
   })
   .strict()
 
-export const patientEditableFieldsSchema = z
+export const patientRegistrationFieldsSchema = z
   .object({
     givenName: z.string().max(120).nullable(),
     familyName: z.string().max(120).nullable(),
@@ -127,8 +127,7 @@ export const patientEditableFieldsSchema = z
     alternateContactName: z.string().max(120).nullable(),
     alternateContactPhone: z.string().max(80).nullable(),
     residenceNotes: z.string().max(500).nullable(),
-    status: patientStatusSchema,
-    acknowledgmentStatus: patientAcknowledgmentStatusSchema
+    status: patientStatusSchema
   })
   .strict()
 
@@ -143,18 +142,12 @@ export const patientGetRequestSchema = exactObject({
 })
 
 export const patientCreateRequestSchema = withSafeTransportPreprocess(
-  patientEditableFieldsSchema
+  patientRegistrationFieldsSchema
     .extend({
       duplicateReviewToken: z.string().min(16).max(256).nullable()
     })
     .strict()
 )
-
-export const patientUpdateRequestSchema = exactObject({
-  patientId: patientUuidSchema,
-  expectedRowVersion: z.number().int().min(1).safe(),
-  patch: patientEditableFieldsSchema
-})
 
 export const patientDemographicAmendmentPatchSchema = withSafeTransportPreprocess(
   z
@@ -210,7 +203,7 @@ export const patientListRecentRequestSchema = exactObject({
 })
 
 export const patientFindDuplicatesRequestSchema = exactObject({
-  identity: patientEditableFieldsSchema.nullable(),
+  identity: patientRegistrationFieldsSchema.nullable(),
   patientId: patientUuidSchema.nullable(),
   limit: patientListLimitSchema
 })
@@ -313,21 +306,6 @@ export const patientCreateSuccessDataSchema = z.discriminatedUnion('status', [
   z
     .object({
       status: z.literal('CREATED'),
-      patient: publicPatientDetailSchema
-    })
-    .strict()
-])
-
-export const patientUpdateSuccessDataSchema = z.discriminatedUnion('status', [
-  z
-    .object({
-      status: z.literal('UPDATED'),
-      patient: publicPatientDetailSchema
-    })
-    .strict(),
-  z
-    .object({
-      status: z.literal('PATIENT_VERSION_CONFLICT'),
       patient: publicPatientDetailSchema
     })
     .strict()
@@ -463,12 +441,6 @@ export const patientCreateResultSchema = withSafeTransportPreprocess(
     patientFailureSchema
   ])
 )
-export const patientUpdateResultSchema = withSafeTransportPreprocess(
-  z.discriminatedUnion('ok', [
-    createIpcSuccessResultSchema(patientUpdateSuccessDataSchema),
-    patientFailureSchema
-  ])
-)
 export const patientAmendDemographicsResultSchema = withSafeTransportPreprocess(
   z.discriminatedUnion('ok', [
     createIpcSuccessResultSchema(patientAmendDemographicsSuccessDataSchema),
@@ -525,7 +497,7 @@ export type PublicPatientDemographicAmendmentRecord = z.infer<
 export type PublicPatientAcknowledgmentHistoryRecord = z.infer<
   typeof publicPatientAcknowledgmentHistoryRecordSchema
 >
-export type PatientEditableFields = z.infer<typeof patientEditableFieldsSchema>
+export type PatientRegistrationFields = z.infer<typeof patientRegistrationFieldsSchema>
 export type PatientDemographicAmendmentPatch = z.infer<
   typeof patientDemographicAmendmentPatchSchema
 >
@@ -535,7 +507,6 @@ export type PatientDemographicAmendmentValue = z.infer<
 export type PatientSearchRequest = z.infer<typeof patientSearchRequestSchema>
 export type PatientGetRequest = z.infer<typeof patientGetRequestSchema>
 export type PatientCreateRequest = z.infer<typeof patientCreateRequestSchema>
-export type PatientUpdateRequest = z.infer<typeof patientUpdateRequestSchema>
 export type PatientAmendDemographicsRequest = z.infer<typeof patientAmendDemographicsRequestSchema>
 export type PatientListDemographicAmendmentHistoryRequest = z.infer<
   typeof patientListDemographicAmendmentHistoryRequestSchema
@@ -552,7 +523,6 @@ export type PatientMarkNotDuplicateRequest = z.infer<typeof patientMarkNotDuplic
 export type PatientSearchResult = z.infer<typeof patientSearchResultSchema>
 export type PatientGetResult = z.infer<typeof patientGetResultSchema>
 export type PatientCreateResult = z.infer<typeof patientCreateResultSchema>
-export type PatientUpdateResult = z.infer<typeof patientUpdateResultSchema>
 export type PatientAmendDemographicsSuccessData = z.infer<
   typeof patientAmendDemographicsSuccessDataSchema
 >
@@ -894,7 +864,7 @@ function hasUnpairedSurrogate(value: string): boolean {
     if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
       const nextCodeUnit = value.charCodeAt(index + 1)
 
-      if (nextCodeUnit < 0xdc00 || nextCodeUnit > 0xdfff) {
+      if (Number.isNaN(nextCodeUnit) || nextCodeUnit < 0xdc00 || nextCodeUnit > 0xdfff) {
         return true
       }
 

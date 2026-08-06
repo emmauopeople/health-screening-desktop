@@ -17,9 +17,7 @@ import type {
   PatientMarkNotDuplicateRequest,
   PatientMarkNotDuplicateResult,
   PatientSearchRequest,
-  PatientSearchResult,
-  PatientUpdateRequest,
-  PatientUpdateResult
+  PatientSearchResult
 } from '@shared/ipc'
 
 export interface PatientServiceActor {
@@ -30,7 +28,6 @@ export interface PatientRegistryService {
   search(request: PatientSearchRequest, actor: PatientServiceActor): PatientSearchResult
   get(request: PatientGetRequest, actor: PatientServiceActor): PatientGetResult
   create(request: PatientCreateRequest, actor: PatientServiceActor): PatientCreateResult
-  update(request: PatientUpdateRequest, actor: PatientServiceActor): PatientUpdateResult
   listRecent(request: PatientListRecentRequest, actor: PatientServiceActor): PatientListRecentResult
   findDuplicates(
     request: PatientFindDuplicatesRequest,

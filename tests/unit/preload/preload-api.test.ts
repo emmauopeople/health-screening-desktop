@@ -140,7 +140,6 @@ describe('preload API factory', () => {
       'search',
       'get',
       'create',
-      'update',
       'amendDemographics',
       'listDemographicAmendmentHistory',
       'recordAcknowledgment',
@@ -202,8 +201,7 @@ describe('preload API factory', () => {
       'amendDemographics',
       'listDemographicAmendmentHistory',
       'recordAcknowledgment',
-      'listAcknowledgmentHistory',
-      'update'
+      'listAcknowledgmentHistory'
     ]) {
       expect(method in api.patient).toBe(true)
     }

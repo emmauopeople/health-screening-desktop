@@ -38,9 +38,7 @@ import type {
   PatientRecordAcknowledgmentRequest,
   PatientRecordAcknowledgmentResult,
   PatientSearchRequest,
-  PatientSearchResult,
-  PatientUpdateRequest,
-  PatientUpdateResult
+  PatientSearchResult
 } from './patient-contracts'
 import { createIpcResultSchema } from './result'
 
@@ -104,7 +102,6 @@ export interface HealthScreeningApi {
     search(request: PatientSearchRequest): Promise<PatientSearchResult>
     get(request: PatientGetRequest): Promise<PatientGetResult>
     create(request: PatientCreateRequest): Promise<PatientCreateResult>
-    update(request: PatientUpdateRequest): Promise<PatientUpdateResult>
     amendDemographics(
       request: PatientAmendDemographicsRequest
     ): Promise<PatientAmendDemographicsResult>

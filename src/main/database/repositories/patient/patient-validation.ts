@@ -6,7 +6,7 @@ import {
 } from '@main/database/repositories/repository-errors'
 import type {
   PatientAcknowledgmentStatus,
-  PatientEditableFields,
+  PatientRegistrationFields,
   PatientSex,
   PatientStatus
 } from '@shared/ipc'
@@ -55,8 +55,24 @@ export function parsePatientRowVersion(value: unknown): number {
   return value
 }
 
-export function normalizePatientEditableFields(
-  input: PatientEditableFields,
+export function normalizePatientRegistrationFields(
+  input: PatientRegistrationFields,
+  { today }: PatientNormalizationOptions
+): NormalizedPatientFields {
+  return normalizePatientFields(input, 'NOT_REQUESTED', { today })
+}
+
+export function normalizePatientDemographicFields(
+  input: PatientRegistrationFields,
+  acknowledgmentStatus: PatientAcknowledgmentStatus,
+  { today }: PatientNormalizationOptions
+): NormalizedPatientFields {
+  return normalizePatientFields(input, acknowledgmentStatus, { today })
+}
+
+function normalizePatientFields(
+  input: PatientRegistrationFields,
+  acknowledgmentStatusValue: unknown,
   { today }: PatientNormalizationOptions
 ): NormalizedPatientFields {
   try {
@@ -76,7 +92,7 @@ export function normalizePatientEditableFields(
     const alternateContactPhone = parsePatientPhoneDisplay(input.alternateContactPhone)
     const residenceNotes = parsePatientText(input.residenceNotes, 500, false)
     const status = parsePatientStatus(input.status)
-    const acknowledgmentStatus = parsePatientAcknowledgmentStatus(input.acknowledgmentStatus)
+    const acknowledgmentStatus = parsePatientAcknowledgmentStatus(acknowledgmentStatusValue)
 
     if (dateOfBirth !== null && approximateAgeYears !== null) {
       throw new RepositoryValidationError()

@@ -19,7 +19,8 @@ export {
 export {
   formatPatientCode,
   normalizeDuplicateReasonCodes,
-  normalizePatientEditableFields,
+  normalizePatientDemographicFields,
+  normalizePatientRegistrationFields,
   parsePatientCode,
   parsePatientEntityId,
   parsePatientRowVersion,
@@ -39,7 +40,6 @@ export type {
   PatientDisplayName,
   PatientDuplicateCandidateRecord,
   PatientDuplicatePairRecord,
-  PatientEditableInput,
   PatientNormalizationOptions,
   PatientNormalizedName,
   PatientPhoneDigits,
@@ -47,9 +47,8 @@ export type {
   PatientSearchInput,
   PatientSearchResultRecord,
   PatientSummaryRecord,
-  PatientUpdateResultRecord,
-  UpdatePatientDemographicsRepositoryInput,
-  UpdatePatientRepositoryInput
+  PatientRegistrationInput,
+  UpdatePatientDemographicsRepositoryInput
 } from './patient-types'
 export type {
   InsertPatientAcknowledgmentInput,

@@ -559,7 +559,6 @@ function createApi({
       search: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
       get: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
       create: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
-      update: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
       amendDemographics: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
       listDemographicAmendmentHistory: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
       recordAcknowledgment: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),

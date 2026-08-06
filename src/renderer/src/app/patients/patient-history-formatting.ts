@@ -31,7 +31,7 @@ const demographicReasonLabels = Object.freeze({
   OTHER: 'Other'
 } satisfies Record<PatientDemographicAmendmentReasonCode, string>)
 
-const acknowledgmentStatusLabels = Object.freeze({
+const participationAcknowledgmentLabels = Object.freeze({
   NOT_REQUESTED: 'Not requested',
   ACKNOWLEDGED: 'Acknowledged',
   DECLINED: 'Declined'
@@ -50,7 +50,7 @@ export function formatDemographicReasonLabel(
 }
 
 export function formatAcknowledgmentStatusLabel(status: PatientAcknowledgmentStatus): string {
-  return acknowledgmentStatusLabels[status]
+  return participationAcknowledgmentLabels[status]
 }
 
 export function formatHistoryValue(value: PatientDemographicAmendmentValue): string {

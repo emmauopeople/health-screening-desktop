@@ -25,6 +25,7 @@ interface PatientDetailTabsProps {
   readonly activeTab: PatientDetailTab
   readonly currentDetails: ReactNode
   readonly demographicHistoryRevision: number
+  readonly acknowledgmentHistoryRevision: number
   readonly securityEpochRef: MutableRefObject<number>
   registerStateInvalidator: RegisterPatientStateInvalidator
   onPatientFailure(code: PatientErrorCode, message: string): boolean
@@ -72,6 +73,7 @@ export function PatientDetailTabs({
   activeTab,
   currentDetails,
   demographicHistoryRevision,
+  acknowledgmentHistoryRevision,
   securityEpochRef,
   registerStateInvalidator,
   onPatientFailure,
@@ -91,6 +93,7 @@ export function PatientDetailTabs({
   const demographicHistoryStateRef = useLatestRef(demographicHistoryState)
   const acknowledgmentHistoryStateRef = useLatestRef(acknowledgmentHistoryState)
   const demographicHistoryRevisionRef = useRef(demographicHistoryRevision)
+  const acknowledgmentHistoryRevisionRef = useRef(acknowledgmentHistoryRevision)
   const patientId = patient?.id ?? null
 
   const invalidateHistoryState = useCallback((): void => {
@@ -131,6 +134,26 @@ export function PatientDetailTabs({
       cancelled = true
     }
   }, [demographicHistoryRevision])
+
+  useEffect(() => {
+    if (acknowledgmentHistoryRevisionRef.current === acknowledgmentHistoryRevision) {
+      return
+    }
+
+    acknowledgmentHistoryRevisionRef.current = acknowledgmentHistoryRevision
+    acknowledgmentRequestRef.current += 1
+    let cancelled = false
+
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setAcknowledgmentHistoryState({ status: 'IDLE' })
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [acknowledgmentHistoryRevision])
 
   const loadDemographicHistory = useCallback(
     async (page: number, pageSize: PatientHistoryPageSize): Promise<void> => {
