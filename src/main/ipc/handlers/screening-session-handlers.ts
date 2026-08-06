@@ -75,6 +75,7 @@ export interface ScreeningSessionIpcHandlers {
 }
 
 const allLocalRoles = Object.freeze(['LOCAL_ADMIN', 'NURSE', 'TRAINED_SCREENER'] as const)
+const reopenRoles = Object.freeze(['LOCAL_ADMIN', 'NURSE'] as const)
 
 export function createScreeningSessionIpcHandlers({
   navigationPolicy,
@@ -157,7 +158,7 @@ export function createScreeningSessionIpcHandlers({
         requestSchema: screeningSessionReopenRequestSchema,
         resultSchema: screeningSessionReopenResultSchema,
         logger,
-        authorize: () => authorization.requireAnyRole(event, allLocalRoles),
+        authorize: () => authorization.requireAnyRole(event, reopenRoles),
         invoke: (data, actor) =>
           mapReopenResult(screeningSessionService.reopen(toInternalReopenRequest(data), actor))
       })

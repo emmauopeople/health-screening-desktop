@@ -8,6 +8,7 @@ import type {
   ScreeningSessionWorkspaceContextService
 } from '@main/application'
 import {
+  LocalSessionAuthorizationError,
   LocalSessionLockedError,
   LocalSessionPasswordChangeRequiredError,
   LocalSessionUnauthenticatedError
@@ -65,7 +66,7 @@ const listRequest: ScreeningSessionListRequest = {
 }
 
 describe('screening-session IPC handlers', () => {
-  it('authorizes all local roles and passes only trusted session actor data', async () => {
+  it('authorizes context, create, close, get, and list for all local roles using trusted actor data', async () => {
     for (const role of ['LOCAL_ADMIN', 'NURSE', 'TRAINED_SCREENER'] as const) {
       const harness = createHarness({ role })
 
@@ -91,12 +92,6 @@ describe('screening-session IPC handlers', () => {
         data: { status: 'CLOSED' }
       })
       await expect(
-        harness.handlers.reopen(createAllowedEvent(), reopenRequest)
-      ).resolves.toMatchObject({
-        ok: true,
-        data: { status: role === 'TRAINED_SCREENER' ? 'FORBIDDEN' : 'REOPENED' }
-      })
-      await expect(
         harness.handlers.getById(createAllowedEvent(), getRequest)
       ).resolves.toMatchObject({
         ok: true,
@@ -117,10 +112,7 @@ describe('screening-session IPC handlers', () => {
         { ...closeRequest, reason: sensitiveReason },
         { userId, role }
       )
-      expect(harness.screeningSessionService.reopen).toHaveBeenCalledWith(reopenRequest, {
-        userId,
-        role
-      })
+      expect(harness.screeningSessionService.reopen).not.toHaveBeenCalled()
       expect(harness.screeningSessionService.getById).toHaveBeenCalledWith(getRequest, {
         userId,
         role
@@ -138,6 +130,49 @@ describe('screening-session IPC handlers', () => {
         Object.isFrozen(await harness.handlers.create(createAllowedEvent(), createRequest))
       ).toBe(true)
     }
+  })
+
+  it('authorizes reopen only for local administrators and nurses before request parsing', async () => {
+    for (const role of ['LOCAL_ADMIN', 'NURSE'] as const) {
+      const harness = createHarness({ role })
+
+      await expect(
+        harness.handlers.reopen(createAllowedEvent(), reopenRequest)
+      ).resolves.toMatchObject({
+        ok: true,
+        data: { status: 'REOPENED' }
+      })
+      expect(harness.authenticationSessionService.requireAnyRole).toHaveBeenCalledWith([
+        'LOCAL_ADMIN',
+        'NURSE'
+      ])
+      expect(harness.screeningSessionService.reopen).toHaveBeenCalledWith(reopenRequest, {
+        userId,
+        role
+      })
+    }
+
+    const harness = createHarness({ role: 'TRAINED_SCREENER' })
+    let requestInspected = false
+    const hostileRequest = new Proxy(
+      {},
+      {
+        getOwnPropertyDescriptor() {
+          requestInspected = true
+          throw new Error('proxy leaked sensitive reopen request')
+        }
+      }
+    )
+
+    await expect(harness.handlers.reopen(createAllowedEvent(), hostileRequest)).resolves.toEqual(
+      createScreeningSessionFailure('AUTHORIZATION_FAILED')
+    )
+    expect(harness.authenticationSessionService.requireAnyRole).toHaveBeenCalledWith([
+      'LOCAL_ADMIN',
+      'NURSE'
+    ])
+    expect(requestInspected).toBe(false)
+    expect(harness.screeningSessionService.reopen).not.toHaveBeenCalled()
   })
 
   it('performs sender and authentication authorization before parsing unsafe requests', async () => {
@@ -360,7 +395,9 @@ function createAuthenticationSessionService(
       throw authError
     }
 
-    expect(roles).toEqual(['LOCAL_ADMIN', 'NURSE', 'TRAINED_SCREENER'])
+    if (!roles.includes(role)) {
+      throw new LocalSessionAuthorizationError()
+    }
 
     return createActiveContext(role)
   })
@@ -389,10 +426,10 @@ function createScreeningSessionService(
     ),
     reopen: vi.fn(
       overrides.reopen ??
-        ((_, actor) =>
-          actor.role === 'TRAINED_SCREENER'
-            ? { status: 'FORBIDDEN' }
-            : { status: 'REOPENED', session: createSession() })
+        (() => ({
+          status: 'REOPENED',
+          session: createSession()
+        }))
     ),
     getById: vi.fn(overrides.getById ?? (() => ({ status: 'FOUND', session: createSession() }))),
     list: vi.fn(

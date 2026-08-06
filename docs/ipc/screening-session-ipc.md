@@ -25,7 +25,7 @@ Allowed roles:
 - `NURSE`: context, create, close, reopen, get, list
 - `TRAINED_SCREENER`: context, create, close, get, list
 
-The IPC handler passes only `{ userId, role }` from the authenticated main-process session to the application service. A trained screener's reopen request reaches the HSD-027C service and returns the service-owned `FORBIDDEN` business result.
+The IPC handler passes only `{ userId, role }` from the authenticated main-process session to the application service. A trained screener's reopen request is denied at the authenticated handler boundary before request parsing or application-service invocation. HSD-027C retains its service-owned `FORBIDDEN` result as defense in depth for any authorized caller path that reaches the service.
 
 ## Workspace Context
 
@@ -76,7 +76,7 @@ Handlers and contracts do not log or return SQL, database paths, raw SQLite mess
 
 Application startup creates one production screening-session service and one workspace-context service from the existing database runtime. The same instances are reused for all screening-session handlers.
 
-Registration uses fixed channels and deterministic disposal. Re-registration first removes application-owned handlers, disposal is idempotent, and unrelated app, first-run, authentication, patient, or external handlers remain untouched.
+Registration uses fixed channels and deterministic disposal. Focused screening-session registration rejects a duplicate active registration with a fixed controlled error and leaves the original handlers in place. If a partial registration fails while Electron handlers are being installed, only the screening-session handlers installed by that failed attempt are removed. Disposal is idempotent, successful disposal removes only screening-session handlers, and unrelated app, first-run, authentication, patient, or external handlers remain untouched. Application-wide startup registration still preserves the existing app, first-run, authentication, and patient handler behavior.
 
 ## HSD-028B Boundary
 

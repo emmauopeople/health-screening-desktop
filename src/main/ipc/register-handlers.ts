@@ -10,10 +10,30 @@ import type { PatientIpcHandlerDependencies } from '@main/ipc/handlers/patient-h
 import { createPatientIpcHandlers } from '@main/ipc/handlers/patient-handlers'
 import type { ScreeningSessionIpcHandlerDependencies } from '@main/ipc/handlers/screening-session-handlers'
 import { createScreeningSessionIpcHandlers } from '@main/ipc/handlers/screening-session-handlers'
-import { ipcChannels } from '@shared/ipc'
+import { ipcChannels, type ScreeningSessionIpcChannel } from '@shared/ipc'
 
 export type ApplicationIpcMain = Pick<IpcMain, 'handle' | 'removeHandler'>
 export type ApplicationIpcDisposer = () => void
+type ApplicationIpcListener = Parameters<ApplicationIpcMain['handle']>[1]
+
+export class ApplicationIpcRegistrationError extends Error {
+  constructor() {
+    super('Application IPC handler registration failed.')
+    this.name = 'ApplicationIpcRegistrationError'
+    delete this.stack
+  }
+}
+
+const screeningSessionIpcChannels: readonly ScreeningSessionIpcChannel[] = Object.freeze([
+  ipcChannels.screeningSessions.getWorkspaceContext,
+  ipcChannels.screeningSessions.create,
+  ipcChannels.screeningSessions.close,
+  ipcChannels.screeningSessions.reopen,
+  ipcChannels.screeningSessions.getById,
+  ipcChannels.screeningSessions.list
+])
+const activeScreeningSessionRegistrations = new WeakSet<ApplicationIpcMain>()
+
 export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependencies {
   readonly firstRun: FirstRunIpcHandlerDependencies
   readonly auth: AuthenticationIpcHandlerDependencies
@@ -80,19 +100,40 @@ export function registerScreeningSessionIpcHandlers(
   applicationIpcMain: ApplicationIpcMain,
   dependencies: ScreeningSessionIpcHandlerDependencies
 ): ApplicationIpcDisposer {
-  disposeScreeningSessionIpcHandlers(applicationIpcMain)
+  if (activeScreeningSessionRegistrations.has(applicationIpcMain)) {
+    throw new ApplicationIpcRegistrationError()
+  }
 
   const screeningSessionHandlers = createScreeningSessionIpcHandlers(dependencies)
+  const registrations: ReadonlyArray<
+    readonly [ScreeningSessionIpcChannel, ApplicationIpcListener]
+  > = [
+    [
+      ipcChannels.screeningSessions.getWorkspaceContext,
+      screeningSessionHandlers.getWorkspaceContext
+    ],
+    [ipcChannels.screeningSessions.create, screeningSessionHandlers.create],
+    [ipcChannels.screeningSessions.close, screeningSessionHandlers.close],
+    [ipcChannels.screeningSessions.reopen, screeningSessionHandlers.reopen],
+    [ipcChannels.screeningSessions.getById, screeningSessionHandlers.getById],
+    [ipcChannels.screeningSessions.list, screeningSessionHandlers.list]
+  ]
+  const installedChannels: ScreeningSessionIpcChannel[] = []
 
-  applicationIpcMain.handle(
-    ipcChannels.screeningSessions.getWorkspaceContext,
-    screeningSessionHandlers.getWorkspaceContext
-  )
-  applicationIpcMain.handle(ipcChannels.screeningSessions.create, screeningSessionHandlers.create)
-  applicationIpcMain.handle(ipcChannels.screeningSessions.close, screeningSessionHandlers.close)
-  applicationIpcMain.handle(ipcChannels.screeningSessions.reopen, screeningSessionHandlers.reopen)
-  applicationIpcMain.handle(ipcChannels.screeningSessions.getById, screeningSessionHandlers.getById)
-  applicationIpcMain.handle(ipcChannels.screeningSessions.list, screeningSessionHandlers.list)
+  try {
+    for (const [channel, listener] of registrations) {
+      applicationIpcMain.handle(channel, listener)
+      installedChannels.push(channel)
+    }
+  } catch {
+    for (const channel of installedChannels.reverse()) {
+      applicationIpcMain.removeHandler(channel)
+    }
+
+    throw new ApplicationIpcRegistrationError()
+  }
+
+  activeScreeningSessionRegistrations.add(applicationIpcMain)
 
   return () => disposeScreeningSessionIpcHandlers(applicationIpcMain)
 }
@@ -123,10 +164,9 @@ export function disposeApplicationIpcHandlers(applicationIpcMain: ApplicationIpc
 }
 
 export function disposeScreeningSessionIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
-  applicationIpcMain.removeHandler(ipcChannels.screeningSessions.getWorkspaceContext)
-  applicationIpcMain.removeHandler(ipcChannels.screeningSessions.create)
-  applicationIpcMain.removeHandler(ipcChannels.screeningSessions.close)
-  applicationIpcMain.removeHandler(ipcChannels.screeningSessions.reopen)
-  applicationIpcMain.removeHandler(ipcChannels.screeningSessions.getById)
-  applicationIpcMain.removeHandler(ipcChannels.screeningSessions.list)
+  for (const channel of screeningSessionIpcChannels) {
+    applicationIpcMain.removeHandler(channel)
+  }
+
+  activeScreeningSessionRegistrations.delete(applicationIpcMain)
 }

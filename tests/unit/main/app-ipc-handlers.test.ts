@@ -8,6 +8,7 @@ import {
   type IpcOperationalLogger
 } from '@main/ipc/handlers/app-handlers'
 import {
+  ApplicationIpcRegistrationError,
   disposeApplicationIpcHandlers,
   disposeScreeningSessionIpcHandlers,
   registerApplicationIpcHandlers,
@@ -305,6 +306,63 @@ describe('application IPC handler registration', () => {
       'health-screening:first-run:get-state',
       'health-screening:patient:search'
     ])
+
+    registerScreeningSessionIpcHandlers(ipcMain, createDependencies().screeningSessions)
+
+    expect(ipcMain.handlers.has(ipcChannels.screeningSessions.create)).toBe(true)
+  })
+
+  it('rejects duplicate screening-session registration without replacing original handlers', () => {
+    const ipcMain = createMockIpcMain()
+    const dispose = registerScreeningSessionIpcHandlers(
+      ipcMain,
+      createDependencies().screeningSessions
+    )
+    const originalHandlers = new Map(ipcMain.handlers)
+
+    expect(() =>
+      registerScreeningSessionIpcHandlers(ipcMain, createDependencies().screeningSessions)
+    ).toThrow(ApplicationIpcRegistrationError)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(6)
+
+    for (const [channel, handler] of originalHandlers) {
+      expect(ipcMain.handlers.get(channel)).toBe(handler)
+    }
+
+    dispose()
+  })
+
+  it('cleans up only screening-session handlers installed by a failed partial registration', () => {
+    const ipcMain = createMockIpcMain({
+      throwOnHandleChannel: ipcChannels.screeningSessions.reopen
+    })
+    const unrelatedHandler = vi.fn()
+    const preexistingReopenHandler = vi.fn()
+    ipcMain.handlers.set('unrelated:channel', unrelatedHandler)
+    ipcMain.handlers.set(ipcChannels.screeningSessions.reopen, preexistingReopenHandler)
+
+    let error: unknown
+
+    try {
+      registerScreeningSessionIpcHandlers(ipcMain, createDependencies().screeningSessions)
+    } catch (caught) {
+      error = caught
+    }
+
+    expect(error).toBeInstanceOf(ApplicationIpcRegistrationError)
+    expect(String(error)).toBe(
+      'ApplicationIpcRegistrationError: Application IPC handler registration failed.'
+    )
+    expect(String(error)).not.toContain('secret')
+    expect(ipcMain.handlers.get('unrelated:channel')).toBe(unrelatedHandler)
+    expect(ipcMain.handlers.get(ipcChannels.screeningSessions.reopen)).toBe(
+      preexistingReopenHandler
+    )
+    expect(ipcMain.handlers.has(ipcChannels.screeningSessions.getWorkspaceContext)).toBe(false)
+    expect(ipcMain.handlers.has(ipcChannels.screeningSessions.create)).toBe(false)
+    expect(ipcMain.handlers.has(ipcChannels.screeningSessions.close)).toBe(false)
+    expect(ipcMain.handlers.has(ipcChannels.screeningSessions.getById)).toBe(false)
+    expect(ipcMain.handlers.has(ipcChannels.screeningSessions.list)).toBe(false)
   })
 })
 
@@ -468,7 +526,11 @@ function createLogger(): TestLogger {
   } as TestLogger
 }
 
-function createMockIpcMain(): ApplicationIpcMain & {
+function createMockIpcMain({
+  throwOnHandleChannel
+}: {
+  readonly throwOnHandleChannel?: string
+} = {}): ApplicationIpcMain & {
   handlers: Map<string, unknown>
   handle: ReturnType<typeof vi.fn>
   removeHandler: ReturnType<typeof vi.fn>
@@ -478,6 +540,10 @@ function createMockIpcMain(): ApplicationIpcMain & {
   return {
     handlers,
     handle: vi.fn((channel: string, listener: unknown) => {
+      if (channel === throwOnHandleChannel) {
+        throw new Error('secret duplicate handler failure')
+      }
+
       handlers.set(channel, listener)
     }),
     removeHandler: vi.fn((channel: string) => {

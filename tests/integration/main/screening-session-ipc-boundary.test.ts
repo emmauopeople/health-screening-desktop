@@ -10,6 +10,7 @@ import {
   createProductionLocalAuthenticationSessionService,
   createScreeningSessionService,
   createScreeningSessionWorkspaceContextService,
+  LocalSessionAuthorizationError,
   type ActiveLocalSessionContext,
   type LocalAuthenticationSessionService
 } from '@main/application'
@@ -146,9 +147,17 @@ describe('screening-session IPC integration boundary', () => {
           expectedRowVersion: 2,
           reason: sensitiveReason
         })
-      ).resolves.toEqual({ ok: true, data: { status: 'FORBIDDEN' } })
+      ).resolves.toMatchObject({ ok: false, error: { code: 'AUTHORIZATION_FAILED' } })
       expect(readRawSession(connection)).toMatchObject({ status: 'CLOSED', row_version: 2 })
       expect(readLifecycleTransitions(connection)).toEqual(['CREATED', 'CLOSED'])
+      expect(readScreeningAuditActions(connection)).toEqual([
+        'SCREENING_SESSION_CREATED',
+        'SCREENING_SESSION_CLOSED'
+      ])
+      expect(readScreeningOutboxOperations(connection)).toEqual([
+        'SCREENING_SESSION_CREATED',
+        'SCREENING_SESSION_CLOSED'
+      ])
 
       await expect(
         handlers.reopen(createAllowedEvent(), {
@@ -404,7 +413,13 @@ function createFakeAuthenticationSessionService({
     logout: vi.fn(),
     recordActivity: vi.fn(),
     requireActiveSession: vi.fn(() => context),
-    requireAnyRole: vi.fn(() => context)
+    requireAnyRole: vi.fn((allowedRoles: readonly LocalUserRole[]) => {
+      if (!allowedRoles.includes(role)) {
+        throw new LocalSessionAuthorizationError()
+      }
+
+      return context
+    })
   } as unknown as LocalAuthenticationSessionService
 }
 
