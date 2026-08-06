@@ -589,6 +589,151 @@ describe('screening session service integration', () => {
     }
   })
 
+  it('rolls back close after session, audit, and outbox write boundaries', async () => {
+    for (const failureMode of ['after-session', 'after-audit', 'after-outbox'] as const) {
+      await withScreeningSessionService(
+        ({ connection, service }) => {
+          seedCoreRecords(connection)
+          insertSession(connection)
+          insertLifecycleHistory(connection, {
+            id: createdHistoryId,
+            screeningSessionId: sessionId,
+            transitionType: 'CREATED',
+            fromStatus: null,
+            toStatus: 'OPEN',
+            reason: null,
+            changedBy: adminId,
+            changedAt: now,
+            priorRowVersion: null,
+            resultingRowVersion: 1
+          })
+
+          const error = captureError(() =>
+            service.close(
+              {
+                id: parseEntityId(sessionId),
+                expectedRowVersion: 1,
+                reason: sensitiveReason
+              },
+              nurseActor
+            )
+          )
+
+          expect(error).toBeInstanceOf(ScreeningSessionServicePersistenceError)
+          expect(readRawSession(connection, sessionId)).toMatchObject({
+            status: 'OPEN',
+            row_version: 1,
+            closed_by: null,
+            closed_at: null
+          })
+          expect(readLifecycleRows(connection, sessionId)).toEqual([
+            expect.objectContaining({
+              id: createdHistoryId,
+              transition_type: 'CREATED',
+              resulting_row_version: 1
+            })
+          ])
+          expect(readLifecycleRows(connection, sessionId)).not.toEqual(
+            expect.arrayContaining([expect.objectContaining({ transition_type: 'CLOSED' })])
+          )
+          expect(readTableCount(connection, 'audit_log')).toBe(0)
+          expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+          expectSafeControlledError(error)
+        },
+        {
+          failureMode,
+          generatedIds: [closedHistoryId, closedAuditId, closedOutboxId],
+          timestamps: [later]
+        }
+      )
+    }
+  })
+
+  it('rolls back reopen after session, audit, and outbox write boundaries', async () => {
+    for (const failureMode of ['after-session', 'after-audit', 'after-outbox'] as const) {
+      await withScreeningSessionService(
+        ({ connection, service }) => {
+          seedCoreRecords(connection)
+          insertSession(connection, {
+            status: 'CLOSED',
+            closedBy: nurseId,
+            closedAt: later,
+            rowVersion: 2
+          })
+          insertLifecycleHistory(connection, {
+            id: createdHistoryId,
+            screeningSessionId: sessionId,
+            transitionType: 'CREATED',
+            fromStatus: null,
+            toStatus: 'OPEN',
+            reason: null,
+            changedBy: adminId,
+            changedAt: now,
+            priorRowVersion: null,
+            resultingRowVersion: 1
+          })
+          insertLifecycleHistory(connection, {
+            id: closedHistoryId,
+            screeningSessionId: sessionId,
+            transitionType: 'CLOSED',
+            fromStatus: 'OPEN',
+            toStatus: 'CLOSED',
+            reason: sensitiveReason,
+            changedBy: nurseId,
+            changedAt: later,
+            priorRowVersion: 1,
+            resultingRowVersion: 2
+          })
+
+          const error = captureError(() =>
+            service.reopen(
+              {
+                id: parseEntityId(sessionId),
+                expectedRowVersion: 2,
+                reason: 'Screening resumed after staff review.'
+              },
+              adminActor
+            )
+          )
+
+          expect(error).toBeInstanceOf(ScreeningSessionServicePersistenceError)
+          expect(readRawSession(connection, sessionId)).toMatchObject({
+            status: 'CLOSED',
+            row_version: 2,
+            closed_by: nurseId,
+            closed_at: later
+          })
+          expect(readLifecycleRows(connection, sessionId)).toEqual([
+            expect.objectContaining({
+              id: createdHistoryId,
+              transition_type: 'CREATED',
+              resulting_row_version: 1
+            }),
+            expect.objectContaining({
+              id: closedHistoryId,
+              transition_type: 'CLOSED',
+              resulting_row_version: 2,
+              changed_by: nurseId,
+              changed_at: later,
+              reason: sensitiveReason
+            })
+          ])
+          expect(readLifecycleRows(connection, sessionId)).not.toEqual(
+            expect.arrayContaining([expect.objectContaining({ transition_type: 'REOPENED' })])
+          )
+          expect(readTableCount(connection, 'audit_log')).toBe(0)
+          expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+          expectSafeControlledError(error)
+        },
+        {
+          failureMode,
+          generatedIds: [reopenedHistoryId, reopenedAuditId, reopenedOutboxId],
+          timestamps: [third]
+        }
+      )
+    }
+  })
+
   it('keeps patient outbox behavior unchanged', async () => {
     await withScreeningSessionService(({ connection, executor }) => {
       seedCoreRecords(connection)
@@ -762,6 +907,30 @@ function wrapScreeningSessionRepository(
       const result = repository.insert(connection, input)
 
       if (failureMode === 'after-session') {
+        throw new RepositoryWriteError()
+      }
+
+      return result
+    },
+    close(
+      connection: Parameters<ScreeningSessionRepository['close']>[0],
+      input: Parameters<ScreeningSessionRepository['close']>[1]
+    ) {
+      const result = repository.close(connection, input)
+
+      if (failureMode === 'after-session' && result.status === 'CLOSED') {
+        throw new RepositoryWriteError()
+      }
+
+      return result
+    },
+    reopen(
+      connection: Parameters<ScreeningSessionRepository['reopen']>[0],
+      input: Parameters<ScreeningSessionRepository['reopen']>[1]
+    ) {
+      const result = repository.reopen(connection, input)
+
+      if (failureMode === 'after-session' && result.status === 'REOPENED') {
         throw new RepositoryWriteError()
       }
 
