@@ -693,6 +693,9 @@ export function ScreeningSessionWorkspace({
     activeLocationId !== null &&
     selectedSession.locationId === activeLocationId &&
     selectedSession.sessionDate === deploymentLocalDate
+  const selectedSessionCanBeActive =
+    selectedSession !== null &&
+    isSessionActiveInWorkspace(selectedSession, contextState, activeLocationId)
   const listedTodaySession =
     activeLocationId !== null && listState.status === 'READY'
       ? (listState.items.find(
@@ -1099,7 +1102,7 @@ export function ScreeningSessionWorkspace({
 
             {contextState.status === 'LOADING' ? (
               <p className="screening-state-note" role="status">
-                Loading trusted screening-session context.
+                Loading locations...
               </p>
             ) : null}
             {contextState.status === 'ERROR' ? (
@@ -1191,15 +1194,16 @@ export function ScreeningSessionWorkspace({
               <SessionDetail
                 session={selectedSession}
                 locationName={selectedSessionLocationName}
-                isActive={activeSessionId === selectedSession.id}
+                isActive={activeSessionId === selectedSession.id && selectedSessionCanBeActive}
+                canActivate={selectedSessionCanBeActive}
                 canReopen={canReopen}
                 commandId={commandId}
                 operationPending={operationPending}
                 onUseSession={() => {
-                  if (selectedSession.status !== 'OPEN') {
+                  if (!selectedSessionCanBeActive) {
                     setActiveSessionId(null)
                     setStatusMessage(
-                      'Closed sessions can be inspected but cannot be active.',
+                      "Only today's open session for the selected location can be active.",
                       'ALERT'
                     )
                     return
@@ -1212,10 +1216,7 @@ export function ScreeningSessionWorkspace({
                 onClose={() => openCloseDialog(selectedSession)}
                 onReopen={() => openReopenDialog(selectedSession)}
                 onOpenNewScreening={() => {
-                  setStatusMessage(
-                    'Patient enrollment and encounter creation are not available until the approved screening workflow checkpoint.',
-                    'STATUS'
-                  )
+                  setStatusMessage('Patient enrollment is not available yet.', 'STATUS')
                 }}
               />
             )}
@@ -1375,6 +1376,7 @@ function SessionDetail({
   session,
   locationName,
   isActive,
+  canActivate,
   canReopen,
   commandId,
   operationPending,
@@ -1387,6 +1389,7 @@ function SessionDetail({
   readonly session: PublicScreeningSession
   readonly locationName: string
   readonly isActive: boolean
+  readonly canActivate: boolean
   readonly canReopen: boolean
   readonly commandId: ScreeningSessionWorkspaceCommandId
   readonly operationPending: boolean
@@ -1440,14 +1443,14 @@ function SessionDetail({
       ) : null}
       {commandId === 'SCREENING_NEW_SCREENING' ? (
         <div className="screening-message" role="status">
-          Encounter entry is not available yet. Select an open session for now.
+          Patient enrollment is not available yet.
         </div>
       ) : null}
       <div className="screening-action-row">
         <button
           type="button"
           className="button button-secondary"
-          disabled={session.status !== 'OPEN'}
+          disabled={!canActivate}
           onClick={onUseSession}
         >
           Select session
@@ -1460,7 +1463,7 @@ function SessionDetail({
             <button
               type="button"
               className="button button-primary"
-              disabled={operationPending}
+              disabled={operationPending || !canActivate}
               onClick={commandId === 'SCREENING_NEW_SCREENING' ? onOpenNewScreening : onUseSession}
             >
               New Screening
