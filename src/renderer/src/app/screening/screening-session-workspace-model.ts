@@ -85,7 +85,7 @@ export function getScreeningSessionFailureMessage(code: ScreeningSessionErrorCod
     case 'IPC_FORBIDDEN':
       return 'This window is not allowed to manage screening sessions.'
     case 'IPC_UNAVAILABLE':
-      return 'The desktop service is unavailable. Try again after local services reconnect.'
+      return 'Session tools are unavailable. Try again after local services reconnect.'
     case 'INTERNAL_ERROR':
       return 'The application could not complete the screening-session request.'
     case 'AUTH_UNAUTHENTICATED':

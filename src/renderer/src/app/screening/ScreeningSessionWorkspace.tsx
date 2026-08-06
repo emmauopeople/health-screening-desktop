@@ -136,7 +136,11 @@ export function ScreeningSessionWorkspace({
   const pendingListKeyRef = useRef<string | null>(null)
   const messageRef = useRef<HTMLDivElement | null>(null)
   const dialogErrorRef = useRef<HTMLDivElement | null>(null)
+  const activeLocationIdRef = useRef<string | null>(null)
+  const activeSessionIdRef = useRef<string | null>(null)
   const selectedSessionIdRef = useRef<string | null>(null)
+  const selectedSessionRef = useRef<PublicScreeningSession | null>(null)
+  const deploymentLocalDateRef = useRef<string | null>(null)
   const [contextState, setContextState] = useState<WorkspaceContextState>(
     protectedEmptyContextState
   )
@@ -154,6 +158,18 @@ export function ScreeningSessionWorkspace({
   useEffect(() => {
     selectedSessionIdRef.current = selectedSessionId
   }, [selectedSessionId])
+
+  useEffect(() => {
+    activeLocationIdRef.current = activeLocationId
+  }, [activeLocationId])
+
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId
+  }, [activeSessionId])
+
+  useEffect(() => {
+    selectedSessionRef.current = selectedSession
+  }, [selectedSession])
 
   const focusMessage = useCallback((): void => {
     queueMicrotask(() => {
@@ -214,6 +230,80 @@ export function ScreeningSessionWorkspace({
     ]
   )
 
+  const clearSessionReference = useCallback((sessionId: string | null = null): void => {
+    setSelectedSessionId((currentSelectedSessionId) =>
+      sessionId === null || currentSelectedSessionId === sessionId ? null : currentSelectedSessionId
+    )
+    setSelectedSession((currentSelectedSession) =>
+      sessionId === null || currentSelectedSession?.id === sessionId ? null : currentSelectedSession
+    )
+    setActiveSessionId((currentActiveSessionId) =>
+      sessionId === null || currentActiveSessionId === sessionId ? null : currentActiveSessionId
+    )
+  }, [])
+
+  const applyAuthoritativeSession = useCallback(
+    (session: PublicScreeningSession, options: { readonly activate?: boolean } = {}): void => {
+      if (!isSessionInspectableInWorkspace(session, contextState, activeLocationId)) {
+        clearSessionReference(session.id)
+        return
+      }
+
+      setSelectedSessionId(session.id)
+      setSelectedSession(session)
+      setActiveSessionId((currentActiveSessionId) => {
+        const canBeActive = isSessionActiveInWorkspace(session, contextState, activeLocationId)
+
+        if (canBeActive && (options.activate === true || currentActiveSessionId === session.id)) {
+          return session.id
+        }
+
+        return currentActiveSessionId === session.id || options.activate === true
+          ? null
+          : currentActiveSessionId
+      })
+    },
+    [activeLocationId, clearSessionReference, contextState]
+  )
+
+  const getAuthoritativeSessionForListReconciliation = useCallback(
+    async (
+      sessionId: string,
+      startedSecurityEpoch: number,
+      listRequestId: number
+    ): Promise<PublicScreeningSession | null | 'STALE'> => {
+      try {
+        const result = await api.screeningSessions.getById({ id: sessionId })
+
+        if (
+          !mountedRef.current ||
+          securityEpochRef.current !== startedSecurityEpoch ||
+          listRequestRef.current !== listRequestId
+        ) {
+          return 'STALE'
+        }
+
+        if (!result.ok) {
+          handleFailure(result.error.code)
+          return null
+        }
+
+        return result.data.status === 'FOUND' ? result.data.session : null
+      } catch {
+        if (
+          mountedRef.current &&
+          securityEpochRef.current === startedSecurityEpoch &&
+          listRequestRef.current === listRequestId
+        ) {
+          setStatusMessage(getScreeningSessionFailureMessage('IPC_UNAVAILABLE'), 'ALERT')
+        }
+
+        return null
+      }
+    },
+    [api, handleFailure, mountedRef, setStatusMessage]
+  )
+
   const loadContext = useCallback(async (): Promise<void> => {
     const requestId = contextRequestRef.current + 1
     const startedSecurityEpoch = securityEpochRef.current
@@ -241,32 +331,34 @@ export function ScreeningSessionWorkspace({
         return
       }
 
+      const previousDeploymentLocalDate = deploymentLocalDateRef.current
+      const dateChanged =
+        previousDeploymentLocalDate !== null &&
+        previousDeploymentLocalDate !== result.data.deploymentLocalDate
+      const nextContext: Extract<WorkspaceContextState, { readonly status: 'READY' }> = {
+        status: 'READY',
+        deploymentLocalDate: result.data.deploymentLocalDate,
+        activeLocations: result.data.activeLocations
+      }
+      const nextActiveLocationId = getNextActiveLocationId(
+        activeLocationIdRef.current,
+        result.data.activeLocations
+      )
+      deploymentLocalDateRef.current = result.data.deploymentLocalDate
+
       setContextState({
         status: 'READY',
         deploymentLocalDate: result.data.deploymentLocalDate,
         activeLocations: result.data.activeLocations
       })
-      setActiveLocationId((currentLocationId) => {
-        if (result.data.activeLocations.length === 0) {
-          return null
-        }
-
-        if (
-          currentLocationId !== null &&
-          result.data.activeLocations.some((location) => location.id === currentLocationId)
-        ) {
-          return currentLocationId
-        }
-
-        return result.data.activeLocations.length === 1
-          ? (result.data.activeLocations[0]?.id ?? null)
-          : null
-      })
+      setActiveLocationId(nextActiveLocationId)
       setSelectedSession((currentSession) => {
-        if (
+        const selectedStillValid =
           currentSession !== null &&
-          result.data.activeLocations.some((location) => location.id === currentSession.locationId)
-        ) {
+          isSessionInspectableInWorkspace(currentSession, nextContext, nextActiveLocationId) &&
+          (!dateChanged || currentSession.sessionDate === result.data.deploymentLocalDate)
+
+        if (selectedStillValid) {
           return currentSession
         }
 
@@ -274,8 +366,18 @@ export function ScreeningSessionWorkspace({
         setActiveSessionId(null)
         return null
       })
+      setActiveSessionId((currentActiveSessionId) => {
+        const currentSelectedSession = selectedSessionRef.current
+
+        return currentActiveSessionId !== null &&
+          currentSelectedSession !== null &&
+          currentSelectedSession.id === currentActiveSessionId &&
+          isSessionActiveInWorkspace(currentSelectedSession, nextContext, nextActiveLocationId)
+          ? currentActiveSessionId
+          : null
+      })
       setFilters((currentFilters) => {
-        if (filtersInitializedRef.current) {
+        if (filtersInitializedRef.current && !dateChanged) {
           return currentFilters
         }
 
@@ -284,7 +386,8 @@ export function ScreeningSessionWorkspace({
         return {
           ...currentFilters,
           dateFrom: result.data.deploymentLocalDate,
-          dateTo: result.data.deploymentLocalDate
+          dateTo: result.data.deploymentLocalDate,
+          page: 1
         }
       })
     } catch {
@@ -323,13 +426,11 @@ export function ScreeningSessionWorkspace({
         }
 
         if (result.data.status === 'FOUND') {
-          setSelectedSessionId(result.data.session.id)
-          setSelectedSession(result.data.session)
+          applyAuthoritativeSession(result.data.session)
           return
         }
 
-        setSelectedSessionId(null)
-        setSelectedSession(null)
+        clearSessionReference(sessionId)
         setStatusMessage('The selected screening session is no longer available.', 'ALERT')
       } catch {
         if (
@@ -341,7 +442,14 @@ export function ScreeningSessionWorkspace({
         }
       }
     },
-    [api, handleFailure, mountedRef, setStatusMessage]
+    [
+      api,
+      applyAuthoritativeSession,
+      clearSessionReference,
+      handleFailure,
+      mountedRef,
+      setStatusMessage
+    ]
   )
 
   const loadSessions = useCallback(
@@ -403,44 +511,100 @@ export function ScreeningSessionWorkspace({
           return
         }
 
-        if (result.data.items.length === 0) {
+        const listedSessions = result.data.items
+
+        if (listedSessions.length === 0) {
           setListState({
             status: 'EMPTY',
             page: result.data.page,
             pageSize: result.data.pageSize
           })
-          setSelectedSessionId(null)
-          setSelectedSession(null)
-          return
+        } else {
+          setListState({
+            status: 'READY',
+            items: listedSessions,
+            page: result.data.page,
+            pageSize: result.data.pageSize,
+            total: result.data.total
+          })
         }
 
-        setListState({
-          status: 'READY',
-          items: result.data.items,
-          page: result.data.page,
-          pageSize: result.data.pageSize,
-          total: result.data.total
-        })
-
-        const matchingToday = result.data.items.find(
+        const matchingToday = listedSessions.find(
           (session) =>
             session.locationId === locationId &&
             session.sessionDate === contextState.deploymentLocalDate
         )
-        const selectedStillPresent =
-          selectedSessionIdRef.current !== null &&
-          result.data.items.some((session) => session.id === selectedSessionIdRef.current)
+        const selectedSessionId = selectedSessionIdRef.current
+        const activeSessionId = activeSessionIdRef.current
+        let activeSessionReconciledThroughSelectedSession = false
 
         if (options.selectMatchingToday && matchingToday !== undefined) {
-          setSelectedSessionId(matchingToday.id)
-          setSelectedSession(matchingToday)
-          setActiveSessionId(matchingToday.id)
-        } else if (!selectedStillPresent && selectedSessionIdRef.current !== null) {
-          setSelectedSessionId(null)
-          setSelectedSession(null)
-        } else if (selectedSessionIdRef.current === null && matchingToday !== undefined) {
-          setSelectedSessionId(matchingToday.id)
-          setSelectedSession(matchingToday)
+          applyAuthoritativeSession(matchingToday, { activate: matchingToday.status === 'OPEN' })
+        } else if (selectedSessionId !== null) {
+          const listedSelectedSession = listedSessions.find(
+            (session) => session.id === selectedSessionId
+          )
+
+          if (listedSelectedSession !== undefined) {
+            applyAuthoritativeSession(listedSelectedSession, {
+              activate: activeSessionIdRef.current === selectedSessionId
+            })
+            activeSessionReconciledThroughSelectedSession = activeSessionId === selectedSessionId
+          } else {
+            const revalidatedSelectedSession = await getAuthoritativeSessionForListReconciliation(
+              selectedSessionId,
+              startedSecurityEpoch,
+              requestId
+            )
+
+            if (revalidatedSelectedSession === 'STALE') {
+              return
+            }
+
+            if (
+              revalidatedSelectedSession === null ||
+              !isSessionInspectableInWorkspace(revalidatedSelectedSession, contextState, locationId)
+            ) {
+              clearSessionReference(selectedSessionId)
+            } else {
+              applyAuthoritativeSession(revalidatedSelectedSession, {
+                activate: activeSessionIdRef.current === selectedSessionId
+              })
+            }
+
+            activeSessionReconciledThroughSelectedSession = activeSessionId === selectedSessionId
+          }
+        } else if (matchingToday !== undefined) {
+          applyAuthoritativeSession(matchingToday)
+        }
+
+        if (activeSessionId !== null && !activeSessionReconciledThroughSelectedSession) {
+          const listedActiveSession = listedSessions.find(
+            (session) => session.id === activeSessionId
+          )
+
+          if (listedActiveSession !== undefined) {
+            if (!isSessionActiveInWorkspace(listedActiveSession, contextState, locationId)) {
+              setActiveSessionId(null)
+            }
+          } else {
+            const revalidatedActiveSession = await getAuthoritativeSessionForListReconciliation(
+              activeSessionId,
+              startedSecurityEpoch,
+              requestId
+            )
+
+            if (revalidatedActiveSession === 'STALE') {
+              return
+            }
+
+            if (
+              revalidatedActiveSession === null ||
+              !isSessionActiveInWorkspace(revalidatedActiveSession, contextState, locationId)
+            ) {
+              setActiveSessionId(null)
+            }
+          }
         }
       } catch {
         if (
@@ -461,7 +625,18 @@ export function ScreeningSessionWorkspace({
         }
       }
     },
-    [activeLocationId, api, contextState, filters, handleFailure, mountedRef, setStatusMessage]
+    [
+      activeLocationId,
+      api,
+      applyAuthoritativeSession,
+      clearSessionReference,
+      contextState,
+      filters,
+      getAuthoritativeSessionForListReconciliation,
+      handleFailure,
+      mountedRef,
+      setStatusMessage
+    ]
   )
 
   useEffect(() => {
@@ -518,6 +693,16 @@ export function ScreeningSessionWorkspace({
     activeLocationId !== null &&
     selectedSession.locationId === activeLocationId &&
     selectedSession.sessionDate === deploymentLocalDate
+  const listedTodaySession =
+    activeLocationId !== null && listState.status === 'READY'
+      ? (listState.items.find(
+          (session) =>
+            session.locationId === activeLocationId && session.sessionDate === deploymentLocalDate
+        ) ?? null)
+      : null
+  const todaySessionForActiveLocation = selectedSessionIsTodayForActiveLocation
+    ? selectedSession
+    : listedTodaySession
   const totalPages =
     listState.status === 'READY' ? Math.max(1, Math.ceil(listState.total / listState.pageSize)) : 1
   const displayedRange =
@@ -578,9 +763,9 @@ export function ScreeningSessionWorkspace({
         case 'CREATED':
           setDialog(null)
           setActiveLocationId(result.data.session.locationId)
-          setSelectedSessionId(result.data.session.id)
-          setSelectedSession(result.data.session)
-          setActiveSessionId(result.data.session.id)
+          applyAuthoritativeSession(result.data.session, {
+            activate: result.data.session.status === 'OPEN'
+          })
           setStatusMessage('Screening session opened.')
           await reloadToday(result.data.session.locationId, result.data.session.sessionDate, true)
           break
@@ -595,7 +780,7 @@ export function ScreeningSessionWorkspace({
         case 'SESSION_DATE_NOT_CURRENT':
           setDialog({
             ...dialog,
-            error: 'Sessions can only be opened for the deployment-local date shown here.'
+            error: 'Sessions can only be opened for the date shown here.'
           })
           break
         case 'LOCATION_NOT_FOUND':
@@ -763,7 +948,9 @@ export function ScreeningSessionWorkspace({
       switch (result.data.status) {
         case 'REOPENED':
           setDialog(null)
-          applyAuthoritativeSession(result.data.session)
+          applyAuthoritativeSession(result.data.session, {
+            activate: result.data.session.status === 'OPEN'
+          })
           setStatusMessage('Screening session reopened.')
           await loadSessions(filters)
           break
@@ -808,12 +995,6 @@ export function ScreeningSessionWorkspace({
         setOperationPending(false)
       }
     }
-  }
-
-  function applyAuthoritativeSession(session: PublicScreeningSession): void {
-    setSelectedSessionId(session.id)
-    setSelectedSession(session)
-    setActiveSessionId(session.id)
   }
 
   async function reloadToday(
@@ -874,10 +1055,7 @@ export function ScreeningSessionWorkspace({
             <h1 ref={headingRef} id={headingId} tabIndex={-1}>
               Today&apos;s Screening Session
             </h1>
-            <p>
-              Manage location-scoped screening sessions using the deployment-local date from the
-              trusted desktop service.
-            </p>
+            <p>Select a location and manage today&apos;s session.</p>
           </div>
           <div className="screening-offline-badge" aria-label="Offline ready">
             <span
@@ -907,8 +1085,8 @@ export function ScreeningSessionWorkspace({
           <section className="screening-context-card" aria-labelledby="screening-context-title">
             <div className="screening-card-header">
               <div>
-                <h2 id="screening-context-title">Session context</h2>
-                <p>Location and date are held in this workspace only.</p>
+                <h2 id="screening-context-title">Select a location</h2>
+                <p>Choose where screening is happening.</p>
               </div>
               <button
                 type="button"
@@ -954,7 +1132,7 @@ export function ScreeningSessionWorkspace({
                     </select>
                   </label>
                   <div className="screening-readonly-field">
-                    <span>Deployment-local date</span>
+                    <span>Today</span>
                     <strong>{deploymentLocalDate}</strong>
                   </div>
                 </div>
@@ -964,16 +1142,18 @@ export function ScreeningSessionWorkspace({
                   </p>
                 ) : activeLocation === null ? (
                   <p className="screening-state-note" role="status">
-                    Select an active location to view today&apos;s session.
+                    Select a location.
                   </p>
                 ) : (
                   <p className="screening-state-note" role="status">
                     Selected location: <strong>{activeLocation.name}</strong>
                   </p>
                 )}
-                {activeLocation !== null && selectedSessionIsTodayForActiveLocation ? (
+                {activeLocation !== null && todaySessionForActiveLocation !== null ? (
                   <p className="screening-state-note" role="status">
-                    Today&apos;s session is open for this location.
+                    {todaySessionForActiveLocation.status === 'OPEN'
+                      ? "Today's session is open."
+                      : "Today's session is closed."}
                   </p>
                 ) : activeLocation !== null ? (
                   <div className="screening-context-actions">
@@ -994,11 +1174,8 @@ export function ScreeningSessionWorkspace({
           <section className="screening-session-card" aria-labelledby="screening-session-title">
             <div className="screening-card-header">
               <div>
-                <h2 id="screening-session-title">Selected session</h2>
-                <p>
-                  Inspect the current session state before closing, reopening, or using it for
-                  future screening work.
-                </p>
+                <h2 id="screening-session-title">Session details</h2>
+                <p>Review status and available actions.</p>
               </div>
               {selectedSession !== null ? (
                 <ScreeningSessionStatusBadge status={selectedSession.status} />
@@ -1008,7 +1185,7 @@ export function ScreeningSessionWorkspace({
               <div className="screening-empty-state" role="status">
                 {activeLocation === null
                   ? 'Choose an active location to inspect a screening session.'
-                  : 'No screening session has been opened for this location and date.'}
+                  : 'No session opened for this location today.'}
               </div>
             ) : (
               <SessionDetail
@@ -1019,8 +1196,17 @@ export function ScreeningSessionWorkspace({
                 commandId={commandId}
                 operationPending={operationPending}
                 onUseSession={() => {
+                  if (selectedSession.status !== 'OPEN') {
+                    setActiveSessionId(null)
+                    setStatusMessage(
+                      'Closed sessions can be inspected but cannot be active.',
+                      'ALERT'
+                    )
+                    return
+                  }
+
                   setActiveSessionId(selectedSession.id)
-                  setStatusMessage('Screening session selected for this workspace.')
+                  setStatusMessage('Session selected.')
                 }}
                 onRefresh={() => void loadSessionById(selectedSession.id)}
                 onClose={() => openCloseDialog(selectedSession)}
@@ -1039,7 +1225,7 @@ export function ScreeningSessionWorkspace({
             <div className="screening-card-header">
               <div>
                 <h2 id="screening-worklist-title">Session worklist</h2>
-                <p>Filter with the approved location, status, date, and pagination boundaries.</p>
+                <p>Find sessions by status and date.</p>
               </div>
             </div>
             <div className="screening-filter-grid">
@@ -1102,8 +1288,7 @@ export function ScreeningSessionWorkspace({
               locations={activeLocations}
               selectedSessionId={selectedSessionId}
               onSelect={(session) => {
-                setSelectedSessionId(session.id)
-                setSelectedSession(session)
+                applyAuthoritativeSession(session)
                 void loadSessionById(session.id)
               }}
             />
@@ -1255,12 +1440,16 @@ function SessionDetail({
       ) : null}
       {commandId === 'SCREENING_NEW_SCREENING' ? (
         <div className="screening-message" role="status">
-          New screening encounter entry is not available in this checkpoint. Select or open a
-          session now; patient enrollment arrives in a later approved task.
+          Encounter entry is not available yet. Select an open session for now.
         </div>
       ) : null}
       <div className="screening-action-row">
-        <button type="button" className="button button-secondary" onClick={onUseSession}>
+        <button
+          type="button"
+          className="button button-secondary"
+          disabled={session.status !== 'OPEN'}
+          onClick={onUseSession}
+        >
           Select session
         </button>
         <button type="button" className="button button-secondary" onClick={onRefresh}>
@@ -1422,9 +1611,7 @@ function CreateSessionDialogContent({
 }): React.JSX.Element {
   return (
     <>
-      <p className="screening-dialog-copy">
-        Open a screening session for an active location and the trusted deployment-local date.
-      </p>
+      <p className="screening-dialog-copy">Open a session for the selected location and date.</p>
       <label className="screening-field">
         <span>Active location</span>
         <select
@@ -1494,8 +1681,8 @@ function CloseSessionDialogContent({
   return (
     <>
       <p className="screening-dialog-copy">
-        Close {createSessionIdentityText(dialog.session, locations)}. This records a lifecycle
-        transition after the desktop service confirms the current row version.
+        Close {createSessionIdentityText(dialog.session, locations)}. This records the session as
+        closed.
       </p>
       <label className="screening-field">
         <span>Close reason (optional)</span>
@@ -1540,8 +1727,7 @@ function ReopenSessionDialogContent({
   return (
     <>
       <p className="screening-dialog-copy">
-        Reopen {createSessionIdentityText(dialog.session, locations)} only after reviewing why the
-        closed session must return to open state.
+        Reopen {createSessionIdentityText(dialog.session, locations)} with a reason.
       </p>
       {!canReopen ? (
         <p className="screening-restricted-note" role="status">
@@ -1661,6 +1847,53 @@ function areSessionListFiltersEqual(left: SessionListFilters, right: SessionList
     left.dateTo === right.dateTo &&
     left.page === right.page &&
     left.pageSize === right.pageSize
+  )
+}
+
+function getNextActiveLocationId(
+  currentLocationId: string | null,
+  activeLocations: readonly PublicScreeningSessionWorkspaceLocation[]
+): string | null {
+  if (activeLocations.length === 0) {
+    return null
+  }
+
+  if (
+    currentLocationId !== null &&
+    activeLocations.some((location) => location.id === currentLocationId)
+  ) {
+    return currentLocationId
+  }
+
+  return activeLocations.length === 1 ? (activeLocations[0]?.id ?? null) : null
+}
+
+function isSessionInspectableInWorkspace(
+  session: PublicScreeningSession,
+  contextState: WorkspaceContextState,
+  activeLocationId: string | null
+): boolean {
+  return (
+    contextState.status === 'READY' &&
+    activeLocationId !== null &&
+    session.locationId === activeLocationId &&
+    contextState.activeLocations.some((location) => location.id === session.locationId)
+  )
+}
+
+function isSessionActiveInWorkspace(
+  session: PublicScreeningSession,
+  contextState: WorkspaceContextState,
+  activeLocationId: string | null
+): boolean {
+  if (contextState.status !== 'READY') {
+    return false
+  }
+
+  return (
+    isSessionInspectableInWorkspace(session, contextState, activeLocationId) &&
+    session.status === 'OPEN' &&
+    session.sessionDate === contextState.deploymentLocalDate
   )
 }
 

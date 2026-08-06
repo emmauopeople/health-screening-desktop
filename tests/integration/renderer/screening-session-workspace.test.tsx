@@ -75,9 +75,7 @@ describe('screening session workspace', () => {
     expect(text(mounted)).toContain("Today's Screening Session")
     expect(text(mounted)).toContain(deploymentLocalDate)
     expect(text(mounted)).toContain('Selected location: Bastos Hall')
-    expect(text(mounted)).toContain(
-      'No screening session has been opened for this location and date.'
-    )
+    expect(text(mounted)).toContain('No session opened for this location today.')
     expect(mounted.getRegisteredGuard()?.('PATIENTS_PATIENT_SEARCH')).toBe(true)
 
     await mounted.unmount()
@@ -92,7 +90,7 @@ describe('screening session workspace', () => {
     })
     const mounted = await mountWorkspace({ api })
 
-    expect(text(mounted)).toContain('Select an active location')
+    expect(text(mounted)).toContain('Select a location.')
     expect(api.screeningSessions.list).not.toHaveBeenCalled()
 
     await changeSelect(selectByLabel(mounted, 'Active screening location'), secondLocationId)
@@ -136,6 +134,7 @@ describe('screening session workspace', () => {
     expect(text(mounted)).toContain('Screening session opened.')
     expect(text(mounted)).toContain('Power confirmed')
     expect(text(mounted)).toContain('Selected for this workspace')
+    expect(text(mounted)).toContain("Today's session is open.")
 
     await mounted.unmount()
   })
@@ -214,6 +213,8 @@ describe('screening session workspace', () => {
     })
     expect(text(mounted)).toContain('Screening session closed.')
     expect(text(mounted)).toContain('Closed')
+    expect(text(mounted)).toContain('Not selected')
+    expect(text(mounted)).toContain("Today's session is closed.")
 
     await clickButton(mounted, 'Reopen session')
     await clickDialogButton(mounted, 'Reopen session')
@@ -229,6 +230,151 @@ describe('screening session workspace', () => {
       reason: 'Closed in error'
     })
     expect(text(mounted)).toContain('Screening session reopened.')
+    expect(text(mounted)).toContain('Selected for this workspace')
+
+    await mounted.unmount()
+  })
+
+  it('clears selected and active session state when authoritative results remove it', async () => {
+    const open = publicSession()
+    const api = createApi({ listItems: [open] })
+    api.screeningSessions.list
+      .mockResolvedValueOnce(
+        createIpcSuccess({ status: 'LISTED', items: [open], page: 1, pageSize: 25, total: 1 })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({ status: 'LISTED', items: [], page: 1, pageSize: 25, total: 0 })
+      )
+    api.screeningSessions.getById.mockResolvedValueOnce(createIpcSuccess({ status: 'NOT_FOUND' }))
+
+    const mounted = await mountWorkspace({ api })
+
+    expect(text(mounted)).toContain('Selected for this workspace')
+
+    await clickButton(mounted, 'Refresh')
+
+    expect(api.screeningSessions.getById).toHaveBeenCalledWith({ id: sessionId })
+    expect(text(mounted)).not.toContain('Selected for this workspace')
+    expect(text(mounted)).not.toContain('Current row version')
+    expect(text(mounted)).toContain('No session opened for this location today.')
+
+    await mounted.unmount()
+  })
+
+  it('keeps a missing current-page session when getById confirms it is still valid', async () => {
+    const open = publicSession()
+    const api = createApi({ listItems: [open] })
+    api.screeningSessions.list
+      .mockResolvedValueOnce(
+        createIpcSuccess({ status: 'LISTED', items: [open], page: 1, pageSize: 25, total: 1 })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({ status: 'LISTED', items: [], page: 2, pageSize: 25, total: 26 })
+      )
+    api.screeningSessions.getById.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'FOUND', session: open })
+    )
+
+    const mounted = await mountWorkspace({ api })
+
+    await clickButton(mounted, 'Select session')
+    expect(text(mounted)).toContain('Selected for this workspace')
+
+    await clickButton(mounted, 'Refresh')
+
+    expect(api.screeningSessions.getById).toHaveBeenCalledWith({ id: sessionId })
+    expect(text(mounted)).toContain('Selected for this workspace')
+    expect(text(mounted)).toContain('Current row version')
+
+    await mounted.unmount()
+  })
+
+  it('allows only an open session to become active while closed sessions remain inspectable', async () => {
+    const closed = publicSession({
+      status: 'CLOSED',
+      closedAt: '2026-08-06T15:00:00.000Z',
+      rowVersion: 2
+    })
+    const api = createApi({ listItems: [closed] })
+    api.screeningSessions.getById.mockResolvedValue(
+      createIpcSuccess({ status: 'FOUND', session: closed })
+    )
+
+    const mounted = await mountWorkspace({ api })
+
+    expect(text(mounted)).toContain("Today's session is closed.")
+    expect(text(mounted)).toContain('Current row version')
+    expect(text(mounted)).toContain('Not selected')
+    expect(buttonByText(mounted, 'Select session').disabled).toBe(true)
+
+    await mounted.unmount()
+  })
+
+  it('updates today-dependent filters and create requests after deployment-local date rollover', async () => {
+    const rolloverDate = '2026-08-07'
+    const api = createApi()
+    api.screeningSessions.getWorkspaceContext
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          deploymentLocalDate,
+          activeLocations: [{ id: locationId, name: 'Bastos Hall' }]
+        })
+      )
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          deploymentLocalDate: rolloverDate,
+          activeLocations: [{ id: locationId, name: 'Bastos Hall' }]
+        })
+      )
+    api.screeningSessions.list.mockResolvedValue(
+      createIpcSuccess({ status: 'LISTED', items: [], page: 1, pageSize: 25, total: 0 })
+    )
+    api.screeningSessions.create.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'CREATED',
+        session: publicSession({ sessionDate: rolloverDate, rowVersion: 1 })
+      })
+    )
+
+    const mounted = await mountWorkspace({ api })
+
+    await changeSelect(selectByLabel(mounted, 'Status'), 'CLOSED')
+    await clickButton(mounted, 'Refresh')
+
+    expect(text(mounted)).toContain(rolloverDate)
+    expect(api.screeningSessions.list).toHaveBeenLastCalledWith({
+      locationId,
+      status: 'CLOSED',
+      dateFrom: rolloverDate,
+      dateTo: rolloverDate,
+      page: 1,
+      pageSize: 25
+    })
+
+    await clickButton(mounted, "Open today's session")
+    await clickDialogButton(mounted, 'Open session')
+
+    expect(api.screeningSessions.create).toHaveBeenCalledWith({
+      locationId,
+      sessionDate: rolloverDate,
+      notes: null
+    })
+
+    await mounted.unmount()
+  })
+
+  it('uses the trusted context date instead of the renderer or operating-system clock', async () => {
+    const api = createApi({ deploymentLocalDate: '2030-01-02' })
+    const mounted = await mountWorkspace({ api })
+
+    await clickButton(mounted, "Open today's session")
+    await clickDialogButton(mounted, 'Open session')
+
+    expect(api.screeningSessions.create).toHaveBeenCalledWith({
+      locationId,
+      sessionDate: '2030-01-02',
+      notes: null
+    })
 
     await mounted.unmount()
   })
@@ -317,6 +463,8 @@ describe('screening session workspace', () => {
 
     expect(mounted.onAuthenticationFailure).toHaveBeenCalledWith('IPC_FORBIDDEN')
     expect(text(mounted)).toContain('This window is not allowed to manage screening sessions.')
+    expect(text(mounted)).not.toContain(deploymentLocalDate)
+    expect(text(mounted)).not.toContain('Selected location: Bastos Hall')
     expect(text(mounted)).not.toContain(sessionId)
     expect(text(mounted)).not.toContain('SELECT')
     expect(text(mounted)).not.toContain('sqlite')
@@ -394,15 +542,17 @@ async function mountWorkspace({
 
 function createApi({
   activeLocations = [{ id: locationId, name: 'Bastos Hall' }],
-  listItems = []
+  listItems = [],
+  deploymentLocalDate: workspaceDate = deploymentLocalDate
 }: {
   readonly activeLocations?: readonly { readonly id: string; readonly name: string }[]
   readonly listItems?: readonly PublicScreeningSession[]
+  readonly deploymentLocalDate?: string
 } = {}): MockedHealthScreeningApi {
   return {
     screeningSessions: {
       getWorkspaceContext: vi.fn(() =>
-        Promise.resolve(createIpcSuccess({ deploymentLocalDate, activeLocations }))
+        Promise.resolve(createIpcSuccess({ deploymentLocalDate: workspaceDate, activeLocations }))
       ),
       create: vi.fn(() => Promise.resolve(createScreeningSessionFailure('IPC_UNAVAILABLE'))),
       close: vi.fn(() => Promise.resolve(createScreeningSessionFailure('IPC_UNAVAILABLE'))),
