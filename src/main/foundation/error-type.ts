@@ -53,6 +53,10 @@ const reviewedErrorTypes = new Set<string>([
   'LocalSessionAuthorizationError',
   'LocalSessionAuthenticationError',
   'LocalSessionCompositionError',
+  'ScreeningSessionServiceValidationError',
+  'ScreeningSessionServiceAuthorizationError',
+  'ScreeningSessionServiceStateIntegrityError',
+  'ScreeningSessionServicePersistenceError',
   'UnknownError'
 ])
 
