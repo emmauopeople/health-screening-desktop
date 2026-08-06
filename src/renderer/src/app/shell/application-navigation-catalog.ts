@@ -61,7 +61,7 @@ const commandDefinitions = [
     'HOME',
     'Today\u2019s Session',
     allRoles,
-    'PLANNED',
+    'AVAILABLE',
     plannedOwners.session
   ),
   command(
@@ -118,7 +118,7 @@ const commandDefinitions = [
     'SCREENING',
     'Today\u2019s Session',
     allRoles,
-    'PLANNED',
+    'AVAILABLE',
     plannedOwners.session
   ),
   command(
@@ -126,7 +126,7 @@ const commandDefinitions = [
     'SCREENING',
     'New Screening',
     allRoles,
-    'PLANNED',
+    'AVAILABLE',
     plannedOwners.screening
   ),
   command(

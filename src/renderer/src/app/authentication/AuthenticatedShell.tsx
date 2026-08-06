@@ -3,7 +3,8 @@ import type {
   AuthLockResult,
   AuthLogoutResult,
   HealthScreeningApi,
-  PatientErrorCode
+  PatientErrorCode,
+  ScreeningSessionErrorCode
 } from '@shared/ipc'
 
 import {
@@ -61,8 +62,8 @@ export function AuthenticatedShell({
 
   const isSubmitting = operationState.status === 'SUBMITTING'
 
-  const handlePatientAuthenticationFailure = useCallback(
-    (code: PatientErrorCode): void => {
+  const handleProtectedWorkspaceAuthenticationFailure = useCallback(
+    (code: PatientErrorCode | ScreeningSessionErrorCode): void => {
       if (code === 'IPC_FORBIDDEN') {
         controller.showUnavailable(true)
         return
@@ -147,7 +148,7 @@ export function AuthenticatedShell({
       onLogout={() => {
         void handleLogout()
       }}
-      onPatientAuthenticationFailure={handlePatientAuthenticationFailure}
+      onProtectedWorkspaceAuthenticationFailure={handleProtectedWorkspaceAuthenticationFailure}
     />
   )
 }

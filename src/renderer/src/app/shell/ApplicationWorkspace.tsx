@@ -1,8 +1,14 @@
 import type { RefObject } from 'react'
 import { useState } from 'react'
-import type { HealthScreeningApi, PatientErrorCode, PublicPatientDetail } from '@shared/ipc'
+import type {
+  HealthScreeningApi,
+  PatientErrorCode,
+  PublicPatientDetail,
+  ScreeningSessionErrorCode
+} from '@shared/ipc'
 
 import { PatientRegistryWorkspace } from '../patients/PatientRegistryWorkspace'
+import { ScreeningSessionWorkspace } from '../screening/ScreeningSessionWorkspace'
 import { DashboardWorkspace } from './DashboardWorkspace'
 import { PlannedModuleWorkspace } from './PlannedModuleWorkspace'
 import type {
@@ -21,7 +27,9 @@ interface ApplicationWorkspaceProps {
   readonly workspaceRef: RefObject<HTMLElement | null>
   readonly headingRef: RefObject<HTMLHeadingElement | null>
   onSelectCommand(commandId: ApplicationCommandId): void
-  onPatientAuthenticationFailure(code: PatientErrorCode): void
+  onProtectedWorkspaceAuthenticationFailure(
+    code: PatientErrorCode | ScreeningSessionErrorCode
+  ): void
   registerNavigationGuard(guard: PatientWorkspaceNavigationGuard | null): void
 }
 
@@ -35,7 +43,7 @@ export function ApplicationWorkspace({
   workspaceRef,
   headingRef,
   onSelectCommand,
-  onPatientAuthenticationFailure,
+  onProtectedWorkspaceAuthenticationFailure,
   registerNavigationGuard
 }: ApplicationWorkspaceProps): React.JSX.Element {
   const [selectedPatient, setSelectedPatient] = useState<PublicPatientDetail | null>(null)
@@ -65,8 +73,18 @@ export function ApplicationWorkspace({
           userRole={user.role}
           selectedPatient={selectedPatient}
           onSelectedPatientChange={setSelectedPatient}
-          onPatientAuthenticationFailure={onPatientAuthenticationFailure}
+          onPatientAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
           onSelectCommand={onSelectCommand}
+          registerNavigationGuard={registerNavigationGuard}
+        />
+      ) : route.status === 'SCREENING_SESSIONS' ? (
+        <ScreeningSessionWorkspace
+          api={api}
+          commandId={route.commandId}
+          headingId={workspaceHeadingId}
+          headingRef={headingRef}
+          userRole={user.role}
+          onScreeningSessionAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
           registerNavigationGuard={registerNavigationGuard}
         />
       ) : (

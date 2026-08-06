@@ -97,11 +97,14 @@ describe('application navigation catalog', () => {
         .map((definition) => definition.id)
     ).toEqual([
       'HOME_DASHBOARD',
+      'HOME_TODAYS_SESSION',
       'HOME_QUICK_PATIENT_SEARCH',
       'PATIENTS_PATIENT_SEARCH',
       'PATIENTS_REGISTER_NEW_PATIENT',
       'PATIENTS_RECENT_PATIENTS',
-      'PATIENTS_POSSIBLE_DUPLICATES'
+      'PATIENTS_POSSIBLE_DUPLICATES',
+      'SCREENING_TODAYS_SESSION',
+      'SCREENING_NEW_SCREENING'
     ])
   })
 

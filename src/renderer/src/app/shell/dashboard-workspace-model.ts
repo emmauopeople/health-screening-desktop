@@ -46,7 +46,7 @@ const dashboardQuickActions = Object.freeze([
   }),
   Object.freeze({
     label: 'Start new screening',
-    support: 'Planned screening workflow entry point',
+    support: 'Open or select today\u2019s session before future encounter entry',
     commandId: 'SCREENING_NEW_SCREENING' as const
   }),
   Object.freeze({
