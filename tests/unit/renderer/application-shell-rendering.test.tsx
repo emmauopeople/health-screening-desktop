@@ -32,7 +32,7 @@ describe('application shell rendering', () => {
         alertRef: { current: null },
         onLock: vi.fn(),
         onLogout: vi.fn(),
-        onPatientAuthenticationFailure: vi.fn()
+        onProtectedWorkspaceAuthenticationFailure: vi.fn()
       })
     )
 

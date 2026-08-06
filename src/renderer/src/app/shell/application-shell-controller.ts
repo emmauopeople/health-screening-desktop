@@ -142,6 +142,18 @@ function createRouteForCommand(
   }
 
   if (
+    definition.id === 'HOME_TODAYS_SESSION' ||
+    definition.id === 'SCREENING_TODAYS_SESSION' ||
+    definition.id === 'SCREENING_NEW_SCREENING'
+  ) {
+    return Object.freeze({
+      status: 'SCREENING_SESSIONS',
+      commandId:
+        definition.id === 'HOME_TODAYS_SESSION' ? 'SCREENING_TODAYS_SESSION' : definition.id
+    })
+  }
+
+  if (
     definition.id === 'HOME_QUICK_PATIENT_SEARCH' ||
     definition.id === 'PATIENTS_PATIENT_SEARCH' ||
     definition.id === 'PATIENTS_REGISTER_NEW_PATIENT' ||

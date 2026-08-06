@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createIpcSuccess,
   createPatientFailure,
+  createScreeningSessionFailure,
   type AuthGetSessionResult,
   type AuthLockResult,
   type AuthLogoutResult,
@@ -236,7 +237,7 @@ describe('application shell DOM integration', () => {
     expect(commandButtonByText(mounted, 'Today\u2019s Session').getAttribute('aria-current')).toBe(
       'page'
     )
-    expect(text(mounted)).toContain('Future session workspace')
+    expectWorkspaceHeading(mounted, "Today's Screening Session")
 
     await clickButton(mounted, 'Patients')
     await clickButton(mounted, 'Patient Search')
@@ -289,7 +290,7 @@ describe('application shell DOM integration', () => {
     expect(commandButtonByText(mounted, 'Patient Search').getAttribute('aria-current')).toBe('page')
 
     await clickButton(mounted, 'Screening')
-    expectWorkspaceHeading(mounted, 'Today\u2019s Session')
+    expectWorkspaceHeading(mounted, "Today's Screening Session")
     expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Screening commands')
     expect(commandButtonByText(mounted, 'Today\u2019s Session').getAttribute('aria-current')).toBe(
       'page'
@@ -378,7 +379,7 @@ describe('application shell DOM integration', () => {
 
     await dispatchKeyboard(menuButton(mounted, 'Screening'), 'Enter')
 
-    expectWorkspaceHeading(mounted, 'Today\u2019s Session')
+    expectWorkspaceHeading(mounted, "Today's Screening Session")
     expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Screening commands')
 
     menuButton(mounted, 'Home').focus()
@@ -489,7 +490,7 @@ describe('application shell DOM integration', () => {
     await clickDialogButton(saveCase.mounted, 'Save amendment')
 
     expect(saveCase.harness.api.patient.amendDemographics).toHaveBeenCalledOnce()
-    expectWorkspaceHeading(saveCase.mounted, 'Today\u2019s Session')
+    expectWorkspaceHeading(saveCase.mounted, "Today's Screening Session")
     expect(commandPanel(saveCase.mounted)?.getAttribute('aria-label')).toBe('Screening commands')
     expect(
       commandButtonByText(saveCase.mounted, 'Today\u2019s Session').getAttribute('aria-current')
@@ -1132,6 +1133,16 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
     findDuplicates: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['findDuplicates']>>
     markNotDuplicate: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['markNotDuplicate']>>
   } & HealthScreeningApi['patient']
+  screeningSessions: {
+    getWorkspaceContext: ReturnType<
+      typeof vi.fn<HealthScreeningApi['screeningSessions']['getWorkspaceContext']>
+    >
+    create: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['create']>>
+    close: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['close']>>
+    reopen: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['reopen']>>
+    getById: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['getById']>>
+    list: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['list']>>
+  } & HealthScreeningApi['screeningSessions']
 }
 
 interface AppApiHarness {
@@ -1240,6 +1251,31 @@ function createAppApi(initialSession: PublicAuthenticationSession): AppApiHarnes
       listRecent: vi.fn(() => Promise.resolve(createIpcSuccess([]))),
       findDuplicates: vi.fn(() => Promise.resolve(createIpcSuccess({ candidates: [], pairs: [] }))),
       markNotDuplicate: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE')))
+    },
+    screeningSessions: {
+      getWorkspaceContext: vi.fn(() =>
+        Promise.resolve(
+          createIpcSuccess({
+            deploymentLocalDate: '2026-08-06',
+            activeLocations: [{ id: '77777777-7777-4777-8777-777777777777', name: 'Bastos Hall' }]
+          })
+        )
+      ),
+      create: vi.fn(() => Promise.resolve(createScreeningSessionFailure('IPC_UNAVAILABLE'))),
+      close: vi.fn(() => Promise.resolve(createScreeningSessionFailure('IPC_UNAVAILABLE'))),
+      reopen: vi.fn(() => Promise.resolve(createScreeningSessionFailure('IPC_UNAVAILABLE'))),
+      getById: vi.fn(() => Promise.resolve(createIpcSuccess({ status: 'NOT_FOUND' }))),
+      list: vi.fn(() =>
+        Promise.resolve(
+          createIpcSuccess({
+            status: 'LISTED',
+            items: [],
+            page: 1,
+            pageSize: 25,
+            total: 0
+          })
+        )
+      )
     }
   } as unknown as MockedHealthScreeningApi
 
@@ -1301,7 +1337,7 @@ async function mountShell({
         alertRef: { current: null },
         onLock: vi.fn(),
         onLogout: vi.fn(),
-        onPatientAuthenticationFailure: vi.fn()
+        onProtectedWorkspaceAuthenticationFailure: vi.fn()
       })
     )
     await flushPromises()

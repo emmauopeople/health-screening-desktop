@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { HealthScreeningApi, PatientErrorCode } from '@shared/ipc'
+import type { HealthScreeningApi, PatientErrorCode, ScreeningSessionErrorCode } from '@shared/ipc'
 
 import {
   getDefaultApplicationCommand,
@@ -36,7 +36,9 @@ interface ApplicationShellProps {
   readonly alertRef: React.RefObject<HTMLDivElement | null>
   onLock(): void
   onLogout(): void
-  onPatientAuthenticationFailure(code: PatientErrorCode): void
+  onProtectedWorkspaceAuthenticationFailure(
+    code: PatientErrorCode | ScreeningSessionErrorCode
+  ): void
 }
 
 const commandPanelId = 'application-command-panel'
@@ -50,7 +52,7 @@ export function ApplicationShell({
   alertRef,
   onLock,
   onLogout,
-  onPatientAuthenticationFailure
+  onProtectedWorkspaceAuthenticationFailure
 }: ApplicationShellProps): React.JSX.Element {
   const controller = useMemo(
     () => createApplicationShellController({ role: user.role }),
@@ -282,13 +284,15 @@ export function ApplicationShell({
         workspaceRef={workspaceRef}
         headingRef={workspaceHeadingRef}
         onSelectCommand={selectCommand}
-        onPatientAuthenticationFailure={onPatientAuthenticationFailure}
+        onProtectedWorkspaceAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
         registerNavigationGuard={(guard) => {
           workspaceNavigationGuardRef.current = guard
         }}
       />
       <footer className="application-shell-footer" data-shell-slot="footer">
-        <span>Local data ready. Patient registry management is available.</span>
+        <span>
+          Local data ready. Patient registry and screening session management are available.
+        </span>
         <span>Version {context.applicationVersion} &bull; Offline-first desktop</span>
       </footer>
     </div>

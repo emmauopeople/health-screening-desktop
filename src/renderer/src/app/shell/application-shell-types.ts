@@ -55,6 +55,11 @@ export type ApplicationWorkspaceRoute =
         | 'PATIENTS_POSSIBLE_DUPLICATES'
     }
   | {
+      readonly status: 'SCREENING_SESSIONS'
+      readonly commandId:
+        'HOME_TODAYS_SESSION' | 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING'
+    }
+  | {
       readonly status: 'PLANNED_MODULE'
       readonly commandId: ApplicationCommandId
       readonly heading: string
@@ -62,7 +67,8 @@ export type ApplicationWorkspaceRoute =
       readonly plannedOwner: string
     }
 
-export type PatientWorkspaceNavigationGuard = (commandId: ApplicationCommandId) => boolean
+export type WorkspaceNavigationGuard = (commandId: ApplicationCommandId) => boolean
+export type PatientWorkspaceNavigationGuard = WorkspaceNavigationGuard
 
 export interface ApplicationShellContext {
   readonly applicationName: string

@@ -99,4 +99,18 @@ Registration uses fixed channels and deterministic disposal. Focused screening-s
 
 ## HSD-028C Boundary
 
-HSD-028C may add renderer workspace state and UI on top of these preload methods. It must not add renderer-selected channel names, generic IPC dispatch, active-location persistence, fake dashboard counts, screening encounters, measurements, protocol calculations, referrals, reports, or sync transport.
+## HSD-028C Renderer Workspace
+
+HSD-028C adds the production renderer workspace on top of the fixed preload API. The workspace uses `window.healthScreening.screeningSessions` only; it does not import Electron, main-process services, repositories, database code, or dynamic channel names.
+
+The renderer calls `getWorkspaceContext()` on entry, displays the deployment-local date returned by the main process, and renders only the active locations returned by the trusted context query. A single active location may be selected in memory automatically; multiple active locations require an explicit choice. The active location ID, active session ID, selected worklist row, filters, and pagination are renderer-memory state only. They are not written to localStorage, sessionStorage, IndexedDB, cookies, files, URLs, SQLite, or another persistence mechanism.
+
+The workspace supports creating, listing, selecting, closing, and authorized reopening of sessions through the approved preload methods. It handles `CREATED`, `ALREADY_EXISTS`, `SESSION_DATE_NOT_CURRENT`, `LOCATION_NOT_FOUND`, `LOCATION_INACTIVE`, `NO_ACTIVE_PROTOCOL`, `CLOSED`, `REOPENED`, `NOT_FOUND`, `SESSION_VERSION_CONFLICT`, `ALREADY_CLOSED`, `ALREADY_OPEN`, `FORBIDDEN`, `VALIDATION_FAILED`, and `IPC_UNAVAILABLE` with user-facing messages. Expected lifecycle outcomes remain typed result data; the renderer does not infer audit or outbox state.
+
+The visible design follows the approved shell and screening-session design language: deep-navy top bar, light-blue contextual commands, pale gray background, white bordered cards, navy headings, teal interaction accents, explicit status text plus dots, compact desktop density, and dialog confirmation for lifecycle transitions. It is designed for the supported desktop range of 1280x720, 1366x768, and 1920x1080.
+
+HSD-028C still does not implement patient enrollment, screening encounters, measurements, protocol calculations, recommendations, referrals, reports, dashboard counts, sync networking, push subscriptions, fake records, or active-session persistence.
+
+## HSD-029 Boundary
+
+Future HSD-029 work may introduce patient enrollment and encounter workflows inside a selected open screening session. That work must continue to use reviewed preload/API boundaries and must not bypass the HSD-027 lifecycle service, audit, or transactional outbox behavior.

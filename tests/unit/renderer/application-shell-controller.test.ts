@@ -76,11 +76,8 @@ describe('application shell controller', () => {
       commandPanelMenu: 'HOME',
       selectedCommandId: 'HOME_TODAYS_SESSION',
       route: {
-        status: 'PLANNED_MODULE',
-        commandId: 'HOME_TODAYS_SESSION',
-        heading: 'Today\u2019s Session',
-        statement: 'Not available in this build.',
-        plannedOwner: 'Future session workspace'
+        status: 'SCREENING_SESSIONS',
+        commandId: 'SCREENING_TODAYS_SESSION'
       }
     })
   })
