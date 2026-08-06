@@ -41,6 +41,19 @@ import type {
   PatientSearchResult
 } from './patient-contracts'
 import { createIpcResultSchema } from './result'
+import type {
+  ScreeningSessionCloseRequest,
+  ScreeningSessionCloseResult,
+  ScreeningSessionCreateRequest,
+  ScreeningSessionCreateResult,
+  ScreeningSessionGetByIdRequest,
+  ScreeningSessionGetByIdResult,
+  ScreeningSessionGetWorkspaceContextResult,
+  ScreeningSessionListRequest,
+  ScreeningSessionListResult,
+  ScreeningSessionReopenRequest,
+  ScreeningSessionReopenResult
+} from './screening-session-contracts'
 
 export const appGetInfoRequestSchema = z.object({}).strict()
 export const appGetHealthRequestSchema = z.object({}).strict()
@@ -119,5 +132,13 @@ export interface HealthScreeningApi {
     markNotDuplicate(
       request: PatientMarkNotDuplicateRequest
     ): Promise<PatientMarkNotDuplicateResult>
+  }
+  screeningSessions: {
+    getWorkspaceContext(): Promise<ScreeningSessionGetWorkspaceContextResult>
+    create(request: ScreeningSessionCreateRequest): Promise<ScreeningSessionCreateResult>
+    close(request: ScreeningSessionCloseRequest): Promise<ScreeningSessionCloseResult>
+    reopen(request: ScreeningSessionReopenRequest): Promise<ScreeningSessionReopenResult>
+    getById(request: ScreeningSessionGetByIdRequest): Promise<ScreeningSessionGetByIdResult>
+    list(request: ScreeningSessionListRequest): Promise<ScreeningSessionListResult>
   }
 }

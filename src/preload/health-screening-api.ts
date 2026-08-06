@@ -20,6 +20,7 @@ import {
 
 import { createAuthenticationApi, type IpcInvoke, type IpcSubscribe } from './authentication-api'
 import { createPatientApi } from './patient-api'
+import { createScreeningSessionApi } from './screening-session-api'
 
 export type { IpcInvoke, IpcSubscribe }
 
@@ -74,7 +75,8 @@ export function createHealthScreeningApi(
       }
     }),
     auth: createAuthenticationApi({ invoke, subscribe }),
-    patient: createPatientApi(invoke)
+    patient: createPatientApi(invoke),
+    screeningSessions: createScreeningSessionApi(invoke)
   })
 }
 
