@@ -55,7 +55,32 @@ describe('first-run IPC lifecycle and scope', () => {
     expect(lifecycle).toContain('patientRegistryService,')
     expect(lifecycle).toContain('patientDemographicAmendmentService,')
     expect(lifecycle).toContain('patientAcknowledgmentService,')
-    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(5)
+    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(7)
+  })
+
+  it('composes screening-session IPC services from the initialized database runtime', () => {
+    const lifecycle = readSource('src/main/app/lifecycle.ts')
+    const registrationStatement = 'const disposeIpcHandlers = registerApplicationIpcHandlers'
+    const serviceStatement =
+      'const screeningSessionService = createProductionScreeningSessionService'
+    const contextStatement =
+      'const screeningSessionWorkspaceContextService =\n        createProductionScreeningSessionWorkspaceContextService'
+
+    expect(lifecycle.match(/createDatabaseRuntime\(/gu)?.length).toBe(1)
+    expect(lifecycle).toContain('createProductionScreeningSessionService')
+    expect(lifecycle).toContain('createProductionScreeningSessionWorkspaceContextService')
+    expect(lifecycle.indexOf('databaseRuntime.initialize()')).toBeLessThan(
+      lifecycle.indexOf(serviceStatement)
+    )
+    expect(lifecycle.indexOf(serviceStatement)).toBeLessThan(
+      lifecycle.indexOf(registrationStatement)
+    )
+    expect(lifecycle.indexOf(contextStatement)).toBeLessThan(
+      lifecycle.indexOf(registrationStatement)
+    )
+    expect(lifecycle).toContain('screeningSessionService,')
+    expect(lifecycle).toContain('screeningSessionWorkspaceContextService,')
+    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(7)
   })
 
   it('keeps renderer first-run consumption scoped to the fixed preload API and preserves shell status text', () => {

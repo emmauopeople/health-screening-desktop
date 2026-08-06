@@ -14,6 +14,8 @@ import { createSystemEntityIdGenerator, createSystemUtcClock } from '@main/found
 
 import { createScreeningSessionService } from './screening-session-service'
 import type { ScreeningSessionService } from './screening-session-service-types'
+import { createScreeningSessionWorkspaceContextService } from './screening-session-workspace-context-service'
+import type { ScreeningSessionWorkspaceContextService } from './screening-session-workspace-context-types'
 
 export interface ProductionScreeningSessionServiceOptions {
   readonly connection: Database.Database
@@ -37,5 +39,19 @@ export function createProductionScreeningSessionService({
       clock: createSystemUtcClock(),
       logger
     })
+  })
+}
+
+export interface ProductionScreeningSessionWorkspaceContextServiceOptions {
+  readonly connection: Database.Database
+}
+
+export function createProductionScreeningSessionWorkspaceContextService({
+  connection
+}: ProductionScreeningSessionWorkspaceContextServiceOptions): ScreeningSessionWorkspaceContextService {
+  return createScreeningSessionWorkspaceContextService({
+    installationRepository: createInstallationRepository(connection),
+    locationRepository: createLocationRepository(connection),
+    clock: createSystemUtcClock()
   })
 }

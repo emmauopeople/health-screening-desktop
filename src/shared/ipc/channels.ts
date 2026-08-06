@@ -28,6 +28,14 @@ export const ipcChannels = {
     listRecent: 'health-screening:patient:list-recent',
     findDuplicates: 'health-screening:patient:find-duplicates',
     markNotDuplicate: 'health-screening:patient:mark-not-duplicate'
+  },
+  screeningSessions: {
+    getWorkspaceContext: 'health-screening:screening-sessions:get-workspace-context',
+    create: 'health-screening:screening-sessions:create',
+    close: 'health-screening:screening-sessions:close',
+    reopen: 'health-screening:screening-sessions:reopen',
+    getById: 'health-screening:screening-sessions:get-by-id',
+    list: 'health-screening:screening-sessions:list'
   }
 } as const
 
@@ -35,3 +43,5 @@ export type AppIpcChannel = (typeof ipcChannels.app)[keyof typeof ipcChannels.ap
 export type FirstRunIpcChannel = (typeof ipcChannels.firstRun)[keyof typeof ipcChannels.firstRun]
 export type AuthenticationIpcChannel = (typeof ipcChannels.auth)[keyof typeof ipcChannels.auth]
 export type PatientIpcChannel = (typeof ipcChannels.patient)[keyof typeof ipcChannels.patient]
+export type ScreeningSessionIpcChannel =
+  (typeof ipcChannels.screeningSessions)[keyof typeof ipcChannels.screeningSessions]

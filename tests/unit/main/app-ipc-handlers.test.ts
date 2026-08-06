@@ -9,7 +9,9 @@ import {
 } from '@main/ipc/handlers/app-handlers'
 import {
   disposeApplicationIpcHandlers,
+  disposeScreeningSessionIpcHandlers,
   registerApplicationIpcHandlers,
+  registerScreeningSessionIpcHandlers,
   type ApplicationIpcHandlerDependencies,
   type ApplicationIpcMain
 } from '@main/ipc/register-handlers'
@@ -20,7 +22,9 @@ import type {
   LocalAuthenticationSessionService,
   PatientAcknowledgmentService,
   PatientDemographicAmendmentService,
-  PatientRegistryService
+  PatientRegistryService,
+  ScreeningSessionService,
+  ScreeningSessionWorkspaceContextService
 } from '@main/application'
 
 const validInfo: AppInfo = {
@@ -151,7 +155,7 @@ describe('application IPC handler registration', () => {
 
     const dispose = registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(21)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(27)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
@@ -174,6 +178,12 @@ describe('application IPC handler registration', () => {
       'health-screening:patient:mark-not-duplicate',
       'health-screening:patient:record-acknowledgment',
       'health-screening:patient:search',
+      'health-screening:screening-sessions:close',
+      'health-screening:screening-sessions:create',
+      'health-screening:screening-sessions:get-by-id',
+      'health-screening:screening-sessions:get-workspace-context',
+      'health-screening:screening-sessions:list',
+      'health-screening:screening-sessions:reopen',
       'unrelated:channel'
     ])
 
@@ -189,7 +199,7 @@ describe('application IPC handler registration', () => {
     registerApplicationIpcHandlers(ipcMain, createDependencies())
     registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(42)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(54)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getHealth)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
@@ -216,6 +226,12 @@ describe('application IPC handler registration', () => {
       'health-screening:patient:mark-not-duplicate',
       'health-screening:patient:record-acknowledgment',
       'health-screening:patient:search',
+      'health-screening:screening-sessions:close',
+      'health-screening:screening-sessions:create',
+      'health-screening:screening-sessions:get-by-id',
+      'health-screening:screening-sessions:get-workspace-context',
+      'health-screening:screening-sessions:list',
+      'health-screening:screening-sessions:reopen',
       'unrelated:channel'
     ])
   })
@@ -244,10 +260,51 @@ describe('application IPC handler registration', () => {
     ipcMain.handlers.set(ipcChannels.patient.listRecent, vi.fn())
     ipcMain.handlers.set(ipcChannels.patient.findDuplicates, vi.fn())
     ipcMain.handlers.set(ipcChannels.patient.markNotDuplicate, vi.fn())
+    ipcMain.handlers.set(ipcChannels.screeningSessions.getWorkspaceContext, vi.fn())
+    ipcMain.handlers.set(ipcChannels.screeningSessions.create, vi.fn())
+    ipcMain.handlers.set(ipcChannels.screeningSessions.close, vi.fn())
+    ipcMain.handlers.set(ipcChannels.screeningSessions.reopen, vi.fn())
+    ipcMain.handlers.set(ipcChannels.screeningSessions.getById, vi.fn())
+    ipcMain.handlers.set(ipcChannels.screeningSessions.list, vi.fn())
 
     disposeApplicationIpcHandlers(ipcMain)
 
     expect([...ipcMain.handlers.keys()]).toEqual(['unrelated:channel'])
+  })
+
+  it('can register and dispose only screening-session handlers', () => {
+    const ipcMain = createMockIpcMain()
+    ipcMain.handlers.set(ipcChannels.app.getInfo, vi.fn())
+    ipcMain.handlers.set(ipcChannels.firstRun.getState, vi.fn())
+    ipcMain.handlers.set(ipcChannels.auth.login, vi.fn())
+    ipcMain.handlers.set(ipcChannels.patient.search, vi.fn())
+
+    const dispose = registerScreeningSessionIpcHandlers(
+      ipcMain,
+      createDependencies().screeningSessions
+    )
+
+    expect(ipcMain.handle).toHaveBeenCalledTimes(6)
+    expect(ipcMain.handlers.has(ipcChannels.screeningSessions.create)).toBe(true)
+    expect(ipcMain.handlers.has(ipcChannels.patient.search)).toBe(true)
+
+    dispose()
+
+    expect([...ipcMain.handlers.keys()].sort()).toEqual([
+      'health-screening:app:get-info',
+      'health-screening:auth:login',
+      'health-screening:first-run:get-state',
+      'health-screening:patient:search'
+    ])
+
+    disposeScreeningSessionIpcHandlers(ipcMain)
+
+    expect([...ipcMain.handlers.keys()].sort()).toEqual([
+      'health-screening:app:get-info',
+      'health-screening:auth:login',
+      'health-screening:first-run:get-state',
+      'health-screening:patient:search'
+    ])
   })
 })
 
@@ -304,6 +361,13 @@ function createDependencies(): ApplicationIpcHandlerDependencies {
       patientAcknowledgmentService: createPatientAcknowledgmentService(),
       logger: createLogger()
     },
+    screeningSessions: {
+      navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
+      authenticationSessionService: createAuthenticationSessionService(),
+      screeningSessionService: createScreeningSessionService(),
+      screeningSessionWorkspaceContextService: createScreeningSessionWorkspaceContextService(),
+      logger: createLogger()
+    },
     logger: createLogger()
   }
 }
@@ -353,6 +417,22 @@ function createPatientAcknowledgmentService(): PatientAcknowledgmentService {
     record: vi.fn(),
     listHistory: vi.fn()
   } as unknown as PatientAcknowledgmentService
+}
+
+function createScreeningSessionService(): ScreeningSessionService {
+  return {
+    create: vi.fn(),
+    close: vi.fn(),
+    reopen: vi.fn(),
+    getById: vi.fn(),
+    list: vi.fn()
+  } as unknown as ScreeningSessionService
+}
+
+function createScreeningSessionWorkspaceContextService(): ScreeningSessionWorkspaceContextService {
+  return {
+    getContext: vi.fn()
+  } as unknown as ScreeningSessionWorkspaceContextService
 }
 
 function createApplicationInfoProvider(): ApplicationInfoProvider {

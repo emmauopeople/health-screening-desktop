@@ -1,7 +1,9 @@
 export { createScreeningSessionService } from './screening-session-service'
 export {
   createProductionScreeningSessionService,
-  type ProductionScreeningSessionServiceOptions
+  createProductionScreeningSessionWorkspaceContextService,
+  type ProductionScreeningSessionServiceOptions,
+  type ProductionScreeningSessionWorkspaceContextServiceOptions
 } from './screening-session-service-composition'
 export {
   getScreeningSessionServiceErrorType,
@@ -14,6 +16,7 @@ export {
   ScreeningSessionServiceStateIntegrityError,
   ScreeningSessionServiceValidationError
 } from './screening-session-service-errors'
+export { createScreeningSessionWorkspaceContextService } from './screening-session-workspace-context-service'
 export type {
   CloseScreeningSessionRequest,
   CloseScreeningSessionResult,
@@ -29,3 +32,9 @@ export type {
   ScreeningSessionServiceActor,
   ScreeningSessionServiceDependencies
 } from './screening-session-service-types'
+export type {
+  ScreeningSessionWorkspaceContext,
+  ScreeningSessionWorkspaceContextService,
+  ScreeningSessionWorkspaceContextServiceDependencies,
+  ScreeningSessionWorkspaceLocation
+} from './screening-session-workspace-context-types'
