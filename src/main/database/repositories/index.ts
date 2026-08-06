@@ -157,6 +157,7 @@ export {
   type UpdatePatientDemographicsRepositoryInput
 } from './patient'
 export {
+  createScreeningSessionOutboxRepository,
   createScreeningSessionRepository,
   parseCloseScreeningSessionInput,
   parseInsertScreeningSessionInput,
@@ -179,7 +180,14 @@ export {
   type ScreeningSessionLifecycleTransition,
   type ScreeningSessionListInput,
   type ScreeningSessionListResult,
+  type ScreeningSessionOutboxOperation,
+  type ScreeningSessionOutboxPayload,
+  type ScreeningSessionOutboxPayloadScalar,
+  type ScreeningSessionOutboxPayloadSchemaVersion,
+  type ScreeningSessionOutboxPayloadValue,
+  type ScreeningSessionOutboxRepository,
   type ScreeningSessionRecord,
   type ScreeningSessionRepository,
-  type ScreeningSessionStatus
+  type ScreeningSessionStatus,
+  type InsertScreeningSessionOutboxInput
 } from './screening-session'
