@@ -1,6 +1,6 @@
 # Screening Session IPC Boundary
 
-HSD-028A exposes the HSD-027 screening-session application service through authenticated main-process IPC handlers. It adds shared renderer-safe contracts and fixed channels only. Preload methods, renderer workspace state, encounters, measurements, protocol calculation, referrals, reports, and sync transport remain outside this checkpoint.
+HSD-028A exposes the HSD-027 screening-session application service through authenticated main-process IPC handlers. HSD-028B exposes those fixed channels through the validated `window.healthScreening.screeningSessions` preload group. Renderer workspace state, encounters, measurements, protocol calculation, referrals, reports, and sync transport remain outside these checkpoints.
 
 ## Channels
 
@@ -14,6 +14,25 @@ HSD-028A exposes the HSD-027 screening-session application service through authe
 | `screeningSessions.list`                | `health-screening:screening-sessions:list`                  | `{ locationId, status, dateFrom, dateTo, page, pageSize }` |
 
 Requests are strict own-property objects. They reject renderer-supplied actor IDs, roles, protocol versions during creation, generated IDs, timestamps, lifecycle-history data, audit data, outbox data, create status, and create row version.
+
+## Preload API
+
+HSD-028B exposes exactly one screening-session group on the existing context-isolated preload bridge:
+
+- `window.healthScreening.screeningSessions.getWorkspaceContext()`
+- `window.healthScreening.screeningSessions.create(request)`
+- `window.healthScreening.screeningSessions.close(request)`
+- `window.healthScreening.screeningSessions.reopen(request)`
+- `window.healthScreening.screeningSessions.getById(request)`
+- `window.healthScreening.screeningSessions.list(request)`
+
+Each method invokes only its matching fixed channel from the table above. `getWorkspaceContext()` constructs the strict empty request inside preload; renderer code cannot provide a request object for that operation. Other methods validate the renderer-supplied request with the shared HSD-028A schema before invoking IPC and pass the parsed transport value, not the original object.
+
+Local request validation failures return `VALIDATION_FAILED` without invoking IPC. Invoke failures, rejected promises, malformed main-process responses, malformed failure envelopes, extra/internal response fields, invalid nested workspace or session data, and response parsing failures return only `IPC_UNAVAILABLE`.
+
+Returned screening-session results are deeply frozen, including nested session records, workspace active-location arrays, active-location records, list item arrays, and list item records. The preload API group and root `window.healthScreening` object are frozen. The preload boundary does not freeze or mutate renderer-provided request objects.
+
+The preload bridge does not expose `ipcRenderer`, `invoke`, `send`, `sendSync`, event objects, listener management, subscriptions, dynamic channel selection, MessagePorts, filesystem or shell APIs, Node built-ins, database objects, repositories, transaction contexts, clocks, or ID generators. HSD-028B adds no screening-session push subscription.
 
 ## Authentication And Authorization
 
@@ -70,7 +89,7 @@ Unexpected application, repository, database, timezone, malformed-output, or thr
 
 ## Sensitive Data
 
-Handlers and contracts do not log or return SQL, database paths, raw SQLite messages, stack traces, causes, notes, reason text, complete IPC payloads, audit metadata, outbox payloads, unrelated identifiers, or clinical data. Operational logs contain only the channel, safe error code, and sanitized error type.
+Handlers, contracts, and preload methods do not log or return SQL, database paths, raw SQLite messages, stack traces, causes, notes, reason text, complete IPC payloads, audit metadata, outbox payloads, unrelated identifiers, or clinical data. Operational logs contain only the channel, safe error code, and sanitized error type.
 
 ## Registration And Disposal
 
@@ -78,6 +97,6 @@ Application startup creates one production screening-session service and one wor
 
 Registration uses fixed channels and deterministic disposal. Focused screening-session registration rejects a duplicate active registration with a fixed controlled error and leaves the original handlers in place. Each successful registration returns a disposer that owns only that exact registration; repeated calls are harmless, and a stale disposer cannot remove a newer registration on the same IPC main object. If a partial registration fails while Electron handlers are being installed, only the screening-session handlers installed by that failed attempt are removed. Disposal is idempotent, successful disposal removes only screening-session handlers, and unrelated app, first-run, authentication, patient, or external handlers remain untouched. Application-wide startup registration still preserves the existing app, first-run, authentication, and patient handler behavior.
 
-## HSD-028B Boundary
+## HSD-028C Boundary
 
-HSD-028B may add preload methods and renderer workflows on top of these contracts. It must not add renderer-selected channel names, generic IPC dispatch, active-location persistence, fake dashboard counts, screening encounters, measurements, protocol calculations, referrals, reports, or sync transport.
+HSD-028C may add renderer workspace state and UI on top of these preload methods. It must not add renderer-selected channel names, generic IPC dispatch, active-location persistence, fake dashboard counts, screening encounters, measurements, protocol calculations, referrals, reports, or sync transport.

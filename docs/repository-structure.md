@@ -90,7 +90,11 @@ The renderer must not import from `src/main`.
 `src/preload` exposes a narrow typed bridge through `contextBridge`. HSD-005
 exposes fixed asynchronous application metadata and shell-health methods.
 HSD-015 adds fixed first-run state and initialization methods. HSD-022 adds a
-fixed `auth` method group and validated session-change subscription. Preload
+fixed `auth` method group and validated session-change subscription. HSD-028B
+adds a fixed `screeningSessions` method group that validates screening-session
+requests before IPC invocation, validates main-process responses before
+renderer delivery, deeply freezes returned screening-session results, and adds
+no push subscriptions. Preload
 does not expose raw `ipcRenderer`, generic send/execute APIs, Electron event
 objects, filesystem access, shell access, or dynamic channel dispatch.
 
