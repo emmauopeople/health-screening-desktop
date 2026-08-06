@@ -46,6 +46,7 @@ export interface CreateLocationInput {
 export interface LocationRepository {
   hasAny(): boolean
   getById(id: EntityId): LocationRecord | null
+  getByIdForWrite(connection: DatabaseTransactionConnection, id: EntityId): LocationRecord | null
   listAll(): readonly LocationRecord[]
   listActive(): readonly LocationRecord[]
   insert(connection: DatabaseTransactionConnection, input: CreateLocationInput): LocationRecord

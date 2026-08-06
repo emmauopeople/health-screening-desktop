@@ -11,7 +11,8 @@ import {
   RepositoryDataIntegrityError,
   RepositoryReadError,
   RepositoryValidationError,
-  RepositoryWriteError
+  RepositoryWriteError,
+  ScreeningSessionAlreadyExistsError
 } from '@main/database'
 import {
   isRepositoryError,
@@ -32,6 +33,7 @@ describe('repository errors', () => {
       new LocalUserAuthenticationStateConflictError('LocalUserAuthenticationStateConflictError'),
       new LocalUserCredentialStateConflictError('LocalUserCredentialStateConflictError'),
       new LocationAlreadyExistsError('LocationAlreadyExistsError'),
+      new ScreeningSessionAlreadyExistsError('ScreeningSessionAlreadyExistsError'),
       new AuditEventAlreadyExistsError('AuditEventAlreadyExistsError')
     ]
 
@@ -46,6 +48,7 @@ describe('repository errors', () => {
       'LOCAL_USER_AUTHENTICATION_STATE_CONFLICT',
       'LOCAL_USER_CREDENTIAL_STATE_CONFLICT',
       'LOCATION_ALREADY_EXISTS',
+      'SCREENING_SESSION_ALREADY_EXISTS',
       'AUDIT_EVENT_ALREADY_EXISTS'
     ])
     expect(errors.map((error) => error.message)).toEqual([
@@ -59,6 +62,7 @@ describe('repository errors', () => {
       'Local user authentication state no longer matches the expected state.',
       'Local user credential state no longer matches the expected state.',
       'Location already exists.',
+      'Screening session already exists.',
       'Audit event already exists.'
     ])
 
