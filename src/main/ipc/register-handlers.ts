@@ -8,14 +8,43 @@ import type { FirstRunIpcHandlerDependencies } from '@main/ipc/handlers/first-ru
 import { createFirstRunIpcHandlers } from '@main/ipc/handlers/first-run-handlers'
 import type { PatientIpcHandlerDependencies } from '@main/ipc/handlers/patient-handlers'
 import { createPatientIpcHandlers } from '@main/ipc/handlers/patient-handlers'
-import { ipcChannels } from '@shared/ipc'
+import type { ScreeningSessionIpcHandlerDependencies } from '@main/ipc/handlers/screening-session-handlers'
+import { createScreeningSessionIpcHandlers } from '@main/ipc/handlers/screening-session-handlers'
+import { ipcChannels, type ScreeningSessionIpcChannel } from '@shared/ipc'
 
 export type ApplicationIpcMain = Pick<IpcMain, 'handle' | 'removeHandler'>
 export type ApplicationIpcDisposer = () => void
+type ApplicationIpcListener = Parameters<ApplicationIpcMain['handle']>[1]
+interface ScreeningSessionRegistrationOwnership {
+  readonly id: symbol
+}
+
+export class ApplicationIpcRegistrationError extends Error {
+  constructor() {
+    super('Application IPC handler registration failed.')
+    this.name = 'ApplicationIpcRegistrationError'
+    delete this.stack
+  }
+}
+
+const screeningSessionIpcChannels: readonly ScreeningSessionIpcChannel[] = Object.freeze([
+  ipcChannels.screeningSessions.getWorkspaceContext,
+  ipcChannels.screeningSessions.create,
+  ipcChannels.screeningSessions.close,
+  ipcChannels.screeningSessions.reopen,
+  ipcChannels.screeningSessions.getById,
+  ipcChannels.screeningSessions.list
+])
+const activeScreeningSessionRegistrations = new WeakMap<
+  ApplicationIpcMain,
+  ScreeningSessionRegistrationOwnership
+>()
+
 export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependencies {
   readonly firstRun: FirstRunIpcHandlerDependencies
   readonly auth: AuthenticationIpcHandlerDependencies
   readonly patient: PatientIpcHandlerDependencies
+  readonly screeningSessions: ScreeningSessionIpcHandlerDependencies
 }
 
 export function registerApplicationIpcHandlers(
@@ -65,11 +94,57 @@ export function registerApplicationIpcHandlers(
   applicationIpcMain.handle(ipcChannels.patient.listRecent, patientHandlers.listRecent)
   applicationIpcMain.handle(ipcChannels.patient.findDuplicates, patientHandlers.findDuplicates)
   applicationIpcMain.handle(ipcChannels.patient.markNotDuplicate, patientHandlers.markNotDuplicate)
+  registerScreeningSessionIpcHandlers(applicationIpcMain, dependencies.screeningSessions)
 
   return () => {
     disposeApplicationIpcHandlers(applicationIpcMain)
     dependencies.auth.sessionPublisher.dispose()
   }
+}
+
+export function registerScreeningSessionIpcHandlers(
+  applicationIpcMain: ApplicationIpcMain,
+  dependencies: ScreeningSessionIpcHandlerDependencies
+): ApplicationIpcDisposer {
+  if (activeScreeningSessionRegistrations.has(applicationIpcMain)) {
+    throw new ApplicationIpcRegistrationError()
+  }
+
+  const ownership: ScreeningSessionRegistrationOwnership = Object.freeze({
+    id: Symbol('screening-session-ipc-registration')
+  })
+  const screeningSessionHandlers = createScreeningSessionIpcHandlers(dependencies)
+  const registrations: ReadonlyArray<
+    readonly [ScreeningSessionIpcChannel, ApplicationIpcListener]
+  > = [
+    [
+      ipcChannels.screeningSessions.getWorkspaceContext,
+      screeningSessionHandlers.getWorkspaceContext
+    ],
+    [ipcChannels.screeningSessions.create, screeningSessionHandlers.create],
+    [ipcChannels.screeningSessions.close, screeningSessionHandlers.close],
+    [ipcChannels.screeningSessions.reopen, screeningSessionHandlers.reopen],
+    [ipcChannels.screeningSessions.getById, screeningSessionHandlers.getById],
+    [ipcChannels.screeningSessions.list, screeningSessionHandlers.list]
+  ]
+  const installedChannels: ScreeningSessionIpcChannel[] = []
+
+  try {
+    for (const [channel, listener] of registrations) {
+      applicationIpcMain.handle(channel, listener)
+      installedChannels.push(channel)
+    }
+  } catch {
+    for (const channel of installedChannels.reverse()) {
+      applicationIpcMain.removeHandler(channel)
+    }
+
+    throw new ApplicationIpcRegistrationError()
+  }
+
+  activeScreeningSessionRegistrations.set(applicationIpcMain, ownership)
+
+  return () => disposeScreeningSessionRegistration(applicationIpcMain, ownership)
 }
 
 export function disposeApplicationIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
@@ -94,4 +169,24 @@ export function disposeApplicationIpcHandlers(applicationIpcMain: ApplicationIpc
   applicationIpcMain.removeHandler(ipcChannels.patient.listRecent)
   applicationIpcMain.removeHandler(ipcChannels.patient.findDuplicates)
   applicationIpcMain.removeHandler(ipcChannels.patient.markNotDuplicate)
+  disposeScreeningSessionIpcHandlers(applicationIpcMain)
+}
+
+export function disposeScreeningSessionIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
+  for (const channel of screeningSessionIpcChannels) {
+    applicationIpcMain.removeHandler(channel)
+  }
+
+  activeScreeningSessionRegistrations.delete(applicationIpcMain)
+}
+
+function disposeScreeningSessionRegistration(
+  applicationIpcMain: ApplicationIpcMain,
+  ownership: ScreeningSessionRegistrationOwnership
+): void {
+  if (activeScreeningSessionRegistrations.get(applicationIpcMain) !== ownership) {
+    return
+  }
+
+  disposeScreeningSessionIpcHandlers(applicationIpcMain)
 }

@@ -93,6 +93,14 @@ describe('shared IPC contracts', () => {
         listRecent: 'health-screening:patient:list-recent',
         findDuplicates: 'health-screening:patient:find-duplicates',
         markNotDuplicate: 'health-screening:patient:mark-not-duplicate'
+      },
+      screeningSessions: {
+        getWorkspaceContext: 'health-screening:screening-sessions:get-workspace-context',
+        create: 'health-screening:screening-sessions:create',
+        close: 'health-screening:screening-sessions:close',
+        reopen: 'health-screening:screening-sessions:reopen',
+        getById: 'health-screening:screening-sessions:get-by-id',
+        list: 'health-screening:screening-sessions:list'
       }
     })
     expect(
@@ -100,9 +108,10 @@ describe('shared IPC contracts', () => {
         ...Object.values(ipcChannels.app),
         ...Object.values(ipcChannels.firstRun),
         ...Object.values(ipcChannels.auth),
-        ...Object.values(ipcChannels.patient)
+        ...Object.values(ipcChannels.patient),
+        ...Object.values(ipcChannels.screeningSessions)
       ]).size
-    ).toBe(22)
+    ).toBe(28)
   })
 
   it('keeps patient requests strict and main-process-authored', () => {

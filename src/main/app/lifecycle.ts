@@ -16,7 +16,9 @@ import {
   createProductionLocalAuthenticationSessionService,
   createProductionPatientAcknowledgmentService,
   createProductionPatientDemographicAmendmentService,
-  createProductionPatientRegistryService
+  createProductionPatientRegistryService,
+  createProductionScreeningSessionService,
+  createProductionScreeningSessionWorkspaceContextService
 } from '@main/application'
 import {
   createDatabaseHealthProvider,
@@ -94,6 +96,14 @@ export function startApplicationLifecycle(): void {
         connection: databaseRuntime.getConnection(),
         logger: console
       })
+      const screeningSessionService = createProductionScreeningSessionService({
+        connection: databaseRuntime.getConnection(),
+        logger: console
+      })
+      const screeningSessionWorkspaceContextService =
+        createProductionScreeningSessionWorkspaceContextService({
+          connection: databaseRuntime.getConnection()
+        })
       const authenticationSessionPublisher = createAuthenticationSessionPublisher({
         navigationPolicy,
         getWebContents: getMainWindowWebContents
@@ -119,6 +129,13 @@ export function startApplicationLifecycle(): void {
           patientRegistryService,
           patientDemographicAmendmentService,
           patientAcknowledgmentService,
+          logger: console
+        },
+        screeningSessions: {
+          navigationPolicy,
+          authenticationSessionService,
+          screeningSessionService,
+          screeningSessionWorkspaceContextService,
           logger: console
         },
         logger: console
