@@ -11,6 +11,7 @@ import {
   ApplicationIpcRegistrationError,
   disposeApplicationIpcHandlers,
   registerApplicationIpcHandlers,
+  registerScreeningEncounterIpcHandlers,
   registerScreeningSessionIpcHandlers,
   type ApplicationIpcHandlerDependencies,
   type ApplicationIpcMain
@@ -23,6 +24,7 @@ import type {
   PatientAcknowledgmentService,
   PatientDemographicAmendmentService,
   PatientRegistryService,
+  ScreeningEncounterStartService,
   ScreeningSessionService,
   ScreeningSessionWorkspaceContextService
 } from '@main/application'
@@ -41,6 +43,37 @@ const validHealth: AppHealth = {
   database: 'ready',
   clinicalFeatures: 'not-implemented'
 }
+
+const applicationOwnedHandlerChannels = Object.freeze([
+  ipcChannels.app.getInfo,
+  ipcChannels.app.getHealth,
+  ipcChannels.firstRun.getState,
+  ipcChannels.firstRun.initialize,
+  ipcChannels.auth.getSession,
+  ipcChannels.auth.login,
+  ipcChannels.auth.changeRequiredPassword,
+  ipcChannels.auth.unlock,
+  ipcChannels.auth.lock,
+  ipcChannels.auth.logout,
+  ipcChannels.auth.recordActivity,
+  ipcChannels.patient.search,
+  ipcChannels.patient.get,
+  ipcChannels.patient.create,
+  ipcChannels.patient.amendDemographics,
+  ipcChannels.patient.listDemographicAmendmentHistory,
+  ipcChannels.patient.recordAcknowledgment,
+  ipcChannels.patient.listAcknowledgmentHistory,
+  ipcChannels.patient.listRecent,
+  ipcChannels.patient.findDuplicates,
+  ipcChannels.patient.markNotDuplicate,
+  ipcChannels.screeningSessions.getWorkspaceContext,
+  ipcChannels.screeningSessions.create,
+  ipcChannels.screeningSessions.close,
+  ipcChannels.screeningSessions.reopen,
+  ipcChannels.screeningSessions.getById,
+  ipcChannels.screeningSessions.list,
+  ipcChannels.screeningEncounters.start
+])
 
 describe('application IPC handlers', () => {
   it('returns validated safe app metadata', async () => {
@@ -155,7 +188,7 @@ describe('application IPC handler registration', () => {
 
     const dispose = registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(27)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(28)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
@@ -178,6 +211,7 @@ describe('application IPC handler registration', () => {
       'health-screening:patient:mark-not-duplicate',
       'health-screening:patient:record-acknowledgment',
       'health-screening:patient:search',
+      'health-screening:screening-encounters:start',
       'health-screening:screening-sessions:close',
       'health-screening:screening-sessions:create',
       'health-screening:screening-sessions:get-by-id',
@@ -199,7 +233,7 @@ describe('application IPC handler registration', () => {
     registerApplicationIpcHandlers(ipcMain, createDependencies())
     registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(54)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(56)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getHealth)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
@@ -226,6 +260,7 @@ describe('application IPC handler registration', () => {
       'health-screening:patient:mark-not-duplicate',
       'health-screening:patient:record-acknowledgment',
       'health-screening:patient:search',
+      'health-screening:screening-encounters:start',
       'health-screening:screening-sessions:close',
       'health-screening:screening-sessions:create',
       'health-screening:screening-sessions:get-by-id',
@@ -234,6 +269,186 @@ describe('application IPC handler registration', () => {
       'health-screening:screening-sessions:reopen',
       'unrelated:channel'
     ])
+  })
+
+  it('rolls back a failed early application registration without removing unrelated handlers', () => {
+    const ipcMain = createMockIpcMain({
+      throwOnHandleChannel: ipcChannels.app.getInfo
+    })
+    const unrelatedHandler = vi.fn()
+    const dependencies = createDependencies()
+    ipcMain.handlers.set('unrelated:channel', unrelatedHandler)
+
+    let error: unknown
+
+    try {
+      registerApplicationIpcHandlers(ipcMain, dependencies)
+    } catch (caught) {
+      error = caught
+    }
+
+    expect(error).toBeInstanceOf(ApplicationIpcRegistrationError)
+    expect(String(error)).toBe(
+      'ApplicationIpcRegistrationError: Application IPC handler registration failed.'
+    )
+    expect(String(error)).not.toContain('secret')
+    expectOnlyUnrelatedHandler(ipcMain, unrelatedHandler)
+    expectNoApplicationOwnedHandlers(ipcMain)
+    expect(dependencies.auth.sessionPublisher.dispose).not.toHaveBeenCalled()
+
+    ipcMain.setThrowOnHandleChannel(undefined)
+
+    const dispose = registerApplicationIpcHandlers(ipcMain, dependencies)
+
+    expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.start)).toBe(true)
+
+    dispose()
+  })
+
+  it('rolls back patient registration failure across earlier application handlers', () => {
+    const ipcMain = createMockIpcMain({
+      throwOnHandleChannel: ipcChannels.patient.listRecent
+    })
+    const unrelatedHandler = vi.fn()
+    const dependencies = createDependencies()
+    ipcMain.handlers.set('unrelated:channel', unrelatedHandler)
+
+    expect(() => registerApplicationIpcHandlers(ipcMain, dependencies)).toThrow(
+      ApplicationIpcRegistrationError
+    )
+
+    expectOnlyUnrelatedHandler(ipcMain, unrelatedHandler)
+    expectNoApplicationOwnedHandlers(ipcMain)
+    expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
+    expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
+    expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.auth.login)
+    expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.patient.recordAcknowledgment)
+    expect(dependencies.auth.sessionPublisher.dispose).not.toHaveBeenCalled()
+
+    ipcMain.setThrowOnHandleChannel(undefined)
+
+    const dispose = registerApplicationIpcHandlers(ipcMain, dependencies)
+
+    expect(ipcMain.handlers.has(ipcChannels.patient.search)).toBe(true)
+
+    dispose()
+  })
+
+  it('rolls back screening-session registration failure and clears focused ownership', () => {
+    const ipcMain = createMockIpcMain({
+      throwOnHandleChannel: ipcChannels.screeningSessions.reopen
+    })
+    const unrelatedHandler = vi.fn()
+    const dependencies = createDependencies()
+    ipcMain.handlers.set('unrelated:channel', unrelatedHandler)
+
+    expect(() => registerApplicationIpcHandlers(ipcMain, dependencies)).toThrow(
+      ApplicationIpcRegistrationError
+    )
+
+    expectOnlyUnrelatedHandler(ipcMain, unrelatedHandler)
+    expectNoApplicationOwnedHandlers(ipcMain)
+    expect(ipcMain.removeHandler).toHaveBeenCalledWith(
+      ipcChannels.screeningSessions.getWorkspaceContext
+    )
+    expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.screeningSessions.close)
+    expect(dependencies.auth.sessionPublisher.dispose).not.toHaveBeenCalled()
+
+    ipcMain.setThrowOnHandleChannel(undefined)
+
+    const focusedDispose = registerScreeningSessionIpcHandlers(
+      ipcMain,
+      dependencies.screeningSessions
+    )
+
+    expect(ipcMain.handlers.has(ipcChannels.screeningSessions.create)).toBe(true)
+
+    focusedDispose()
+
+    const dispose = registerApplicationIpcHandlers(ipcMain, dependencies)
+
+    expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.start)).toBe(true)
+
+    dispose()
+  })
+
+  it('rolls back screening-encounter registration failure and clears focused ownership', () => {
+    const ipcMain = createMockIpcMain({
+      throwOnHandleChannel: ipcChannels.screeningEncounters.start
+    })
+    const unrelatedHandler = vi.fn()
+    const dependencies = createDependencies()
+    ipcMain.handlers.set('unrelated:channel', unrelatedHandler)
+
+    expect(() => registerApplicationIpcHandlers(ipcMain, dependencies)).toThrow(
+      ApplicationIpcRegistrationError
+    )
+
+    expectOnlyUnrelatedHandler(ipcMain, unrelatedHandler)
+    expectNoApplicationOwnedHandlers(ipcMain)
+    expect(ipcMain.removeHandler).toHaveBeenCalledWith(
+      ipcChannels.screeningSessions.getWorkspaceContext
+    )
+    expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.screeningSessions.list)
+    expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.start)).toBe(false)
+    expect(dependencies.auth.sessionPublisher.dispose).not.toHaveBeenCalled()
+
+    ipcMain.setThrowOnHandleChannel(undefined)
+
+    const focusedSessionDispose = registerScreeningSessionIpcHandlers(
+      ipcMain,
+      dependencies.screeningSessions
+    )
+    const focusedEncounterDispose = registerScreeningEncounterIpcHandlers(
+      ipcMain,
+      dependencies.screeningEncounters
+    )
+
+    expect(ipcMain.handlers.has(ipcChannels.screeningSessions.list)).toBe(true)
+    expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.start)).toBe(true)
+
+    focusedEncounterDispose()
+    focusedSessionDispose()
+
+    const dispose = registerApplicationIpcHandlers(ipcMain, dependencies)
+
+    expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.start)).toBe(true)
+
+    dispose()
+  })
+
+  it('prevents stale application disposers from removing newer registrations', () => {
+    const ipcMain = createMockIpcMain()
+    const unrelatedHandler = vi.fn()
+    const firstDependencies = createDependencies()
+    const secondDependencies = createDependencies()
+    ipcMain.handlers.set('unrelated:channel', unrelatedHandler)
+
+    const firstDispose = registerApplicationIpcHandlers(ipcMain, firstDependencies)
+    const firstHandlers = new Map(ipcMain.handlers)
+
+    expect(firstHandlers.has(ipcChannels.screeningEncounters.start)).toBe(true)
+
+    const secondDispose = registerApplicationIpcHandlers(ipcMain, secondDependencies)
+    const secondHandlers = new Map(ipcMain.handlers)
+
+    expect(firstDependencies.auth.sessionPublisher.dispose).toHaveBeenCalledOnce()
+
+    firstDispose()
+
+    expectHandlerMapsEqual(ipcMain.handlers, secondHandlers)
+    expect(firstDependencies.auth.sessionPublisher.dispose).toHaveBeenCalledOnce()
+    expect(secondDependencies.auth.sessionPublisher.dispose).not.toHaveBeenCalled()
+
+    secondDispose()
+
+    expectOnlyUnrelatedHandler(ipcMain, unrelatedHandler)
+    expect(secondDependencies.auth.sessionPublisher.dispose).toHaveBeenCalledOnce()
+
+    secondDispose()
+
+    expectOnlyUnrelatedHandler(ipcMain, unrelatedHandler)
+    expect(secondDependencies.auth.sessionPublisher.dispose).toHaveBeenCalledOnce()
   })
 
   it('disposes only application-owned handlers', () => {
@@ -266,6 +481,7 @@ describe('application IPC handler registration', () => {
     ipcMain.handlers.set(ipcChannels.screeningSessions.reopen, vi.fn())
     ipcMain.handlers.set(ipcChannels.screeningSessions.getById, vi.fn())
     ipcMain.handlers.set(ipcChannels.screeningSessions.list, vi.fn())
+    ipcMain.handlers.set(ipcChannels.screeningEncounters.start, vi.fn())
 
     disposeApplicationIpcHandlers(ipcMain)
 
@@ -347,6 +563,61 @@ describe('application IPC handler registration', () => {
     thirdDispose()
   })
 
+  it('can register and dispose only screening-encounter handlers with ownership protection', () => {
+    const ipcMain = createMockIpcMain()
+    ipcMain.handlers.set(ipcChannels.app.getInfo, vi.fn())
+    ipcMain.handlers.set(ipcChannels.patient.search, vi.fn())
+
+    const dispose = registerScreeningEncounterIpcHandlers(
+      ipcMain,
+      createDependencies().screeningEncounters
+    )
+    const firstHandlers = new Map(ipcMain.handlers)
+
+    expect(ipcMain.handle).toHaveBeenCalledTimes(1)
+    expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.start)).toBe(true)
+
+    dispose()
+
+    expect([...ipcMain.handlers.keys()].sort()).toEqual([
+      'health-screening:app:get-info',
+      'health-screening:patient:search'
+    ])
+
+    dispose()
+
+    const secondDispose = registerScreeningEncounterIpcHandlers(
+      ipcMain,
+      createDependencies().screeningEncounters
+    )
+    const secondHandlers = new Map(ipcMain.handlers)
+
+    expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.start)).toBe(true)
+
+    dispose()
+
+    for (const [channel, handler] of secondHandlers) {
+      expect(ipcMain.handlers.get(channel)).toBe(handler)
+    }
+
+    expect(() =>
+      registerScreeningEncounterIpcHandlers(ipcMain, createDependencies().screeningEncounters)
+    ).toThrow(ApplicationIpcRegistrationError)
+
+    for (const [channel, handler] of firstHandlers) {
+      if (channel !== ipcChannels.screeningEncounters.start) {
+        expect(ipcMain.handlers.get(channel)).toBe(handler)
+      }
+    }
+
+    secondDispose()
+
+    expect([...ipcMain.handlers.keys()].sort()).toEqual([
+      'health-screening:app:get-info',
+      'health-screening:patient:search'
+    ])
+  })
+
   it('rejects duplicate screening-session registration without replacing original handlers', () => {
     const ipcMain = createMockIpcMain()
     const dispose = registerScreeningSessionIpcHandlers(
@@ -410,6 +681,31 @@ describe('application IPC handler registration', () => {
 
     dispose()
   })
+
+  it('cleans up only screening-encounter handlers installed by a failed registration', () => {
+    const ipcMain = createMockIpcMain({
+      throwOnHandleChannel: ipcChannels.screeningEncounters.start
+    })
+    const unrelatedHandler = vi.fn()
+    ipcMain.handlers.set('unrelated:channel', unrelatedHandler)
+
+    expect(() =>
+      registerScreeningEncounterIpcHandlers(ipcMain, createDependencies().screeningEncounters)
+    ).toThrow(ApplicationIpcRegistrationError)
+    expect(ipcMain.handlers.get('unrelated:channel')).toBe(unrelatedHandler)
+    expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.start)).toBe(false)
+
+    ipcMain.setThrowOnHandleChannel(undefined)
+
+    const dispose = registerScreeningEncounterIpcHandlers(
+      ipcMain,
+      createDependencies().screeningEncounters
+    )
+
+    expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.start)).toBe(true)
+
+    dispose()
+  })
 })
 
 interface HandlerTestOverrides {
@@ -470,6 +766,11 @@ function createDependencies(): ApplicationIpcHandlerDependencies {
       authenticationSessionService: createAuthenticationSessionService(),
       screeningSessionService: createScreeningSessionService(),
       screeningSessionWorkspaceContextService: createScreeningSessionWorkspaceContextService(),
+      logger: createLogger()
+    },
+    screeningEncounters: {
+      navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
+      screeningEncounterStartService: createScreeningEncounterStartService(),
       logger: createLogger()
     },
     logger: createLogger()
@@ -539,6 +840,12 @@ function createScreeningSessionWorkspaceContextService(): ScreeningSessionWorksp
   } as unknown as ScreeningSessionWorkspaceContextService
 }
 
+function createScreeningEncounterStartService(): ScreeningEncounterStartService {
+  return {
+    start: vi.fn()
+  } as unknown as ScreeningEncounterStartService
+}
+
 function createApplicationInfoProvider(): ApplicationInfoProvider {
   return {
     getVersion: () => validInfo.applicationVersion,
@@ -570,6 +877,35 @@ function createLogger(): TestLogger {
     warn: vi.fn<(message: string) => void>(),
     error: vi.fn<(message: string) => void>()
   } as TestLogger
+}
+
+function expectNoApplicationOwnedHandlers({
+  handlers
+}: {
+  readonly handlers: ReadonlyMap<string, unknown>
+}): void {
+  for (const channel of applicationOwnedHandlerChannels) {
+    expect(handlers.has(channel)).toBe(false)
+  }
+}
+
+function expectOnlyUnrelatedHandler(
+  { handlers }: { readonly handlers: ReadonlyMap<string, unknown> },
+  unrelatedHandler: unknown
+): void {
+  expect([...handlers.keys()]).toEqual(['unrelated:channel'])
+  expect(handlers.get('unrelated:channel')).toBe(unrelatedHandler)
+}
+
+function expectHandlerMapsEqual(
+  actual: ReadonlyMap<string, unknown>,
+  expected: ReadonlyMap<string, unknown>
+): void {
+  expect([...actual.keys()].sort()).toEqual([...expected.keys()].sort())
+
+  for (const [channel, handler] of expected) {
+    expect(actual.get(channel)).toBe(handler)
+  }
 }
 
 function createMockIpcMain({

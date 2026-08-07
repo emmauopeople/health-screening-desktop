@@ -4,6 +4,7 @@ export {
   type AuthenticationIpcChannel,
   type FirstRunIpcChannel,
   type PatientIpcChannel,
+  type ScreeningEncounterIpcChannel,
   type ScreeningSessionIpcChannel
 } from './channels'
 export {
@@ -213,6 +214,26 @@ export {
   type PublicPatientDuplicatePair,
   type PublicPatientSummary
 } from './patient-contracts'
+export {
+  createScreeningEncounterIpcFailure,
+  createScreeningEncounterStartStatusResult,
+  publicScreeningEncounterStartSummarySchema,
+  screeningEncounterFailureSchema,
+  screeningEncounterIpcErrorCodeSchema,
+  screeningEncounterSafeErrorMessages,
+  screeningEncounterStartRequestSchema,
+  screeningEncounterStartResultSchema,
+  screeningEncounterStartSuccessDataSchema,
+  screeningEncounterStatusSchema,
+  screeningEncounterUtcTimestampSchema,
+  screeningEncounterUuidSchema,
+  type PublicScreeningEncounterStartSummary,
+  type ScreeningEncounterIpcErrorCode,
+  type ScreeningEncounterStartRequest,
+  type ScreeningEncounterStartResult,
+  type ScreeningEncounterStartSuccessData,
+  type ScreeningEncounterStatus
+} from './screening-encounter-contracts'
 export {
   createScreeningSessionFailure,
   publicScreeningSessionSchema,

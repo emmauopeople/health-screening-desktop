@@ -101,6 +101,9 @@ describe('shared IPC contracts', () => {
         reopen: 'health-screening:screening-sessions:reopen',
         getById: 'health-screening:screening-sessions:get-by-id',
         list: 'health-screening:screening-sessions:list'
+      },
+      screeningEncounters: {
+        start: 'health-screening:screening-encounters:start'
       }
     })
     expect(
@@ -109,9 +112,10 @@ describe('shared IPC contracts', () => {
         ...Object.values(ipcChannels.firstRun),
         ...Object.values(ipcChannels.auth),
         ...Object.values(ipcChannels.patient),
-        ...Object.values(ipcChannels.screeningSessions)
+        ...Object.values(ipcChannels.screeningSessions),
+        ...Object.values(ipcChannels.screeningEncounters)
       ]).size
-    ).toBe(28)
+    ).toBe(29)
   })
 
   it('keeps patient requests strict and main-process-authored', () => {
