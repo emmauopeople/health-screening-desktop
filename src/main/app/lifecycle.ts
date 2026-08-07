@@ -17,6 +17,7 @@ import {
   createProductionPatientAcknowledgmentService,
   createProductionPatientDemographicAmendmentService,
   createProductionPatientRegistryService,
+  createProductionScreeningEncounterStartService,
   createProductionScreeningSessionService,
   createProductionScreeningSessionWorkspaceContextService
 } from '@main/application'
@@ -100,6 +101,11 @@ export function startApplicationLifecycle(): void {
         connection: databaseRuntime.getConnection(),
         logger: console
       })
+      const screeningEncounterStartService = createProductionScreeningEncounterStartService({
+        connection: databaseRuntime.getConnection(),
+        authenticationSessionService,
+        logger: console
+      })
       const screeningSessionWorkspaceContextService =
         createProductionScreeningSessionWorkspaceContextService({
           connection: databaseRuntime.getConnection()
@@ -136,6 +142,11 @@ export function startApplicationLifecycle(): void {
           authenticationSessionService,
           screeningSessionService,
           screeningSessionWorkspaceContextService,
+          logger: console
+        },
+        screeningEncounters: {
+          navigationPolicy,
+          screeningEncounterStartService,
           logger: console
         },
         logger: console

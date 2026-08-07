@@ -110,8 +110,10 @@ fixed `auth` method group and validated session-change subscription. HSD-028B
 adds a fixed `screeningSessions` method group that validates screening-session
 requests before IPC invocation, validates main-process responses before
 renderer delivery, deeply freezes returned screening-session results, and adds
-no push subscriptions. Preload
-does not expose raw `ipcRenderer`, generic send/execute APIs, Electron event
+no push subscriptions. HSD-029B adds a fixed `screeningEncounters.start`
+method that accepts only patient and screening-session IDs, validates responses,
+and adds no lookup, mutation, measurement, referral, or push APIs. Preload does
+not expose raw `ipcRenderer`, generic send/execute APIs, Electron event
 objects, filesystem access, shell access, or dynamic channel dispatch.
 
 ## Renderer

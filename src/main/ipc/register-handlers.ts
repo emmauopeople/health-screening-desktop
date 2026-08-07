@@ -8,14 +8,23 @@ import type { FirstRunIpcHandlerDependencies } from '@main/ipc/handlers/first-ru
 import { createFirstRunIpcHandlers } from '@main/ipc/handlers/first-run-handlers'
 import type { PatientIpcHandlerDependencies } from '@main/ipc/handlers/patient-handlers'
 import { createPatientIpcHandlers } from '@main/ipc/handlers/patient-handlers'
+import type { ScreeningEncounterIpcHandlerDependencies } from '@main/ipc/handlers/screening-encounter-handlers'
+import { createScreeningEncounterIpcHandlers } from '@main/ipc/handlers/screening-encounter-handlers'
 import type { ScreeningSessionIpcHandlerDependencies } from '@main/ipc/handlers/screening-session-handlers'
 import { createScreeningSessionIpcHandlers } from '@main/ipc/handlers/screening-session-handlers'
-import { ipcChannels, type ScreeningSessionIpcChannel } from '@shared/ipc'
+import {
+  ipcChannels,
+  type ScreeningEncounterIpcChannel,
+  type ScreeningSessionIpcChannel
+} from '@shared/ipc'
 
 export type ApplicationIpcMain = Pick<IpcMain, 'handle' | 'removeHandler'>
 export type ApplicationIpcDisposer = () => void
 type ApplicationIpcListener = Parameters<ApplicationIpcMain['handle']>[1]
 interface ScreeningSessionRegistrationOwnership {
+  readonly id: symbol
+}
+interface ScreeningEncounterRegistrationOwnership {
   readonly id: symbol
 }
 
@@ -39,12 +48,20 @@ const activeScreeningSessionRegistrations = new WeakMap<
   ApplicationIpcMain,
   ScreeningSessionRegistrationOwnership
 >()
+const screeningEncounterIpcChannels: readonly ScreeningEncounterIpcChannel[] = Object.freeze([
+  ipcChannels.screeningEncounters.start
+])
+const activeScreeningEncounterRegistrations = new WeakMap<
+  ApplicationIpcMain,
+  ScreeningEncounterRegistrationOwnership
+>()
 
 export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependencies {
   readonly firstRun: FirstRunIpcHandlerDependencies
   readonly auth: AuthenticationIpcHandlerDependencies
   readonly patient: PatientIpcHandlerDependencies
   readonly screeningSessions: ScreeningSessionIpcHandlerDependencies
+  readonly screeningEncounters: ScreeningEncounterIpcHandlerDependencies
 }
 
 export function registerApplicationIpcHandlers(
@@ -95,6 +112,7 @@ export function registerApplicationIpcHandlers(
   applicationIpcMain.handle(ipcChannels.patient.findDuplicates, patientHandlers.findDuplicates)
   applicationIpcMain.handle(ipcChannels.patient.markNotDuplicate, patientHandlers.markNotDuplicate)
   registerScreeningSessionIpcHandlers(applicationIpcMain, dependencies.screeningSessions)
+  registerScreeningEncounterIpcHandlers(applicationIpcMain, dependencies.screeningEncounters)
 
   return () => {
     disposeApplicationIpcHandlers(applicationIpcMain)
@@ -147,6 +165,39 @@ export function registerScreeningSessionIpcHandlers(
   return () => disposeScreeningSessionRegistration(applicationIpcMain, ownership)
 }
 
+export function registerScreeningEncounterIpcHandlers(
+  applicationIpcMain: ApplicationIpcMain,
+  dependencies: ScreeningEncounterIpcHandlerDependencies
+): ApplicationIpcDisposer {
+  if (activeScreeningEncounterRegistrations.has(applicationIpcMain)) {
+    throw new ApplicationIpcRegistrationError()
+  }
+
+  const ownership: ScreeningEncounterRegistrationOwnership = Object.freeze({
+    id: Symbol('screening-encounter-ipc-registration')
+  })
+  const screeningEncounterHandlers = createScreeningEncounterIpcHandlers(dependencies)
+  const installedChannels: ScreeningEncounterIpcChannel[] = []
+
+  try {
+    applicationIpcMain.handle(
+      ipcChannels.screeningEncounters.start,
+      screeningEncounterHandlers.start
+    )
+    installedChannels.push(ipcChannels.screeningEncounters.start)
+  } catch {
+    for (const channel of installedChannels.reverse()) {
+      applicationIpcMain.removeHandler(channel)
+    }
+
+    throw new ApplicationIpcRegistrationError()
+  }
+
+  activeScreeningEncounterRegistrations.set(applicationIpcMain, ownership)
+
+  return () => disposeScreeningEncounterRegistration(applicationIpcMain, ownership)
+}
+
 export function disposeApplicationIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
   applicationIpcMain.removeHandler(ipcChannels.app.getInfo)
   applicationIpcMain.removeHandler(ipcChannels.app.getHealth)
@@ -170,6 +221,7 @@ export function disposeApplicationIpcHandlers(applicationIpcMain: ApplicationIpc
   applicationIpcMain.removeHandler(ipcChannels.patient.findDuplicates)
   applicationIpcMain.removeHandler(ipcChannels.patient.markNotDuplicate)
   disposeScreeningSessionIpcHandlers(applicationIpcMain)
+  disposeScreeningEncounterIpcHandlers(applicationIpcMain)
 }
 
 export function disposeScreeningSessionIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
@@ -189,4 +241,23 @@ function disposeScreeningSessionRegistration(
   }
 
   disposeScreeningSessionIpcHandlers(applicationIpcMain)
+}
+
+export function disposeScreeningEncounterIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
+  for (const channel of screeningEncounterIpcChannels) {
+    applicationIpcMain.removeHandler(channel)
+  }
+
+  activeScreeningEncounterRegistrations.delete(applicationIpcMain)
+}
+
+function disposeScreeningEncounterRegistration(
+  applicationIpcMain: ApplicationIpcMain,
+  ownership: ScreeningEncounterRegistrationOwnership
+): void {
+  if (activeScreeningEncounterRegistrations.get(applicationIpcMain) !== ownership) {
+    return
+  }
+
+  disposeScreeningEncounterIpcHandlers(applicationIpcMain)
 }

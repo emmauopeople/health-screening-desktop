@@ -36,6 +36,9 @@ export const ipcChannels = {
     reopen: 'health-screening:screening-sessions:reopen',
     getById: 'health-screening:screening-sessions:get-by-id',
     list: 'health-screening:screening-sessions:list'
+  },
+  screeningEncounters: {
+    start: 'health-screening:screening-encounters:start'
   }
 } as const
 
@@ -45,3 +48,5 @@ export type AuthenticationIpcChannel = (typeof ipcChannels.auth)[keyof typeof ip
 export type PatientIpcChannel = (typeof ipcChannels.patient)[keyof typeof ipcChannels.patient]
 export type ScreeningSessionIpcChannel =
   (typeof ipcChannels.screeningSessions)[keyof typeof ipcChannels.screeningSessions]
+export type ScreeningEncounterIpcChannel =
+  (typeof ipcChannels.screeningEncounters)[keyof typeof ipcChannels.screeningEncounters]

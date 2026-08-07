@@ -42,6 +42,10 @@ import type {
 } from './patient-contracts'
 import { createIpcResultSchema } from './result'
 import type {
+  ScreeningEncounterStartRequest,
+  ScreeningEncounterStartResult
+} from './screening-encounter-contracts'
+import type {
   ScreeningSessionCloseRequest,
   ScreeningSessionCloseResult,
   ScreeningSessionCreateRequest,
@@ -140,5 +144,8 @@ export interface HealthScreeningApi {
     reopen(request: ScreeningSessionReopenRequest): Promise<ScreeningSessionReopenResult>
     getById(request: ScreeningSessionGetByIdRequest): Promise<ScreeningSessionGetByIdResult>
     list(request: ScreeningSessionListRequest): Promise<ScreeningSessionListResult>
+  }
+  screeningEncounters: {
+    start(request: ScreeningEncounterStartRequest): Promise<ScreeningEncounterStartResult>
   }
 }
