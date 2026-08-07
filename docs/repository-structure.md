@@ -148,14 +148,16 @@ patient tabs, database access, network behavior, or authorization decisions.
 HSD-025 owns patient search, duplicate review, four-patient tabs, and
 unsaved-change guards.
 
-`src/renderer/src/app/screening` owns the HSD-028C screening-session workspace.
-It consumes only the validated `window.healthScreening.screeningSessions`
-preload group, renders active locations and deployment-local date from trusted
-workspace context, and keeps active location, active session, selected row,
-filters, and pagination in renderer memory only. It does not persist session
-context, calculate the authoritative local date, import Electron/main/preload
-modules, access SQLite, create fake records, or implement encounters,
-measurements, protocol calculations, reports, referrals, dashboards, sync
+`src/renderer/src/app/screening` owns the HSD-028C screening-session workspace
+and the HSD-029C screening encounter-start workspace. It consumes only the
+validated screening-session, screening-encounter, and patient-search preload
+groups. Session-management state, patient tabs, active visual step, selected
+patient, and selected session are renderer-memory state only. The HSD-029C
+workspace may start or resume an encounter through
+`screeningEncounters.start({ patientId, screeningSessionId })`; it does not
+persist clinical fields, calculate protocol recommendations, import
+Electron/main/preload modules, access SQLite, create fake records, generate
+encounter IDs, add browser storage, implement referrals, dashboards, sync
 transport, or networking.
 
 ## Shared Contracts

@@ -9,6 +9,7 @@ import type {
 
 import { PatientRegistryWorkspace } from '../patients/PatientRegistryWorkspace'
 import { ScreeningSessionWorkspace } from '../screening/ScreeningSessionWorkspace'
+import { ScreeningWorkspace } from '../screening/ScreeningWorkspace'
 import { DashboardWorkspace } from './DashboardWorkspace'
 import { PlannedModuleWorkspace } from './PlannedModuleWorkspace'
 import type {
@@ -75,6 +76,14 @@ export function ApplicationWorkspace({
           onSelectedPatientChange={setSelectedPatient}
           onPatientAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
           onSelectCommand={onSelectCommand}
+          registerNavigationGuard={registerNavigationGuard}
+        />
+      ) : route.status === 'SCREENING_SESSIONS' && route.commandId === 'SCREENING_NEW_SCREENING' ? (
+        <ScreeningWorkspace
+          api={api}
+          headingId={workspaceHeadingId}
+          headingRef={headingRef}
+          onScreeningAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
           registerNavigationGuard={registerNavigationGuard}
         />
       ) : route.status === 'SCREENING_SESSIONS' ? (

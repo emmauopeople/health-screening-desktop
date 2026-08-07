@@ -78,6 +78,11 @@ Invocation failures or malformed main-process responses return the HSD-029A
 
 ## HSD-029C Boundary
 
-Future renderer work may call this preload method from the screening workspace.
-That work must not bypass preload validation or treat renderer state as
-authorization.
+The HSD-029C screening workspace calls this preload method only after a patient
+and current open screening session are selected and the user intentionally
+begins or resumes screening. It sends exactly `patientId` and
+`screeningSessionId`, maps `STARTED` and `ALREADY_EXISTS` to the same draft
+workspace, and maps controlled failures to concise messages. The renderer does
+not bypass preload validation, treat renderer state as authorization, generate
+encounter IDs, persist clinical values, calculate recommendations, or create
+referrals.

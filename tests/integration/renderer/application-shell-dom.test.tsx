@@ -251,6 +251,19 @@ describe('application shell DOM integration', () => {
     expect(commandButtonByText(mounted, 'Patient Search').getAttribute('aria-current')).toBe('page')
     expect(commandPanel(mounted)?.textContent).not.toContain('Dashboard')
 
+    await clickButton(mounted, 'Screening')
+    await clickButton(mounted, 'New Screening')
+
+    expectCommandPanelLabels(mounted, [
+      'Today\u2019s Session',
+      'New Screening',
+      'Draft Encounters',
+      'Session Summary'
+    ])
+    expect(commandButtonByText(mounted, 'New Screening').getAttribute('aria-current')).toBe('page')
+    expectWorkspaceHeading(mounted, 'New Screening')
+    expect(text(mounted)).toContain('Select a patient to open the screening workspace.')
+
     await clickButton(mounted, 'Home')
 
     expectCommandPanelLabels(mounted, [

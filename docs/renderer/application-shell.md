@@ -85,6 +85,54 @@ It does not implement patient enrollment, screening encounters, measurements,
 protocol calculations, recommendations, referrals, reports, dashboard counts,
 sync networking, or fake operational records.
 
+## Screening Encounter Workspace
+
+HSD-029C routes `SCREENING_NEW_SCREENING` to the screening encounter workspace.
+The workspace uses the approved screening split-workspace SVG and UX design
+notes as its visual source: patient context on the left, screening workflow on
+the right, navy/teal shell styling, compact white cards, explicit status text
+plus icon treatment, and support for 1280x720, 1366x768, and 1920x1080 desktop
+workspaces.
+
+Patient lookup uses the existing patient-search preload API. Selecting a
+patient opens an in-memory tab labeled with the patient display name only. The
+tab strip holds at most four patients, does not persist to browser storage, and
+does not expose patient codes, patient IDs, encounter IDs, or session IDs in
+tab labels. Opening an already-open patient activates that tab. Opening a fifth
+distinct patient shows a controlled message requiring one existing tab to be
+closed.
+
+The workspace renders the intended patient-context regions from the approved
+design: identity summary, follow-up/referral area, last three screenings,
+30-day average blood pressure, blood-pressure graph, weight graph, recent
+pulse, OTC medication use, follow-up date, and screening count. Regions without
+an approved preload contract show honest empty states. Empty graphs keep their
+axes and layout but do not contain fabricated clinical points.
+
+The right panel establishes the five screening steps: Vitals, Lifestyle, Food,
+OTC Medications, and Review. Vitals follows the approved table structure for BP
+and related measurements. Clinical fields are disabled with unavailable states
+until persistence contracts exist. The clinical-action panel remains neutral
+with "Awaiting completed screening data" and the permanent safety wording,
+"Screening action, not a diagnosis."
+
+Encounter start is the only operational encounter mutation. The renderer calls
+`window.healthScreening.screeningEncounters.start()` with exactly `patientId`
+and `screeningSessionId` after the user intentionally begins or resumes
+screening. `STARTED` and `ALREADY_EXISTS` open the canonical draft workspace;
+controlled failures map to concise local messages and never expose raw errors,
+SQL, database paths, stack traces, actor IDs, audit data, outbox payloads, or
+clinical details. The renderer does not optimistically create encounters.
+
+The workspace uses semantic tab and tabpanel roles, keyboard tab navigation,
+accessible close controls, visible focus states, live status messages for
+controlled failures, and deterministic focus restoration when tabs close.
+
+HSD-029C does not implement vital-sign persistence, lifestyle persistence, food
+persistence, OTC medication persistence, review completion, recommendation
+calculation, referral creation, synchronization, FHIR mapping, or clinical
+threshold logic.
+
 ## Keyboard Model
 
 Primary menu buttons use one roving tab stop. Left and Right move through the
@@ -96,9 +144,10 @@ F6 cycles major focus zones in order: top bar, contextual command panel when
 open, workspace, then top bar. Shift+F6 cycles in reverse. HSD-024 deliberately
 skips the absent patient-tab region and does not render an empty focus target.
 
-## HSD-029 Boundary
+## Future Clinical Boundary
 
-HSD-029 may add patient enrollment and encounter workflows inside an open
-screening session. That future work must continue to use reviewed preload
-boundaries and must not bypass the lifecycle service, audit event, or
-transactional outbox behavior.
+Future clinical checkpoints may add measurement persistence, screening review,
+recommendations, referrals, reports, sync transport, or FHIR mapping. That work
+must continue to use reviewed preload boundaries and must not bypass the
+lifecycle service, encounter start service, audit event, or transactional outbox
+behavior.
