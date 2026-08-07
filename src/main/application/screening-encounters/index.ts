@@ -5,7 +5,6 @@ export {
 } from './screening-encounter-start-service-composition'
 export type {
   ScreeningEncounterStartService,
-  ScreeningEncounterStartServiceActor,
   ScreeningEncounterStartServiceDependencies,
   ScreeningEncounterStartSummary,
   StartScreeningEncounterRequest,

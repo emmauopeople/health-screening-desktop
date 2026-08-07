@@ -13,16 +13,21 @@ import {
   type AuditMetadata,
   type InstallationRecord,
   type LocalUserRole,
-  type LocationRecord,
   type ScreeningEncounterOutboxPayload,
   type ScreeningEncounterRecord
 } from '@main/database'
 import { EntityIdGenerationError, parseEntityId, type EntityId } from '@main/foundation/entity-id'
 import { parseUtcTimestamp, UtcClockError, type UtcTimestamp } from '@main/foundation/utc-clock'
 
+import {
+  LocalSessionAuthorizationError,
+  LocalSessionLockedError,
+  LocalSessionPasswordChangeRequiredError,
+  LocalSessionUnauthenticatedError,
+  isLocalSessionError
+} from '../authentication/session'
 import type {
   ScreeningEncounterStartService,
-  ScreeningEncounterStartServiceActor,
   ScreeningEncounterStartServiceDependencies,
   ScreeningEncounterStartSummary,
   StartScreeningEncounterRequest,
@@ -31,8 +36,7 @@ import type {
 
 const startedAction = parseAuditActionCode('SCREENING_ENCOUNTER_STARTED')
 const screeningEncounterEntityType = parseAuditEntityType('SCREENING_ENCOUNTER')
-const allowedRoles = new Set<LocalUserRole>(['LOCAL_ADMIN', 'NURSE', 'TRAINED_SCREENER'])
-const actorKeys = Object.freeze(['userId', 'role'] as const)
+const allowedRoles = Object.freeze(['LOCAL_ADMIN', 'NURSE', 'TRAINED_SCREENER'] as const)
 const startRequestKeys = Object.freeze(['patientId', 'screeningSessionId'] as const)
 
 interface ValidatedActor {
@@ -46,6 +50,7 @@ interface ParsedStartCommand {
 }
 
 export function createScreeningEncounterStartService({
+  authenticationSessionService,
   installationRepository,
   patientRepository,
   locationRepository,
@@ -56,11 +61,8 @@ export function createScreeningEncounterStartService({
   transactionExecutor
 }: ScreeningEncounterStartServiceDependencies): ScreeningEncounterStartService {
   return Object.freeze({
-    start(
-      request: StartScreeningEncounterRequest,
-      actor: ScreeningEncounterStartServiceActor
-    ): StartScreeningEncounterResult {
-      const actorResult = validateActor(actor)
+    start(request: StartScreeningEncounterRequest): StartScreeningEncounterResult {
+      const actorResult = resolveTrustedActor(authenticationSessionService)
 
       if (actorResult.status !== 'VALID') {
         return actorResult.result
@@ -97,10 +99,6 @@ export function createScreeningEncounterStartService({
 
           if (!location.isActive) {
             return result('LOCATION_INACTIVE')
-          }
-
-          if (!isActorAuthorizedForLocation(actorResult.actor, location)) {
-            return result('FORBIDDEN')
           }
 
           if (session.status !== 'OPEN') {
@@ -189,26 +187,20 @@ export function createScreeningEncounterStartService({
   })
 }
 
-function validateActor(
-  actor: ScreeningEncounterStartServiceActor
+function resolveTrustedActor(
+  authenticationSessionService: ScreeningEncounterStartServiceDependencies['authenticationSessionService']
 ):
   | { readonly status: 'VALID'; readonly actor: ValidatedActor }
   | { readonly status: 'INVALID'; readonly result: StartScreeningEncounterResult } {
   try {
-    const data = readDataProperties(actor, actorKeys)
-    const userId = parseEntityId(data.userId)
-    const role = parseActorRole(data.role)
-
-    if (!allowedRoles.has(role)) {
-      return { status: 'INVALID', result: result('FORBIDDEN') }
-    }
+    const context = authenticationSessionService.requireAnyRole(allowedRoles)
 
     return {
       status: 'VALID',
-      actor: Object.freeze({ userId, role })
+      actor: Object.freeze({ userId: context.user.id, role: context.user.role })
     }
-  } catch {
-    return { status: 'INVALID', result: result('AUTHENTICATION_REQUIRED') }
+  } catch (error) {
+    return { status: 'INVALID', result: mapAuthenticationFailure(error) }
   }
 }
 
@@ -230,24 +222,6 @@ function parseStartCommand(
   } catch {
     return { status: 'INVALID', result: result('VALIDATION_FAILED') }
   }
-}
-
-function parseActorRole(value: unknown): LocalUserRole {
-  if (value === 'LOCAL_ADMIN' || value === 'NURSE' || value === 'TRAINED_SCREENER') {
-    return value
-  }
-
-  if (typeof value === 'string') {
-    return value as LocalUserRole
-  }
-
-  throw new RepositoryValidationError()
-}
-
-function isActorAuthorizedForLocation(actor: ValidatedActor, location: LocationRecord): boolean {
-  void location
-
-  return allowedRoles.has(actor.role)
 }
 
 function readInitializedInstallation(
@@ -464,6 +438,26 @@ function readDataProperties(
   }
 
   return data
+}
+
+function mapAuthenticationFailure(error: unknown): StartScreeningEncounterResult {
+  if (
+    error instanceof LocalSessionUnauthenticatedError ||
+    error instanceof LocalSessionLockedError ||
+    error instanceof LocalSessionPasswordChangeRequiredError
+  ) {
+    return result('AUTHENTICATION_REQUIRED')
+  }
+
+  if (error instanceof LocalSessionAuthorizationError) {
+    return result('FORBIDDEN')
+  }
+
+  if (isLocalSessionError(error)) {
+    return result('UNAVAILABLE')
+  }
+
+  return result('UNAVAILABLE')
 }
 
 function isControlledInfrastructureError(error: unknown): boolean {

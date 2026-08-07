@@ -21,9 +21,9 @@ The service accepts only:
 - `patientId`
 - `screeningSessionId`
 
-The caller cannot supply encounter IDs, actor data, location authority,
-protocol versions, status, session date, timestamps, record versions, audit
-metadata, outbox metadata, or clinical values.
+The caller cannot supply encounter IDs, actor data, session state, location
+authority, protocol versions, status, session date, timestamps, record
+versions, audit metadata, outbox metadata, or clinical values.
 
 ## Eligibility
 
@@ -36,18 +36,28 @@ from the transaction UTC timestamp and the installation IANA timezone.
 The service does not use renderer-provided dates, JavaScript wall-clock time, or
 the operating-system timezone as the date authority.
 
-## Authorization
+## Authentication And Authorization
 
-The trusted actor input contains only `userId` and `role`. The approved
-operational roles are:
+The service obtains the actor from the established in-memory local
+authentication session by calling `requireAnyRole()`. The session must be
+`ACTIVE`; signed-out, locked, password-change-required, expired, malformed, or
+otherwise unavailable session states fail with sanitized service results.
+
+Approved operational roles are:
 
 - `LOCAL_ADMIN`
 - `NURSE`
 - `TRAINED_SCREENER`
 
-Location authorization is enforced in the main process. HSD-029A has no
-location-membership table, so all approved operational roles are authorized for
-active screening-session locations.
+Actor authority is never request-controlled. The encounter `recorded_by`, audit
+user, and outbox actor fields come from the trusted active session.
+
+The established location policy is installation-wide operational authorization:
+the schema and repositories define no user-to-location assignment table, and
+the existing screening-session workspace exposes active locations to approved
+operational roles. HSD-029A therefore validates the session's persisted
+location exists and is active, while `requireAnyRole()` is the authorization
+gate for operation access. Request data cannot override the session location.
 
 ## Canonical Root Identity
 
@@ -126,6 +136,13 @@ When the database identity constraint wins a race, the service re-reads the
 canonical root encounter and returns `ALREADY_EXISTS` without writing another
 audit or outbox event. Encounter-ID collisions are not treated as idempotent
 identity conflicts.
+
+Tests include both a deterministic simulated identity-conflict recovery case and
+a two-connection service verification. SQLite serializes writers, so the
+two-connection test uses explicit ordering: one independently composed service
+commits the root encounter, and a second independently composed service on a
+separate connection returns the same authoritative encounter as
+`ALREADY_EXISTS`.
 
 ## HSD-029B Boundary
 

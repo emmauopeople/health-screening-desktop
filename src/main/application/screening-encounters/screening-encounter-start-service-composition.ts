@@ -15,17 +15,21 @@ import { createSystemEntityIdGenerator, createSystemUtcClock } from '@main/found
 
 import { createScreeningEncounterStartService } from './screening-encounter-start-service'
 import type { ScreeningEncounterStartService } from './screening-encounter-start-service-types'
+import type { LocalAuthenticationSessionService } from '../authentication/session'
 
 export interface ProductionScreeningEncounterStartServiceOptions {
   readonly connection: Database.Database
+  readonly authenticationSessionService: LocalAuthenticationSessionService
   readonly logger?: DatabaseTransactionLogger
 }
 
 export function createProductionScreeningEncounterStartService({
   connection,
+  authenticationSessionService,
   logger
 }: ProductionScreeningEncounterStartServiceOptions): ScreeningEncounterStartService {
   return createScreeningEncounterStartService({
+    authenticationSessionService,
     installationRepository: createInstallationRepository(connection),
     patientRepository: createPatientRepository(connection),
     locationRepository: createLocationRepository(connection),

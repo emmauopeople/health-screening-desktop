@@ -1,7 +1,6 @@
 import type {
   AuditEventRepository,
   InstallationRepository,
-  LocalUserRole,
   LocationRepository,
   PatientRepository,
   ScreeningEncounterOutboxRepository,
@@ -13,10 +12,7 @@ import type { DatabaseTransactionExecutor } from '@main/database/transaction'
 import type { EntityId } from '@main/foundation/entity-id'
 import type { UtcTimestamp } from '@main/foundation/utc-clock'
 
-export interface ScreeningEncounterStartServiceActor {
-  readonly userId: EntityId
-  readonly role: LocalUserRole
-}
+import type { LocalAuthenticationSessionService } from '../authentication/session'
 
 export interface StartScreeningEncounterRequest {
   readonly patientId: EntityId
@@ -76,13 +72,11 @@ export type StartScreeningEncounterResult =
     }
 
 export interface ScreeningEncounterStartService {
-  start(
-    request: StartScreeningEncounterRequest,
-    actor: ScreeningEncounterStartServiceActor
-  ): StartScreeningEncounterResult
+  start(request: StartScreeningEncounterRequest): StartScreeningEncounterResult
 }
 
 export interface ScreeningEncounterStartServiceDependencies {
+  readonly authenticationSessionService: LocalAuthenticationSessionService
   readonly installationRepository: InstallationRepository
   readonly patientRepository: PatientRepository
   readonly locationRepository: LocationRepository
