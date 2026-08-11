@@ -177,6 +177,35 @@ describe('screening encounter repository', () => {
       )
     })
   })
+
+  it('detects draft encounters across the installation without a location filter', async () => {
+    await withScreeningEncounterRepository(({ connection, repository, executor }) => {
+      insertReferenceGraph(connection)
+      insertRawEncounter(connection, { id: encounterId, status: 'COMPLETED' })
+
+      expect(executor.run((context) => repository.hasAnyDraftForWrite(context.connection))).toBe(
+        false
+      )
+
+      insertRawEncounter(connection, {
+        id: duplicateEncounterId,
+        patientId: secondPatientId,
+        status: 'DRAFT'
+      })
+
+      expect(executor.run((context) => repository.hasAnyDraftForWrite(context.connection))).toBe(
+        true
+      )
+      expect(
+        executor.run((context) =>
+          repository.hasDraftForLocationForWrite(
+            context.connection,
+            parseEntityId('20000000-0000-4000-8000-000000000099')
+          )
+        )
+      ).toBe(false)
+    })
+  })
 })
 
 interface RepositoryHarness {

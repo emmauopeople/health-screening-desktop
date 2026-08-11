@@ -27,6 +27,28 @@ export type ResolveConfiguredInstallationLocationResult =
         'LOCATION_NOT_CONFIGURED' | 'LOCATION_NOT_FOUND' | 'LOCATION_INACTIVE' | 'UNAVAILABLE'
     }
 
+export type AssignInitialInstallationLocationResult =
+  | {
+      readonly status: 'ASSIGNED'
+      readonly location: ConfiguredInstallationLocation
+    }
+  | {
+      readonly status: 'UNCHANGED'
+      readonly location: ConfiguredInstallationLocation
+    }
+  | {
+      readonly status:
+        | 'AUTHENTICATION_REQUIRED'
+        | 'FORBIDDEN'
+        | 'VALIDATION_FAILED'
+        | 'LOCATION_NOT_FOUND'
+        | 'LOCATION_INACTIVE'
+        | 'LOCATION_ALREADY_CONFIGURED'
+        | 'ACTIVE_SCREENING_WORK'
+        | 'CONFIGURATION_CONFLICT'
+        | 'UNAVAILABLE'
+    }
+
 export type ReconfigureInstallationLocationResult =
   | {
       readonly status: 'UPDATED'
@@ -51,6 +73,7 @@ export type ReconfigureInstallationLocationResult =
 
 export interface InstallationLocationService {
   resolveConfiguredInstallationLocation(): ResolveConfiguredInstallationLocationResult
+  assignInitialInstallationLocation(request: unknown): AssignInitialInstallationLocationResult
   reconfigureInstallationLocation(request: unknown): ReconfigureInstallationLocationResult
 }
 

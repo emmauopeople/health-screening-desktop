@@ -2,6 +2,7 @@ import type { DatabaseTransactionConnection } from '@main/database/transaction'
 import {
   parseAuditActionCode,
   parseAuditEntityType,
+  InstallationLocationConfigurationAlreadyExistsError,
   RepositoryDataIntegrityError,
   RepositoryValidationError,
   type AuditMetadata,
@@ -22,23 +23,25 @@ import {
 } from '../authentication/session'
 import type {
   ConfiguredInstallationLocation,
+  AssignInitialInstallationLocationResult,
   InstallationLocationService,
   InstallationLocationServiceDependencies,
   ReconfigureInstallationLocationResult,
   ResolveConfiguredInstallationLocationResult
 } from './installation-location-service-types'
 
+const assignedAction = parseAuditActionCode('INSTALLATION_LOCATION_ASSIGNED')
 const changedAction = parseAuditActionCode('INSTALLATION_LOCATION_CHANGED')
 const installationEntityType = parseAuditEntityType('INSTALLATION')
 const adminRoles = Object.freeze(['LOCAL_ADMIN'] as const)
-const reconfigureRequestKeys = Object.freeze(['locationId'] as const)
+const locationCommandKeys = Object.freeze(['locationId'] as const)
 
 interface ValidatedActor {
   readonly userId: EntityId
   readonly role: LocalUserRole
 }
 
-interface ParsedReconfigureCommand {
+interface ParsedLocationCommand {
   readonly locationId: EntityId
 }
 
@@ -69,14 +72,109 @@ export function createInstallationLocationService({
       }
     },
 
-    reconfigureInstallationLocation(request: unknown): ReconfigureInstallationLocationResult {
-      const actorResult = resolveTrustedAdmin(authenticationSessionService)
+    assignInitialInstallationLocation(request: unknown): AssignInitialInstallationLocationResult {
+      const actorResult = resolveTrustedAdmin(authenticationSessionService, assignResult)
 
       if (actorResult.status !== 'VALID') {
         return actorResult.result
       }
 
-      const commandResult = parseReconfigureCommand(request)
+      const commandResult = parseLocationCommand(request, assignResult)
+
+      if (commandResult.status !== 'VALID') {
+        return commandResult.result
+      }
+
+      try {
+        return transactionExecutor.run((context) => {
+          const occurredAt = context.nowUtc()
+          const installation = readInitializedInstallation(installationRepository)
+          const currentConfiguration = installationLocationConfigurationRepository.getForWrite(
+            context.connection
+          )
+
+          if (currentConfiguration !== null) {
+            return resolveExistingInitialAssignment(
+              currentConfiguration,
+              commandResult.command.locationId,
+              locationRepository,
+              context.connection
+            )
+          }
+
+          const proposedLocation = locationRepository.getByIdForWrite(
+            context.connection,
+            commandResult.command.locationId
+          )
+
+          if (proposedLocation === null) {
+            return assignResult('LOCATION_NOT_FOUND')
+          }
+
+          if (!proposedLocation.isActive) {
+            return assignResult('LOCATION_INACTIVE')
+          }
+
+          if (
+            hasActiveScreeningWork({
+              connection: context.connection,
+              screeningSessionRepository,
+              screeningEncounterRepository
+            })
+          ) {
+            return assignResult('ACTIVE_SCREENING_WORK')
+          }
+
+          let configuration: InstallationLocationConfigurationRecord
+
+          try {
+            configuration = installationLocationConfigurationRepository.insert(context.connection, {
+              installationId: installation.id,
+              locationId: proposedLocation.id,
+              configuredAt: occurredAt,
+              configuredBy: actorResult.actor.userId
+            })
+          } catch (error) {
+            if (error instanceof InstallationLocationConfigurationAlreadyExistsError) {
+              return recoverConcurrentInitialAssignment(
+                commandResult.command.locationId,
+                installationLocationConfigurationRepository,
+                locationRepository,
+                context.connection
+              )
+            }
+
+            throw error
+          }
+
+          insertLocationAssignedAudit({
+            auditEventId: context.newEntityId(),
+            auditEventRepository,
+            installation,
+            actor: actorResult.actor,
+            configuration,
+            occurredAt,
+            connection: context.connection
+          })
+
+          return Object.freeze({
+            status: 'ASSIGNED' as const,
+            location: toConfiguredLocation(proposedLocation)
+          })
+        })
+      } catch {
+        return assignResult('UNAVAILABLE')
+      }
+    },
+
+    reconfigureInstallationLocation(request: unknown): ReconfigureInstallationLocationResult {
+      const actorResult = resolveTrustedAdmin(authenticationSessionService, reconfigureResult)
+
+      if (actorResult.status !== 'VALID') {
+        return actorResult.result
+      }
+
+      const commandResult = parseLocationCommand(request, reconfigureResult)
 
       if (commandResult.status !== 'VALID') {
         return commandResult.result
@@ -115,14 +213,11 @@ export function createInstallationLocationService({
           }
 
           if (
-            screeningSessionRepository.hasOpenForLocationForWrite(
-              context.connection,
-              configuration.locationId
-            ) ||
-            screeningEncounterRepository.hasDraftForLocationForWrite(
-              context.connection,
-              configuration.locationId
-            )
+            hasActiveScreeningWork({
+              connection: context.connection,
+              screeningSessionRepository,
+              screeningEncounterRepository
+            })
           ) {
             return reconfigureResult('ACTIVE_SCREENING_WORK')
           }
@@ -168,11 +263,12 @@ export function createInstallationLocationService({
   })
 }
 
-function resolveTrustedAdmin(
-  authenticationSessionService: InstallationLocationServiceDependencies['authenticationSessionService']
+function resolveTrustedAdmin<Result>(
+  authenticationSessionService: InstallationLocationServiceDependencies['authenticationSessionService'],
+  createFailureResult: (status: AuthenticationFailureStatus) => Result
 ):
   | { readonly status: 'VALID'; readonly actor: ValidatedActor }
-  | { readonly status: 'INVALID'; readonly result: ReconfigureInstallationLocationResult } {
+  | { readonly status: 'INVALID'; readonly result: Result } {
   try {
     const context = authenticationSessionService.requireAnyRole(adminRoles)
 
@@ -181,24 +277,25 @@ function resolveTrustedAdmin(
       actor: Object.freeze({ userId: context.user.id, role: context.user.role })
     }
   } catch (error) {
-    return { status: 'INVALID', result: mapAuthenticationFailure(error) }
+    return { status: 'INVALID', result: mapAuthenticationFailure(error, createFailureResult) }
   }
 }
 
-function parseReconfigureCommand(
-  request: unknown
+function parseLocationCommand<Result>(
+  request: unknown,
+  createFailureResult: (status: 'VALIDATION_FAILED') => Result
 ):
-  | { readonly status: 'VALID'; readonly command: ParsedReconfigureCommand }
-  | { readonly status: 'INVALID'; readonly result: ReconfigureInstallationLocationResult } {
+  | { readonly status: 'VALID'; readonly command: ParsedLocationCommand }
+  | { readonly status: 'INVALID'; readonly result: Result } {
   try {
-    const data = readDataProperties(request, reconfigureRequestKeys)
+    const data = readDataProperties(request, locationCommandKeys)
 
     return {
       status: 'VALID',
       command: Object.freeze({ locationId: parseEntityId(data.locationId) })
     }
   } catch {
-    return { status: 'INVALID', result: reconfigureResult('VALIDATION_FAILED') }
+    return { status: 'INVALID', result: createFailureResult('VALIDATION_FAILED') }
   }
 }
 
@@ -238,6 +335,96 @@ function toConfiguredLocation(location: LocationRecord): ConfiguredInstallationL
   })
 }
 
+function resolveExistingInitialAssignment(
+  configuration: InstallationLocationConfigurationRecord,
+  requestedLocationId: EntityId,
+  locationRepository: InstallationLocationServiceDependencies['locationRepository'],
+  connection: DatabaseTransactionConnection
+): AssignInitialInstallationLocationResult {
+  if (configuration.locationId !== requestedLocationId) {
+    return assignResult('LOCATION_ALREADY_CONFIGURED')
+  }
+
+  const location = locationRepository.getByIdForWrite(connection, configuration.locationId)
+
+  if (location === null) {
+    return assignResult('LOCATION_NOT_FOUND')
+  }
+
+  if (!location.isActive) {
+    return assignResult('LOCATION_INACTIVE')
+  }
+
+  return Object.freeze({
+    status: 'UNCHANGED' as const,
+    location: toConfiguredLocation(location)
+  })
+}
+
+function recoverConcurrentInitialAssignment(
+  requestedLocationId: EntityId,
+  installationLocationConfigurationRepository: InstallationLocationServiceDependencies['installationLocationConfigurationRepository'],
+  locationRepository: InstallationLocationServiceDependencies['locationRepository'],
+  connection: DatabaseTransactionConnection
+): AssignInitialInstallationLocationResult {
+  const configuration = installationLocationConfigurationRepository.getForWrite(connection)
+
+  if (configuration === null) {
+    return assignResult('CONFIGURATION_CONFLICT')
+  }
+
+  return resolveExistingInitialAssignment(
+    configuration,
+    requestedLocationId,
+    locationRepository,
+    connection
+  )
+}
+
+function hasActiveScreeningWork({
+  connection,
+  screeningSessionRepository,
+  screeningEncounterRepository
+}: {
+  readonly connection: DatabaseTransactionConnection
+  readonly screeningSessionRepository: InstallationLocationServiceDependencies['screeningSessionRepository']
+  readonly screeningEncounterRepository: InstallationLocationServiceDependencies['screeningEncounterRepository']
+}): boolean {
+  return (
+    screeningSessionRepository.hasAnyOpenForWrite(connection) ||
+    screeningEncounterRepository.hasAnyDraftForWrite(connection)
+  )
+}
+
+function insertLocationAssignedAudit({
+  auditEventRepository,
+  auditEventId,
+  installation,
+  actor,
+  configuration,
+  occurredAt,
+  connection
+}: {
+  readonly auditEventRepository: InstallationLocationServiceDependencies['auditEventRepository']
+  readonly auditEventId: EntityId
+  readonly installation: InstallationRecord
+  readonly actor: ValidatedActor
+  readonly configuration: InstallationLocationConfigurationRecord
+  readonly occurredAt: UtcTimestamp
+  readonly connection: DatabaseTransactionConnection
+}): void {
+  auditEventRepository.insert(connection, {
+    id: auditEventId,
+    installationId: installation.id,
+    userId: actor.userId,
+    action: assignedAction,
+    entityType: installationEntityType,
+    entityId: installation.id,
+    occurredAt,
+    metadata: createAssignedAuditMetadata(configuration)
+  })
+}
+
 function insertLocationChangedAudit({
   auditEventRepository,
   auditEventId,
@@ -269,6 +456,15 @@ function insertLocationChangedAudit({
   })
 }
 
+function createAssignedAuditMetadata(
+  configuration: InstallationLocationConfigurationRecord
+): AuditMetadata {
+  return Object.freeze({
+    location_id: configuration.locationId,
+    row_version: configuration.rowVersion
+  })
+}
+
 function createChangedAuditMetadata(
   previousConfiguration: InstallationLocationConfigurationRecord,
   updatedConfiguration: InstallationLocationConfigurationRecord
@@ -287,30 +483,41 @@ function resolveResult(
   return Object.freeze({ status }) as ResolveConfiguredInstallationLocationResult
 }
 
+function assignResult(
+  status: Exclude<AssignInitialInstallationLocationResult['status'], 'ASSIGNED' | 'UNCHANGED'>
+): AssignInitialInstallationLocationResult {
+  return Object.freeze({ status }) as AssignInitialInstallationLocationResult
+}
+
 function reconfigureResult(
   status: Exclude<ReconfigureInstallationLocationResult['status'], 'UPDATED' | 'UNCHANGED'>
 ): ReconfigureInstallationLocationResult {
   return Object.freeze({ status }) as ReconfigureInstallationLocationResult
 }
 
-function mapAuthenticationFailure(error: unknown): ReconfigureInstallationLocationResult {
+type AuthenticationFailureStatus = 'AUTHENTICATION_REQUIRED' | 'FORBIDDEN' | 'UNAVAILABLE'
+
+function mapAuthenticationFailure<Result>(
+  error: unknown,
+  createFailureResult: (status: AuthenticationFailureStatus) => Result
+): Result {
   if (
     error instanceof LocalSessionUnauthenticatedError ||
     error instanceof LocalSessionLockedError ||
     error instanceof LocalSessionPasswordChangeRequiredError
   ) {
-    return reconfigureResult('AUTHENTICATION_REQUIRED')
+    return createFailureResult('AUTHENTICATION_REQUIRED')
   }
 
   if (error instanceof LocalSessionAuthorizationError) {
-    return reconfigureResult('FORBIDDEN')
+    return createFailureResult('FORBIDDEN')
   }
 
   if (isLocalSessionError(error)) {
-    return reconfigureResult('UNAVAILABLE')
+    return createFailureResult('UNAVAILABLE')
   }
 
-  return reconfigureResult('UNAVAILABLE')
+  return createFailureResult('UNAVAILABLE')
 }
 
 function readDataProperties(

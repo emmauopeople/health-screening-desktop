@@ -67,6 +67,7 @@ export interface ScreeningEncounterRepository {
     connection: DatabaseTransactionConnection,
     locationId: EntityId
   ): boolean
+  hasAnyDraftForWrite(connection: DatabaseTransactionConnection): boolean
   insertCanonicalRoot(
     connection: DatabaseTransactionConnection,
     input: InsertCanonicalRootScreeningEncounterInput

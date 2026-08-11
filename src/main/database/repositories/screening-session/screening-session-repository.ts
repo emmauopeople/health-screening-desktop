@@ -100,6 +100,15 @@ SELECT EXISTS(
 ) AS has_any;
 `
 
+const selectHasAnyOpenScreeningSessionSql = `
+SELECT EXISTS(
+  SELECT 1
+  FROM screening_sessions
+  WHERE status = 'OPEN'
+  LIMIT 1
+) AS has_any;
+`
+
 const insertScreeningSessionSql = `
 INSERT INTO screening_sessions (
   id,
@@ -235,6 +244,24 @@ export function createScreeningSessionRepository(
 
         if (error instanceof RepositoryValidationError) {
           throw new RepositoryValidationError(error.errorType)
+        }
+
+        if (error instanceof RepositoryDataIntegrityError) {
+          throw new RepositoryDataIntegrityError(error.errorType)
+        }
+
+        throw new RepositoryReadError(getRepositoryErrorType(error))
+      }
+    },
+
+    hasAnyOpenForWrite(scopedConnection: DatabaseTransactionConnection): boolean {
+      assertActiveDatabaseTransactionConnection(scopedConnection)
+
+      try {
+        return decodeExistsRow(scopedConnection.prepare(selectHasAnyOpenScreeningSessionSql).get())
+      } catch (error) {
+        if (error instanceof DatabaseTransactionStateError) {
+          throw new DatabaseTransactionStateError(error.errorType)
         }
 
         if (error instanceof RepositoryDataIntegrityError) {

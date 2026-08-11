@@ -23,8 +23,10 @@ import {
   createScreeningEncounterRepository,
   createScreeningSessionRepository,
   RepositoryWriteError,
+  type AuditEventRepository,
   type DatabaseTransactionConnection,
   type InstallationLocationConfigurationRepository,
+  type InsertInstallationLocationConfigurationInput,
   type LocalUserRecord,
   type LocalUserRole,
   type UpdateInstallationLocationConfigurationInput
@@ -46,6 +48,11 @@ const sessionId = '63000000-0000-4000-8000-000000000009'
 const closedSessionId = '63000000-0000-4000-8000-000000000010'
 const encounterId = '63000000-0000-4000-8000-000000000011'
 const auditId = '63000000-0000-4000-8000-000000000012'
+const thirdLocationId = '63000000-0000-4000-8000-000000000013'
+const secondSessionId = '63000000-0000-4000-8000-000000000014'
+const thirdSessionId = '63000000-0000-4000-8000-000000000015'
+const secondEncounterId = '63000000-0000-4000-8000-000000000016'
+const thirdEncounterId = '63000000-0000-4000-8000-000000000017'
 
 describe('installation location service integration', () => {
   it('resolves the configured active location and reports absent configuration without mutation', async () => {
@@ -98,6 +105,228 @@ describe('installation location service integration', () => {
         status: 'LOCATION_INACTIVE'
       })
       expect(readConfiguration(connection).location_id).toBe(inactiveLocationId)
+    })
+  })
+
+  it('assigns an existing initialized installation with trusted admin authority', async () => {
+    await withService(({ connection, service, authenticationSessionService }) => {
+      seedBaseGraph(connection)
+
+      const result = service.assignInitialInstallationLocation({ locationId })
+
+      expect(result).toEqual({
+        status: 'ASSIGNED',
+        location: {
+          id: locationId,
+          displayName: 'Site One'
+        }
+      })
+      expect(authenticationSessionService.requireAnyRole).toHaveBeenCalledWith(['LOCAL_ADMIN'])
+      expect(readConfiguration(connection)).toMatchObject({
+        installation_id: installationId,
+        location_id: locationId,
+        configured_at: later,
+        configured_by: adminId,
+        updated_at: later,
+        updated_by: adminId,
+        row_version: 1
+      })
+      expect(service.resolveConfiguredInstallationLocation()).toEqual({
+        status: 'RESOLVED',
+        location: {
+          id: locationId,
+          displayName: 'Site One'
+        }
+      })
+      expect(readAuditRows(connection)).toEqual([
+        {
+          action: 'INSTALLATION_LOCATION_ASSIGNED',
+          entity_type: 'INSTALLATION',
+          entity_id: installationId,
+          user_id: adminId,
+          occurred_at: later,
+          metadata_json: '{"location_id":"63000000-0000-4000-8000-000000000004","row_version":1}'
+        }
+      ])
+      expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+    })
+  })
+
+  it('requires authenticated LOCAL_ADMIN authority for initial assignment', async () => {
+    for (const authFailure of [
+      new LocalSessionUnauthenticatedError(),
+      new LocalSessionUnauthenticatedError('expired')
+    ]) {
+      await withService(
+        ({ connection, service }) => {
+          seedBaseGraph(connection)
+
+          expect(service.assignInitialInstallationLocation({ locationId })).toEqual({
+            status: 'AUTHENTICATION_REQUIRED'
+          })
+          expect(readTableCount(connection, 'installation_location_configuration')).toBe(0)
+          expect(readTableCount(connection, 'audit_log')).toBe(0)
+        },
+        { authFailure }
+      )
+    }
+
+    await withService(
+      ({ connection, service }) => {
+        seedBaseGraph(connection)
+
+        expect(service.assignInitialInstallationLocation({ locationId })).toEqual({
+          status: 'FORBIDDEN'
+        })
+        expect(readTableCount(connection, 'installation_location_configuration')).toBe(0)
+        expect(readTableCount(connection, 'audit_log')).toBe(0)
+      },
+      { authFailure: new LocalSessionAuthorizationError(), sessionRole: 'NURSE' }
+    )
+  })
+
+  it('strictly accepts only locationId for initial assignment', async () => {
+    await withService(({ connection, service }) => {
+      seedBaseGraph(connection)
+
+      for (const request of [
+        {},
+        { locationId: '' },
+        { locationId: locationId.slice(0, -1) },
+        { locationId, userId: adminId },
+        { locationId, role: 'LOCAL_ADMIN' },
+        { locationId, actor: { userId: adminId } },
+        { locationId, installationId },
+        { locationId, configuredAt: later },
+        { locationId, updatedAt: later },
+        { locationId, force: true },
+        { locationId, bypass: true }
+      ]) {
+        expect(service.assignInitialInstallationLocation(request)).toEqual({
+          status: 'VALIDATION_FAILED'
+        })
+      }
+
+      expect(readTableCount(connection, 'installation_location_configuration')).toBe(0)
+      expect(readTableCount(connection, 'audit_log')).toBe(0)
+    })
+  })
+
+  it('validates proposed locations before initial assignment', async () => {
+    await withService(({ connection, service }) => {
+      seedBaseGraph(connection)
+
+      expect(
+        service.assignInitialInstallationLocation({
+          locationId: '63000000-0000-4000-8000-000000000099'
+        })
+      ).toEqual({ status: 'LOCATION_NOT_FOUND' })
+      expect(service.assignInitialInstallationLocation({ locationId: inactiveLocationId })).toEqual(
+        {
+          status: 'LOCATION_INACTIVE'
+        }
+      )
+      expect(readTableCount(connection, 'installation_location_configuration')).toBe(0)
+      expect(readTableCount(connection, 'audit_log')).toBe(0)
+    })
+  })
+
+  it('never overwrites existing configuration through initial assignment', async () => {
+    await withService(({ connection, service }) => {
+      seedBaseGraph(connection)
+      insertConfiguration(connection, locationId)
+
+      expect(service.assignInitialInstallationLocation({ locationId })).toEqual({
+        status: 'UNCHANGED',
+        location: {
+          id: locationId,
+          displayName: 'Site One'
+        }
+      })
+      expect(service.assignInitialInstallationLocation({ locationId: secondLocationId })).toEqual({
+        status: 'LOCATION_ALREADY_CONFIGURED'
+      })
+      expect(readConfiguration(connection)).toMatchObject({
+        location_id: locationId,
+        row_version: 1,
+        updated_at: now
+      })
+      expect(readTableCount(connection, 'audit_log')).toBe(0)
+      expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+    })
+  })
+
+  it('rolls back initial assignment and sanitizes transient write failures', async () => {
+    await withService(
+      ({ connection, service }) => {
+        seedBaseGraph(connection)
+
+        expect(service.assignInitialInstallationLocation({ locationId })).toEqual({
+          status: 'UNAVAILABLE'
+        })
+        expect(readTableCount(connection, 'installation_location_configuration')).toBe(0)
+        expect(readTableCount(connection, 'audit_log')).toBe(0)
+      },
+      { auditMode: 'throw' }
+    )
+
+    await withService(
+      ({ connection, service }) => {
+        seedBaseGraph(connection)
+
+        expect(service.assignInitialInstallationLocation({ locationId })).toEqual({
+          status: 'UNAVAILABLE'
+        })
+        expect(readTableCount(connection, 'installation_location_configuration')).toBe(0)
+        expect(readTableCount(connection, 'audit_log')).toBe(0)
+      },
+      { insertMode: 'throw' }
+    )
+
+    await withService(({ connection, service }) => {
+      seedBaseGraph(connection)
+
+      expect(service.assignInitialInstallationLocation({ locationId })).toMatchObject({
+        status: 'ASSIGNED'
+      })
+      expect(readTableCount(connection, 'installation_location_configuration')).toBe(1)
+      expect(readTableCount(connection, 'audit_log')).toBe(1)
+    })
+  })
+
+  it('handles repeated and concurrent initial assignment without duplicate side effects', async () => {
+    await withService(async ({ connection, service }) => {
+      seedBaseGraph(connection)
+
+      const [first, second] = await Promise.all([
+        Promise.resolve().then(() => service.assignInitialInstallationLocation({ locationId })),
+        Promise.resolve().then(() => service.assignInitialInstallationLocation({ locationId }))
+      ])
+
+      expect([first.status, second.status].sort()).toEqual(['ASSIGNED', 'UNCHANGED'])
+      expect(readConfiguration(connection).location_id).toBe(locationId)
+      expect(readTableCount(connection, 'installation_location_configuration')).toBe(1)
+      expect(readTableCount(connection, 'audit_log')).toBe(1)
+      expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+    })
+
+    await withService(async ({ connection, service }) => {
+      seedBaseGraph(connection)
+
+      const [first, second] = await Promise.all([
+        Promise.resolve().then(() => service.assignInitialInstallationLocation({ locationId })),
+        Promise.resolve().then(() =>
+          service.assignInitialInstallationLocation({ locationId: secondLocationId })
+        )
+      ])
+
+      expect([first.status, second.status].sort()).toEqual([
+        'ASSIGNED',
+        'LOCATION_ALREADY_CONFIGURED'
+      ])
+      expect([locationId, secondLocationId]).toContain(readConfiguration(connection).location_id)
+      expect(readTableCount(connection, 'installation_location_configuration')).toBe(1)
+      expect(readTableCount(connection, 'audit_log')).toBe(1)
     })
   })
 
@@ -251,19 +480,145 @@ describe('installation location service integration', () => {
     })
   })
 
-  it('blocks reconfiguration while open sessions or draft encounters exist', async () => {
+  it('blocks initial assignment when active screening work exists anywhere', async () => {
+    for (const [activeLocationId, activeSessionId] of [
+      [locationId, sessionId],
+      [secondLocationId, secondSessionId],
+      [thirdLocationId, thirdSessionId]
+    ] as const) {
+      await withService(({ connection, service }) => {
+        seedBaseGraph(connection)
+        insertProtocolVersion(connection)
+        insertSession(connection, {
+          id: activeSessionId,
+          locationId: activeLocationId,
+          status: 'OPEN'
+        })
+
+        expect(service.assignInitialInstallationLocation({ locationId })).toEqual({
+          status: 'ACTIVE_SCREENING_WORK'
+        })
+        expect(readTableCount(connection, 'installation_location_configuration')).toBe(0)
+        expect(readSession(connection, activeSessionId).status).toBe('OPEN')
+        expect(readTableCount(connection, 'audit_log')).toBe(0)
+        expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+      })
+    }
+
+    for (const [activeLocationId, activeEncounterId, activeSessionId] of [
+      [locationId, encounterId, sessionId],
+      [secondLocationId, secondEncounterId, secondSessionId],
+      [thirdLocationId, thirdEncounterId, thirdSessionId]
+    ] as const) {
+      await withService(({ connection, service }) => {
+        seedBaseGraph(connection)
+        insertProtocolVersion(connection)
+        insertPatient(connection)
+        insertSession(connection, {
+          id: activeSessionId,
+          locationId: activeLocationId,
+          status: 'CLOSED'
+        })
+        insertEncounter(connection, {
+          id: activeEncounterId,
+          sessionId: activeSessionId,
+          locationId: activeLocationId,
+          status: 'DRAFT'
+        })
+
+        expect(service.assignInitialInstallationLocation({ locationId })).toEqual({
+          status: 'ACTIVE_SCREENING_WORK'
+        })
+        expect(readTableCount(connection, 'installation_location_configuration')).toBe(0)
+        expect(readEncounter(connection, activeEncounterId).status).toBe('DRAFT')
+        expect(readTableCount(connection, 'audit_log')).toBe(0)
+        expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+      })
+    }
+  })
+
+  it('blocks reconfiguration when active screening work exists at current, proposed, or third locations', async () => {
+    for (const [activeLocationId, activeSessionId] of [
+      [locationId, sessionId],
+      [secondLocationId, secondSessionId],
+      [thirdLocationId, thirdSessionId]
+    ] as const) {
+      await withService(({ connection, service }) => {
+        seedBaseGraph(connection)
+        insertConfiguration(connection, locationId)
+        insertProtocolVersion(connection)
+        insertSession(connection, {
+          id: activeSessionId,
+          locationId: activeLocationId,
+          status: 'OPEN'
+        })
+
+        expect(service.reconfigureInstallationLocation({ locationId: secondLocationId })).toEqual({
+          status: 'ACTIVE_SCREENING_WORK'
+        })
+        expect(readConfiguration(connection).location_id).toBe(locationId)
+        expect(readSession(connection, activeSessionId).status).toBe('OPEN')
+        expect(readTableCount(connection, 'audit_log')).toBe(0)
+        expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+      })
+    }
+
+    for (const [activeLocationId, activeEncounterId, activeSessionId] of [
+      [locationId, encounterId, sessionId],
+      [secondLocationId, secondEncounterId, secondSessionId],
+      [thirdLocationId, thirdEncounterId, thirdSessionId]
+    ] as const) {
+      await withService(({ connection, service }) => {
+        seedBaseGraph(connection)
+        insertConfiguration(connection, locationId)
+        insertProtocolVersion(connection)
+        insertPatient(connection)
+        insertSession(connection, {
+          id: activeSessionId,
+          locationId: activeLocationId,
+          status: 'CLOSED'
+        })
+        insertEncounter(connection, {
+          id: activeEncounterId,
+          sessionId: activeSessionId,
+          locationId: activeLocationId,
+          status: 'DRAFT'
+        })
+
+        expect(service.reconfigureInstallationLocation({ locationId: secondLocationId })).toEqual({
+          status: 'ACTIVE_SCREENING_WORK'
+        })
+        expect(readConfiguration(connection).location_id).toBe(locationId)
+        expect(readEncounter(connection, activeEncounterId).status).toBe('DRAFT')
+        expect(readTableCount(connection, 'audit_log')).toBe(0)
+        expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+      })
+    }
+  })
+
+  it('permits configuration changes when only closed sessions and completed encounters exist', async () => {
     await withService(({ connection, service }) => {
       seedBaseGraph(connection)
-      insertConfiguration(connection, locationId)
       insertProtocolVersion(connection)
-      insertOpenSession(connection)
+      insertPatient(connection)
+      insertSession(connection, {
+        id: closedSessionId,
+        locationId: thirdLocationId,
+        status: 'CLOSED'
+      })
+      insertEncounter(connection, {
+        id: encounterId,
+        sessionId: closedSessionId,
+        locationId: thirdLocationId,
+        status: 'COMPLETED'
+      })
 
-      expect(service.reconfigureInstallationLocation({ locationId: secondLocationId })).toEqual({
-        status: 'ACTIVE_SCREENING_WORK'
+      expect(service.assignInitialInstallationLocation({ locationId })).toMatchObject({
+        status: 'ASSIGNED'
       })
       expect(readConfiguration(connection).location_id).toBe(locationId)
-      expect(readSession(connection, sessionId).status).toBe('OPEN')
-      expect(readTableCount(connection, 'audit_log')).toBe(0)
+      expect(readSession(connection, closedSessionId).status).toBe('CLOSED')
+      expect(readEncounter(connection, encounterId).status).toBe('COMPLETED')
     })
 
     await withService(({ connection, service }) => {
@@ -271,14 +626,54 @@ describe('installation location service integration', () => {
       insertConfiguration(connection, locationId)
       insertProtocolVersion(connection)
       insertPatient(connection)
-      insertClosedSession(connection)
-      insertDraftEncounter(connection)
+      insertSession(connection, {
+        id: closedSessionId,
+        locationId: thirdLocationId,
+        status: 'CLOSED'
+      })
+      insertEncounter(connection, {
+        id: encounterId,
+        sessionId: closedSessionId,
+        locationId: thirdLocationId,
+        status: 'COMPLETED'
+      })
 
       expect(service.reconfigureInstallationLocation({ locationId: secondLocationId })).toEqual({
-        status: 'ACTIVE_SCREENING_WORK'
+        status: 'UPDATED',
+        location: {
+          id: secondLocationId,
+          displayName: 'Site Two'
+        }
       })
-      expect(readConfiguration(connection).location_id).toBe(locationId)
-      expect(readEncounter(connection, encounterId).status).toBe('DRAFT')
+      expect(readConfiguration(connection).location_id).toBe(secondLocationId)
+      expect(readSession(connection, closedSessionId).status).toBe('CLOSED')
+      expect(readEncounter(connection, encounterId).status).toBe('COMPLETED')
+    })
+  })
+
+  it('returns same-location reconfiguration without active-work evaluation or mutation', async () => {
+    await withService(({ connection, service }) => {
+      seedBaseGraph(connection)
+      insertConfiguration(connection, locationId)
+      insertProtocolVersion(connection)
+      insertSession(connection, {
+        id: thirdSessionId,
+        locationId: thirdLocationId,
+        status: 'OPEN'
+      })
+
+      expect(service.reconfigureInstallationLocation({ locationId })).toEqual({
+        status: 'UNCHANGED',
+        location: {
+          id: locationId,
+          displayName: 'Site One'
+        }
+      })
+      expect(readConfiguration(connection)).toMatchObject({
+        location_id: locationId,
+        row_version: 1
+      })
+      expect(readSession(connection, thirdSessionId).status).toBe('OPEN')
       expect(readTableCount(connection, 'audit_log')).toBe(0)
     })
   })
@@ -313,10 +708,9 @@ describe('installation location service integration', () => {
     )
   })
 
-  it('production composition resolves persisted configuration through the real boundary', async () => {
+  it('production composition assigns and resolves persisted configuration through the real boundary', async () => {
     await withService(({ connection, authenticationSessionService }) => {
       seedBaseGraph(connection)
-      insertConfiguration(connection, locationId)
 
       const service = createProductionInstallationLocationService({
         connection,
@@ -324,6 +718,13 @@ describe('installation location service integration', () => {
         logger: { error: vi.fn() }
       })
 
+      expect(service.assignInitialInstallationLocation({ locationId })).toEqual({
+        status: 'ASSIGNED',
+        location: {
+          id: locationId,
+          displayName: 'Site One'
+        }
+      })
       expect(service.resolveConfiguredInstallationLocation()).toEqual({
         status: 'RESOLVED',
         location: {
@@ -335,13 +736,17 @@ describe('installation location service integration', () => {
   })
 })
 
+type InsertMode = 'normal' | 'throw'
 type UpdateMode = 'normal' | 'conflict' | 'throw'
+type AuditMode = 'normal' | 'throw'
 
 interface HarnessOptions {
   readonly authFailure?: unknown
   readonly sessionRole?: LocalUserRole
   readonly sessionUserId?: string
+  readonly insertMode?: InsertMode
   readonly updateMode?: UpdateMode
+  readonly auditMode?: AuditMode
 }
 
 async function withService(
@@ -351,7 +756,7 @@ async function withService(
     readonly authenticationSessionService: LocalAuthenticationSessionService & {
       readonly requireAnyRole: ReturnType<typeof vi.fn>
     }
-  }) => void,
+  }) => void | Promise<void>,
   options: HarnessOptions = {}
 ): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), 'hsd029c-p0-installation-location-service-'))
@@ -377,12 +782,16 @@ async function withService(
       installationRepository: createInstallationRepository(connection),
       installationLocationConfigurationRepository: wrapConfigurationRepository(
         rawConfigurationRepository,
+        options.insertMode ?? 'normal',
         options.updateMode ?? 'normal'
       ),
       locationRepository: createLocationRepository(connection),
       screeningSessionRepository: createScreeningSessionRepository(connection),
       screeningEncounterRepository: createScreeningEncounterRepository(connection),
-      auditEventRepository: createAuditEventRepository(connection),
+      auditEventRepository: wrapAuditEventRepository(
+        createAuditEventRepository(connection),
+        options.auditMode ?? 'normal'
+      ),
       transactionExecutor: createDatabaseTransactionExecutor({
         connection,
         idGenerator: createEntityIdGenerator(() => auditId),
@@ -391,7 +800,7 @@ async function withService(
       })
     })
 
-    test({ connection, service, authenticationSessionService })
+    await test({ connection, service, authenticationSessionService })
   } finally {
     if (connection.open) {
       connection.close()
@@ -402,10 +811,21 @@ async function withService(
 
 function wrapConfigurationRepository(
   repository: InstallationLocationConfigurationRepository,
+  insertMode: InsertMode,
   updateMode: UpdateMode
 ): InstallationLocationConfigurationRepository {
   return Object.freeze({
     ...repository,
+    insert(
+      connection: DatabaseTransactionConnection,
+      input: InsertInstallationLocationConfigurationInput
+    ) {
+      if (insertMode === 'throw') {
+        throw new RepositoryWriteError('C:\\secret\\configuration.sqlite3')
+      }
+
+      return repository.insert(connection, input)
+    },
     updateLocation(
       connection: DatabaseTransactionConnection,
       input: UpdateInstallationLocationConfigurationInput
@@ -422,6 +842,25 @@ function wrapConfigurationRepository(
       }
 
       return repository.updateLocation(connection, input)
+    }
+  })
+}
+
+function wrapAuditEventRepository(
+  repository: AuditEventRepository,
+  auditMode: AuditMode
+): AuditEventRepository {
+  return Object.freeze({
+    ...repository,
+    insert(
+      connection: Parameters<AuditEventRepository['insert']>[0],
+      input: Parameters<AuditEventRepository['insert']>[1]
+    ) {
+      if (auditMode === 'throw') {
+        throw new RepositoryWriteError('C:\\secret\\audit.sqlite3')
+      }
+
+      return repository.insert(connection, input)
     }
   })
 }
@@ -505,6 +944,7 @@ function seedBaseGraph(connection: Database.Database): void {
   insertLocation(connection, locationId, 'Site One', true)
   insertLocation(connection, secondLocationId, 'Site Two', true)
   insertLocation(connection, inactiveLocationId, 'Inactive Site', false)
+  insertLocation(connection, thirdLocationId, 'Legacy Site', true)
 }
 
 function insertUser(
@@ -616,15 +1056,18 @@ function insertPatient(connection: Database.Database): void {
     .run(patientId, adminId, now, adminId, now)
 }
 
-function insertOpenSession(connection: Database.Database): void {
-  insertSession(connection, sessionId, 'OPEN')
-}
-
-function insertClosedSession(connection: Database.Database): void {
-  insertSession(connection, closedSessionId, 'CLOSED')
-}
-
-function insertSession(connection: Database.Database, id: string, status: 'OPEN' | 'CLOSED'): void {
+function insertSession(
+  connection: Database.Database,
+  {
+    id,
+    locationId: sessionLocationId,
+    status
+  }: {
+    readonly id: string
+    readonly locationId: string
+    readonly status: 'OPEN' | 'CLOSED'
+  }
+): void {
   const closedBy = status === 'CLOSED' ? adminId : null
   const closedAt = status === 'CLOSED' ? now : null
   const rowVersion = status === 'CLOSED' ? 2 : 1
@@ -651,7 +1094,7 @@ function insertSession(connection: Database.Database, id: string, status: 'OPEN'
     )
     .run(
       id,
-      locationId,
+      sessionLocationId,
       protocolId,
       status,
       adminId,
@@ -666,7 +1109,22 @@ function insertSession(connection: Database.Database, id: string, status: 'OPEN'
     )
 }
 
-function insertDraftEncounter(connection: Database.Database): void {
+function insertEncounter(
+  connection: Database.Database,
+  {
+    id,
+    sessionId: encounterSessionId,
+    locationId: encounterLocationId,
+    status
+  }: {
+    readonly id: string
+    readonly sessionId: string
+    readonly locationId: string
+    readonly status: 'DRAFT' | 'COMPLETED'
+  }
+): void {
+  const completedAt = status === 'COMPLETED' ? now : null
+
   connection
     .prepare(
       `INSERT INTO screening_encounters (
@@ -686,9 +1144,21 @@ function insertDraftEncounter(connection: Database.Database): void {
         record_version,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, NULL, 'LOCAL', ?, NULL, NULL, NULL, 1, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'LOCAL', ?, NULL, NULL, NULL, 1, ?, ?)`
     )
-    .run(encounterId, patientId, closedSessionId, locationId, protocolId, now, adminId, now, now)
+    .run(
+      id,
+      patientId,
+      encounterSessionId,
+      encounterLocationId,
+      protocolId,
+      status,
+      now,
+      completedAt,
+      adminId,
+      now,
+      now
+    )
 }
 
 function readConfiguration(connection: Database.Database): Record<string, unknown> {

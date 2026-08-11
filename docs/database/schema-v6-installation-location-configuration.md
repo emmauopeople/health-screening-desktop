@@ -31,6 +31,9 @@ backfill, or inference.
 ## Operational Meaning
 
 An absent row means callers must return or handle `LOCATION_NOT_CONFIGURED`.
+Existing initialized installations recover only through the authenticated
+`LOCAL_ADMIN` initial-assignment service; the migration does not choose a
+location.
 The schema is intentionally separate from renderer state, browser storage,
 environment variables, daily sessions, encounter state, clinical data, sync
 state, and arbitrary JSON settings.

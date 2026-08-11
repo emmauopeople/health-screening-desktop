@@ -112,6 +112,15 @@ SELECT EXISTS(
 ) AS has_any;
 `
 
+const selectHasAnyDraftScreeningEncounterSql = `
+SELECT EXISTS(
+  SELECT 1
+  FROM screening_encounters
+  WHERE status = 'DRAFT'
+  LIMIT 1
+) AS has_any;
+`
+
 const insertCanonicalRootSql = `
 INSERT INTO screening_encounters (
   id,
@@ -272,6 +281,26 @@ export function createScreeningEncounterRepository(
 
         if (error instanceof RepositoryValidationError) {
           throw new RepositoryValidationError(error.errorType)
+        }
+
+        if (error instanceof RepositoryDataIntegrityError) {
+          throw new RepositoryDataIntegrityError(error.errorType)
+        }
+
+        throw new RepositoryReadError(getRepositoryErrorType(error))
+      }
+    },
+
+    hasAnyDraftForWrite(scopedConnection: DatabaseTransactionConnection): boolean {
+      assertActiveDatabaseTransactionConnection(scopedConnection)
+
+      try {
+        return decodeExistsRow(
+          scopedConnection.prepare(selectHasAnyDraftScreeningEncounterSql).get()
+        )
+      } catch (error) {
+        if (error instanceof DatabaseTransactionStateError) {
+          throw new DatabaseTransactionStateError(error.errorType)
         }
 
         if (error instanceof RepositoryDataIntegrityError) {
