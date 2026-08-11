@@ -1934,7 +1934,7 @@ describe('patient registry workspace mounted regressions', () => {
     expect(patientRowByCode(mounted, 'PT-000001').getAttribute('aria-selected')).toBe('true')
     expect(text(mounted)).toContain('PT-000001')
 
-    await clickButton(mounted, 'Amend demographics')
+    await clickButton(mounted, 'Edit demographics')
     await changeInput(fieldInput(mounted, 'Given name'), 'Ada Edited')
     await changeSelect(fieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
     await clickButton(mounted, 'Save amendment')
@@ -1960,7 +1960,7 @@ describe('patient registry workspace mounted regressions', () => {
     )
     const mounted = await mountWorkspace({ api, selectedPatient: patientDetail() })
 
-    await clickButton(mounted, 'Amend demographics')
+    await clickButton(mounted, 'Edit demographics')
     await clickButton(mounted, 'Save amendment')
 
     expect(api.patient.amendDemographics).not.toHaveBeenCalled()
@@ -1988,7 +1988,7 @@ describe('patient registry workspace mounted regressions', () => {
     )
     const mounted = await mountWorkspace({ api, selectedPatient: patientDetail() })
 
-    await clickButton(mounted, 'Amend demographics')
+    await clickButton(mounted, 'Edit demographics')
     await changeInput(fieldInput(mounted, 'Village'), 'Bamenda')
     await changeSelect(fieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
     await changeTextarea(fieldTextarea(mounted, 'Reason note'), unsafeNote)
@@ -2022,7 +2022,7 @@ describe('patient registry workspace mounted regressions', () => {
       userRole: 'TRAINED_SCREENER'
     })
 
-    await clickButton(mounted, 'Amend demographics')
+    await clickButton(mounted, 'Edit demographics')
 
     const statusSelect = fieldSelect(mounted, 'Status')
     expect(statusSelect.disabled).toBe(true)
@@ -2388,7 +2388,7 @@ describe('patient registry workspace mounted regressions', () => {
     expect(activeTabPanel(mounted).textContent).toContain('Acknowledgment stays cached.')
 
     await clickElement(tabByText(mounted, 'Current Details'))
-    await clickButton(mounted, 'Amend demographics')
+    await clickButton(mounted, 'Edit demographics')
     await changeInput(fieldInput(mounted, 'Village'), 'Updated Village')
     await changeSelect(fieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
     await clickButton(mounted, 'Save amendment')
@@ -3025,7 +3025,7 @@ describe('patient registry workspace mounted regressions', () => {
     await clickButton(mounted, 'Record acknowledgment decision')
     await clickRadio(decisionRadio(mounted, 'DECLINED'))
     await changeTextarea(fieldTextarea(mounted, 'Decision note'), 'Selection guard note.')
-    await clickButtonWithin(patientRowByCode(mounted, 'PT-000002'), 'Select')
+    await clickElement(patientRowByCode(mounted, 'PT-000002'))
 
     expect(dialog(mounted)?.textContent).toContain('Save decision')
 
@@ -3034,7 +3034,7 @@ describe('patient registry workspace mounted regressions', () => {
     expect(mounted.getSelectedPatient()).toEqual(first)
     expect(fieldTextarea(mounted, 'Decision note').value).toBe('Selection guard note.')
 
-    await clickButtonWithin(patientRowByCode(mounted, 'PT-000002'), 'Select')
+    await clickElement(patientRowByCode(mounted, 'PT-000002'))
     await clickButtonWithin(dialog(mounted)!, 'Discard decision')
 
     expect(mounted.getSelectedPatient()).toEqual(second)
@@ -3211,7 +3211,7 @@ describe('patient registry workspace mounted regressions', () => {
     const mounted = await mountWorkspace({ api, selectedPatient: first })
 
     await clickElement(tabByText(mounted, 'Demographic History'))
-    await clickButtonWithin(patientRowByCode(mounted, 'PT-000002'), 'Select')
+    await clickElement(patientRowByCode(mounted, 'PT-000002'))
 
     staleHistory.resolve(
       createIpcSuccess({
@@ -3257,7 +3257,7 @@ describe('patient registry workspace mounted regressions', () => {
     const mounted = await mountWorkspace({ api, selectedPatient: first })
 
     await clickElement(tabByText(mounted, 'Acknowledgment History'))
-    await clickButtonWithin(patientRowByCode(mounted, 'PT-000002'), 'Select')
+    await clickElement(patientRowByCode(mounted, 'PT-000002'))
 
     staleHistory.resolve(
       createIpcSuccess({
@@ -3415,7 +3415,7 @@ describe('patient registry workspace mounted regressions', () => {
 
     const mounted = await mountWorkspace({ api, selectedPatient: original })
 
-    await clickButton(mounted, 'Amend demographics')
+    await clickButton(mounted, 'Edit demographics')
     await changeInput(fieldInput(mounted, 'Village'), 'Attempted Village')
     await changeSelect(fieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
     await clickButton(mounted, 'Save amendment')
@@ -3485,7 +3485,7 @@ describe('patient registry workspace mounted regressions', () => {
 
     const mounted = await mountWorkspace({ api, selectedPatient: original })
 
-    await clickButton(mounted, 'Amend demographics')
+    await clickButton(mounted, 'Edit demographics')
     await changeInput(fieldInput(mounted, 'Village'), 'Attempted Village')
     await changeSelect(fieldSelect(mounted, 'Reason'), 'PATIENT_REPORTED_CHANGE')
     await changeTextarea(fieldTextarea(mounted, 'Reason note'), 'Patient reported a new village.')
@@ -3549,7 +3549,7 @@ describe('patient registry workspace mounted regressions', () => {
     )
     const mounted = await mountWorkspace({ api, selectedPatient: original })
 
-    await clickButton(mounted, 'Amend demographics')
+    await clickButton(mounted, 'Edit demographics')
     await changeInput(fieldInput(mounted, 'Village'), 'Attempted Village')
     await changeSelect(fieldSelect(mounted, 'Reason'), 'OTHER')
     await changeTextarea(fieldTextarea(mounted, 'Reason note'), 'Sensitive conflict note.')
@@ -3566,7 +3566,7 @@ describe('patient registry workspace mounted regressions', () => {
     expect(text(mounted)).not.toContain('Draft amendment')
     expect(text(mounted)).not.toContain('Sensitive conflict note.')
 
-    await clickButton(mounted, 'Amend demographics')
+    await clickButton(mounted, 'Edit demographics')
 
     expect(fieldInput(mounted, 'Village').value).toBe('Latest Village')
     expect(fieldSelect(mounted, 'Reason').value).toBe('')
@@ -3608,7 +3608,7 @@ describe('patient registry workspace mounted regressions', () => {
       userRole: 'TRAINED_SCREENER'
     })
 
-    await clickButton(mounted, 'Amend demographics')
+    await clickButton(mounted, 'Edit demographics')
     await changeInput(fieldInput(mounted, 'Village'), 'Attempted Village')
     await changeSelect(fieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
     await clickButton(mounted, 'Save amendment')
@@ -3653,7 +3653,7 @@ describe('patient registry workspace mounted regressions', () => {
       selectedPatient: patientDetail({ village: 'Original Village' })
     })
 
-    await clickButton(mounted, 'Amend demographics')
+    await clickButton(mounted, 'Edit demographics')
     const villageInput = fieldInput(mounted, 'Village')
     await changeInput(villageInput, 'Dirty Village')
     await changeSelect(fieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
@@ -4055,7 +4055,7 @@ describe('patient registry workspace mounted regressions', () => {
     expect(api.patient.listRecent).toHaveBeenCalledWith({ limit: 25 })
     expect(text(mounted)).toContain('Recent Patient')
 
-    await clickButton(mounted, 'Select')
+    await clickElement(patientRowByCode(mounted, 'PT-000001'))
 
     expect(api.patient.get).toHaveBeenCalledWith({ patientId: patientIdOne })
 
@@ -4156,7 +4156,7 @@ describe('patient registry workspace mounted regressions', () => {
           api.patient.amendDemographics.mockResolvedValueOnce(createPatientFailure('IPC_FORBIDDEN'))
         },
         run: async (mounted) => {
-          await clickButton(mounted, 'Amend demographics')
+          await clickButton(mounted, 'Edit demographics')
           await changeInput(fieldInput(mounted, 'Given name'), 'Forbidden Edit')
           await changeSelect(fieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
           await clickButton(mounted, 'Save amendment')
@@ -4478,7 +4478,7 @@ async function mountDirtyPatientSearchWorkspace({
     'true'
   )
 
-  await clickButton(mounted, 'Amend demographics')
+  await clickButton(mounted, 'Edit demographics')
   await changeInput(fieldInput(mounted, 'Village'), draftVillage)
   await changeSelect(fieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
 

@@ -208,6 +208,7 @@ export {
   createScreeningEncounterRepository,
   parseInsertCanonicalRootScreeningEncounterInput,
   parseNullableScreeningEncounterText,
+  readDataProperties,
   parseScreeningEncounterRecordVersion,
   parseScreeningEncounterStatus,
   type InsertCanonicalRootScreeningEncounterInput,
@@ -224,3 +225,25 @@ export {
   type ScreeningEncounterSourceType,
   type ScreeningEncounterStatus
 } from './screening-encounter'
+export {
+  createScreeningVitalsDraftRepository,
+  parseInsertScreeningVitalsDraftInput,
+  parseScreeningVitalsDraftRowVersion,
+  parseScreeningVitalsDraftStatus,
+  parseUpdateScreeningVitalsDraftInput,
+  parseVitalsMeasurementSite,
+  parseVitalsMeasurementTime,
+  parseVitalsPatientPosition,
+  type InsertScreeningVitalsDraftInput,
+  type ParsedScreeningVitalsDraftReadingInput,
+  type ReplaceScreeningVitalsDraftReadingInput,
+  type ScreeningVitalsDraftReadingRecord,
+  type ScreeningVitalsDraftRecord,
+  type ScreeningVitalsDraftRepository,
+  type ScreeningVitalsDraftStatus,
+  type UpdateScreeningVitalsDraftInput,
+  type UpdateScreeningVitalsDraftResult,
+  type VitalsMeasurementSite,
+  type VitalsMeasurementTime,
+  type VitalsPatientPosition
+} from './screening-vitals-draft'

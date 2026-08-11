@@ -67,7 +67,10 @@ const activeApplicationRegistrations = new WeakMap<
   ApplicationRegistrationOwnership
 >()
 const screeningEncounterIpcChannels: readonly ScreeningEncounterIpcChannel[] = Object.freeze([
-  ipcChannels.screeningEncounters.start
+  ipcChannels.screeningEncounters.start,
+  ipcChannels.screeningEncounters.getVitalsDraft,
+  ipcChannels.screeningEncounters.saveVitalsDraft,
+  ipcChannels.screeningEncounters.completeVitalsStep
 ])
 const activeScreeningEncounterRegistrations = new WeakMap<
   ApplicationIpcMain,
@@ -238,14 +241,24 @@ export function registerScreeningEncounterIpcHandlers(
     id: Symbol('screening-encounter-ipc-registration')
   })
   const screeningEncounterHandlers = createScreeningEncounterIpcHandlers(dependencies)
+  const registrations: ReadonlyArray<
+    readonly [ScreeningEncounterIpcChannel, ApplicationIpcListener]
+  > = [
+    [ipcChannels.screeningEncounters.start, screeningEncounterHandlers.start],
+    [ipcChannels.screeningEncounters.getVitalsDraft, screeningEncounterHandlers.getVitalsDraft],
+    [ipcChannels.screeningEncounters.saveVitalsDraft, screeningEncounterHandlers.saveVitalsDraft],
+    [
+      ipcChannels.screeningEncounters.completeVitalsStep,
+      screeningEncounterHandlers.completeVitalsStep
+    ]
+  ]
   const installedChannels: ScreeningEncounterIpcChannel[] = []
 
   try {
-    applicationIpcMain.handle(
-      ipcChannels.screeningEncounters.start,
-      screeningEncounterHandlers.start
-    )
-    installedChannels.push(ipcChannels.screeningEncounters.start)
+    for (const [channel, listener] of registrations) {
+      applicationIpcMain.handle(channel, listener)
+      installedChannels.push(channel)
+    }
   } catch {
     for (const channel of installedChannels.reverse()) {
       applicationIpcMain.removeHandler(channel)

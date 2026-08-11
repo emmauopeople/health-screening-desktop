@@ -11,7 +11,7 @@ under `src/main/database/migrations/sql/`.
 - Use positive integer versions beginning at `1` with no gaps.
 - Use stable lowercase kebab-case names.
 - Import SQL with `?raw` so the text is bundled into the Electron main output.
-- The current production target is migration version `7`.
+- The current production target is migration version `8`.
 - Version `5`, `screening-encounter-identity`, adds the root encounter identity
   constraint `ux_screening_encounters_root_session_patient`.
 - Version `6`, `installation-location-configuration`, adds the singleton
@@ -23,6 +23,10 @@ under `src/main/database/migrations/sql/`.
   service to create the first daily screening session without manual database
   repair. Existing protocol rows are preserved and are not overwritten,
   reinterpreted, or replaced.
+- Version `8`, `screening-vitals-drafts`, adds local offline Vitals draft
+  persistence with one draft per encounter and multiple ordered draft readings.
+  It preserves all existing data and does not create clinical measurements,
+  encounters, sessions, sync transport, or FHIR mappings.
 - Do not export raw SQL through preload, renderer, or shared contracts.
 
 ## Checksums
@@ -76,6 +80,8 @@ index set, exact table column metadata, `schema_migrations` structure, and
 
 Version `7` does not change the physical table/index/trigger schema; its
 schema validator intentionally delegates to the version-6 structural contract.
+Version `8` is the next structural schema contract and adds the Vitals draft
+tables and indexes.
 
 ## Compatibility Rules
 

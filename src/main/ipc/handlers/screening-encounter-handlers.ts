@@ -4,7 +4,9 @@ import type { NavigationPolicy } from '@main/app/navigation-policy'
 import type {
   ScreeningEncounterStartService,
   ScreeningEncounterStartSummary,
-  StartScreeningEncounterResult as InternalStartScreeningEncounterResult
+  ScreeningVitalsDraftService,
+  StartScreeningEncounterResult as InternalStartScreeningEncounterResult,
+  VitalsDraftSummary
 } from '@main/application'
 import { getErrorType } from '@main/foundation/error-type'
 import type { EntityId } from '@main/foundation/entity-id'
@@ -13,14 +15,27 @@ import {
   createIpcSuccess,
   createScreeningEncounterIpcFailure,
   createScreeningEncounterStartStatusResult,
+  createScreeningVitalsGetDraftLoadedResult,
   ipcChannels,
+  publicScreeningVitalsDraftSchema,
   screeningEncounterStartRequestSchema,
   screeningEncounterStartResultSchema,
+  screeningVitalsCompleteStepResultSchema,
+  screeningVitalsGetDraftRequestSchema,
+  screeningVitalsGetDraftResultSchema,
+  screeningVitalsSaveDraftRequestSchema,
+  screeningVitalsSaveDraftResultSchema,
   type PublicScreeningEncounterStartSummary,
+  type PublicScreeningVitalsDraft,
   type ScreeningEncounterIpcChannel,
   type ScreeningEncounterIpcErrorCode,
   type ScreeningEncounterStartRequest,
-  type ScreeningEncounterStartResult
+  type ScreeningEncounterStartResult,
+  type ScreeningVitalsCompleteStepResult,
+  type ScreeningVitalsGetDraftRequest,
+  type ScreeningVitalsGetDraftResult,
+  type ScreeningVitalsSaveDraftRequest,
+  type ScreeningVitalsSaveDraftResult
 } from '@shared/ipc'
 
 export interface ScreeningEncounterIpcOperationalLogger {
@@ -31,16 +46,30 @@ export interface ScreeningEncounterIpcOperationalLogger {
 export interface ScreeningEncounterIpcHandlerDependencies {
   readonly navigationPolicy: NavigationPolicy
   readonly screeningEncounterStartService: ScreeningEncounterStartService
+  readonly screeningVitalsDraftService: ScreeningVitalsDraftService
   readonly logger?: ScreeningEncounterIpcOperationalLogger
 }
 
 export interface ScreeningEncounterIpcHandlers {
   start(event: IpcSenderValidationEvent, request: unknown): Promise<ScreeningEncounterStartResult>
+  getVitalsDraft(
+    event: IpcSenderValidationEvent,
+    request: unknown
+  ): Promise<ScreeningVitalsGetDraftResult>
+  saveVitalsDraft(
+    event: IpcSenderValidationEvent,
+    request: unknown
+  ): Promise<ScreeningVitalsSaveDraftResult>
+  completeVitalsStep(
+    event: IpcSenderValidationEvent,
+    request: unknown
+  ): Promise<ScreeningVitalsCompleteStepResult>
 }
 
 export function createScreeningEncounterIpcHandlers({
   navigationPolicy,
   screeningEncounterStartService,
+  screeningVitalsDraftService,
   logger = console
 }: ScreeningEncounterIpcHandlerDependencies): ScreeningEncounterIpcHandlers {
   return Object.freeze({
@@ -89,6 +118,151 @@ export function createScreeningEncounterIpcHandlers({
         )
         return freezeIpcResult(createScreeningEncounterStartStatusResult('UNAVAILABLE'))
       }
+    },
+
+    async getVitalsDraft(
+      event: IpcSenderValidationEvent,
+      request: unknown
+    ): Promise<ScreeningVitalsGetDraftResult> {
+      if (!isIpcSenderAllowed(event, navigationPolicy)) {
+        const failure = createScreeningEncounterIpcFailure('IPC_FORBIDDEN')
+        logScreeningEncounterIpcFailure(
+          logger,
+          ipcChannels.screeningEncounters.getVitalsDraft,
+          'IPC_FORBIDDEN'
+        )
+        return freezeIpcResult(failure) as ScreeningVitalsGetDraftResult
+      }
+
+      const requestResult = safeParseIpcValue(screeningVitalsGetDraftRequestSchema, request)
+
+      if (!requestResult.success) {
+        return freezeIpcResult(createIpcSuccess({ status: 'VALIDATION_FAILED' as const }))
+      }
+
+      try {
+        const result = mapGetVitalsDraftResult(
+          screeningVitalsDraftService.getVitalsDraft(toInternalGetVitalsRequest(requestResult.data))
+        )
+        const resultEnvelope = safeParseIpcValue(screeningVitalsGetDraftResultSchema, result)
+
+        if (!resultEnvelope.success) {
+          logScreeningEncounterIpcFailure(
+            logger,
+            ipcChannels.screeningEncounters.getVitalsDraft,
+            'INTERNAL_ERROR'
+          )
+          return freezeIpcResult(createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+        }
+
+        return freezeIpcResult(resultEnvelope.data)
+      } catch (error) {
+        logScreeningEncounterIpcFailure(
+          logger,
+          ipcChannels.screeningEncounters.getVitalsDraft,
+          'INTERNAL_ERROR',
+          error
+        )
+        return freezeIpcResult(createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+      }
+    },
+
+    async saveVitalsDraft(
+      event: IpcSenderValidationEvent,
+      request: unknown
+    ): Promise<ScreeningVitalsSaveDraftResult> {
+      if (!isIpcSenderAllowed(event, navigationPolicy)) {
+        const failure = createScreeningEncounterIpcFailure('IPC_FORBIDDEN')
+        logScreeningEncounterIpcFailure(
+          logger,
+          ipcChannels.screeningEncounters.saveVitalsDraft,
+          'IPC_FORBIDDEN'
+        )
+        return freezeIpcResult(failure) as ScreeningVitalsSaveDraftResult
+      }
+
+      const requestResult = safeParseIpcValue(screeningVitalsSaveDraftRequestSchema, request)
+
+      if (!requestResult.success) {
+        return freezeIpcResult(createIpcSuccess({ status: 'VALIDATION_FAILED' as const }))
+      }
+
+      try {
+        const result = mapSaveVitalsDraftResult(
+          screeningVitalsDraftService.saveVitalsDraft(
+            toInternalSaveVitalsRequest(requestResult.data)
+          )
+        )
+        const resultEnvelope = safeParseIpcValue(screeningVitalsSaveDraftResultSchema, result)
+
+        if (!resultEnvelope.success) {
+          logScreeningEncounterIpcFailure(
+            logger,
+            ipcChannels.screeningEncounters.saveVitalsDraft,
+            'INTERNAL_ERROR'
+          )
+          return freezeIpcResult(createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+        }
+
+        return freezeIpcResult(resultEnvelope.data)
+      } catch (error) {
+        logScreeningEncounterIpcFailure(
+          logger,
+          ipcChannels.screeningEncounters.saveVitalsDraft,
+          'INTERNAL_ERROR',
+          error
+        )
+        return freezeIpcResult(createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+      }
+    },
+
+    async completeVitalsStep(
+      event: IpcSenderValidationEvent,
+      request: unknown
+    ): Promise<ScreeningVitalsCompleteStepResult> {
+      if (!isIpcSenderAllowed(event, navigationPolicy)) {
+        const failure = createScreeningEncounterIpcFailure('IPC_FORBIDDEN')
+        logScreeningEncounterIpcFailure(
+          logger,
+          ipcChannels.screeningEncounters.completeVitalsStep,
+          'IPC_FORBIDDEN'
+        )
+        return freezeIpcResult(failure) as ScreeningVitalsCompleteStepResult
+      }
+
+      const requestResult = safeParseIpcValue(screeningVitalsSaveDraftRequestSchema, request)
+
+      if (!requestResult.success) {
+        return freezeIpcResult(createIpcSuccess({ status: 'VALIDATION_FAILED' as const }))
+      }
+
+      try {
+        const result = mapCompleteVitalsStepResult(
+          screeningVitalsDraftService.completeVitalsStep(
+            toInternalSaveVitalsRequest(requestResult.data)
+          )
+        )
+        const resultEnvelope = safeParseIpcValue(screeningVitalsCompleteStepResultSchema, result)
+
+        if (!resultEnvelope.success) {
+          logScreeningEncounterIpcFailure(
+            logger,
+            ipcChannels.screeningEncounters.completeVitalsStep,
+            'INTERNAL_ERROR'
+          )
+          return freezeIpcResult(createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+        }
+
+        return freezeIpcResult(resultEnvelope.data)
+      } catch (error) {
+        logScreeningEncounterIpcFailure(
+          logger,
+          ipcChannels.screeningEncounters.completeVitalsStep,
+          'INTERNAL_ERROR',
+          error
+        )
+        return freezeIpcResult(createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+      }
     }
   })
 }
@@ -99,6 +273,40 @@ function toInternalStartRequest(
   return Object.freeze({
     patientId: request.patientId as EntityId,
     screeningSessionId: request.screeningSessionId as EntityId
+  })
+}
+
+function toInternalGetVitalsRequest(
+  request: ScreeningVitalsGetDraftRequest
+): Parameters<ScreeningVitalsDraftService['getVitalsDraft']>[0] {
+  return Object.freeze({
+    encounterId: request.encounterId as EntityId
+  })
+}
+
+function toInternalSaveVitalsRequest(
+  request: ScreeningVitalsSaveDraftRequest
+): Parameters<ScreeningVitalsDraftService['saveVitalsDraft']>[0] {
+  return Object.freeze({
+    encounterId: request.encounterId as EntityId,
+    expectedVersion: request.expectedVersion,
+    readings: Object.freeze(
+      request.readings.map((reading) =>
+        Object.freeze({
+          id: reading.id === null ? null : (reading.id as EntityId),
+          sequenceNumber: reading.sequenceNumber,
+          systolic: reading.systolic,
+          diastolic: reading.diastolic,
+          pulse: reading.pulse,
+          measurementSite: reading.measurementSite,
+          patientPosition: reading.patientPosition,
+          measurementTime: reading.measurementTime
+        })
+      )
+    ),
+    weightKg: request.weightKg,
+    waistCm: request.waistCm,
+    notes: request.notes
   })
 }
 
@@ -142,6 +350,74 @@ function toPublicStartSummary(
     startedAt: encounter.startedAt,
     recordVersion: encounter.recordVersion
   })
+}
+
+function mapGetVitalsDraftResult(
+  result: ReturnType<ScreeningVitalsDraftService['getVitalsDraft']>
+): ScreeningVitalsGetDraftResult {
+  if (result.status === 'LOADED') {
+    return createScreeningVitalsGetDraftLoadedResult(
+      result.draft === null ? null : toPublicVitalsDraft(result.draft)
+    ) as ScreeningVitalsGetDraftResult
+  }
+
+  return createIpcSuccess({ status: result.status }) as ScreeningVitalsGetDraftResult
+}
+
+function mapSaveVitalsDraftResult(
+  result: ReturnType<ScreeningVitalsDraftService['saveVitalsDraft']>
+): ScreeningVitalsSaveDraftResult {
+  if (result.status === 'SAVED') {
+    return createIpcSuccess({
+      status: 'SAVED',
+      draft: toPublicVitalsDraft(result.draft)
+    }) as ScreeningVitalsSaveDraftResult
+  }
+
+  return createIpcSuccess({ status: result.status }) as ScreeningVitalsSaveDraftResult
+}
+
+function mapCompleteVitalsStepResult(
+  result: ReturnType<ScreeningVitalsDraftService['completeVitalsStep']>
+): ScreeningVitalsCompleteStepResult {
+  if (result.status === 'COMPLETED') {
+    return createIpcSuccess({
+      status: 'COMPLETED',
+      draft: toPublicVitalsDraft(result.draft)
+    }) as ScreeningVitalsCompleteStepResult
+  }
+
+  return createIpcSuccess({ status: result.status }) as ScreeningVitalsCompleteStepResult
+}
+
+function toPublicVitalsDraft(draft: VitalsDraftSummary): PublicScreeningVitalsDraft {
+  const publicDraft = {
+    id: draft.id,
+    encounterId: draft.encounterId,
+    status: draft.status,
+    readings: draft.readings.map((reading) => ({
+      id: reading.id,
+      sequenceNumber: reading.sequenceNumber,
+      systolic: reading.systolic,
+      diastolic: reading.diastolic,
+      pulse: reading.pulse,
+      measurementSite: reading.measurementSite,
+      patientPosition: reading.patientPosition,
+      measurementTime: reading.measurementTime
+    })),
+    weightKg: draft.weightKg,
+    waistCm: draft.waistCm,
+    notes: draft.notes,
+    rowVersion: draft.rowVersion,
+    updatedAt: draft.updatedAt
+  }
+  const parsed = safeParseIpcValue(publicScreeningVitalsDraftSchema, publicDraft)
+
+  if (!parsed.success) {
+    throw new Error('Invalid public Vitals draft.')
+  }
+
+  return parsed.data
 }
 
 function freezeIpcResult<TResult>(result: TResult): TResult {

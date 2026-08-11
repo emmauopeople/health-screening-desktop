@@ -1,0 +1,789 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import Database from 'better-sqlite3'
+import { describe, expect, it, vi } from 'vitest'
+
+import {
+  LocalSessionAuthorizationError,
+  LocalSessionUnauthenticatedError,
+  createInstallationLocationService,
+  createScreeningVitalsDraftService,
+  type ActiveLocalSessionContext,
+  type LocalAuthenticationSessionService,
+  type ScreeningVitalsDraftService
+} from '@main/application'
+import {
+  RepositoryWriteError,
+  createAuditEventRepository,
+  createDatabaseTransactionExecutor,
+  createInstallationLocationConfigurationRepository,
+  createInstallationRepository,
+  createLocationRepository,
+  createProductionDatabaseMigrationRunner,
+  createScreeningEncounterOutboxRepository,
+  createScreeningEncounterRepository,
+  createScreeningSessionRepository,
+  createScreeningVitalsDraftRepository,
+  parseUserDisplayName,
+  parseUsername,
+  type LocalUserRecord,
+  type LocalUserRole,
+  type ScreeningEncounterOutboxRepository
+} from '@main/database'
+import { createEntityIdGenerator, parseEntityId } from '@main/foundation/entity-id'
+import { createUtcClock, type UtcTimestamp } from '@main/foundation/utc-clock'
+
+const now = '2026-08-06T12:00:00.000Z'
+const installationId = '93000000-0000-4000-8000-000000000001'
+const adminId = '93000000-0000-4000-8000-000000000002'
+const nurseId = '93000000-0000-4000-8000-000000000003'
+const locationId = '93000000-0000-4000-8000-000000000004'
+const protocolId = '00000000-0000-4000-8000-000000000007'
+const patientId = '93000000-0000-4000-8000-000000000006'
+const secondPatientId = '93000000-0000-4000-8000-000000000007'
+const sessionId = '93000000-0000-4000-8000-000000000008'
+const encounterId = '93000000-0000-4000-8000-000000000009'
+const secondEncounterId = '93000000-0000-4000-8000-000000000010'
+
+describe('screening vitals draft service integration', () => {
+  it('loads no draft for a current editable encounter without creating an empty record', async () => {
+    await withVitalsService(({ connection, service }) => {
+      seedCoreGraph(connection)
+
+      expect(service.getVitalsDraft({ encounterId: parseEntityId(encounterId) })).toEqual({
+        status: 'LOADED',
+        draft: null
+      })
+      expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(0)
+      expect(readTableCount(connection, 'screening_vitals_draft_readings')).toBe(0)
+      expect(readTableCount(connection, 'audit_log')).toBe(0)
+      expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+    })
+  })
+
+  it('saves incomplete local drafts transactionally with trusted actor, audit, and outbox', async () => {
+    await withVitalsService(({ connection, service, authenticationSessionService }) => {
+      seedCoreGraph(connection)
+
+      const result = service.saveVitalsDraft(
+        createVitalsRequest({
+          readings: [
+            {
+              id: null,
+              sequenceNumber: 1,
+              systolic: 150,
+              diastolic: null,
+              pulse: null,
+              measurementSite: null,
+              patientPosition: null,
+              measurementTime: null
+            }
+          ],
+          notes: 'Incomplete local draft'
+        })
+      )
+
+      expect(result).toMatchObject({
+        status: 'SAVED',
+        draft: {
+          encounterId,
+          status: 'DRAFT',
+          rowVersion: 1,
+          weightKg: null,
+          waistCm: null,
+          notes: 'Incomplete local draft',
+          readings: [
+            expect.objectContaining({
+              sequenceNumber: 1,
+              systolic: 150,
+              diastolic: null,
+              pulse: null
+            })
+          ]
+        }
+      })
+      expect(authenticationSessionService.requireAnyRole).toHaveBeenCalledWith([
+        'LOCAL_ADMIN',
+        'NURSE',
+        'TRAINED_SCREENER'
+      ])
+      expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(1)
+      expect(readTableCount(connection, 'screening_vitals_draft_readings')).toBe(1)
+      expect(readDraftRows(connection)).toEqual([
+        expect.objectContaining({
+          encounter_id: encounterId,
+          status: 'DRAFT',
+          weight_kg: null,
+          waist_cm: null,
+          notes: 'Incomplete local draft',
+          created_by: nurseId,
+          updated_by: nurseId,
+          row_version: 1
+        })
+      ])
+      expect(readAuditRows(connection)).toEqual([
+        expect.objectContaining({
+          action: 'SCREENING_VITALS_DRAFT_SAVED',
+          entity_type: 'SCREENING_ENCOUNTER',
+          entity_id: encounterId,
+          user_id: nurseId
+        })
+      ])
+      expect(readOutboxRows(connection)).toEqual([
+        expect.objectContaining({
+          aggregate_type: 'SCREENING_ENCOUNTER',
+          aggregate_id: encounterId,
+          operation: 'SCREENING_VITALS_DRAFT_SAVED',
+          payload_schema_version: 'screening-encounter.vitals-draft-saved.v1'
+        })
+      ])
+      expect(JSON.stringify(readAuditRows(connection))).not.toContain('150')
+      expect(JSON.stringify(readOutboxRows(connection))).not.toContain('Incomplete local draft')
+    })
+  })
+
+  it('updates the same encounter draft, clears optional values, and persists removed readings', async () => {
+    await withVitalsService(({ connection, service }) => {
+      seedCoreGraph(connection)
+
+      const first = service.saveVitalsDraft(
+        createVitalsRequest({
+          readings: [completeReading(1), completeReading(2)],
+          weightKg: 80.5,
+          waistCm: 91,
+          notes: 'Initial note'
+        })
+      )
+
+      if (first.status !== 'SAVED') {
+        throw new Error('Expected first save to succeed.')
+      }
+
+      const firstReadingId = first.draft.readings[0]!.id
+      const secondReadingId = first.draft.readings[1]!.id
+      const second = service.saveVitalsDraft(
+        createVitalsRequest({
+          expectedVersion: first.draft.rowVersion,
+          readings: [{ ...completeReading(1), id: firstReadingId, systolic: 142 }],
+          weightKg: null,
+          waistCm: null,
+          notes: null
+        })
+      )
+
+      expect(second).toMatchObject({
+        status: 'SAVED',
+        draft: {
+          id: first.draft.id,
+          rowVersion: 2,
+          weightKg: null,
+          waistCm: null,
+          notes: null,
+          readings: [
+            expect.objectContaining({
+              id: firstReadingId,
+              sequenceNumber: 1,
+              systolic: 142
+            })
+          ]
+        }
+      })
+      expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(1)
+      expect(readReadingRows(connection)).toEqual([
+        expect.objectContaining({
+          id: firstReadingId,
+          sequence_number: 1,
+          systolic: 142
+        })
+      ])
+      expect(JSON.stringify(readReadingRows(connection))).not.toContain(secondReadingId)
+      expect(readAuditRows(connection).map((row) => row.action)).toEqual([
+        'SCREENING_VITALS_DRAFT_SAVED',
+        'SCREENING_VITALS_DRAFT_SAVED'
+      ])
+
+      const identical = service.saveVitalsDraft(
+        createVitalsRequest({
+          expectedVersion: 2,
+          readings: [{ ...completeReading(1), id: firstReadingId, systolic: 142 }],
+          weightKg: null,
+          waistCm: null,
+          notes: null
+        })
+      )
+
+      expect(identical).toMatchObject({
+        status: 'SAVED',
+        draft: {
+          id: first.draft.id,
+          rowVersion: 2
+        }
+      })
+      expect(readAuditRows(connection).map((row) => row.action)).toEqual([
+        'SCREENING_VITALS_DRAFT_SAVED',
+        'SCREENING_VITALS_DRAFT_SAVED'
+      ])
+      expect(readOutboxRows(connection).map((row) => row.operation)).toEqual([
+        'SCREENING_VITALS_DRAFT_SAVED',
+        'SCREENING_VITALS_DRAFT_SAVED'
+      ])
+    })
+  })
+
+  it('requires one complete reading to complete Vitals but keeps optional fields optional', async () => {
+    await withVitalsService(({ connection, service }) => {
+      seedCoreGraph(connection)
+
+      expect(
+        service.completeVitalsStep(
+          createVitalsRequest({
+            readings: [
+              {
+                ...completeReading(1),
+                pulse: null
+              }
+            ]
+          })
+        )
+      ).toEqual({ status: 'VALIDATION_FAILED' })
+      expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(0)
+
+      const completed = service.completeVitalsStep(
+        createVitalsRequest({
+          readings: [completeReading(1)],
+          weightKg: null,
+          waistCm: null,
+          notes: null
+        })
+      )
+
+      expect(completed).toMatchObject({
+        status: 'COMPLETED',
+        draft: {
+          status: 'VITALS_COMPLETE',
+          weightKg: null,
+          waistCm: null,
+          notes: null
+        }
+      })
+      expect(readDraftRows(connection)).toEqual([
+        expect.objectContaining({
+          encounter_id: encounterId,
+          status: 'VITALS_COMPLETE',
+          weight_kg: null,
+          waist_cm: null,
+          notes: null
+        })
+      ])
+      expect(readAuditRows(connection).map((row) => row.action)).toEqual([
+        'SCREENING_VITALS_STEP_COMPLETED'
+      ])
+      expect(readOutboxRows(connection).map((row) => row.operation)).toEqual([
+        'SCREENING_VITALS_STEP_COMPLETED'
+      ])
+    })
+  })
+
+  it('rejects unauthorized, over-posted, stale, and cross-encounter requests without mutation', async () => {
+    await withVitalsService(
+      ({ connection, service }) => {
+        seedCoreGraph(connection)
+
+        expect(service.getVitalsDraft({ encounterId: parseEntityId(encounterId) })).toEqual({
+          status: 'FORBIDDEN'
+        })
+        expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(0)
+      },
+      { sessionFailure: new LocalSessionAuthorizationError() }
+    )
+
+    await withVitalsService(
+      ({ connection, service }) => {
+        seedCoreGraph(connection)
+
+        expect(service.saveVitalsDraft(createVitalsRequest())).toEqual({
+          status: 'AUTHENTICATION_REQUIRED'
+        })
+        expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(0)
+      },
+      { sessionFailure: new LocalSessionUnauthenticatedError() }
+    )
+
+    await withVitalsService(({ connection, service }) => {
+      seedCoreGraph(connection)
+
+      expect(
+        service.saveVitalsDraft({ ...createVitalsRequest(), actor: { id: adminId } } as never)
+      ).toEqual({
+        status: 'VALIDATION_FAILED'
+      })
+      expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(0)
+
+      const saved = service.saveVitalsDraft(createVitalsRequest({ readings: [completeReading(1)] }))
+
+      if (saved.status !== 'SAVED') {
+        throw new Error('Expected save to succeed.')
+      }
+
+      expect(
+        service.saveVitalsDraft(createVitalsRequest({ readings: [completeReading(1)] }))
+      ).toEqual({
+        status: 'VERSION_CONFLICT'
+      })
+      expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(1)
+
+      insertPatient(connection, secondPatientId, 'PT-000002')
+      insertEncounter(connection, secondEncounterId, secondPatientId)
+      const second = service.saveVitalsDraft(
+        createVitalsRequest({
+          encounterId: parseEntityId(secondEncounterId),
+          readings: [completeReading(1)]
+        })
+      )
+
+      if (second.status !== 'SAVED') {
+        throw new Error('Expected second save to succeed.')
+      }
+
+      expect(
+        service.saveVitalsDraft(
+          createVitalsRequest({
+            expectedVersion: saved.draft.rowVersion,
+            readings: [{ ...completeReading(1), id: second.draft.readings[0]!.id }]
+          })
+        )
+      ).toEqual({ status: 'VALIDATION_FAILED' })
+    })
+  })
+
+  it('rolls back draft, audit, and outbox effects when a later mutation boundary fails', async () => {
+    await withVitalsService(
+      ({ connection, service }) => {
+        seedCoreGraph(connection)
+
+        expect(
+          service.saveVitalsDraft(createVitalsRequest({ readings: [completeReading(1)] }))
+        ).toEqual({
+          status: 'UNAVAILABLE'
+        })
+        expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(0)
+        expect(readTableCount(connection, 'screening_vitals_draft_readings')).toBe(0)
+        expect(readTableCount(connection, 'audit_log')).toBe(0)
+        expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+      },
+      { failOutboxInsert: true }
+    )
+  })
+})
+
+interface Harness {
+  readonly connection: Database.Database
+  readonly service: ScreeningVitalsDraftService
+  readonly authenticationSessionService: LocalAuthenticationSessionService & {
+    readonly requireAnyRole: ReturnType<typeof vi.fn>
+  }
+}
+
+async function withVitalsService(
+  test: (harness: Harness) => void,
+  options: {
+    readonly sessionRole?: LocalUserRole
+    readonly sessionFailure?: unknown
+    readonly failOutboxInsert?: boolean
+  } = {}
+): Promise<void> {
+  const directory = await mkdtemp(join(tmpdir(), 'hsd030a-vitals-service-'))
+  const databasePath = join(directory, 'health-screening.sqlite3')
+  const connection = new Database(databasePath)
+
+  try {
+    createProductionDatabaseMigrationRunner({
+      applicationVersion: '1.0.0',
+      logger: createLogger(),
+      clock: createUtcClock(() => now)
+    })(connection)
+
+    const authenticationSessionService = createAuthenticationSessionService({
+      userId: nurseId,
+      role: options.sessionRole ?? 'NURSE',
+      failure: options.sessionFailure
+    })
+    const transactionExecutor = createDatabaseTransactionExecutor({
+      connection,
+      idGenerator: createEntityIdGenerator(createQueuedIdGenerator()),
+      clock: createUtcClock(() => now),
+      logger: createLogger()
+    })
+    const installationRepository = createInstallationRepository(connection)
+    const locationRepository = createLocationRepository(connection)
+    const screeningSessionRepository = createScreeningSessionRepository(connection)
+    const screeningEncounterRepository = createScreeningEncounterRepository(connection)
+    const auditEventRepository = createAuditEventRepository(connection)
+    const outboxRepository = createOutboxRepository(connection, options.failOutboxInsert === true)
+    const installationLocationService = createInstallationLocationService({
+      authenticationSessionService,
+      installationRepository,
+      installationLocationConfigurationRepository:
+        createInstallationLocationConfigurationRepository(connection),
+      locationRepository,
+      screeningSessionRepository,
+      screeningEncounterRepository,
+      auditEventRepository,
+      transactionExecutor
+    })
+    const service = createScreeningVitalsDraftService({
+      authenticationSessionService,
+      installationLocationService,
+      installationRepository,
+      locationRepository,
+      screeningSessionRepository,
+      screeningEncounterRepository,
+      screeningVitalsDraftRepository: createScreeningVitalsDraftRepository(connection),
+      screeningEncounterOutboxRepository: outboxRepository,
+      auditEventRepository,
+      transactionExecutor
+    })
+
+    test({ connection, service, authenticationSessionService })
+  } finally {
+    if (connection.open) {
+      connection.close()
+    }
+    await rm(directory, { recursive: true, force: true })
+  }
+}
+
+function createOutboxRepository(
+  connection: Database.Database,
+  failInsert: boolean
+): ScreeningEncounterOutboxRepository {
+  const repository = createScreeningEncounterOutboxRepository(connection)
+
+  if (!failInsert) {
+    return repository
+  }
+
+  return {
+    ...repository,
+    insert: vi.fn(() => {
+      throw new RepositoryWriteError()
+    })
+  } as unknown as ScreeningEncounterOutboxRepository
+}
+
+function createAuthenticationSessionService({
+  userId,
+  role,
+  failure
+}: {
+  readonly userId: string
+  readonly role: LocalUserRole
+  readonly failure?: unknown
+}): LocalAuthenticationSessionService & { readonly requireAnyRole: ReturnType<typeof vi.fn> } {
+  const context = createActiveContext(userId, role)
+
+  return {
+    getSnapshot: vi.fn(),
+    login: vi.fn(),
+    changeRequiredPassword: vi.fn(),
+    unlock: vi.fn(),
+    lock: vi.fn(),
+    logout: vi.fn(),
+    recordActivity: vi.fn(),
+    requireActiveSession: vi.fn(),
+    requireAnyRole: vi.fn((roles: readonly LocalUserRole[]) => {
+      if (failure !== undefined) {
+        throw failure
+      }
+
+      if (!roles.includes(role)) {
+        throw new LocalSessionAuthorizationError()
+      }
+
+      return context
+    })
+  } as unknown as LocalAuthenticationSessionService & {
+    readonly requireAnyRole: ReturnType<typeof vi.fn>
+  }
+}
+
+function createActiveContext(userId: string, role: LocalUserRole): ActiveLocalSessionContext {
+  const user: LocalUserRecord = Object.freeze({
+    id: parseEntityId(userId),
+    username: parseUsername('screening-user'),
+    displayName: parseUserDisplayName('Screening User'),
+    role,
+    isActive: true,
+    mustChangePassword: false,
+    failedLoginCount: 0,
+    lockedUntil: null,
+    lastLoginAt: now as UtcTimestamp,
+    createdAt: now as UtcTimestamp,
+    updatedAt: now as UtcTimestamp
+  })
+
+  return Object.freeze({
+    user,
+    authenticatedAt: now as UtcTimestamp,
+    lastActivityAt: now as UtcTimestamp,
+    idleExpiresAt: '2026-08-06T12:15:00.000Z' as UtcTimestamp,
+    absoluteExpiresAt: '2026-08-07T00:00:00.000Z' as UtcTimestamp
+  })
+}
+
+function createVitalsRequest(
+  overrides: Partial<Parameters<ScreeningVitalsDraftService['saveVitalsDraft']>[0]> = {}
+): Parameters<ScreeningVitalsDraftService['saveVitalsDraft']>[0] {
+  return {
+    encounterId: parseEntityId(encounterId),
+    expectedVersion: null,
+    readings: [completeReading(1)],
+    weightKg: null,
+    waistCm: null,
+    notes: null,
+    ...overrides
+  }
+}
+
+function completeReading(
+  sequenceNumber: number
+): Parameters<ScreeningVitalsDraftService['saveVitalsDraft']>[0]['readings'][number] {
+  return {
+    id: null,
+    sequenceNumber,
+    systolic: 120 + sequenceNumber,
+    diastolic: 80 + sequenceNumber,
+    pulse: 70 + sequenceNumber,
+    measurementSite: sequenceNumber === 1 ? 'RIGHT_ARM' : 'LEFT_ARM',
+    patientPosition: sequenceNumber === 1 ? 'SITTING' : 'STANDING',
+    measurementTime: sequenceNumber === 1 ? '10:12' : '10:18'
+  }
+}
+
+function seedCoreGraph(connection: Database.Database): void {
+  insertInstallation(connection)
+  insertUser(connection, adminId, 'admin', 'LOCAL_ADMIN')
+  insertUser(connection, nurseId, 'nurse', 'NURSE')
+  insertLocation(connection, locationId)
+  insertPatient(connection, patientId, 'PT-000001')
+  insertSession(connection)
+  insertConfiguration(connection)
+  insertEncounter(connection, encounterId, patientId)
+}
+
+function insertInstallation(connection: Database.Database): void {
+  connection
+    .prepare(
+      `INSERT INTO installation (
+        singleton_id,
+        id,
+        deployment_name,
+        timezone,
+        created_at,
+        updated_at
+      ) VALUES (1, ?, 'Local Deployment', 'UTC', ?, ?)`
+    )
+    .run(installationId, now, now)
+}
+
+function insertUser(
+  connection: Database.Database,
+  id: string,
+  username: string,
+  role: string
+): void {
+  connection
+    .prepare(
+      `INSERT INTO users (
+        id,
+        username,
+        username_normalized,
+        display_name,
+        password_hash,
+        password_salt,
+        role,
+        is_active,
+        must_change_password,
+        failed_login_count,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, 'hash', 'salt', ?, 1, 0, 0, ?, ?)`
+    )
+    .run(id, username, username, `${username} User`, role, now, now)
+}
+
+function insertLocation(connection: Database.Database, id: string): void {
+  connection
+    .prepare(
+      `INSERT INTO locations (
+        id,
+        name,
+        name_normalized,
+        location_type,
+        is_active,
+        created_by,
+        created_at,
+        updated_by,
+        updated_at
+      ) VALUES (?, ?, ?, 'COMMUNITY_SITE', 1, ?, ?, ?, ?)`
+    )
+    .run(id, `Site ${id}`, `site ${id}`, adminId, now, adminId, now)
+}
+
+function insertPatient(connection: Database.Database, id: string, patientCode: string): void {
+  connection
+    .prepare(
+      `INSERT INTO patients (
+        id,
+        patient_code,
+        display_name,
+        given_name,
+        family_name,
+        name_normalized,
+        sex,
+        date_of_birth,
+        status,
+        created_by,
+        created_at,
+        updated_by,
+        updated_at
+      ) VALUES (?, ?, 'Test Patient', 'Test', 'Patient', 'test patient', 'UNKNOWN', '1990-01-01', 'ACTIVE', ?, ?, ?, ?)`
+    )
+    .run(id, patientCode, adminId, now, adminId, now)
+}
+
+function insertSession(connection: Database.Database): void {
+  connection
+    .prepare(
+      `INSERT INTO screening_sessions (
+        id,
+        location_id,
+        protocol_version_id,
+        session_date,
+        status,
+        notes,
+        opened_by,
+        opened_at,
+        closed_by,
+        closed_at,
+        created_by,
+        created_at,
+        updated_by,
+        updated_at,
+        row_version
+      ) VALUES (?, ?, ?, '2026-08-06', 'OPEN', NULL, ?, ?, NULL, NULL, ?, ?, ?, ?, 1)`
+    )
+    .run(sessionId, locationId, protocolId, adminId, now, adminId, now, adminId, now)
+}
+
+function insertConfiguration(connection: Database.Database): void {
+  connection
+    .prepare(
+      `INSERT INTO installation_location_configuration (
+        singleton_id,
+        installation_id,
+        location_id,
+        configured_at,
+        configured_by,
+        updated_at,
+        updated_by,
+        row_version
+      ) VALUES (1, ?, ?, ?, ?, ?, ?, 1)`
+    )
+    .run(installationId, locationId, now, adminId, now, adminId)
+}
+
+function insertEncounter(
+  connection: Database.Database,
+  id: string,
+  encounterPatientId: string
+): void {
+  connection
+    .prepare(
+      `INSERT INTO screening_encounters (
+        id,
+        patient_id,
+        screening_session_id,
+        location_id,
+        protocol_version_id,
+        status,
+        started_at,
+        completed_at,
+        source_type,
+        recorded_by,
+        amendment_of_encounter_id,
+        amendment_reason,
+        void_reason,
+        record_version,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, NULL, 'LOCAL', ?, NULL, NULL, NULL, 1, ?, ?)`
+    )
+    .run(id, encounterPatientId, sessionId, locationId, protocolId, now, nurseId, now, now)
+}
+
+function createQueuedIdGenerator(): () => string {
+  const ids = Array.from(
+    { length: 80 },
+    (_, index) => `94000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`
+  )
+
+  return () => {
+    const next = ids.shift()
+
+    if (next === undefined) {
+      throw new Error('No HSD-030A test ID remains.')
+    }
+
+    return next
+  }
+}
+
+function readTableCount(connection: Database.Database, tableName: string): number {
+  const row = connection.prepare(`SELECT COUNT(*) AS total FROM "${tableName}"`).get() as {
+    total: number
+  }
+
+  return row.total
+}
+
+function readDraftRows(connection: Database.Database): Array<Record<string, unknown>> {
+  return connection
+    .prepare('SELECT * FROM screening_vitals_drafts ORDER BY encounter_id')
+    .all() as Array<Record<string, unknown>>
+}
+
+function readReadingRows(connection: Database.Database): Array<Record<string, unknown>> {
+  return connection
+    .prepare('SELECT * FROM screening_vitals_draft_readings ORDER BY sequence_number')
+    .all() as Array<Record<string, unknown>>
+}
+
+function readAuditRows(connection: Database.Database): Array<Record<string, unknown>> {
+  return connection
+    .prepare(
+      'SELECT action, entity_type, entity_id, user_id, metadata_json FROM audit_log ORDER BY rowid'
+    )
+    .all() as Array<Record<string, unknown>>
+}
+
+function readOutboxRows(connection: Database.Database): Array<Record<string, unknown>> {
+  return connection
+    .prepare(
+      `SELECT aggregate_type, aggregate_id, operation, payload_json, payload_schema_version
+       FROM sync_outbox
+       ORDER BY rowid`
+    )
+    .all() as Array<Record<string, unknown>>
+}
+
+function createLogger(): {
+  info(message: string): void
+  error(message: string): void
+} {
+  return {
+    info: vi.fn<(message: string) => void>(),
+    error: vi.fn<(message: string) => void>()
+  }
+}

@@ -51,7 +51,12 @@ import type {
 import { createIpcResultSchema } from './result'
 import type {
   ScreeningEncounterStartRequest,
-  ScreeningEncounterStartResult
+  ScreeningEncounterStartResult,
+  ScreeningVitalsCompleteStepResult,
+  ScreeningVitalsGetDraftRequest,
+  ScreeningVitalsGetDraftResult,
+  ScreeningVitalsSaveDraftRequest,
+  ScreeningVitalsSaveDraftResult
 } from './screening-encounter-contracts'
 import type {
   ScreeningSessionCloseRequest,
@@ -157,6 +162,13 @@ export interface HealthScreeningApi {
   }
   screeningEncounters: {
     start(request: ScreeningEncounterStartRequest): Promise<ScreeningEncounterStartResult>
+    vitals: {
+      getDraft(request: ScreeningVitalsGetDraftRequest): Promise<ScreeningVitalsGetDraftResult>
+      saveDraft(request: ScreeningVitalsSaveDraftRequest): Promise<ScreeningVitalsSaveDraftResult>
+      completeStep(
+        request: ScreeningVitalsSaveDraftRequest
+      ): Promise<ScreeningVitalsCompleteStepResult>
+    }
   }
   installationSettings: {
     getConfiguredLocation(): Promise<InstallationSettingsGetConfiguredLocationResult>

@@ -16,6 +16,7 @@ import type {
   InsertScreeningEncounterOutboxInput,
   ScreeningEncounterOutboxOperation,
   ScreeningEncounterOutboxPayload,
+  ScreeningEncounterOutboxPayloadSchemaVersion,
   ScreeningEncounterOutboxPayloadValue,
   ScreeningEncounterOutboxRepository
 } from './screening-encounter-outbox-types'
@@ -29,7 +30,7 @@ interface ParsedScreeningEncounterOutboxInput {
   readonly id: string
   readonly aggregateId: string
   readonly operation: ScreeningEncounterOutboxOperation
-  readonly payloadSchemaVersion: 'screening-encounter.start.v1'
+  readonly payloadSchemaVersion: ScreeningEncounterOutboxPayloadSchemaVersion
   readonly createdAt: string
   readonly payloadJson: string
 }
@@ -42,8 +43,14 @@ const inputKeys = Object.freeze([
   'createdAt',
   'payload'
 ] as const)
-const operation = 'SCREENING_ENCOUNTER_STARTED'
-const schemaVersion = 'screening-encounter.start.v1'
+const approvedOperationSchemas = new Map<
+  ScreeningEncounterOutboxOperation,
+  ScreeningEncounterOutboxPayloadSchemaVersion
+>([
+  ['SCREENING_ENCOUNTER_STARTED', 'screening-encounter.start.v1'],
+  ['SCREENING_VITALS_DRAFT_SAVED', 'screening-encounter.vitals-draft-saved.v1'],
+  ['SCREENING_VITALS_STEP_COMPLETED', 'screening-encounter.vitals-step-completed.v1']
+])
 const maximumPayloadDepth = 4
 const maximumPayloadNodes = 80
 const maximumPayloadObjectProperties = 40
@@ -113,7 +120,12 @@ function parseInsertScreeningEncounterOutboxInput(
   try {
     const data = readDataProperties(input, inputKeys)
 
-    if (data.operation !== operation || data.payloadSchemaVersion !== schemaVersion) {
+    const operation = parseScreeningEncounterOutboxOperation(data.operation)
+    const payloadSchemaVersion = parseScreeningEncounterOutboxPayloadSchemaVersion(
+      data.payloadSchemaVersion
+    )
+
+    if (approvedOperationSchemas.get(operation) !== payloadSchemaVersion) {
       throw new RepositoryValidationError()
     }
 
@@ -121,7 +133,7 @@ function parseInsertScreeningEncounterOutboxInput(
       id: parseEntityId(data.id),
       aggregateId: parseEntityId(data.aggregateId),
       operation,
-      payloadSchemaVersion: schemaVersion,
+      payloadSchemaVersion,
       createdAt: parseUtcTimestamp(data.createdAt),
       payloadJson: createCanonicalPayloadJson(data.payload)
     })
@@ -136,6 +148,32 @@ function parseInsertScreeningEncounterOutboxInput(
 
     throw new RepositoryValidationError(getRepositoryErrorType(error))
   }
+}
+
+function parseScreeningEncounterOutboxOperation(value: unknown): ScreeningEncounterOutboxOperation {
+  if (
+    typeof value !== 'string' ||
+    !approvedOperationSchemas.has(value as ScreeningEncounterOutboxOperation)
+  ) {
+    throw new RepositoryValidationError()
+  }
+
+  return value as ScreeningEncounterOutboxOperation
+}
+
+function parseScreeningEncounterOutboxPayloadSchemaVersion(
+  value: unknown
+): ScreeningEncounterOutboxPayloadSchemaVersion {
+  if (
+    typeof value !== 'string' ||
+    !Array.from(approvedOperationSchemas.values()).includes(
+      value as ScreeningEncounterOutboxPayloadSchemaVersion
+    )
+  ) {
+    throw new RepositoryValidationError()
+  }
+
+  return value as ScreeningEncounterOutboxPayloadSchemaVersion
 }
 
 function createCanonicalPayloadJson(value: unknown): string {

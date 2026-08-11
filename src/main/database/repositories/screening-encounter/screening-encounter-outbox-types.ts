@@ -2,8 +2,12 @@ import type { DatabaseTransactionConnection } from '@main/database/transaction'
 import type { EntityId } from '@main/foundation/entity-id'
 import type { UtcTimestamp } from '@main/foundation/utc-clock'
 
-export type ScreeningEncounterOutboxOperation = 'SCREENING_ENCOUNTER_STARTED'
-export type ScreeningEncounterOutboxPayloadSchemaVersion = 'screening-encounter.start.v1'
+export type ScreeningEncounterOutboxOperation =
+  'SCREENING_ENCOUNTER_STARTED' | 'SCREENING_VITALS_DRAFT_SAVED' | 'SCREENING_VITALS_STEP_COMPLETED'
+export type ScreeningEncounterOutboxPayloadSchemaVersion =
+  | 'screening-encounter.start.v1'
+  | 'screening-encounter.vitals-draft-saved.v1'
+  | 'screening-encounter.vitals-step-completed.v1'
 
 export type ScreeningEncounterOutboxPayloadScalar = null | boolean | number | string
 export type ScreeningEncounterOutboxPayloadValue =

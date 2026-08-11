@@ -39,7 +39,10 @@ export const ipcChannels = {
     list: 'health-screening:screening-sessions:list'
   },
   screeningEncounters: {
-    start: 'health-screening:screening-encounters:start'
+    start: 'health-screening:screening-encounters:start',
+    getVitalsDraft: 'health-screening:screening-encounters:vitals:get-draft',
+    saveVitalsDraft: 'health-screening:screening-encounters:vitals:save-draft',
+    completeVitalsStep: 'health-screening:screening-encounters:vitals:complete-step'
   },
   installationSettings: {
     getConfiguredLocation: 'health-screening:installation-settings:get-configured-location',

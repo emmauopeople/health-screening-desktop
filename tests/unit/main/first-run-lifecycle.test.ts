@@ -55,7 +55,7 @@ describe('first-run IPC lifecycle and scope', () => {
     expect(lifecycle).toContain('patientRegistryService,')
     expect(lifecycle).toContain('patientDemographicAmendmentService,')
     expect(lifecycle).toContain('patientAcknowledgmentService,')
-    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(10)
+    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(11)
   })
 
   it('composes screening-session IPC services from the initialized database runtime', () => {
@@ -87,7 +87,7 @@ describe('first-run IPC lifecycle and scope', () => {
     expect(lifecycle).toContain('screeningSessionService,')
     expect(lifecycle).toContain('currentScreeningSessionService,')
     expect(lifecycle).toContain('screeningSessionWorkspaceContextService,')
-    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(10)
+    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(11)
   })
 
   it('composes installation-settings IPC services from the initialized database runtime', () => {
@@ -119,17 +119,24 @@ describe('first-run IPC lifecycle and scope', () => {
     const registrationStatement = 'const disposeIpcHandlers = registerApplicationIpcHandlers'
     const serviceStatement =
       'const screeningEncounterStartService = createProductionScreeningEncounterStartService'
+    const vitalsServiceStatement =
+      'const screeningVitalsDraftService = createProductionScreeningVitalsDraftService'
 
     expect(lifecycle.match(/createDatabaseRuntime\(/gu)?.length).toBe(1)
     expect(lifecycle).toContain('createProductionScreeningEncounterStartService')
+    expect(lifecycle).toContain('createProductionScreeningVitalsDraftService')
     expect(lifecycle.indexOf('databaseRuntime.initialize()')).toBeLessThan(
       lifecycle.indexOf(serviceStatement)
     )
     expect(lifecycle.indexOf(serviceStatement)).toBeLessThan(
       lifecycle.indexOf(registrationStatement)
     )
+    expect(lifecycle.indexOf(vitalsServiceStatement)).toBeLessThan(
+      lifecycle.indexOf(registrationStatement)
+    )
     expect(lifecycle).toContain('authenticationSessionService,')
     expect(lifecycle).toContain('screeningEncounterStartService,')
+    expect(lifecycle).toContain('screeningVitalsDraftService,')
   })
 
   it('keeps renderer first-run consumption scoped to the fixed preload API and preserves shell status text', () => {

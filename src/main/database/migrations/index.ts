@@ -7,6 +7,7 @@ import { validateSchemaVersion4 } from './schema-v4-contract'
 import { validateSchemaVersion5 } from './schema-v5-contract'
 import { validateSchemaVersion6 } from './schema-v6-contract'
 import { validateSchemaVersion7 } from './schema-v7-contract'
+import { validateSchemaVersion8 } from './schema-v8-contract'
 import type { DatabaseMigrationContext, DatabaseMigrationRunner } from './migration-types'
 
 const productionSchemaValidators = new Map([
@@ -16,7 +17,8 @@ const productionSchemaValidators = new Map([
   [4, validateSchemaVersion4],
   [5, validateSchemaVersion5],
   [6, validateSchemaVersion6],
-  [7, validateSchemaVersion7]
+  [7, validateSchemaVersion7],
+  [8, validateSchemaVersion8]
 ])
 
 export {
@@ -69,6 +71,13 @@ export {
   schemaVersion7TriggerNames,
   validateSchemaVersion7
 } from './schema-v7-contract'
+export {
+  schemaVersion8NamedIndexes,
+  schemaVersion8TableContracts,
+  schemaVersion8TableNames,
+  schemaVersion8TriggerNames,
+  validateSchemaVersion8
+} from './schema-v8-contract'
 
 export function createProductionDatabaseMigrationRunner({
   applicationVersion,

@@ -8,6 +8,9 @@ or FHIR mapping.
 ## Channel
 
 - `health-screening:screening-encounters:start`
+- `health-screening:screening-encounters:vitals:get-draft`
+- `health-screening:screening-encounters:vitals:save-draft`
+- `health-screening:screening-encounters:vitals:complete-step`
 
 The handler is registered by the application IPC registrar after the production
 screening-encounter start service is composed. Duplicate focused registration is
@@ -24,6 +27,26 @@ screening-encounter handler.
 Unknown fields are rejected. The renderer cannot provide actor, user, role,
 location, encounter ID, protocol version, status, date, timestamp, installation,
 record version, audit, outbox, measurement, recommendation, or referral data.
+
+`vitals.getDraft` accepts exactly:
+
+- `encounterId`
+
+`vitals.saveDraft` and `vitals.completeStep` accept exactly:
+
+- `encounterId`
+- `expectedVersion`
+- `readings`
+- `weightKg`
+- `waistCm`
+- `notes`
+
+Each reading accepts only `id`, `sequenceNumber`, `systolic`, `diastolic`,
+`pulse`, `measurementSite`, `patientPosition`, and `measurementTime`. Draft save
+permits incomplete readings. Complete-step validation requires complete readings
+before workflow advancement. Unknown fields, renderer-supplied actor, role,
+patient, session, location, installation, audit, force, bypass, override, or
+sync authority are rejected before service execution.
 
 ## Main-Process Authority
 
@@ -83,3 +106,26 @@ returned a sanitized current daily-session context. The renderer passes only
 `patientId` and the P1 `screeningSessionId`; it does not pass location, date,
 actor, role, status, or audit metadata, and it must not bypass preload
 validation or treat renderer state as authorization.
+
+## HSD-030A Vitals Draft Boundary
+
+HSD-030A extends `window.healthScreening.screeningEncounters` with the fixed
+`vitals.getDraft`, `vitals.saveDraft`, and `vitals.completeStep` methods. The
+preload validates strict request schemas before invoking the fixed channels,
+validates the response envelopes, deeply freezes returned data, and maps invoke
+failures or malformed responses to sanitized `UNAVAILABLE` results.
+
+The main-process handlers validate the trusted sender before request parsing,
+then call the Vitals draft application service. The service resolves
+authentication and screening authorization, P0 configured location, current
+daily session, encounter ownership, timestamps, audit actor, and transaction
+ownership in the main process. The renderer cannot provide any of those
+authorities.
+
+Successful `saveDraft` returns `SAVED` with the sanitized draft and does not
+advance the workflow. Successful `completeStep` returns `COMPLETED` with the
+sanitized draft after Vitals persistence succeeds. Controlled failures include
+authentication, authorization, validation, location, encounter, session,
+version-conflict, and unavailable outcomes. Raw SQL, SQLite messages, database
+paths, stack traces, patient records, audit rows, outbox rows, clinical logs,
+and internal repository rows are not returned.

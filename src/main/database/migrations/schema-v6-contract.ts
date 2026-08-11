@@ -191,15 +191,26 @@ function isSchemaVersion6Valid(
   connection: MigrationConnection,
   options: { readonly requireForeignKeyEnforcement: boolean }
 ): boolean {
+  return hasRequiredSchemaVersion6Invariants(connection, options)
+}
+
+export function hasRequiredSchemaVersion6Invariants(
+  connection: MigrationConnection,
+  options: {
+    readonly requireForeignKeyEnforcement: boolean
+    readonly namedIndexes?: readonly string[]
+    readonly tableNames?: readonly string[]
+  }
+): boolean {
   try {
     return (
       hasRequiredSchemaVersion5Invariants(connection, {
         requireForeignKeyEnforcement: options.requireForeignKeyEnforcement,
-        namedIndexes: schemaVersion6NamedIndexes,
-        tableNames: schemaVersion6TableNames
+        namedIndexes: options.namedIndexes ?? schemaVersion6NamedIndexes,
+        tableNames: options.tableNames ?? schemaVersion6TableNames
       }) &&
-      hasExactTableNames(connection) &&
-      hasExactNamedIndexes(connection) &&
+      hasExactTableNames(connection, options.tableNames ?? schemaVersion6TableNames) &&
+      hasExactNamedIndexes(connection, options.namedIndexes ?? schemaVersion6NamedIndexes) &&
       hasExactTriggerNames(connection) &&
       hasExactConfigurationColumns(connection) &&
       hasRequiredConfigurationForeignKeys(connection) &&
@@ -211,12 +222,18 @@ function isSchemaVersion6Valid(
   }
 }
 
-function hasExactTableNames(connection: MigrationConnection): boolean {
-  return arraysEqual(readNonInternalTableNames(connection), schemaVersion6TableNames)
+function hasExactTableNames(
+  connection: MigrationConnection,
+  expectedTableNames: readonly string[]
+): boolean {
+  return arraysEqual(readNonInternalTableNames(connection), expectedTableNames)
 }
 
-function hasExactNamedIndexes(connection: MigrationConnection): boolean {
-  return arraysEqual(readNamedIndexNames(connection), schemaVersion6NamedIndexes)
+function hasExactNamedIndexes(
+  connection: MigrationConnection,
+  expectedIndexNames: readonly string[]
+): boolean {
+  return arraysEqual(readNamedIndexNames(connection), expectedIndexNames)
 }
 
 function hasExactTriggerNames(connection: MigrationConnection): boolean {

@@ -97,7 +97,8 @@ After the daily session is ready, the workspace displays:
 
 - `Patients`
 - `Search patients`
-- a table with `Name`, `Sex`, `Age`, `Last Screening`, and `Follow-up`
+- a table with `Name`, `Date of birth`, `Patient ID`, and supported safe
+  patient fields such as `Sex`
 
 The table uses the existing patient-search preload boundary and a bounded page
 size. Patient rows are fully clickable and keyboard-accessible with Enter and
@@ -121,6 +122,18 @@ the encounter.
 Patient tab labels use safe formatted patient names. The clinical section labels
 are `Vitals`, `Lifestyle`, `Food`, `OTC Medications`, and `Review`, with the
 short disclaimer `Screening guidance—not a diagnosis.` Clinical persistence,
+recommendations, referrals, printing, reporting, sync, and FHIR behavior other
+than the HSD-030A Vitals draft remain outside this renderer checkpoint.
+
+HSD-030A implements only Vitals draft persistence. The Vitals step loads the
+authoritative draft for the active encounter, always renders non-removable
+Reading 1, permits additional removable blood-pressure readings, and saves
+incomplete local draft work through the fixed main-process boundary. `Save
+draft` does not advance the workflow. `Continue to Lifestyle` requires at least
+one complete valid reading, persists the Vitals step first, and then opens the
+Lifestyle placeholder. Weight, waist measurement, and notes are optional.
+
+Lifestyle, Food, OTC, Review persistence, clinical interpretation,
 recommendations, referrals, printing, reporting, sync, and FHIR behavior remain
 outside this renderer checkpoint.
 

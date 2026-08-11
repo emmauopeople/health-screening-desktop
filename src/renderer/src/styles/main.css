@@ -371,6 +371,127 @@ h1 {
   width: min(560px, 100%);
 }
 
+.auth-login-root {
+  min-height: 100vh;
+}
+
+.auth-login-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px 24px;
+  background-color: #0b4960;
+  background-image:
+    linear-gradient(rgba(5, 28, 53, 0.22), rgba(5, 28, 53, 0.22)),
+    url('../../../../assests/images/background-image.png');
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.auth-login-content {
+  display: grid;
+  width: min(430px, 100%);
+  gap: 24px;
+}
+
+.auth-login-intro {
+  color: #ffffff;
+  text-align: center;
+  text-shadow: 0 2px 12px rgba(3, 23, 42, 0.48);
+}
+
+.auth-login-intro p {
+  margin: 0;
+}
+
+.auth-login-tagline {
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.auth-login-welcome {
+  margin-top: 6px !important;
+  font-size: 1.55rem;
+  font-weight: 760;
+  line-height: 1.15;
+}
+
+.auth-login-card {
+  width: 100%;
+  border-color: rgba(255, 255, 255, 0.62);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 24px 60px rgba(3, 23, 42, 0.28);
+}
+
+.auth-login-card h1 {
+  max-width: none;
+  margin: 0;
+  text-align: center;
+}
+
+.auth-login-card .auth-form {
+  margin-top: 24px;
+}
+
+.auth-login-card .auth-fieldset {
+  margin-top: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.auth-login-card .auth-recovery {
+  margin-top: 14px;
+}
+
+.auth-recovery-action {
+  min-height: 44px;
+  border: 0;
+  padding: 0;
+  color: var(--color-accent);
+  background: transparent;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: left;
+  text-decoration: underline;
+}
+
+.auth-recovery-action:hover {
+  color: #084b56;
+}
+
+.auth-required-indicator {
+  color: #c53030;
+  font-weight: 800;
+}
+
+.auth-recovery-message {
+  margin-top: 10px;
+  border: 1px solid #d8a4a4;
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: #7f1d1d;
+  background: #fff5f5;
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.auth-login-card .auth-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.auth-login-card .auth-actions .button {
+  width: 100%;
+}
+
 .auth-panel h1,
 .auth-workspace h1 {
   max-width: 18ch;
@@ -2023,10 +2144,45 @@ h1 {
   font: inherit;
 }
 
+.screening-vitals-table input[aria-invalid='true'],
+.screening-vitals-table select[aria-invalid='true'],
+.screening-vitals-fields input[aria-invalid='true'],
+.screening-vitals-fields textarea[aria-invalid='true'] {
+  border-color: #b42318;
+  box-shadow: 0 0 0 2px rgba(180, 35, 24, 0.16);
+}
+
 .screening-vitals-table-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.screening-reading-remove {
+  min-height: 32px;
+  padding: 5px 9px;
+  font-size: 0.8rem;
+}
+
+.screening-vitals-validation {
+  border: 1px solid #c8d3df;
+  border-radius: 6px;
+  padding: 9px 10px;
+  color: #344054;
+  background: #f8fbfd;
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.screening-vitals-validation-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.screening-vitals-validation-error {
+  border-color: #f1b5b0;
+  color: #912018;
+  background: #fff4f2;
 }
 
 .screening-vitals-fields {
@@ -2257,8 +2413,17 @@ h1 {
   background: #e6f3f5;
 }
 
-.patient-row-action {
-  width: 100%;
+.patient-table tbody tr[role='button'] {
+  cursor: pointer;
+}
+
+.patient-table tbody tr[role='button']:hover td {
+  background: #f0f8f9;
+}
+
+.patient-table tbody tr[role='button']:focus-visible {
+  outline: 3px solid rgba(19, 111, 126, 0.28);
+  outline-offset: -3px;
 }
 
 .patient-detail-tabs {
@@ -2499,8 +2664,12 @@ h1 {
   margin: 0;
   color: var(--shell-text);
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 400;
   line-height: 1.35;
+}
+
+.patient-detail-list dt {
+  font-weight: 700;
 }
 
 .patient-fields-grid label {
@@ -2832,6 +3001,14 @@ h1 {
 
   .auth-workspace {
     padding: 24px 18px;
+  }
+
+  .auth-login-page {
+    padding: 24px 16px;
+  }
+
+  .auth-login-card {
+    padding: 28px 22px;
   }
 }
 

@@ -16,6 +16,7 @@ import {
   type PublicCurrentScreeningSession,
   type PublicPatientSummary,
   type PublicScreeningEncounterStartSummary,
+  type PublicScreeningVitalsDraft,
   type ScreeningSessionErrorCode
 } from '@shared/ipc'
 import {
@@ -30,6 +31,17 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
   } & HealthScreeningApi['patient']
   screeningEncounters: {
     start: ReturnType<typeof vi.fn<HealthScreeningApi['screeningEncounters']['start']>>
+    vitals: {
+      getDraft: ReturnType<
+        typeof vi.fn<HealthScreeningApi['screeningEncounters']['vitals']['getDraft']>
+      >
+      saveDraft: ReturnType<
+        typeof vi.fn<HealthScreeningApi['screeningEncounters']['vitals']['saveDraft']>
+      >
+      completeStep: ReturnType<
+        typeof vi.fn<HealthScreeningApi['screeningEncounters']['vitals']['completeStep']>
+      >
+    }
   } & HealthScreeningApi['screeningEncounters']
   screeningSessions: {
     getWorkspaceContext: ReturnType<
@@ -235,14 +247,15 @@ describe('screening patient entry workspace', () => {
     expect(mounted.onSelectCommand).toHaveBeenCalledWith('SCREENING_NEW_SCREENING')
     expectWorkspaceHeading(mounted, 'New Screening')
     expect(tabButtons(mounted).map((button) => button.textContent?.trim())).toContain(
-      'Ada Lovelace • PT-000001'
+      'Ada Lovelace'
     )
     expect(mounted.container.querySelector('.screening-patient-table')).toBeNull()
     expect(mounted.container.querySelector('.screening-context-panel')).not.toBeNull()
     expect(mounted.container.querySelector('.screening-current-encounter-panel')).not.toBeNull()
     expect(text(mounted)).toContain('Patient context')
     expect(text(mounted)).toContain('Current screening encounter')
-    expect(text(mounted)).toContain('Date of birth 1990-08-06')
+    expect(text(mounted)).toContain('08/06/1990 • Female')
+    expect(text(mounted)).not.toContain('Date of birth')
     expect(text(mounted)).toContain('Vitals')
     expect(text(mounted)).toContain('Lifestyle')
     expect(text(mounted)).toContain('Food')
@@ -255,7 +268,8 @@ describe('screening patient entry workspace', () => {
       'Pulse',
       'Site',
       'Position',
-      'Time'
+      'Time',
+      'Remove'
     ])
     expect(text(mounted)).toContain('Blood pressure readings')
     expect(text(mounted)).toContain('Weight (kg)')
@@ -277,8 +291,8 @@ describe('screening patient entry workspace', () => {
     await clickRow(mounted, 'Ada Lovelace')
 
     expect(vitalsRows(mounted)).toHaveLength(1)
-    expect(buttonByText(mounted, 'Save draft').disabled).toBe(true)
-    expect(buttonByText(mounted, 'Continue to lifestyle').disabled).toBe(true)
+    expect(buttonByText(mounted, 'Save draft').disabled).toBe(false)
+    expect(buttonByText(mounted, 'Continue to Lifestyle').disabled).toBe(false)
     expect(selectOptions(selectByLabel(mounted, 'Reading 1 site'))).toEqual([
       'Select',
       'Right arm',
@@ -314,13 +328,200 @@ describe('screening patient entry workspace', () => {
     await changeTextarea(textareaByLabel(mounted, 'Vitals notes'), 'Patient rested before reading.')
 
     expect(buttonByText(mounted, 'Save draft').disabled).toBe(false)
-    expect(buttonByText(mounted, 'Continue to lifestyle').disabled).toBe(false)
+    expect(buttonByText(mounted, 'Continue to Lifestyle').disabled).toBe(false)
 
     await clickButton(mounted, 'Save draft')
-    await clickButton(mounted, 'Continue to lifestyle')
 
+    expect(api.screeningEncounters.vitals.saveDraft).toHaveBeenCalledOnce()
+    expect(api.screeningEncounters.vitals.saveDraft.mock.calls[0]?.[0]).toMatchObject({
+      encounterId,
+      expectedVersion: null,
+      weightKg: 80.5,
+      waistCm: 91,
+      notes: 'Patient rested before reading.',
+      readings: [
+        {
+          id: null,
+          sequenceNumber: 1,
+          systolic: 150,
+          diastolic: 92,
+          pulse: 80,
+          measurementSite: 'RIGHT_ARM',
+          patientPosition: 'SITTING',
+          measurementTime: '10:12'
+        },
+        {
+          id: null,
+          sequenceNumber: 2,
+          systolic: 146,
+          diastolic: 88,
+          pulse: 78,
+          measurementSite: 'LEFT_ARM',
+          patientPosition: 'STANDING',
+          measurementTime: '10:18'
+        }
+      ]
+    })
+    expect(text(mounted)).toContain('Draft saved')
+
+    await clickButton(mounted, 'Continue to Lifestyle')
+
+    expect(api.screeningEncounters.vitals.completeStep).toHaveBeenCalledOnce()
+    expect(api.screeningEncounters.vitals.completeStep.mock.calls[0]?.[0]).toMatchObject({
+      encounterId,
+      expectedVersion: 1
+    })
     expect(text(mounted)).toContain('Lifestyle')
     expect(text(mounted)).toContain('Lifestyle collection is not available in this build.')
+
+    await mounted.unmount()
+  })
+
+  it('restores a persisted Vitals draft without auto-saving or overwriting it on rerender', async () => {
+    const api = createApi()
+    const persistedDraft = publicVitalsDraftFromRequest(
+      {
+        encounterId,
+        expectedVersion: null,
+        readings: [
+          {
+            id: null,
+            sequenceNumber: 1,
+            systolic: 138,
+            diastolic: 84,
+            pulse: 76,
+            measurementSite: 'LEFT_ARM',
+            patientPosition: 'SITTING',
+            measurementTime: '09:45'
+          }
+        ],
+        weightKg: null,
+        waistCm: null,
+        notes: 'Restored local draft.'
+      },
+      { status: 'DRAFT', rowVersion: 7 }
+    )
+    api.screeningEncounters.vitals.getDraft.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', draft: persistedDraft })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+
+    expect(api.screeningEncounters.vitals.getDraft).toHaveBeenCalledWith({ encounterId })
+    expect(api.screeningEncounters.vitals.saveDraft).not.toHaveBeenCalled()
+    expect(inputByLabel(mounted, 'Reading 1 systolic').value).toBe('138')
+    expect(inputByLabel(mounted, 'Reading 1 diastolic').value).toBe('84')
+    expect(inputByLabel(mounted, 'Reading 1 pulse').value).toBe('76')
+    expect(selectByLabel(mounted, 'Reading 1 site').value).toBe('LEFT_ARM')
+    expect(selectByLabel(mounted, 'Reading 1 position').value).toBe('SITTING')
+    expect(inputByLabel(mounted, 'Reading 1 time').value).toBe('09:45')
+    expect(textareaByLabel(mounted, 'Vitals notes').value).toBe('Restored local draft.')
+
+    await mounted.hideWorkspace()
+    await mounted.showWorkspace('SCREENING_NEW_SCREENING')
+
+    expect(api.screeningEncounters.vitals.getDraft).toHaveBeenCalledOnce()
+    expect(textareaByLabel(mounted, 'Vitals notes').value).toBe('Restored local draft.')
+
+    await mounted.unmount()
+  })
+
+  it('keeps Reading 1 present and persists removal of later readings after renumbering', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const api = createApi()
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+    await clickButton(mounted, 'Add reading')
+    await clickButton(mounted, 'Add reading')
+    await changeInput(inputByLabel(mounted, 'Reading 2 systolic'), '145')
+    await changeInput(inputByLabel(mounted, 'Reading 3 systolic'), '152')
+
+    expect(vitalsRows(mounted)).toHaveLength(3)
+    expect(
+      mounted.container.querySelector('[aria-label="Reading 1 cannot be removed"]')
+    ).not.toBeNull()
+
+    await clickButton(mounted, 'Remove')
+
+    expect(confirmSpy).toHaveBeenCalledWith('Remove this reading?')
+    expect(vitalsRows(mounted)).toHaveLength(2)
+    expect(inputByLabel(mounted, 'Reading 2 systolic').value).toBe('152')
+
+    await clickButton(mounted, 'Save draft')
+
+    expect(api.screeningEncounters.vitals.saveDraft.mock.calls[0]?.[0]).toMatchObject({
+      readings: [
+        expect.objectContaining({ sequenceNumber: 1 }),
+        expect.objectContaining({ sequenceNumber: 2, systolic: 152 })
+      ]
+    })
+
+    await mounted.unmount()
+  })
+
+  it('blocks Continue until Vitals has complete readings while keeping optional fields optional', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const api = createApi()
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+    await clickButton(mounted, 'Continue to Lifestyle')
+
+    expect(api.screeningEncounters.vitals.completeStep).not.toHaveBeenCalled()
+    expect(text(mounted)).toContain('Complete Reading 1 before continuing.')
+    expect(text(mounted)).toContain('Reading 1 systolic is required.')
+
+    await fillCompleteVitalsReading(mounted, 1)
+    await clickButton(mounted, 'Add reading')
+    await changeInput(inputByLabel(mounted, 'Reading 2 systolic'), '146')
+    await clickButton(mounted, 'Continue to Lifestyle')
+
+    expect(api.screeningEncounters.vitals.completeStep).not.toHaveBeenCalled()
+    expect(text(mounted)).toContain('Reading 2 diastolic is required.')
+    expect(text(mounted)).toContain('Complete or remove the highlighted readings.')
+
+    await clickButton(mounted, 'Remove')
+    await clickButton(mounted, 'Continue to Lifestyle')
+
+    expect(api.screeningEncounters.vitals.completeStep).toHaveBeenCalledOnce()
+    expect(api.screeningEncounters.vitals.completeStep.mock.calls[0]?.[0]).toMatchObject({
+      weightKg: null,
+      waistCm: null,
+      notes: null
+    })
+    expect(text(mounted)).toContain('Lifestyle collection is not available in this build.')
+
+    await mounted.unmount()
+  })
+
+  it('does not show Draft saved until persistence succeeds and preserves input after save failure', async () => {
+    const saveResult =
+      createDeferred<
+        Awaited<ReturnType<HealthScreeningApi['screeningEncounters']['vitals']['saveDraft']>>
+      >()
+    const api = createApi()
+    api.screeningEncounters.vitals.saveDraft.mockReturnValueOnce(saveResult.promise)
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+    await changeInput(inputByLabel(mounted, 'Reading 1 systolic'), '150')
+    await clickButton(mounted, 'Save draft')
+
+    expect(api.screeningEncounters.vitals.saveDraft).toHaveBeenCalledOnce()
+    expect(text(mounted)).not.toContain('Draft saved')
+    expect(buttonByText(mounted, 'Saving draft...').disabled).toBe(true)
+
+    await act(async () => {
+      saveResult.resolve(createIpcSuccess({ status: 'VERSION_CONFLICT' }))
+      await flushPromises()
+    })
+    await flushReact()
+
+    expect(text(mounted)).toContain('Draft changed elsewhere. Reload and try again.')
+    expect(text(mounted)).not.toContain('Draft saved')
+    expect(inputByLabel(mounted, 'Reading 1 systolic').value).toBe('150')
 
     await mounted.unmount()
   })
@@ -388,8 +589,8 @@ describe('screening patient entry workspace', () => {
 
     expectWorkspaceHeading(mounted, 'New Screening')
     expect(tabButtons(mounted).map((button) => button.textContent?.trim())).toEqual([
-      'Ada Lovelace • PT-000001',
-      'Grace Hopper • PT-000002'
+      'Ada Lovelace',
+      'Grace Hopper'
     ])
 
     await clickButton(mounted, 'Search / open patient')
@@ -401,8 +602,8 @@ describe('screening patient entry workspace', () => {
 
     expectWorkspaceHeading(mounted, 'New Screening')
     expect(tabButtons(mounted).map((button) => button.textContent?.trim())).toEqual([
-      'Ada Lovelace • PT-000001',
-      'Grace Hopper • PT-000002'
+      'Ada Lovelace',
+      'Grace Hopper'
     ])
     expect(text(mounted)).toContain('Current screening encounter')
 
@@ -432,8 +633,8 @@ describe('screening patient entry workspace', () => {
     await clickRow(mounted, 'Grace Hopper')
 
     expect(tabButtons(mounted).map((button) => button.textContent?.trim())).toEqual([
-      'Ada Lovelace • PT-000001',
-      'Grace Hopper • PT-000002'
+      'Ada Lovelace',
+      'Grace Hopper'
     ])
 
     await mounted.hideWorkspace()
@@ -445,8 +646,8 @@ describe('screening patient entry workspace', () => {
     expectWorkspaceHeading(mounted, 'New Screening')
     expect(api.screeningEncounters.start).toHaveBeenCalledTimes(2)
     expect(tabButtons(mounted).map((button) => button.textContent?.trim())).toEqual([
-      'Ada Lovelace • PT-000001',
-      'Grace Hopper • PT-000002'
+      'Ada Lovelace',
+      'Grace Hopper'
     ])
     expect(text(mounted)).toContain('Current screening encounter')
 
@@ -503,9 +704,7 @@ describe('screening patient entry workspace', () => {
 
     expect(api.screeningEncounters.start).toHaveBeenCalledTimes(2)
     expect(
-      tabButtons(mounted).filter(
-        (button) => button.textContent?.trim() === 'Ada Lovelace • PT-000001'
-      )
+      tabButtons(mounted).filter((button) => button.textContent?.trim() === 'Ada Lovelace')
     ).toHaveLength(1)
     expectWorkspaceHeading(mounted, 'New Screening')
     expect(text(mounted)).toContain('Current screening encounter')
@@ -933,7 +1132,32 @@ function createApi({
             })
           })
         )
-      )
+      ),
+      vitals: {
+        getDraft: vi.fn(() => Promise.resolve(createIpcSuccess({ status: 'LOADED', draft: null }))),
+        saveDraft: vi.fn((request) =>
+          Promise.resolve(
+            createIpcSuccess({
+              status: 'SAVED',
+              draft: publicVitalsDraftFromRequest(request, {
+                status: 'DRAFT',
+                rowVersion: (request.expectedVersion ?? 0) + 1
+              })
+            })
+          )
+        ),
+        completeStep: vi.fn((request) =>
+          Promise.resolve(
+            createIpcSuccess({
+              status: 'COMPLETED',
+              draft: publicVitalsDraftFromRequest(request, {
+                status: 'VITALS_COMPLETE',
+                rowVersion: (request.expectedVersion ?? 0) + 1
+              })
+            })
+          )
+        )
+      }
     },
     screeningSessions: {
       getWorkspaceContext: vi.fn(() =>
@@ -990,6 +1214,44 @@ function publicCurrentSession(
   }
 }
 
+function publicVitalsDraftFromRequest(
+  request: Parameters<HealthScreeningApi['screeningEncounters']['vitals']['saveDraft']>[0],
+  overrides: Pick<PublicScreeningVitalsDraft, 'status' | 'rowVersion'>
+): PublicScreeningVitalsDraft {
+  return {
+    id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    encounterId: request.encounterId,
+    status: overrides.status,
+    readings: request.readings.map((reading, index) => ({
+      id: reading.id ?? publicVitalsReadingId(index),
+      sequenceNumber: reading.sequenceNumber,
+      systolic: reading.systolic,
+      diastolic: reading.diastolic,
+      pulse: reading.pulse,
+      measurementSite: reading.measurementSite,
+      patientPosition: reading.patientPosition,
+      measurementTime: reading.measurementTime
+    })),
+    weightKg: request.weightKg,
+    waistCm: request.waistCm,
+    notes: request.notes,
+    rowVersion: overrides.rowVersion,
+    updatedAt: baseTimestamp
+  }
+}
+
+function publicVitalsReadingId(index: number): string {
+  return (
+    [
+      'dddddddd-dddd-4ddd-8ddd-dddddddddd01',
+      'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
+      'dddddddd-dddd-4ddd-8ddd-dddddddddd03',
+      'dddddddd-dddd-4ddd-8ddd-dddddddddd04',
+      'dddddddd-dddd-4ddd-8ddd-dddddddddd05'
+    ][index] ?? `dddddddd-dddd-4ddd-8ddd-dddddddddd${String(index + 1).padStart(2, '0')}`
+  )
+}
+
 function patientSummary(overrides: Partial<PublicPatientSummary> = {}): PublicPatientSummary {
   return {
     id: patientId,
@@ -1043,6 +1305,7 @@ async function clickRow(
 
   if (options.flush !== false) {
     await flushReact()
+    await flushReact()
   }
 }
 
@@ -1094,6 +1357,18 @@ async function changeSelect(select: HTMLSelectElement, value: string): Promise<v
     await flushPromises()
   })
   await flushReact()
+}
+
+async function fillCompleteVitalsReading(
+  mounted: MountedWorkspace,
+  readingNumber: number
+): Promise<void> {
+  await changeInput(inputByLabel(mounted, `Reading ${readingNumber} systolic`), '150')
+  await changeInput(inputByLabel(mounted, `Reading ${readingNumber} diastolic`), '92')
+  await changeInput(inputByLabel(mounted, `Reading ${readingNumber} pulse`), '80')
+  await changeSelect(selectByLabel(mounted, `Reading ${readingNumber} site`), 'RIGHT_ARM')
+  await changeSelect(selectByLabel(mounted, `Reading ${readingNumber} position`), 'SITTING')
+  await changeInput(inputByLabel(mounted, `Reading ${readingNumber} time`), '10:12')
 }
 
 function rowByName(mounted: MountedWorkspace, name: string): HTMLTableRowElement {

@@ -9,7 +9,8 @@ import {
   LocalSessionUnauthenticatedError,
   createScreeningEncounterStartService,
   type ActiveLocalSessionContext,
-  type LocalAuthenticationSessionService
+  type LocalAuthenticationSessionService,
+  type ScreeningVitalsDraftService
 } from '@main/application'
 import { createDevelopmentNavigationPolicy } from '@main/app/navigation-policy'
 import {
@@ -253,6 +254,7 @@ async function withScreeningEncounterIpc(
       handlers: createScreeningEncounterIpcHandlers({
         navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
         screeningEncounterStartService,
+        screeningVitalsDraftService: createScreeningVitalsDraftService(),
         logger: createLogger()
       })
     })
@@ -262,6 +264,14 @@ async function withScreeningEncounterIpc(
     }
     await rm(directory, { recursive: true, force: true })
   }
+}
+
+function createScreeningVitalsDraftService(): ScreeningVitalsDraftService {
+  return {
+    getVitalsDraft: vi.fn(() => ({ status: 'UNAVAILABLE' })),
+    saveVitalsDraft: vi.fn(() => ({ status: 'UNAVAILABLE' })),
+    completeVitalsStep: vi.fn(() => ({ status: 'UNAVAILABLE' }))
+  } as unknown as ScreeningVitalsDraftService
 }
 
 function createAuthenticationSessionService({
