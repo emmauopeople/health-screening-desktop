@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /// <reference lib="dom" />
 
-import { act, createElement, type RefObject } from 'react'
+import { act, createElement, useState, type RefObject } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -321,6 +321,31 @@ describe('screening patient entry workspace', () => {
 
     expect(text(mounted)).toContain('Lifestyle')
     expect(text(mounted)).toContain('Lifestyle collection is not available in this build.')
+
+    await mounted.unmount()
+  })
+
+  it('keeps the screening workspace open when vitals fields update with React tab state', async () => {
+    const api = createApi()
+    const mounted = await mountWorkspaceWithReactTabState({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+
+    expectWorkspaceHeading(mounted, 'New Screening')
+    expect(text(mounted)).toContain('Ada Lovelace')
+    expect(text(mounted)).toContain('PT-000001')
+
+    await changeInput(inputByLabel(mounted, 'Reading 1 systolic'), '150')
+    await changeSelect(selectByLabel(mounted, 'Reading 1 site'), 'RIGHT_ARM')
+    await changeTextarea(textareaByLabel(mounted, 'Vitals notes'), 'Patient rested.')
+
+    expectWorkspaceHeading(mounted, 'New Screening')
+    expect(inputByLabel(mounted, 'Reading 1 systolic').value).toBe('150')
+    expect(selectByLabel(mounted, 'Reading 1 site').value).toBe('RIGHT_ARM')
+    expect(textareaByLabel(mounted, 'Vitals notes').value).toBe('Patient rested.')
+    expect(text(mounted)).toContain('Ada Lovelace')
+    expect(text(mounted)).toContain('PT-000001')
+    expect(mounted.container.querySelector('.screening-current-encounter-panel')).not.toBeNull()
 
     await mounted.unmount()
   })
@@ -765,6 +790,109 @@ async function mountWorkspace({
       currentCommandId = nextCommandId
       await act(async () => {
         renderWorkspace()
+        await flushPromises()
+      })
+      await flushReact()
+    },
+    async unmount(): Promise<void> {
+      await act(async () => {
+        root.unmount()
+        await flushPromises()
+      })
+      container.remove()
+    }
+  }
+}
+
+async function mountWorkspaceWithReactTabState({
+  api = createApi(),
+  userRole = 'LOCAL_ADMIN',
+  commandId = 'SCREENING_TODAYS_SESSION'
+}: {
+  readonly api?: MockedHealthScreeningApi
+  readonly userRole?: LocalUserRole
+  readonly commandId?:
+    'HOME_TODAYS_SESSION' | 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING'
+} = {}): Promise<MountedWorkspace> {
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  const headingRef = { current: null } as RefObject<HTMLHeadingElement | null>
+  let registeredGuard: WorkspaceNavigationGuard | null = null
+  let setCommandIdFromHarness:
+    ((commandId: 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING') => void) | null = null
+  let setVisibleFromHarness: ((visible: boolean) => void) | null = null
+  const onAuthenticationFailure = vi.fn<(code: ScreeningSessionErrorCode) => void>()
+  const onSelectCommand = vi.fn(
+    (nextCommandId: 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING') => {
+      setCommandIdFromHarness?.(nextCommandId)
+    }
+  )
+
+  function WorkspaceHarness(): React.JSX.Element {
+    const [currentCommandId, setCurrentCommandId] = useState(commandId)
+    const [visible, setVisible] = useState(true)
+    const [openTabs, setOpenTabs] = useState<readonly PatientScreeningTab[]>([])
+    const [activePatientId, setActivePatientId] = useState<string | null>(null)
+
+    setCommandIdFromHarness = setCurrentCommandId
+    setVisibleFromHarness = setVisible
+
+    if (!visible) {
+      return createElement('section', null, 'Draft Encounters')
+    }
+
+    return createElement(ScreeningSessionWorkspace, {
+      api,
+      activePatientId,
+      commandId: currentCommandId,
+      headingId: 'screening-workspace-heading',
+      headingRef,
+      openTabs,
+      userRole,
+      onActivePatientIdChange: setActivePatientId,
+      onOpenTabsChange: setOpenTabs,
+      onScreeningSessionAuthenticationFailure: onAuthenticationFailure,
+      onSelectCommand,
+      registerNavigationGuard: (guard) => {
+        registeredGuard = guard
+      }
+    })
+  }
+
+  await act(async () => {
+    root.render(createElement(WorkspaceHarness))
+    await flushPromises()
+  })
+  await flushReact()
+
+  return {
+    api,
+    container,
+    onSelectCommand,
+    onAuthenticationFailure,
+    getRegisteredGuard: () => registeredGuard,
+    async setCommandId(nextCommandId): Promise<void> {
+      await act(async () => {
+        setCommandIdFromHarness?.(nextCommandId)
+        await flushPromises()
+      })
+      await flushReact()
+    },
+    async hideWorkspace(): Promise<void> {
+      await act(async () => {
+        setVisibleFromHarness?.(false)
+        await flushPromises()
+      })
+      await flushReact()
+    },
+    async showWorkspace(
+      nextCommandId:
+        'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING' = 'SCREENING_NEW_SCREENING'
+    ): Promise<void> {
+      await act(async () => {
+        setCommandIdFromHarness?.(nextCommandId)
+        setVisibleFromHarness?.(true)
         await flushPromises()
       })
       await flushReact()

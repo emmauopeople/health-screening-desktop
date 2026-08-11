@@ -1068,9 +1068,11 @@ function VitalsStep({
                       min="0"
                       value={reading.systolic}
                       onChange={(event) => {
+                        const value = event.currentTarget.value
+
                         onUpdateDraft((currentDraft) =>
                           updateVitalsReading(currentDraft, reading.id, {
-                            systolic: event.currentTarget.value
+                            systolic: value
                           })
                         )
                       }}
@@ -1084,9 +1086,11 @@ function VitalsStep({
                       min="0"
                       value={reading.diastolic}
                       onChange={(event) => {
+                        const value = event.currentTarget.value
+
                         onUpdateDraft((currentDraft) =>
                           updateVitalsReading(currentDraft, reading.id, {
-                            diastolic: event.currentTarget.value
+                            diastolic: value
                           })
                         )
                       }}
@@ -1100,9 +1104,11 @@ function VitalsStep({
                       min="0"
                       value={reading.pulse}
                       onChange={(event) => {
+                        const value = event.currentTarget.value
+
                         onUpdateDraft((currentDraft) =>
                           updateVitalsReading(currentDraft, reading.id, {
-                            pulse: event.currentTarget.value
+                            pulse: value
                           })
                         )
                       }}
@@ -1113,9 +1119,11 @@ function VitalsStep({
                       aria-label={`Reading ${index + 1} site`}
                       value={reading.site}
                       onChange={(event) => {
+                        const value = event.currentTarget.value as VitalsReadingDraft['site']
+
                         onUpdateDraft((currentDraft) =>
                           updateVitalsReading(currentDraft, reading.id, {
-                            site: event.currentTarget.value as VitalsReadingDraft['site']
+                            site: value
                           })
                         )
                       }}
@@ -1133,9 +1141,11 @@ function VitalsStep({
                       aria-label={`Reading ${index + 1} position`}
                       value={reading.position}
                       onChange={(event) => {
+                        const value = event.currentTarget.value as VitalsReadingDraft['position']
+
                         onUpdateDraft((currentDraft) =>
                           updateVitalsReading(currentDraft, reading.id, {
-                            position: event.currentTarget.value as VitalsReadingDraft['position']
+                            position: value
                           })
                         )
                       }}
@@ -1154,9 +1164,11 @@ function VitalsStep({
                       type="time"
                       value={reading.time}
                       onChange={(event) => {
+                        const value = event.currentTarget.value
+
                         onUpdateDraft((currentDraft) =>
                           updateVitalsReading(currentDraft, reading.id, {
-                            time: event.currentTarget.value
+                            time: value
                           })
                         )
                       }}
@@ -1199,9 +1211,11 @@ function VitalsStep({
               min="0"
               value={draft.weightKg}
               onChange={(event) => {
+                const value = event.currentTarget.value
+
                 onUpdateDraft((currentDraft) => ({
                   ...currentDraft,
-                  weightKg: event.currentTarget.value,
+                  weightKg: value,
                   saved: false
                 }))
               }}
@@ -1215,9 +1229,11 @@ function VitalsStep({
               min="0"
               value={draft.waist}
               onChange={(event) => {
+                const value = event.currentTarget.value
+
                 onUpdateDraft((currentDraft) => ({
                   ...currentDraft,
-                  waist: event.currentTarget.value,
+                  waist: value,
                   saved: false
                 }))
               }}
@@ -1229,9 +1245,11 @@ function VitalsStep({
               aria-label="Vitals notes"
               value={draft.notes}
               onChange={(event) => {
+                const value = event.currentTarget.value
+
                 onUpdateDraft((currentDraft) => ({
                   ...currentDraft,
-                  notes: event.currentTarget.value,
+                  notes: value,
                   saved: false
                 }))
               }}
