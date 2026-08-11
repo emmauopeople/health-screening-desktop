@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { createIpcSuccessResultSchema } from './result'
+import { createIpcSuccess, createIpcSuccessResultSchema } from './result'
 
 const unsafeTransportValue = Symbol('UnsafeScreeningSessionIpcTransportValue')
 const maximumScreeningSessionTransportArrayLength = 250
@@ -20,6 +20,9 @@ export const screeningSessionOptionalTextSchema = z.string().refine(isSafeNonbla
 export const screeningSessionRequiredTextSchema = z.string().refine(isSafeNonblankText)
 
 export const screeningSessionGetWorkspaceContextRequestSchema = exactObject({})
+export const screeningSessionEnsureCurrentRequestSchema = withSafeTransportPreprocess(
+  z.union([z.undefined(), z.object({}).strict()]).transform(() => ({}))
+)
 
 export const screeningSessionCreateRequestSchema = exactObject({
   locationId: screeningSessionUuidSchema,
@@ -91,12 +94,53 @@ export const publicScreeningSessionWorkspaceLocationSchema = z
   })
   .strict()
 
+export const publicCurrentScreeningSessionSchema = z
+  .object({
+    id: screeningSessionUuidSchema,
+    locationId: screeningSessionUuidSchema,
+    protocolVersionId: screeningSessionUuidSchema,
+    sessionDate: screeningSessionLocalDateSchema,
+    status: z.literal('OPEN'),
+    notes: screeningSessionOptionalTextSchema,
+    openedAt: screeningSessionUtcTimestampSchema,
+    closedAt: z.null(),
+    createdAt: screeningSessionUtcTimestampSchema,
+    rowVersion: z.number().int().min(1).safe()
+  })
+  .strict()
+
 export const screeningSessionWorkspaceContextSuccessDataSchema = z
   .object({
     deploymentLocalDate: screeningSessionLocalDateSchema,
     activeLocations: z.array(publicScreeningSessionWorkspaceLocationSchema).max(250)
   })
   .strict()
+
+export const screeningSessionEnsureCurrentSuccessDataSchema = z.discriminatedUnion('status', [
+  z
+    .object({
+      status: z.literal('RESOLVED'),
+      session: publicCurrentScreeningSessionSchema,
+      location: publicScreeningSessionWorkspaceLocationSchema
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal('CREATED'),
+      session: publicCurrentScreeningSessionSchema,
+      location: publicScreeningSessionWorkspaceLocationSchema
+    })
+    .strict(),
+  z.object({ status: z.literal('AUTHENTICATION_REQUIRED') }).strict(),
+  z.object({ status: z.literal('FORBIDDEN') }).strict(),
+  z.object({ status: z.literal('LOCATION_NOT_CONFIGURED') }).strict(),
+  z.object({ status: z.literal('LOCATION_NOT_FOUND') }).strict(),
+  z.object({ status: z.literal('LOCATION_INACTIVE') }).strict(),
+  z.object({ status: z.literal('SESSION_CLOSED') }).strict(),
+  z.object({ status: z.literal('SESSION_CONFLICT') }).strict(),
+  z.object({ status: z.literal('NO_ACTIVE_PROTOCOL') }).strict(),
+  z.object({ status: z.literal('UNAVAILABLE') }).strict()
+])
 
 export const screeningSessionCreateSuccessDataSchema = z.discriminatedUnion('status', [
   z
@@ -223,6 +267,12 @@ export const screeningSessionGetWorkspaceContextResultSchema = withSafeTransport
     screeningSessionFailureSchema
   ])
 )
+export const screeningSessionEnsureCurrentResultSchema = withSafeTransportPreprocess(
+  z.discriminatedUnion('ok', [
+    createIpcSuccessResultSchema(screeningSessionEnsureCurrentSuccessDataSchema),
+    screeningSessionFailureSchema
+  ])
+)
 export const screeningSessionCreateResultSchema = withSafeTransportPreprocess(
   z.discriminatedUnion('ok', [
     createIpcSuccessResultSchema(screeningSessionCreateSuccessDataSchema),
@@ -257,14 +307,21 @@ export const screeningSessionListResultSchema = withSafeTransportPreprocess(
 export type ScreeningSessionStatus = z.infer<typeof screeningSessionStatusSchema>
 export type ScreeningSessionPageSize = z.infer<typeof screeningSessionPageSizeSchema>
 export type PublicScreeningSession = z.infer<typeof publicScreeningSessionSchema>
+export type PublicCurrentScreeningSession = z.infer<typeof publicCurrentScreeningSessionSchema>
 export type PublicScreeningSessionWorkspaceLocation = z.infer<
   typeof publicScreeningSessionWorkspaceLocationSchema
 >
 export type ScreeningSessionWorkspaceContextSuccessData = z.infer<
   typeof screeningSessionWorkspaceContextSuccessDataSchema
 >
+export type ScreeningSessionEnsureCurrentSuccessData = z.infer<
+  typeof screeningSessionEnsureCurrentSuccessDataSchema
+>
 export type ScreeningSessionGetWorkspaceContextRequest = z.infer<
   typeof screeningSessionGetWorkspaceContextRequestSchema
+>
+export type ScreeningSessionEnsureCurrentRequest = z.infer<
+  typeof screeningSessionEnsureCurrentRequestSchema
 >
 export type ScreeningSessionCreateRequest = z.infer<typeof screeningSessionCreateRequestSchema>
 export type ScreeningSessionCloseRequest = z.infer<typeof screeningSessionCloseRequestSchema>
@@ -273,6 +330,9 @@ export type ScreeningSessionGetByIdRequest = z.infer<typeof screeningSessionGetB
 export type ScreeningSessionListRequest = z.infer<typeof screeningSessionListRequestSchema>
 export type ScreeningSessionGetWorkspaceContextResult = z.infer<
   typeof screeningSessionGetWorkspaceContextResultSchema
+>
+export type ScreeningSessionEnsureCurrentResult = z.infer<
+  typeof screeningSessionEnsureCurrentResultSchema
 >
 export type ScreeningSessionCreateResult = z.infer<typeof screeningSessionCreateResultSchema>
 export type ScreeningSessionCloseResult = z.infer<typeof screeningSessionCloseResultSchema>
@@ -309,6 +369,20 @@ export function createScreeningSessionFailure<TCode extends ScreeningSessionErro
       message: screeningSessionSafeErrorMessages[code]
     }
   }
+}
+
+export function createScreeningSessionEnsureCurrentStatusResult<
+  TStatus extends Exclude<
+    ScreeningSessionEnsureCurrentSuccessData['status'],
+    'RESOLVED' | 'CREATED'
+  >
+>(
+  status: TStatus
+): {
+  ok: true
+  data: { status: TStatus }
+} {
+  return createIpcSuccess({ status })
 }
 
 function createScreeningSessionErrorSchema<TCode extends ScreeningSessionErrorCode>(

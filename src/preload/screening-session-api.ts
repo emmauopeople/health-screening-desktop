@@ -5,6 +5,8 @@ import {
   screeningSessionCloseResultSchema,
   screeningSessionCreateRequestSchema,
   screeningSessionCreateResultSchema,
+  screeningSessionEnsureCurrentRequestSchema,
+  screeningSessionEnsureCurrentResultSchema,
   screeningSessionGetByIdRequestSchema,
   screeningSessionGetByIdResultSchema,
   screeningSessionGetWorkspaceContextRequestSchema,
@@ -17,6 +19,7 @@ import {
   type ScreeningSessionCloseResult,
   type ScreeningSessionCreateRequest,
   type ScreeningSessionCreateResult,
+  type ScreeningSessionEnsureCurrentResult,
   type ScreeningSessionGetByIdRequest,
   type ScreeningSessionGetByIdResult,
   type ScreeningSessionGetWorkspaceContextResult,
@@ -30,6 +33,7 @@ import type { IpcInvoke } from './authentication-api'
 
 export interface ScreeningSessionApi {
   getWorkspaceContext(): Promise<ScreeningSessionGetWorkspaceContextResult>
+  ensureCurrent(): Promise<ScreeningSessionEnsureCurrentResult>
   create(request: ScreeningSessionCreateRequest): Promise<ScreeningSessionCreateResult>
   close(request: ScreeningSessionCloseRequest): Promise<ScreeningSessionCloseResult>
   reopen(request: ScreeningSessionReopenRequest): Promise<ScreeningSessionReopenResult>
@@ -52,6 +56,20 @@ export function createScreeningSessionApi(invoke: IpcInvoke): ScreeningSessionAp
         unavailableFailure: createScreeningSessionFailure(
           'IPC_UNAVAILABLE'
         ) as ScreeningSessionGetWorkspaceContextResult
+      }),
+    ensureCurrent: () =>
+      invokeScreeningSession({
+        invoke,
+        channel: ipcChannels.screeningSessions.ensureCurrent,
+        request: {},
+        requestSchema: screeningSessionEnsureCurrentRequestSchema,
+        resultSchema: screeningSessionEnsureCurrentResultSchema,
+        validationFailure: createScreeningSessionFailure(
+          'VALIDATION_FAILED'
+        ) as ScreeningSessionEnsureCurrentResult,
+        unavailableFailure: createScreeningSessionFailure(
+          'IPC_UNAVAILABLE'
+        ) as ScreeningSessionEnsureCurrentResult
       }),
     create: (request: ScreeningSessionCreateRequest) =>
       invokeScreeningSession({

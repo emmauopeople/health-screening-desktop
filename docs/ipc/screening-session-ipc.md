@@ -7,26 +7,39 @@ HSD-028A exposes the HSD-027 screening-session application service through authe
 | Operation                               | Channel                                                     | Request                                                    |
 | --------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------- |
 | `screeningSessions.getWorkspaceContext` | `health-screening:screening-sessions:get-workspace-context` | `{}`                                                       |
+| `screeningSessions.ensureCurrent`       | `health-screening:screening-sessions:ensure-current`        | no payload or strict `{}`                                  |
 | `screeningSessions.create`              | `health-screening:screening-sessions:create`                | `{ locationId, sessionDate, notes? }`                      |
 | `screeningSessions.close`               | `health-screening:screening-sessions:close`                 | `{ id, expectedRowVersion, reason? }`                      |
 | `screeningSessions.reopen`              | `health-screening:screening-sessions:reopen`                | `{ id, expectedRowVersion, reason }`                       |
 | `screeningSessions.getById`             | `health-screening:screening-sessions:get-by-id`             | `{ id }`                                                   |
 | `screeningSessions.list`                | `health-screening:screening-sessions:list`                  | `{ locationId, status, dateFrom, dateTo, page, pageSize }` |
 
-Requests are strict own-property objects. They reject renderer-supplied actor IDs, roles, protocol versions during creation, generated IDs, timestamps, lifecycle-history data, audit data, outbox data, create status, and create row version.
+Requests are strict own-property objects. They reject renderer-supplied actor
+IDs, roles, protocol versions during creation, generated IDs, timestamps,
+lifecycle-history data, audit data, outbox data, create status, and create row
+version. `ensureCurrent` rejects all unexpected fields, including
+`locationId`, date or timestamp fields, actor or user fields, role, status,
+session ID, installation ID, patient or encounter IDs, force flags, and bypass
+flags.
 
 ## Preload API
 
 HSD-028B exposes exactly one screening-session group on the existing context-isolated preload bridge:
 
 - `window.healthScreening.screeningSessions.getWorkspaceContext()`
+- `window.healthScreening.screeningSessions.ensureCurrent()`
 - `window.healthScreening.screeningSessions.create(request)`
 - `window.healthScreening.screeningSessions.close(request)`
 - `window.healthScreening.screeningSessions.reopen(request)`
 - `window.healthScreening.screeningSessions.getById(request)`
 - `window.healthScreening.screeningSessions.list(request)`
 
-Each method invokes only its matching fixed channel from the table above. `getWorkspaceContext()` constructs the strict empty request inside preload; renderer code cannot provide a request object for that operation. Other methods validate the renderer-supplied request with the shared HSD-028A schema before invoking IPC and pass the parsed transport value, not the original object.
+Each method invokes only its matching fixed channel from the table above.
+`getWorkspaceContext()` and `ensureCurrent()` construct strict empty requests
+inside preload; renderer code cannot provide request objects for those
+operations. Other methods validate the renderer-supplied request with the
+shared schema before invoking IPC and pass the parsed transport value, not the
+original object.
 
 Local request validation failures return `VALIDATION_FAILED` without invoking IPC. Invoke failures, rejected promises, malformed main-process responses, malformed failure envelopes, extra/internal response fields, invalid nested workspace or session data, and response parsing failures return only `IPC_UNAVAILABLE`.
 
@@ -40,9 +53,9 @@ Every handler validates the sender with the trusted main-frame policy before par
 
 Allowed roles:
 
-- `LOCAL_ADMIN`: context, create, close, reopen, get, list
-- `NURSE`: context, create, close, reopen, get, list
-- `TRAINED_SCREENER`: context, create, close, get, list
+- `LOCAL_ADMIN`: context, ensure current, create, close, reopen, get, list
+- `NURSE`: context, ensure current, create, close, reopen, get, list
+- `TRAINED_SCREENER`: context, ensure current, create, close, get, list
 
 The IPC handler passes only `{ userId, role }` from the authenticated main-process session to the application service. A trained screener's reopen request is denied at the authenticated handler boundary before request parsing or application-service invocation. HSD-027C retains its service-owned `FORBIDDEN` result as defense in depth for any authorized caller path that reaches the service.
 
@@ -57,6 +70,52 @@ The IPC handler passes only `{ userId, role }` from the authenticated main-proce
 The context does not return installation IDs, database timestamps, audit fields, normalized location names, inactive locations, repository metadata, or an active-location selection. HSD-029C-P0 supersedes temporary renderer location selection as operational authority by adding a trusted persisted configured-location service in the main process; this HSD-028B IPC context still persists nothing and is not the authority for future background daily-session resolution.
 
 Invalid or missing installation/timezone state fails closed with a sanitized IPC error. The code never falls back to the operating-system timezone or UTC.
+
+## Current Daily Session
+
+`ensureCurrent` is the HSD-029C-P1 route-entry boundary for the Screening
+workflow. The handler validates the trusted sender before parsing the empty
+request, rejects unexpected positional arguments, resolves authentication and
+authorization in the main process, calls the P0 configured-location resolver,
+derives the operational local date from the stored installation timezone and
+authoritative transaction clock, and returns only the sanitized service result.
+
+Success statuses are:
+
+- `RESOLVED`, for an existing reusable `OPEN` daily session;
+- `CREATED`, for a newly inserted daily session.
+
+Controlled statuses are:
+
+- `AUTHENTICATION_REQUIRED`
+- `FORBIDDEN`
+- `LOCATION_NOT_CONFIGURED`
+- `LOCATION_NOT_FOUND`
+- `LOCATION_INACTIVE`
+- `SESSION_CLOSED`
+- `SESSION_CONFLICT`
+- `NO_ACTIVE_PROTOCOL`
+- `UNAVAILABLE`
+
+The database uniqueness constraint
+`ux_screening_sessions_location_date(location_id, session_date)` remains the
+daily-session invariant. Expected uniqueness races are recovered by querying
+the canonical row with the trusted configured location and authoritative local
+date. Unrelated repository or SQLite failures are sanitized and do not cross IPC
+as raw messages.
+
+When a missing daily session is created, the existing session lifecycle service
+policy writes one `SCREENING_SESSION_CREATED` audit event and one
+`SCREENING_SESSION_CREATED` outbox row in the same transaction. Returning an
+existing session, returning `SESSION_CLOSED`, recovering after a uniqueness
+race, validation failure, authorization failure, location-resolution failure,
+and rollback do not create duplicate audit or outbox rows.
+
+The handler does not accept renderer location state, date state, session status,
+actor, user ID, role, force flags, bypass flags, patient IDs, encounter IDs, or
+clinical data. It does not create patient encounters, clinical records,
+recommendations, referrals, reports, sync transport, or FHIR mappings. It never
+opens the P0 administrative recovery or reconfiguration services.
 
 ## Public Session Data
 
@@ -73,12 +132,22 @@ Screening-session results expose:
 - `createdAt`
 - `rowVersion`
 
-They do not expose actor IDs, audit metadata, outbox payloads, lifecycle-history IDs, installation IDs, normalized values, raw SQL, or database details. Display-name resolution beyond the workspace context is deferred to the renderer checkpoint unless an approved service boundary provides it.
+`ensureCurrent` exposes the same minimum open-session identifiers and dates, a
+sanitized configured-location display object for the header, and no notes.
+
+They do not expose actor IDs, audit metadata, outbox payloads,
+lifecycle-history IDs, installation IDs, normalized values, raw SQL, database
+details, patient data, encounter data, clinical values, or internal
+configuration records.
 
 ## Result Mapping
 
 Expected HSD-027C lifecycle outcomes remain successful typed IPC data:
 
+- ensure current: `RESOLVED`, `CREATED`, `AUTHENTICATION_REQUIRED`,
+  `FORBIDDEN`, `LOCATION_NOT_CONFIGURED`, `LOCATION_NOT_FOUND`,
+  `LOCATION_INACTIVE`, `SESSION_CLOSED`, `SESSION_CONFLICT`,
+  `NO_ACTIVE_PROTOCOL`, `UNAVAILABLE`
 - create: `CREATED`, `ALREADY_EXISTS`, `SESSION_DATE_NOT_CURRENT`, `LOCATION_NOT_FOUND`, `LOCATION_INACTIVE`, `NO_ACTIVE_PROTOCOL`
 - close: `CLOSED`, `NOT_FOUND`, `SESSION_VERSION_CONFLICT`, `ALREADY_CLOSED`
 - reopen: `REOPENED`, `NOT_FOUND`, `SESSION_VERSION_CONFLICT`, `ALREADY_OPEN`, `FORBIDDEN`
@@ -103,14 +172,46 @@ Registration uses fixed channels and deterministic disposal. Focused screening-s
 
 HSD-028C adds the production renderer workspace on top of the fixed preload API. The workspace uses `window.healthScreening.screeningSessions` only; it does not import Electron, main-process services, repositories, database code, or dynamic channel names.
 
-The renderer calls `getWorkspaceContext()` on entry, displays the deployment-local date returned by the main process, and renders only the active locations returned by the trusted context query. A single active location may be selected in memory automatically; multiple active locations require an explicit choice. The active location ID, active session ID, selected worklist row, filters, and pagination are renderer-memory state only. They are not written to localStorage, sessionStorage, IndexedDB, cookies, files, URLs, SQLite, or another persistence mechanism.
+HSD-029C-P1 changes the Screening entry gate to call `ensureCurrent()` instead
+of deriving operational authority from the workspace context. The renderer waits
+for `RESOLVED` or `CREATED` before enabling patient-screening workflow context,
+shows controlled states for authentication, authorization, location
+configuration, closed-session, protocol, and temporary-unavailable outcomes,
+and supports retry after `UNAVAILABLE`. Ordinary rerenders do not create
+additional operational effects.
 
-The workspace supports creating, listing, selecting, closing, and authorized reopening of sessions through the approved preload methods. It handles `CREATED`, `ALREADY_EXISTS`, `SESSION_DATE_NOT_CURRENT`, `LOCATION_NOT_FOUND`, `LOCATION_INACTIVE`, `NO_ACTIVE_PROTOCOL`, `CLOSED`, `REOPENED`, `NOT_FOUND`, `SESSION_VERSION_CONFLICT`, `ALREADY_CLOSED`, `ALREADY_OPEN`, `FORBIDDEN`, `VALIDATION_FAILED`, and `IPC_UNAVAILABLE` with user-facing messages. Expected lifecycle outcomes remain typed result data; the renderer does not infer audit or outbox state.
+The active location ID and daily session returned by `ensureCurrent()` are
+renderer workflow context, not new operational authority. They are not written
+to localStorage, sessionStorage, IndexedDB, cookies, files, URLs, SQLite, or
+another persistence mechanism. The renderer does not choose the session date,
+select another location, assign or reconfigure the installation, reopen closed
+sessions automatically, rewrite historical attribution, create encounters, or
+perform clinical work.
+
+The workspace ensures the current daily session on entry, then supports listing,
+selecting, closing, and authorized reopening of sessions through the approved
+preload methods. It handles `RESOLVED`, `CREATED`, `ALREADY_EXISTS`,
+`SESSION_DATE_NOT_CURRENT`, `LOCATION_NOT_CONFIGURED`, `LOCATION_NOT_FOUND`,
+`LOCATION_INACTIVE`, `SESSION_CLOSED`, `NO_ACTIVE_PROTOCOL`, `CLOSED`,
+`REOPENED`, `NOT_FOUND`, `SESSION_VERSION_CONFLICT`, `ALREADY_CLOSED`,
+`ALREADY_OPEN`, `FORBIDDEN`, `VALIDATION_FAILED`, and `IPC_UNAVAILABLE` with
+user-facing messages. Expected lifecycle outcomes remain typed result data; the
+renderer does not infer audit or outbox state.
 
 The visible design follows the approved shell and screening-session design language: deep-navy top bar, light-blue contextual commands, pale gray background, white bordered cards, navy headings, teal interaction accents, explicit status text plus dots, compact desktop density, and dialog confirmation for lifecycle transitions. It is designed for the supported desktop range of 1280x720, 1366x768, and 1920x1080.
 
-HSD-028C still does not implement patient enrollment, screening encounters, measurements, protocol calculations, recommendations, referrals, reports, dashboard counts, sync networking, push subscriptions, fake records, or active-session persistence.
+HSD-029C-P1 does not redesign the workspace, patient search, patient tabs,
+clinical panels, charts, or styling. It does not implement an admin settings UI.
+It still does not implement patient enrollment, screening encounters,
+measurements, protocol calculations, recommendations, referrals, reports,
+dashboard counts, sync networking, push subscriptions, fake records, or
+active-session persistence.
 
 ## HSD-029 Boundary
 
-Future HSD-029 work may introduce patient enrollment and encounter workflows inside a selected open screening session. That work must continue to use reviewed preload/API boundaries and must not bypass the HSD-027 lifecycle service, audit, or transactional outbox behavior.
+HSD-029A and HSD-029B introduced the reviewed encounter-start service and
+IPC/preload boundary. Future patient-row work may use the ensured session as
+workflow context, but it must preserve those approved encounter-start authority
+checks, must not accept renderer-supplied location authority, and must not
+introduce arbitrary IPC. P0 administrative recovery remains separate for
+installations that return `LOCATION_NOT_CONFIGURED`.

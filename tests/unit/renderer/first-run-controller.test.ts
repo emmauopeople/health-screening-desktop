@@ -570,6 +570,7 @@ function createApi({
     },
     screeningSessions: {
       getWorkspaceContext: vi.fn(async () => createScreeningSessionFailure('IPC_UNAVAILABLE')),
+      ensureCurrent: vi.fn(async () => createScreeningSessionFailure('IPC_UNAVAILABLE')),
       create: vi.fn(async () => createScreeningSessionFailure('IPC_UNAVAILABLE')),
       close: vi.fn(async () => createScreeningSessionFailure('IPC_UNAVAILABLE')),
       reopen: vi.fn(async () => createScreeningSessionFailure('IPC_UNAVAILABLE')),

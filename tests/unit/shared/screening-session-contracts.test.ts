@@ -7,6 +7,8 @@ import {
   screeningSessionCloseResultSchema,
   screeningSessionCreateRequestSchema,
   screeningSessionCreateResultSchema,
+  screeningSessionEnsureCurrentRequestSchema,
+  screeningSessionEnsureCurrentResultSchema,
   screeningSessionGetByIdRequestSchema,
   screeningSessionGetByIdResultSchema,
   screeningSessionGetWorkspaceContextRequestSchema,
@@ -49,6 +51,9 @@ describe('screening-session IPC contracts', () => {
     expect(ipcChannels.screeningSessions.getWorkspaceContext).toBe(
       'health-screening:screening-sessions:get-workspace-context'
     )
+    expect(ipcChannels.screeningSessions.ensureCurrent).toBe(
+      'health-screening:screening-sessions:ensure-current'
+    )
     expect(ipcChannels.screeningSessions.create).toBe('health-screening:screening-sessions:create')
     expect(ipcChannels.screeningSessions.close).toBe('health-screening:screening-sessions:close')
     expect(ipcChannels.screeningSessions.reopen).toBe('health-screening:screening-sessions:reopen')
@@ -60,6 +65,8 @@ describe('screening-session IPC contracts', () => {
 
   it('accepts every valid exact request shape', () => {
     expect(screeningSessionGetWorkspaceContextRequestSchema.parse({})).toEqual({})
+    expect(screeningSessionEnsureCurrentRequestSchema.parse(undefined)).toEqual({})
+    expect(screeningSessionEnsureCurrentRequestSchema.parse({})).toEqual({})
     expect(
       screeningSessionCreateRequestSchema.parse({
         locationId,
@@ -151,6 +158,23 @@ describe('screening-session IPC contracts', () => {
     expect(
       screeningSessionGetWorkspaceContextRequestSchema.safeParse({ extra: true }).success
     ).toBe(false)
+
+    for (const request of [
+      { locationId },
+      { localDate: '2026-07-29' },
+      { date: '2026-07-29' },
+      { timestamp },
+      { userId: sessionId },
+      { role: 'LOCAL_ADMIN' },
+      { actor: { userId: sessionId, role: 'LOCAL_ADMIN' } },
+      { installationId: sessionId },
+      { sessionId },
+      { status: 'OPEN' },
+      { force: true },
+      { bypass: true }
+    ]) {
+      expect(screeningSessionEnsureCurrentRequestSchema.safeParse(request).success).toBe(false)
+    }
   })
 
   it('rejects malformed identifiers, dates, versions, filters, pagination, and text', () => {
@@ -275,6 +299,50 @@ describe('screening-session IPC contracts', () => {
   })
 
   it('accepts public success results for lifecycle outcomes', () => {
+    for (const status of [
+      'AUTHENTICATION_REQUIRED',
+      'FORBIDDEN',
+      'LOCATION_NOT_CONFIGURED',
+      'LOCATION_NOT_FOUND',
+      'LOCATION_INACTIVE',
+      'SESSION_CLOSED',
+      'SESSION_CONFLICT',
+      'NO_ACTIVE_PROTOCOL',
+      'UNAVAILABLE'
+    ] as const) {
+      expect(
+        screeningSessionEnsureCurrentResultSchema.safeParse(createIpcSuccess({ status })).success
+      ).toBe(true)
+    }
+
+    expect(
+      screeningSessionEnsureCurrentResultSchema.safeParse(
+        createIpcSuccess({
+          status: 'RESOLVED',
+          session: { ...openSession, notes: null },
+          location: { id: locationId, name: 'Central Church' }
+        })
+      ).success
+    ).toBe(true)
+    expect(
+      screeningSessionEnsureCurrentResultSchema.safeParse(
+        createIpcSuccess({
+          status: 'CREATED',
+          session: { ...openSession, notes: null },
+          location: { id: locationId, name: 'Central Church' }
+        })
+      ).success
+    ).toBe(true)
+    expect(
+      screeningSessionEnsureCurrentResultSchema.safeParse(
+        createIpcSuccess({
+          status: 'RESOLVED',
+          session: closedSession,
+          location: { id: locationId, name: 'Central Church' }
+        })
+      ).success
+    ).toBe(false)
+
     for (const status of [
       'ALREADY_EXISTS',
       'SESSION_DATE_NOT_CURRENT',

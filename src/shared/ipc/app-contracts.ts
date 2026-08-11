@@ -50,6 +50,7 @@ import type {
   ScreeningSessionCloseResult,
   ScreeningSessionCreateRequest,
   ScreeningSessionCreateResult,
+  ScreeningSessionEnsureCurrentResult,
   ScreeningSessionGetByIdRequest,
   ScreeningSessionGetByIdResult,
   ScreeningSessionGetWorkspaceContextResult,
@@ -139,6 +140,7 @@ export interface HealthScreeningApi {
   }
   screeningSessions: {
     getWorkspaceContext(): Promise<ScreeningSessionGetWorkspaceContextResult>
+    ensureCurrent(): Promise<ScreeningSessionEnsureCurrentResult>
     create(request: ScreeningSessionCreateRequest): Promise<ScreeningSessionCreateResult>
     close(request: ScreeningSessionCloseRequest): Promise<ScreeningSessionCloseResult>
     reopen(request: ScreeningSessionReopenRequest): Promise<ScreeningSessionReopenResult>

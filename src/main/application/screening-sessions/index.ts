@@ -1,10 +1,20 @@
+export { createCurrentScreeningSessionService } from './current-screening-session-service'
 export { createScreeningSessionService } from './screening-session-service'
 export {
+  createProductionCurrentScreeningSessionService,
   createProductionScreeningSessionService,
   createProductionScreeningSessionWorkspaceContextService,
+  type ProductionCurrentScreeningSessionServiceOptions,
   type ProductionScreeningSessionServiceOptions,
   type ProductionScreeningSessionWorkspaceContextServiceOptions
 } from './screening-session-service-composition'
+export type {
+  CurrentScreeningSessionLocation,
+  CurrentScreeningSessionService,
+  CurrentScreeningSessionServiceDependencies,
+  CurrentScreeningSessionSummary,
+  EnsureCurrentScreeningSessionResult
+} from './current-screening-session-service-types'
 export {
   getScreeningSessionServiceErrorType,
   isScreeningSessionServiceError,

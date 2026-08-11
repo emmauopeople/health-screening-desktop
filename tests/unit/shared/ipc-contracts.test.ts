@@ -96,6 +96,7 @@ describe('shared IPC contracts', () => {
       },
       screeningSessions: {
         getWorkspaceContext: 'health-screening:screening-sessions:get-workspace-context',
+        ensureCurrent: 'health-screening:screening-sessions:ensure-current',
         create: 'health-screening:screening-sessions:create',
         close: 'health-screening:screening-sessions:close',
         reopen: 'health-screening:screening-sessions:reopen',
@@ -115,7 +116,7 @@ describe('shared IPC contracts', () => {
         ...Object.values(ipcChannels.screeningSessions),
         ...Object.values(ipcChannels.screeningEncounters)
       ]).size
-    ).toBe(29)
+    ).toBe(30)
   })
 
   it('keeps patient requests strict and main-process-authored', () => {

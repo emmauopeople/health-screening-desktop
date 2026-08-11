@@ -13,6 +13,7 @@ import { createRendererNavigationPolicy } from '@main/app/navigation-policy'
 import { registerApplicationShutdown } from '@main/app/shutdown'
 import {
   createProductionFirstRunBootstrapService,
+  createProductionCurrentScreeningSessionService,
   createProductionLocalAuthenticationSessionService,
   createProductionPatientAcknowledgmentService,
   createProductionPatientDemographicAmendmentService,
@@ -101,6 +102,11 @@ export function startApplicationLifecycle(): void {
         connection: databaseRuntime.getConnection(),
         logger: console
       })
+      const currentScreeningSessionService = createProductionCurrentScreeningSessionService({
+        connection: databaseRuntime.getConnection(),
+        authenticationSessionService,
+        logger: console
+      })
       const screeningEncounterStartService = createProductionScreeningEncounterStartService({
         connection: databaseRuntime.getConnection(),
         authenticationSessionService,
@@ -140,6 +146,7 @@ export function startApplicationLifecycle(): void {
         screeningSessions: {
           navigationPolicy,
           authenticationSessionService,
+          currentScreeningSessionService,
           screeningSessionService,
           screeningSessionWorkspaceContextService,
           logger: console
