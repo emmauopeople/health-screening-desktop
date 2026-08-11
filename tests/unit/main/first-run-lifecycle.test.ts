@@ -55,7 +55,7 @@ describe('first-run IPC lifecycle and scope', () => {
     expect(lifecycle).toContain('patientRegistryService,')
     expect(lifecycle).toContain('patientDemographicAmendmentService,')
     expect(lifecycle).toContain('patientAcknowledgmentService,')
-    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(8)
+    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(9)
   })
 
   it('composes screening-session IPC services from the initialized database runtime', () => {
@@ -65,9 +65,12 @@ describe('first-run IPC lifecycle and scope', () => {
       'const screeningSessionService = createProductionScreeningSessionService'
     const contextStatement =
       'const screeningSessionWorkspaceContextService =\n        createProductionScreeningSessionWorkspaceContextService'
+    const currentStatement =
+      'const currentScreeningSessionService =\n        createProductionCurrentScreeningSessionService'
 
     expect(lifecycle.match(/createDatabaseRuntime\(/gu)?.length).toBe(1)
     expect(lifecycle).toContain('createProductionScreeningSessionService')
+    expect(lifecycle).toContain('createProductionCurrentScreeningSessionService')
     expect(lifecycle).toContain('createProductionScreeningSessionWorkspaceContextService')
     expect(lifecycle.indexOf('databaseRuntime.initialize()')).toBeLessThan(
       lifecycle.indexOf(serviceStatement)
@@ -78,9 +81,13 @@ describe('first-run IPC lifecycle and scope', () => {
     expect(lifecycle.indexOf(contextStatement)).toBeLessThan(
       lifecycle.indexOf(registrationStatement)
     )
+    expect(lifecycle.indexOf(currentStatement)).toBeLessThan(
+      lifecycle.indexOf(registrationStatement)
+    )
     expect(lifecycle).toContain('screeningSessionService,')
+    expect(lifecycle).toContain('currentScreeningSessionService,')
     expect(lifecycle).toContain('screeningSessionWorkspaceContextService,')
-    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(8)
+    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(9)
   })
 
   it('composes screening-encounter IPC services from the initialized database runtime', () => {

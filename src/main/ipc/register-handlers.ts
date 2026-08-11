@@ -42,6 +42,7 @@ export class ApplicationIpcRegistrationError extends Error {
 
 const screeningSessionIpcChannels: readonly ScreeningSessionIpcChannel[] = Object.freeze([
   ipcChannels.screeningSessions.getWorkspaceContext,
+  ipcChannels.screeningSessions.ensureCurrent,
   ipcChannels.screeningSessions.create,
   ipcChannels.screeningSessions.close,
   ipcChannels.screeningSessions.reopen,
@@ -169,6 +170,7 @@ export function registerScreeningSessionIpcHandlers(
       ipcChannels.screeningSessions.getWorkspaceContext,
       screeningSessionHandlers.getWorkspaceContext
     ],
+    [ipcChannels.screeningSessions.ensureCurrent, screeningSessionHandlers.ensureCurrent],
     [ipcChannels.screeningSessions.create, screeningSessionHandlers.create],
     [ipcChannels.screeningSessions.close, screeningSessionHandlers.close],
     [ipcChannels.screeningSessions.reopen, screeningSessionHandlers.reopen],

@@ -3,15 +3,21 @@ import type Database from 'better-sqlite3'
 import {
   createAuditEventRepository,
   createDatabaseTransactionExecutor,
+  createInstallationLocationConfigurationRepository,
   createInstallationRepository,
   createLocationRepository,
   createProtocolVersionRepository,
+  createScreeningEncounterRepository,
   createScreeningSessionOutboxRepository,
   createScreeningSessionRepository,
   type DatabaseTransactionLogger
 } from '@main/database'
 import { createSystemEntityIdGenerator, createSystemUtcClock } from '@main/foundation'
 
+import type { LocalAuthenticationSessionService } from '../authentication/session'
+import { createInstallationLocationService } from '../installation-location'
+import { createCurrentScreeningSessionService } from './current-screening-session-service'
+import type { CurrentScreeningSessionService } from './current-screening-session-service-types'
 import { createScreeningSessionService } from './screening-session-service'
 import type { ScreeningSessionService } from './screening-session-service-types'
 import { createScreeningSessionWorkspaceContextService } from './screening-session-workspace-context-service'
@@ -33,6 +39,56 @@ export function createProductionScreeningSessionService({
     screeningSessionRepository: createScreeningSessionRepository(connection),
     screeningSessionOutboxRepository: createScreeningSessionOutboxRepository(connection),
     auditEventRepository: createAuditEventRepository(connection),
+    transactionExecutor: createDatabaseTransactionExecutor({
+      connection,
+      idGenerator: createSystemEntityIdGenerator(),
+      clock: createSystemUtcClock(),
+      logger
+    })
+  })
+}
+
+export interface ProductionCurrentScreeningSessionServiceOptions {
+  readonly connection: Database.Database
+  readonly authenticationSessionService: LocalAuthenticationSessionService
+  readonly logger?: DatabaseTransactionLogger
+}
+
+export function createProductionCurrentScreeningSessionService({
+  connection,
+  authenticationSessionService,
+  logger
+}: ProductionCurrentScreeningSessionServiceOptions): CurrentScreeningSessionService {
+  const installationRepository = createInstallationRepository(connection)
+  const locationRepository = createLocationRepository(connection)
+  const screeningSessionRepository = createScreeningSessionRepository(connection)
+  const auditEventRepository = createAuditEventRepository(connection)
+  const installationLocationService = createInstallationLocationService({
+    authenticationSessionService,
+    installationRepository,
+    installationLocationConfigurationRepository:
+      createInstallationLocationConfigurationRepository(connection),
+    locationRepository,
+    screeningSessionRepository,
+    screeningEncounterRepository: createScreeningEncounterRepository(connection),
+    auditEventRepository,
+    transactionExecutor: createDatabaseTransactionExecutor({
+      connection,
+      idGenerator: createSystemEntityIdGenerator(),
+      clock: createSystemUtcClock(),
+      logger
+    })
+  })
+
+  return createCurrentScreeningSessionService({
+    authenticationSessionService,
+    installationLocationService,
+    installationRepository,
+    locationRepository,
+    protocolVersionRepository: createProtocolVersionRepository(connection),
+    screeningSessionRepository,
+    screeningSessionOutboxRepository: createScreeningSessionOutboxRepository(connection),
+    auditEventRepository,
     transactionExecutor: createDatabaseTransactionExecutor({
       connection,
       idGenerator: createSystemEntityIdGenerator(),

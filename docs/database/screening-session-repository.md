@@ -36,6 +36,13 @@ The database enforces one screening session per location/date through `ux_screen
 
 Multiple locations may have `OPEN` sessions on the same date. There is no global one-open-session uniqueness rule.
 
+HSD-029C-P1 adds `findByLocationAndDateForWrite` so the current daily-session
+service can resolve the canonical row inside the same transaction used for
+creation and uniqueness-race recovery. The query is scoped only by the trusted
+configured `location_id` and authoritative operational `session_date`; it does
+not accept renderer location state, fallback to another location, or mutate
+session lifecycle state.
+
 ## Transaction Ownership
 
 Repository write methods require an active `DatabaseTransactionConnection`. They do not begin, commit, roll back, or create savepoints. `DatabaseTransactionExecutor.run` owns transaction lifetime.

@@ -90,6 +90,14 @@ FROM screening_sessions
 WHERE id = ?;
 `
 
+const selectScreeningSessionByLocationAndDateSql = `
+SELECT
+${screeningSessionColumns}
+FROM screening_sessions
+WHERE location_id = ?
+  AND session_date = ?;
+`
+
 const selectHasOpenScreeningSessionForLocationSql = `
 SELECT EXISTS(
   SELECT 1
@@ -206,6 +214,37 @@ export function createScreeningSessionRepository(
         return readScreeningSession(
           scopedConnection,
           parseReadEntityId(id),
+          (error) => new RepositoryReadError(error)
+        )
+      } catch (error) {
+        if (error instanceof DatabaseTransactionStateError) {
+          throw new DatabaseTransactionStateError(error.errorType)
+        }
+
+        if (error instanceof RepositoryValidationError) {
+          throw new RepositoryValidationError(error.errorType)
+        }
+
+        if (error instanceof RepositoryDataIntegrityError) {
+          throw new RepositoryDataIntegrityError(error.errorType)
+        }
+
+        throw new RepositoryReadError(getRepositoryErrorType(error))
+      }
+    },
+
+    findByLocationAndDateForWrite(
+      scopedConnection: DatabaseTransactionConnection,
+      locationId: ScreeningSessionRecord['locationId'],
+      sessionDate: ScreeningSessionRecord['sessionDate']
+    ): ScreeningSessionRecord | null {
+      assertActiveDatabaseTransactionConnection(scopedConnection)
+
+      try {
+        return readScreeningSessionByLocationAndDate(
+          scopedConnection,
+          parseReadEntityId(locationId),
+          parseReadScreeningSessionDate(sessionDate),
           (error) => new RepositoryReadError(error)
         )
       } catch (error) {
@@ -585,6 +624,31 @@ function readScreeningSession(
   }
 }
 
+function readScreeningSessionByLocationAndDate(
+  connection: ScreeningSessionReadConnection,
+  locationId: string,
+  sessionDate: string,
+  createFailure: (errorType?: string) => RepositoryReadError | RepositoryWriteError
+): ScreeningSessionRecord | null {
+  try {
+    const row = connection
+      .prepare(selectScreeningSessionByLocationAndDateSql)
+      .get(locationId, sessionDate)
+
+    return row === undefined ? null : decodeScreeningSessionRow(row)
+  } catch (error) {
+    if (error instanceof DatabaseTransactionStateError) {
+      throw new DatabaseTransactionStateError(error.errorType)
+    }
+
+    if (error instanceof RepositoryDataIntegrityError) {
+      throw new RepositoryDataIntegrityError(error.errorType)
+    }
+
+    throw createFailure(getRepositoryErrorType(error))
+  }
+}
+
 function insertLifecycleHistory(
   connection: DatabaseTransactionConnection,
   input: {
@@ -787,6 +851,14 @@ function decodeExistsRow(row: unknown): boolean {
 function parseReadEntityId(value: unknown): string {
   try {
     return parseEntityId(value)
+  } catch (error) {
+    throw new RepositoryValidationError(getRepositoryErrorType(error))
+  }
+}
+
+function parseReadScreeningSessionDate(value: unknown): string {
+  try {
+    return parseScreeningSessionDate(value)
   } catch (error) {
     throw new RepositoryValidationError(getRepositoryErrorType(error))
   }

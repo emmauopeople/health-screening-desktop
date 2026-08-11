@@ -31,6 +31,7 @@ export const ipcChannels = {
   },
   screeningSessions: {
     getWorkspaceContext: 'health-screening:screening-sessions:get-workspace-context',
+    ensureCurrent: 'health-screening:screening-sessions:ensure-current',
     create: 'health-screening:screening-sessions:create',
     close: 'health-screening:screening-sessions:close',
     reopen: 'health-screening:screening-sessions:reopen',

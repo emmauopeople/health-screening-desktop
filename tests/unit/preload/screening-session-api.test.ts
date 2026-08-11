@@ -86,6 +86,7 @@ describe('preload screening-session API', () => {
 
     expect(Object.keys(api.screeningSessions)).toEqual([
       'getWorkspaceContext',
+      'ensureCurrent',
       'create',
       'close',
       'reopen',
@@ -114,6 +115,7 @@ describe('preload screening-session API', () => {
     const api: HealthScreeningApi = createHealthScreeningApi(vi.fn())
 
     expect(typeof api.screeningSessions.getWorkspaceContext).toBe('function')
+    expect(typeof api.screeningSessions.ensureCurrent).toBe('function')
     expect(typeof api.screeningSessions.create).toBe('function')
     expect(typeof api.screeningSessions.close).toBe('function')
     expect(typeof api.screeningSessions.reopen).toBe('function')
@@ -126,6 +128,11 @@ describe('preload screening-session API', () => {
       createIpcSuccess({
         deploymentLocalDate: '2026-07-29',
         activeLocations: [activeLocation]
+      }),
+      createIpcSuccess({
+        status: 'RESOLVED' as const,
+        session: openSession,
+        location: activeLocation
       }),
       createIpcSuccess({ status: 'CREATED' as const, session: openSession }),
       createIpcSuccess({ status: 'CLOSED' as const, session: closedSession }),
@@ -150,29 +157,62 @@ describe('preload screening-session API', () => {
 
     const getWorkspaceContextWithIgnoredArgument = api.screeningSessions
       .getWorkspaceContext as unknown as (request: unknown) => Promise<unknown>
+    const ensureCurrentWithIgnoredArgument = api.screeningSessions.ensureCurrent as unknown as (
+      request: unknown
+    ) => Promise<unknown>
 
     await expect(
       getWorkspaceContextWithIgnoredArgument({ channel: 'attacker:channel' })
     ).resolves.toEqual(responses[0])
-    await expect(api.screeningSessions.create(rendererCreateRequest)).resolves.toEqual(responses[1])
-    await expect(api.screeningSessions.close(closeRequest)).resolves.toEqual(responses[2])
-    await expect(api.screeningSessions.reopen(reopenRequest)).resolves.toEqual(responses[3])
-    await expect(api.screeningSessions.getById(getByIdRequest)).resolves.toEqual(responses[4])
-    await expect(api.screeningSessions.list(listRequest)).resolves.toEqual(responses[5])
+    await expect(ensureCurrentWithIgnoredArgument({ locationId })).resolves.toEqual(responses[1])
+    await expect(api.screeningSessions.create(rendererCreateRequest)).resolves.toEqual(responses[2])
+    await expect(api.screeningSessions.close(closeRequest)).resolves.toEqual(responses[3])
+    await expect(api.screeningSessions.reopen(reopenRequest)).resolves.toEqual(responses[4])
+    await expect(api.screeningSessions.getById(getByIdRequest)).resolves.toEqual(responses[5])
+    await expect(api.screeningSessions.list(listRequest)).resolves.toEqual(responses[6])
 
     expect(invoke).toHaveBeenNthCalledWith(1, ipcChannels.screeningSessions.getWorkspaceContext, {})
-    expect(invoke).toHaveBeenNthCalledWith(2, ipcChannels.screeningSessions.create, createRequest)
-    expect(invoke.mock.calls[1]?.[1]).not.toBe(rendererCreateRequest)
-    expect(invoke).toHaveBeenNthCalledWith(3, ipcChannels.screeningSessions.close, closeRequest)
-    expect(invoke).toHaveBeenNthCalledWith(4, ipcChannels.screeningSessions.reopen, reopenRequest)
-    expect(invoke).toHaveBeenNthCalledWith(5, ipcChannels.screeningSessions.getById, getByIdRequest)
-    expect(invoke).toHaveBeenNthCalledWith(6, ipcChannels.screeningSessions.list, listRequest)
+    expect(invoke).toHaveBeenNthCalledWith(2, ipcChannels.screeningSessions.ensureCurrent, {})
+    expect(invoke).toHaveBeenNthCalledWith(3, ipcChannels.screeningSessions.create, createRequest)
+    expect(invoke.mock.calls[2]?.[1]).not.toBe(rendererCreateRequest)
+    expect(invoke).toHaveBeenNthCalledWith(4, ipcChannels.screeningSessions.close, closeRequest)
+    expect(invoke).toHaveBeenNthCalledWith(5, ipcChannels.screeningSessions.reopen, reopenRequest)
+    expect(invoke).toHaveBeenNthCalledWith(6, ipcChannels.screeningSessions.getById, getByIdRequest)
+    expect(invoke).toHaveBeenNthCalledWith(7, ipcChannels.screeningSessions.list, listRequest)
     expect(invoke).not.toHaveBeenCalledWith('attacker:channel', expect.anything())
     expect(rendererCreateRequest).toEqual(createRequest)
     expect(Object.isFrozen(rendererCreateRequest)).toBe(false)
   })
 
   it('preserves every valid service business outcome after response validation', async () => {
+    for (const response of [
+      createIpcSuccess({
+        status: 'RESOLVED' as const,
+        session: openSession,
+        location: activeLocation
+      }),
+      createIpcSuccess({
+        status: 'CREATED' as const,
+        session: openSession,
+        location: activeLocation
+      }),
+      createIpcSuccess({ status: 'AUTHENTICATION_REQUIRED' as const }),
+      createIpcSuccess({ status: 'FORBIDDEN' as const }),
+      createIpcSuccess({ status: 'LOCATION_NOT_CONFIGURED' as const }),
+      createIpcSuccess({ status: 'LOCATION_NOT_FOUND' as const }),
+      createIpcSuccess({ status: 'LOCATION_INACTIVE' as const }),
+      createIpcSuccess({ status: 'SESSION_CLOSED' as const }),
+      createIpcSuccess({ status: 'SESSION_CONFLICT' as const }),
+      createIpcSuccess({ status: 'NO_ACTIVE_PROTOCOL' as const }),
+      createIpcSuccess({ status: 'UNAVAILABLE' as const })
+    ]) {
+      await expect(
+        createHealthScreeningApi(
+          vi.fn().mockResolvedValue(response)
+        ).screeningSessions.ensureCurrent()
+      ).resolves.toEqual(response)
+    }
+
     const cases = [
       [
         'create',

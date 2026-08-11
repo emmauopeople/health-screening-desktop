@@ -14,6 +14,7 @@ import type {
   LocalUserRole,
   PublicScreeningSession,
   PublicScreeningSessionWorkspaceLocation,
+  ScreeningSessionEnsureCurrentSuccessData,
   ScreeningSessionErrorCode,
   ScreeningSessionListRequest,
   ScreeningSessionPageSize,
@@ -78,13 +79,6 @@ type WorkspaceMessage = {
 
 type DialogState =
   | {
-      readonly kind: 'CREATE'
-      readonly locationId: string
-      readonly sessionDate: string
-      readonly notes: string
-      readonly error: string | null
-    }
-  | {
       readonly kind: 'CLOSE'
       readonly session: PublicScreeningSession
       readonly reason: string
@@ -132,7 +126,6 @@ export function ScreeningSessionWorkspace({
   const detailRequestRef = useRef(0)
   const mutationRequestRef = useRef(0)
   const mutationPendingRef = useRef(false)
-  const filtersInitializedRef = useRef(false)
   const pendingListKeyRef = useRef<string | null>(null)
   const messageRef = useRef<HTMLDivElement | null>(null)
   const dialogErrorRef = useRef<HTMLDivElement | null>(null)
@@ -140,7 +133,6 @@ export function ScreeningSessionWorkspace({
   const activeSessionIdRef = useRef<string | null>(null)
   const selectedSessionIdRef = useRef<string | null>(null)
   const selectedSessionRef = useRef<PublicScreeningSession | null>(null)
-  const deploymentLocalDateRef = useRef<string | null>(null)
   const [contextState, setContextState] = useState<WorkspaceContextState>(
     protectedEmptyContextState
   )
@@ -195,7 +187,6 @@ export function ScreeningSessionWorkspace({
     mutationRequestRef.current += 1
     mutationPendingRef.current = false
     pendingListKeyRef.current = null
-    filtersInitializedRef.current = false
     setContextState(protectedEmptyContextState)
     setActiveLocationId(null)
     setActiveSessionId(null)
@@ -266,6 +257,86 @@ export function ScreeningSessionWorkspace({
     [activeLocationId, clearSessionReference, contextState]
   )
 
+  const applyEnsureCurrentResult = useCallback(
+    (data: ScreeningSessionEnsureCurrentSuccessData): void => {
+      if (data.status === 'RESOLVED' || data.status === 'CREATED') {
+        const session: PublicScreeningSession = data.session
+        const nextFilters: SessionListFilters = {
+          status: null,
+          dateFrom: session.sessionDate,
+          dateTo: session.sessionDate,
+          page: 1,
+          pageSize: initialFilters.pageSize
+        }
+
+        activeLocationIdRef.current = data.location.id
+        activeSessionIdRef.current = session.id
+        selectedSessionIdRef.current = session.id
+        selectedSessionRef.current = session
+        pendingListKeyRef.current = null
+
+        setContextState({
+          status: 'READY',
+          deploymentLocalDate: session.sessionDate,
+          activeLocations: [data.location]
+        })
+        setActiveLocationId(data.location.id)
+        setActiveSessionId(session.id)
+        setSelectedSessionId(session.id)
+        setSelectedSession(session)
+        setFilters(nextFilters)
+        setListState({
+          status: 'READY',
+          items: [session],
+          page: nextFilters.page,
+          pageSize: nextFilters.pageSize,
+          total: 1
+        })
+
+        if (data.status === 'CREATED') {
+          setStatusMessage("Today's screening session is open.")
+        }
+
+        return
+      }
+
+      const message = getEnsureCurrentStatusMessage(data.status)
+
+      if (data.status === 'AUTHENTICATION_REQUIRED' || data.status === 'FORBIDDEN') {
+        clearProtectedWorkspaceState()
+        setContextState({ status: 'ERROR', message })
+        setMessage({ text: message, tone: 'ALERT' })
+        focusMessage()
+        onScreeningSessionAuthenticationFailure(
+          data.status === 'AUTHENTICATION_REQUIRED'
+            ? 'AUTH_UNAUTHENTICATED'
+            : 'AUTHORIZATION_FAILED'
+        )
+        return
+      }
+
+      activeLocationIdRef.current = null
+      activeSessionIdRef.current = null
+      selectedSessionIdRef.current = null
+      selectedSessionRef.current = null
+      pendingListKeyRef.current = null
+      setContextState({ status: 'ERROR', message })
+      setActiveLocationId(null)
+      setActiveSessionId(null)
+      setSelectedSessionId(null)
+      setSelectedSession(null)
+      setFilters(initialFilters)
+      setListState(emptyListState)
+      setStatusMessage(message, 'ALERT')
+    },
+    [
+      clearProtectedWorkspaceState,
+      focusMessage,
+      onScreeningSessionAuthenticationFailure,
+      setStatusMessage
+    ]
+  )
+
   const getAuthoritativeSessionForListReconciliation = useCallback(
     async (
       sessionId: string,
@@ -312,7 +383,7 @@ export function ScreeningSessionWorkspace({
     setMessage(null)
 
     try {
-      const result = await api.screeningSessions.getWorkspaceContext()
+      const result = await api.screeningSessions.ensureCurrent()
 
       if (
         !mountedRef.current ||
@@ -331,65 +402,7 @@ export function ScreeningSessionWorkspace({
         return
       }
 
-      const previousDeploymentLocalDate = deploymentLocalDateRef.current
-      const dateChanged =
-        previousDeploymentLocalDate !== null &&
-        previousDeploymentLocalDate !== result.data.deploymentLocalDate
-      const nextContext: Extract<WorkspaceContextState, { readonly status: 'READY' }> = {
-        status: 'READY',
-        deploymentLocalDate: result.data.deploymentLocalDate,
-        activeLocations: result.data.activeLocations
-      }
-      const nextActiveLocationId = getNextActiveLocationId(
-        activeLocationIdRef.current,
-        result.data.activeLocations
-      )
-      deploymentLocalDateRef.current = result.data.deploymentLocalDate
-
-      setContextState({
-        status: 'READY',
-        deploymentLocalDate: result.data.deploymentLocalDate,
-        activeLocations: result.data.activeLocations
-      })
-      setActiveLocationId(nextActiveLocationId)
-      setSelectedSession((currentSession) => {
-        const selectedStillValid =
-          currentSession !== null &&
-          isSessionInspectableInWorkspace(currentSession, nextContext, nextActiveLocationId) &&
-          (!dateChanged || currentSession.sessionDate === result.data.deploymentLocalDate)
-
-        if (selectedStillValid) {
-          return currentSession
-        }
-
-        setSelectedSessionId(null)
-        setActiveSessionId(null)
-        return null
-      })
-      setActiveSessionId((currentActiveSessionId) => {
-        const currentSelectedSession = selectedSessionRef.current
-
-        return currentActiveSessionId !== null &&
-          currentSelectedSession !== null &&
-          currentSelectedSession.id === currentActiveSessionId &&
-          isSessionActiveInWorkspace(currentSelectedSession, nextContext, nextActiveLocationId)
-          ? currentActiveSessionId
-          : null
-      })
-      setFilters((currentFilters) => {
-        if (filtersInitializedRef.current && !dateChanged) {
-          return currentFilters
-        }
-
-        filtersInitializedRef.current = true
-
-        return {
-          ...currentFilters,
-          dateFrom: result.data.deploymentLocalDate,
-          dateTo: result.data.deploymentLocalDate,
-          page: 1
-        }
-      })
+      applyEnsureCurrentResult(result.data)
     } catch {
       if (
         mountedRef.current &&
@@ -401,7 +414,7 @@ export function ScreeningSessionWorkspace({
         setStatusMessage(unavailableMessage, 'ALERT')
       }
     }
-  }, [api, handleFailure, mountedRef, setStatusMessage])
+  }, [api, applyEnsureCurrentResult, handleFailure, mountedRef, setStatusMessage])
 
   const loadSessionById = useCallback(
     async (sessionId: string): Promise<void> => {
@@ -716,109 +729,6 @@ export function ScreeningSessionWorkspace({
         )} of ${listState.total}`
       : null
 
-  async function submitCreate(): Promise<void> {
-    if (dialog?.kind !== 'CREATE' || mutationPendingRef.current) {
-      return
-    }
-
-    const locationExists = activeLocations.some((location) => location.id === dialog.locationId)
-
-    if (!locationExists) {
-      setDialog({ ...dialog, error: 'Choose an active screening location.' })
-      return
-    }
-
-    const notesResult = validateOptionalLifecycleText(dialog.notes, 'Session notes')
-
-    if (notesResult.status === 'INVALID') {
-      setDialog({ ...dialog, error: notesResult.message })
-      return
-    }
-
-    const requestId = mutationRequestRef.current + 1
-    const startedSecurityEpoch = securityEpochRef.current
-    mutationRequestRef.current = requestId
-    mutationPendingRef.current = true
-    setOperationPending(true)
-    setDialog({ ...dialog, error: null })
-
-    try {
-      const result = await api.screeningSessions.create({
-        locationId: dialog.locationId,
-        sessionDate: dialog.sessionDate,
-        notes: notesResult.value
-      })
-
-      if (
-        !mountedRef.current ||
-        securityEpochRef.current !== startedSecurityEpoch ||
-        mutationRequestRef.current !== requestId
-      ) {
-        return
-      }
-
-      if (!result.ok) {
-        handleFailure(result.error.code)
-        return
-      }
-
-      switch (result.data.status) {
-        case 'CREATED':
-          setDialog(null)
-          setActiveLocationId(result.data.session.locationId)
-          applyAuthoritativeSession(result.data.session, {
-            activate: result.data.session.status === 'OPEN'
-          })
-          setStatusMessage('Screening session opened.')
-          await reloadToday(result.data.session.locationId, result.data.session.sessionDate, true)
-          break
-        case 'ALREADY_EXISTS':
-          setDialog(null)
-          setStatusMessage(
-            'A screening session already exists for this location and date. Loading it now.',
-            'STATUS'
-          )
-          await reloadToday(dialog.locationId, dialog.sessionDate, true)
-          break
-        case 'SESSION_DATE_NOT_CURRENT':
-          setDialog({
-            ...dialog,
-            error: 'Sessions can only be opened for the date shown here.'
-          })
-          break
-        case 'LOCATION_NOT_FOUND':
-          setDialog({
-            ...dialog,
-            error:
-              'The selected location is no longer available. Refresh locations and choose again.'
-          })
-          break
-        case 'LOCATION_INACTIVE':
-          setDialog({
-            ...dialog,
-            error: 'The selected location is no longer active. Refresh locations and choose again.'
-          })
-          break
-        case 'NO_ACTIVE_PROTOCOL':
-          setDialog({
-            ...dialog,
-            error:
-              'No active screening protocol is available. Ask an administrator to activate one.'
-          })
-          break
-      }
-    } catch {
-      if (mountedRef.current && securityEpochRef.current === startedSecurityEpoch) {
-        setStatusMessage(getScreeningSessionFailureMessage('IPC_UNAVAILABLE'), 'ALERT')
-      }
-    } finally {
-      if (mutationRequestRef.current === requestId) {
-        mutationPendingRef.current = false
-        setOperationPending(false)
-      }
-    }
-  }
-
   async function submitClose(): Promise<void> {
     if (dialog?.kind !== 'CLOSE' || mutationPendingRef.current) {
       return
@@ -1000,39 +910,6 @@ export function ScreeningSessionWorkspace({
     }
   }
 
-  async function reloadToday(
-    locationId: string,
-    sessionDate: string,
-    selectMatchingToday: boolean
-  ): Promise<void> {
-    const todayFilters: SessionListFilters = {
-      status: null,
-      dateFrom: sessionDate,
-      dateTo: sessionDate,
-      page: 1,
-      pageSize: 25
-    }
-    setFilters((current) =>
-      areSessionListFiltersEqual(current, todayFilters) ? current : todayFilters
-    )
-    await loadSessions(todayFilters, { locationId, selectMatchingToday })
-  }
-
-  function openCreateDialog(): void {
-    if (contextState.status !== 'READY') {
-      setStatusMessage('Workspace context must load before opening a session.', 'ALERT')
-      return
-    }
-
-    setDialog({
-      kind: 'CREATE',
-      locationId: activeLocationId ?? '',
-      sessionDate: contextState.deploymentLocalDate,
-      notes: '',
-      error: null
-    })
-  }
-
   function openCloseDialog(session: PublicScreeningSession): void {
     setDialog({ kind: 'CLOSE', session, reason: '', error: null })
   }
@@ -1058,7 +935,7 @@ export function ScreeningSessionWorkspace({
             <h1 ref={headingRef} id={headingId} tabIndex={-1}>
               Today&apos;s Screening Session
             </h1>
-            <p>Select a location and manage today&apos;s session.</p>
+            <p>Current daily screening session.</p>
           </div>
           <div className="screening-offline-badge" aria-label="Offline ready">
             <span
@@ -1088,8 +965,8 @@ export function ScreeningSessionWorkspace({
           <section className="screening-context-card" aria-labelledby="screening-context-title">
             <div className="screening-card-header">
               <div>
-                <h2 id="screening-context-title">Select a location</h2>
-                <p>Choose where screening is happening.</p>
+                <h2 id="screening-context-title">Configured location</h2>
+                <p>Screening location and local date.</p>
               </div>
               <button
                 type="button"
@@ -1102,7 +979,7 @@ export function ScreeningSessionWorkspace({
 
             {contextState.status === 'LOADING' ? (
               <p className="screening-state-note" role="status">
-                Loading locations...
+                Resolving today&apos;s screening session...
               </p>
             ) : null}
             {contextState.status === 'ERROR' ? (
@@ -1113,62 +990,21 @@ export function ScreeningSessionWorkspace({
             {contextState.status === 'READY' ? (
               <>
                 <div className="screening-context-grid">
-                  <label className="screening-field">
-                    <span>Active screening location</span>
-                    <select
-                      value={activeLocationId ?? ''}
-                      onChange={(event) => {
-                        const nextLocationId = event.currentTarget.value
-                        setActiveLocationId(nextLocationId.length === 0 ? null : nextLocationId)
-                        setSelectedSessionId(null)
-                        setSelectedSession(null)
-                        setActiveSessionId(null)
-                      }}
-                      disabled={activeLocations.length === 0}
-                    >
-                      <option value="">Choose a location</option>
-                      {activeLocations.map((location) => (
-                        <option key={location.id} value={location.id}>
-                          {location.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <div className="screening-readonly-field">
+                    <span>Configured location</span>
+                    <strong>{activeLocation?.name ?? 'Not available'}</strong>
+                  </div>
                   <div className="screening-readonly-field">
                     <span>Today</span>
                     <strong>{deploymentLocalDate}</strong>
                   </div>
                 </div>
-                {activeLocations.length === 0 ? (
-                  <p className="screening-state-note" role="status">
-                    No active screening locations are available.
-                  </p>
-                ) : activeLocation === null ? (
-                  <p className="screening-state-note" role="status">
-                    Select a location.
-                  </p>
-                ) : (
-                  <p className="screening-state-note" role="status">
-                    Selected location: <strong>{activeLocation.name}</strong>
-                  </p>
-                )}
                 {activeLocation !== null && todaySessionForActiveLocation !== null ? (
                   <p className="screening-state-note" role="status">
                     {todaySessionForActiveLocation.status === 'OPEN'
                       ? "Today's session is open."
                       : "Today's session is closed."}
                   </p>
-                ) : activeLocation !== null ? (
-                  <div className="screening-context-actions">
-                    <button
-                      type="button"
-                      className="button button-primary"
-                      onClick={openCreateDialog}
-                      disabled={operationPending}
-                    >
-                      Open today&apos;s session
-                    </button>
-                  </div>
                 ) : null}
               </>
             ) : null}
@@ -1186,9 +1022,7 @@ export function ScreeningSessionWorkspace({
             </div>
             {selectedSession === null ? (
               <div className="screening-empty-state" role="status">
-                {activeLocation === null
-                  ? 'Choose an active location to inspect a screening session.'
-                  : 'No session opened for this location today.'}
+                Today&apos;s screening session is not available.
               </div>
             ) : (
               <SessionDetail
@@ -1203,7 +1037,7 @@ export function ScreeningSessionWorkspace({
                   if (!selectedSessionCanBeActive) {
                     setActiveSessionId(null)
                     setStatusMessage(
-                      "Only today's open session for the selected location can be active.",
+                      "Only today's open session for the configured location can be active.",
                       'ALERT'
                     )
                     return
@@ -1337,15 +1171,6 @@ export function ScreeningSessionWorkspace({
             >
               {dialog.error}
             </div>
-          ) : null}
-          {dialog.kind === 'CREATE' ? (
-            <CreateSessionDialogContent
-              dialog={dialog}
-              locations={activeLocations}
-              pending={operationPending}
-              onDialogChange={setDialog}
-              onSubmit={() => void submitCreate()}
-            />
           ) : null}
           {dialog.kind === 'CLOSE' ? (
             <CloseSessionDialogContent
@@ -1514,7 +1339,7 @@ function SessionWorklist({
   if (state.status === 'IDLE') {
     return (
       <div className="screening-empty-state" role="status">
-        Choose a location to load screening sessions.
+        Resolve today&apos;s session to load screening sessions.
       </div>
     )
   }
@@ -1596,75 +1421,6 @@ function ScreeningSessionStatusBadge({
       />
       {formatScreeningSessionStatus(status)}
     </span>
-  )
-}
-
-function CreateSessionDialogContent({
-  dialog,
-  locations,
-  pending,
-  onDialogChange,
-  onSubmit
-}: {
-  readonly dialog: Exclude<DialogState, null> & { readonly kind: 'CREATE' }
-  readonly locations: readonly PublicScreeningSessionWorkspaceLocation[]
-  readonly pending: boolean
-  onDialogChange(dialog: DialogState): void
-  onSubmit(): void
-}): React.JSX.Element {
-  return (
-    <>
-      <p className="screening-dialog-copy">Open a session for the selected location and date.</p>
-      <label className="screening-field">
-        <span>Active location</span>
-        <select
-          value={dialog.locationId}
-          disabled={pending}
-          onChange={(event) =>
-            onDialogChange({ ...dialog, locationId: event.currentTarget.value, error: null })
-          }
-        >
-          <option value="">Choose a location</option>
-          {locations.map((location) => (
-            <option key={location.id} value={location.id}>
-              {location.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="screening-field">
-        <span>Session date</span>
-        <input
-          type="date"
-          value={dialog.sessionDate}
-          disabled={pending}
-          onChange={(event) =>
-            onDialogChange({ ...dialog, sessionDate: event.currentTarget.value, error: null })
-          }
-        />
-      </label>
-      <label className="screening-field">
-        <span>Session notes (optional)</span>
-        <textarea
-          value={dialog.notes}
-          maxLength={1000}
-          disabled={pending}
-          onChange={(event) =>
-            onDialogChange({ ...dialog, notes: event.currentTarget.value, error: null })
-          }
-        />
-      </label>
-      <div className="screening-dialog-actions">
-        <button
-          type="button"
-          className="button button-primary"
-          disabled={pending}
-          onClick={onSubmit}
-        >
-          Open session
-        </button>
-      </div>
-    </>
   )
 }
 
@@ -1834,8 +1590,6 @@ function ScreeningSessionDialog({
 
 function dialogTitle(dialog: Exclude<DialogState, null>): string {
   switch (dialog.kind) {
-    case 'CREATE':
-      return "Open today's screening session"
     case 'CLOSE':
       return 'Close screening session'
     case 'REOPEN':
@@ -1853,22 +1607,29 @@ function areSessionListFiltersEqual(left: SessionListFilters, right: SessionList
   )
 }
 
-function getNextActiveLocationId(
-  currentLocationId: string | null,
-  activeLocations: readonly PublicScreeningSessionWorkspaceLocation[]
-): string | null {
-  if (activeLocations.length === 0) {
-    return null
+function getEnsureCurrentStatusMessage(
+  status: Exclude<ScreeningSessionEnsureCurrentSuccessData['status'], 'RESOLVED' | 'CREATED'>
+): string {
+  switch (status) {
+    case 'AUTHENTICATION_REQUIRED':
+      return 'Sign in is required before screening can begin.'
+    case 'FORBIDDEN':
+      return 'The active session is not authorized for Screening.'
+    case 'LOCATION_NOT_CONFIGURED':
+      return 'This installation does not have a configured screening location.'
+    case 'LOCATION_NOT_FOUND':
+      return 'The configured screening location is no longer available.'
+    case 'LOCATION_INACTIVE':
+      return 'The configured screening location is inactive.'
+    case 'SESSION_CLOSED':
+      return "Today's screening session is closed."
+    case 'SESSION_CONFLICT':
+      return "Today's screening session could not be resolved. Try again."
+    case 'NO_ACTIVE_PROTOCOL':
+      return 'No active screening protocol is available.'
+    case 'UNAVAILABLE':
+      return 'Session tools are unavailable. Try again after local services reconnect.'
   }
-
-  if (
-    currentLocationId !== null &&
-    activeLocations.some((location) => location.id === currentLocationId)
-  ) {
-    return currentLocationId
-  }
-
-  return activeLocations.length === 1 ? (activeLocations[0]?.id ?? null) : null
 }
 
 function isSessionInspectableInWorkspace(

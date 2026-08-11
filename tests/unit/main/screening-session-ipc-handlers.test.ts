@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createDevelopmentNavigationPolicy } from '@main/app/navigation-policy'
 import type {
   ActiveLocalSessionContext,
+  CurrentScreeningSessionService,
   LocalAuthenticationSessionService,
   ScreeningSessionService,
   ScreeningSessionWorkspaceContextService
@@ -238,7 +239,118 @@ describe('screening-session IPC handlers', () => {
     }
   })
 
+  it('invokes ensure-current with no renderer authority and sanitized session data', async () => {
+    const harness = createHarness()
+
+    await expect(harness.handlers.ensureCurrent(createAllowedEvent(), undefined)).resolves.toEqual({
+      ok: true,
+      data: {
+        status: 'RESOLVED',
+        session: {
+          id: sessionId,
+          locationId,
+          protocolVersionId,
+          sessionDate: '2026-07-29',
+          status: 'OPEN',
+          notes: null,
+          openedAt: timestamp,
+          closedAt: null,
+          createdAt: timestamp,
+          rowVersion: 1
+        },
+        location: {
+          id: locationId,
+          name: 'Central Church'
+        }
+      }
+    })
+    await expect(harness.handlers.ensureCurrent(createAllowedEvent(), {})).resolves.toMatchObject({
+      ok: true,
+      data: { status: 'RESOLVED' }
+    })
+    expect(
+      harness.currentScreeningSessionService.ensureCurrentScreeningSession
+    ).toHaveBeenCalledTimes(2)
+    expect(harness.authenticationSessionService.requireAnyRole).not.toHaveBeenCalled()
+  })
+
+  it('rejects ensure-current authority-bearing payloads before service execution', async () => {
+    for (const request of [
+      { locationId },
+      { localDate: '2026-07-29' },
+      { date: '2026-07-29' },
+      { timestamp },
+      { userId },
+      { role: 'LOCAL_ADMIN' },
+      { actor: { userId, role: 'LOCAL_ADMIN' } },
+      { installationId: locationId },
+      { sessionId },
+      { status: 'OPEN' },
+      { force: true },
+      { bypass: true }
+    ]) {
+      const harness = createHarness()
+
+      await expect(harness.handlers.ensureCurrent(createAllowedEvent(), request)).resolves.toEqual(
+        createScreeningSessionFailure('VALIDATION_FAILED')
+      )
+      expect(
+        harness.currentScreeningSessionService.ensureCurrentScreeningSession
+      ).not.toHaveBeenCalled()
+    }
+
+    const extraArgumentHarness = createHarness()
+
+    await expect(
+      extraArgumentHarness.handlers.ensureCurrent(createAllowedEvent(), {}, { date: '2026-07-29' })
+    ).resolves.toEqual(createScreeningSessionFailure('VALIDATION_FAILED'))
+    expect(
+      extraArgumentHarness.currentScreeningSessionService.ensureCurrentScreeningSession
+    ).not.toHaveBeenCalled()
+  })
+
+  it('rejects untrusted ensure-current senders before request parsing or service execution', async () => {
+    const harness = createHarness()
+    let requestInspected = false
+    const request = new Proxy(
+      {},
+      {
+        getOwnPropertyDescriptor() {
+          requestInspected = true
+          throw new Error(`proxy leaked ${sensitiveNote}`)
+        }
+      }
+    )
+
+    await expect(harness.handlers.ensureCurrent(createForbiddenEvent(), request)).resolves.toEqual(
+      createScreeningSessionFailure('IPC_FORBIDDEN')
+    )
+    expect(requestInspected).toBe(false)
+    expect(
+      harness.currentScreeningSessionService.ensureCurrentScreeningSession
+    ).not.toHaveBeenCalled()
+  })
+
   it('maps expected service outcomes as successful typed results', async () => {
+    for (const status of [
+      'AUTHENTICATION_REQUIRED',
+      'FORBIDDEN',
+      'LOCATION_NOT_CONFIGURED',
+      'LOCATION_NOT_FOUND',
+      'LOCATION_INACTIVE',
+      'SESSION_CLOSED',
+      'SESSION_CONFLICT',
+      'NO_ACTIVE_PROTOCOL',
+      'UNAVAILABLE'
+    ] as const) {
+      await expect(
+        createHarness({ ensureCurrent: () => ({ status }) }).handlers.ensureCurrent(
+          createAllowedEvent(),
+          undefined
+        )
+      ).resolves.toEqual({ ok: true, data: { status } })
+    }
+
     for (const status of [
       'ALREADY_EXISTS',
       'SESSION_DATE_NOT_CURRENT',
@@ -289,6 +401,29 @@ describe('screening-session IPC handlers', () => {
   })
 
   it('fails closed for malformed service output and thrown errors without leaking sensitive data', async () => {
+    const malformedEnsureHarness = createHarness({
+      ensureCurrent: () => ({
+        status: 'CREATED',
+        session: {
+          id: sessionId,
+          locationId,
+          protocolVersionId,
+          sessionDate: '2026-07-29' as never,
+          status: 'OPEN',
+          notes: null,
+          openedAt: timestamp,
+          closedAt: null,
+          createdAt: timestamp,
+          rowVersion: 0
+        },
+        location: { id: locationId, displayName: 'Central Church' as never }
+      })
+    })
+    const thrownEnsureHarness = createHarness({
+      ensureCurrent: () => {
+        throw new Error(`SELECT ${sensitiveNote} C:\\secret\\ensure.sqlite3`)
+      }
+    })
     const malformedHarness = createHarness({
       getById: () => ({ status: 'FOUND', session: createSession({ rowVersion: 0 }) })
     })
@@ -299,6 +434,12 @@ describe('screening-session IPC handlers', () => {
     })
 
     await expect(
+      malformedEnsureHarness.handlers.ensureCurrent(createAllowedEvent(), undefined)
+    ).resolves.toEqual(createScreeningSessionFailure('INTERNAL_ERROR'))
+    await expect(
+      thrownEnsureHarness.handlers.ensureCurrent(createAllowedEvent(), undefined)
+    ).resolves.toEqual(createScreeningSessionFailure('INTERNAL_ERROR'))
+    await expect(
       malformedHarness.handlers.getById(createAllowedEvent(), getRequest)
     ).resolves.toEqual(createScreeningSessionFailure('INTERNAL_ERROR'))
     await expect(thrownHarness.handlers.close(createAllowedEvent(), closeRequest)).resolves.toEqual(
@@ -306,6 +447,8 @@ describe('screening-session IPC handlers', () => {
     )
     expectLogsAreSafe(malformedHarness.logger)
     expectLogsAreSafe(thrownHarness.logger)
+    expectLogsAreSafe(malformedEnsureHarness.logger)
+    expectLogsAreSafe(thrownEnsureHarness.logger)
   })
 
   it('validates workspace context output and maps query failures safely', async () => {
@@ -335,6 +478,7 @@ interface HandlerOverrides {
   readonly role?: LocalUserRole
   readonly authError?: Error | null
   readonly workspaceContext?: () => unknown
+  readonly ensureCurrent?: CurrentScreeningSessionService['ensureCurrentScreeningSession']
   readonly create?: ScreeningSessionService['create']
   readonly close?: ScreeningSessionService['close']
   readonly reopen?: ScreeningSessionService['reopen']
@@ -354,6 +498,9 @@ interface HandlerHarness {
     getById: ReturnType<typeof vi.fn>
     list: ReturnType<typeof vi.fn>
   }
+  readonly currentScreeningSessionService: CurrentScreeningSessionService & {
+    ensureCurrentScreeningSession: ReturnType<typeof vi.fn>
+  }
   readonly logger: TestLogger
 }
 
@@ -368,11 +515,13 @@ function createHarness(overrides: HandlerOverrides = {}): HandlerHarness {
     overrides.role ?? 'LOCAL_ADMIN',
     overrides.authError
   )
+  const currentScreeningSessionService = createCurrentScreeningSessionService(overrides)
   const screeningSessionService = createScreeningSessionService(overrides)
   const workspaceContextService = createWorkspaceContextService(overrides.workspaceContext)
   const handlers = createScreeningSessionIpcHandlers({
     navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
     authenticationSessionService,
+    currentScreeningSessionService,
     screeningSessionService,
     screeningSessionWorkspaceContextService: workspaceContextService,
     logger
@@ -381,9 +530,25 @@ function createHarness(overrides: HandlerOverrides = {}): HandlerHarness {
   return {
     handlers,
     authenticationSessionService,
+    currentScreeningSessionService,
     screeningSessionService,
     logger
   }
+}
+
+function createCurrentScreeningSessionService(
+  overrides: HandlerOverrides
+): HandlerHarness['currentScreeningSessionService'] {
+  return {
+    ensureCurrentScreeningSession: vi.fn(
+      overrides.ensureCurrent ??
+        (() => ({
+          status: 'RESOLVED',
+          session: createSession(),
+          location: { id: locationId, displayName: 'Central Church' }
+        }))
+    )
+  } as unknown as HandlerHarness['currentScreeningSessionService']
 }
 
 function createAuthenticationSessionService(

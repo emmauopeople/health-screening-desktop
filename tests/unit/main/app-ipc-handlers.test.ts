@@ -20,6 +20,7 @@ import type { IpcSenderValidationEvent } from '@main/ipc/sender-policy'
 import { ipcChannels, type AppHealth, type AppInfo } from '@shared/ipc'
 import type {
   FirstRunBootstrapService,
+  CurrentScreeningSessionService,
   LocalAuthenticationSessionService,
   PatientAcknowledgmentService,
   PatientDemographicAmendmentService,
@@ -67,6 +68,7 @@ const applicationOwnedHandlerChannels = Object.freeze([
   ipcChannels.patient.findDuplicates,
   ipcChannels.patient.markNotDuplicate,
   ipcChannels.screeningSessions.getWorkspaceContext,
+  ipcChannels.screeningSessions.ensureCurrent,
   ipcChannels.screeningSessions.create,
   ipcChannels.screeningSessions.close,
   ipcChannels.screeningSessions.reopen,
@@ -188,7 +190,7 @@ describe('application IPC handler registration', () => {
 
     const dispose = registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(28)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(29)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
@@ -214,6 +216,7 @@ describe('application IPC handler registration', () => {
       'health-screening:screening-encounters:start',
       'health-screening:screening-sessions:close',
       'health-screening:screening-sessions:create',
+      'health-screening:screening-sessions:ensure-current',
       'health-screening:screening-sessions:get-by-id',
       'health-screening:screening-sessions:get-workspace-context',
       'health-screening:screening-sessions:list',
@@ -233,7 +236,7 @@ describe('application IPC handler registration', () => {
     registerApplicationIpcHandlers(ipcMain, createDependencies())
     registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(56)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(58)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getHealth)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
@@ -263,6 +266,7 @@ describe('application IPC handler registration', () => {
       'health-screening:screening-encounters:start',
       'health-screening:screening-sessions:close',
       'health-screening:screening-sessions:create',
+      'health-screening:screening-sessions:ensure-current',
       'health-screening:screening-sessions:get-by-id',
       'health-screening:screening-sessions:get-workspace-context',
       'health-screening:screening-sessions:list',
@@ -351,6 +355,7 @@ describe('application IPC handler registration', () => {
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(
       ipcChannels.screeningSessions.getWorkspaceContext
     )
+    expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.screeningSessions.ensureCurrent)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.screeningSessions.close)
     expect(dependencies.auth.sessionPublisher.dispose).not.toHaveBeenCalled()
 
@@ -476,6 +481,7 @@ describe('application IPC handler registration', () => {
     ipcMain.handlers.set(ipcChannels.patient.findDuplicates, vi.fn())
     ipcMain.handlers.set(ipcChannels.patient.markNotDuplicate, vi.fn())
     ipcMain.handlers.set(ipcChannels.screeningSessions.getWorkspaceContext, vi.fn())
+    ipcMain.handlers.set(ipcChannels.screeningSessions.ensureCurrent, vi.fn())
     ipcMain.handlers.set(ipcChannels.screeningSessions.create, vi.fn())
     ipcMain.handlers.set(ipcChannels.screeningSessions.close, vi.fn())
     ipcMain.handlers.set(ipcChannels.screeningSessions.reopen, vi.fn())
@@ -501,7 +507,7 @@ describe('application IPC handler registration', () => {
     )
     const firstHandlers = new Map(ipcMain.handlers)
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(6)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(7)
     expect(ipcMain.handlers.has(ipcChannels.screeningSessions.create)).toBe(true)
     expect(ipcMain.handlers.has(ipcChannels.patient.search)).toBe(true)
     expect(firstHandlers.has(ipcChannels.screeningSessions.getWorkspaceContext)).toBe(true)
@@ -629,7 +635,7 @@ describe('application IPC handler registration', () => {
     expect(() =>
       registerScreeningSessionIpcHandlers(ipcMain, createDependencies().screeningSessions)
     ).toThrow(ApplicationIpcRegistrationError)
-    expect(ipcMain.handle).toHaveBeenCalledTimes(6)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(7)
 
     for (const [channel, handler] of originalHandlers) {
       expect(ipcMain.handlers.get(channel)).toBe(handler)
@@ -665,6 +671,7 @@ describe('application IPC handler registration', () => {
       preexistingReopenHandler
     )
     expect(ipcMain.handlers.has(ipcChannels.screeningSessions.getWorkspaceContext)).toBe(false)
+    expect(ipcMain.handlers.has(ipcChannels.screeningSessions.ensureCurrent)).toBe(false)
     expect(ipcMain.handlers.has(ipcChannels.screeningSessions.create)).toBe(false)
     expect(ipcMain.handlers.has(ipcChannels.screeningSessions.close)).toBe(false)
     expect(ipcMain.handlers.has(ipcChannels.screeningSessions.getById)).toBe(false)
@@ -764,6 +771,7 @@ function createDependencies(): ApplicationIpcHandlerDependencies {
     screeningSessions: {
       navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
       authenticationSessionService: createAuthenticationSessionService(),
+      currentScreeningSessionService: createCurrentScreeningSessionService(),
       screeningSessionService: createScreeningSessionService(),
       screeningSessionWorkspaceContextService: createScreeningSessionWorkspaceContextService(),
       logger: createLogger()
@@ -782,6 +790,12 @@ function createFirstRunBootstrapService(): FirstRunBootstrapService {
     getState: vi.fn(() => ({ status: 'REQUIRED' })),
     initialize: vi.fn()
   } as unknown as FirstRunBootstrapService
+}
+
+function createCurrentScreeningSessionService(): CurrentScreeningSessionService {
+  return {
+    ensureCurrentScreeningSession: vi.fn(() => ({ status: 'UNAVAILABLE' }))
+  } as unknown as CurrentScreeningSessionService
 }
 
 function createAuthenticationSessionService(): LocalAuthenticationSessionService {

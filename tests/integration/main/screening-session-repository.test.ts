@@ -237,6 +237,52 @@ describe('screening session repository', () => {
     })
   })
 
+  it('finds the canonical daily session by location and date inside a transaction', async () => {
+    await withScreeningSessionRepository(({ connection, repository, executor }) => {
+      insertReferences(connection)
+      insertRawLocation(connection, { id: secondLocationId, name: 'Second Site' })
+      insertRawSession(connection, {
+        id: sessionId,
+        location_id: locationId,
+        session_date: '2026-07-29',
+        status: 'OPEN'
+      })
+      insertRawSession(connection, {
+        id: secondSessionId,
+        location_id: secondLocationId,
+        session_date: '2026-07-29',
+        status: 'OPEN'
+      })
+
+      expect(
+        executor.run((context) =>
+          repository.findByLocationAndDateForWrite(
+            context.connection,
+            parseEntityId(locationId),
+            parseScreeningSessionDate('2026-07-29')
+          )
+        )
+      ).toMatchObject({ id: sessionId, locationId })
+      expect(
+        executor.run((context) =>
+          repository.findByLocationAndDateForWrite(
+            context.connection,
+            parseEntityId(locationId),
+            parseScreeningSessionDate('2026-07-30')
+          )
+        )
+      ).toBeNull()
+
+      expect(() =>
+        repository.findByLocationAndDateForWrite(
+          connection as unknown as DatabaseTransactionConnection,
+          parseEntityId(locationId),
+          parseScreeningSessionDate('2026-07-29')
+        )
+      ).toThrow(DatabaseTransactionStateError)
+    })
+  })
+
   it('classifies only location/date uniqueness as ScreeningSessionAlreadyExistsError', async () => {
     await withScreeningSessionRepository(({ connection, repository, executor }) => {
       insertReferences(connection)

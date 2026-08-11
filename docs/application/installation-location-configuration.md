@@ -168,9 +168,12 @@ trusted-sender validation before parsing, strictly accept only `locationId`,
 resolve authentication and authorization in the main process, and return only
 the sanitized service result.
 
-No admin settings UI is implemented by P0 or this correction.
+No admin settings UI is implemented by P0 or the P0 correction.
 
-P1 must not proceed until P0 is reviewed, approved, and merged. P1 can then use
-`resolveConfiguredInstallationLocation()` as the trusted location authority for
-`ensureCurrentScreeningSession()` while still resolving date, auth, status,
-audit, and outbox authority inside the main process.
+HSD-029C-P1 consumes `resolveConfiguredInstallationLocation()` as the trusted
+location authority for `ensureCurrentScreeningSession()` while still resolving
+date, auth, status, audit, and outbox authority inside the main process. If an
+existing installation still has no configured location, P1 returns
+`LOCATION_NOT_CONFIGURED`; recovery remains the separate authenticated
+`LOCAL_ADMIN` assignment operation described above and is not invoked
+automatically by the Screening workflow.

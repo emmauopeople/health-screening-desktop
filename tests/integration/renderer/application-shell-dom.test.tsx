@@ -1137,6 +1137,9 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
     getWorkspaceContext: ReturnType<
       typeof vi.fn<HealthScreeningApi['screeningSessions']['getWorkspaceContext']>
     >
+    ensureCurrent: ReturnType<
+      typeof vi.fn<HealthScreeningApi['screeningSessions']['ensureCurrent']>
+    >
     create: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['create']>>
     close: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['close']>>
     reopen: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['reopen']>>
@@ -1258,6 +1261,26 @@ function createAppApi(initialSession: PublicAuthenticationSession): AppApiHarnes
           createIpcSuccess({
             deploymentLocalDate: '2026-08-06',
             activeLocations: [{ id: '77777777-7777-4777-8777-777777777777', name: 'Bastos Hall' }]
+          })
+        )
+      ),
+      ensureCurrent: vi.fn(() =>
+        Promise.resolve(
+          createIpcSuccess({
+            status: 'RESOLVED',
+            session: {
+              id: '99999999-9999-4999-8999-999999999999',
+              locationId: '77777777-7777-4777-8777-777777777777',
+              protocolVersionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              sessionDate: '2026-08-06',
+              status: 'OPEN',
+              notes: null,
+              openedAt: '2026-08-06T08:15:00.000Z',
+              closedAt: null,
+              createdAt: '2026-08-06T08:15:00.000Z',
+              rowVersion: 1
+            },
+            location: { id: '77777777-7777-4777-8777-777777777777', name: 'Bastos Hall' }
           })
         )
       ),

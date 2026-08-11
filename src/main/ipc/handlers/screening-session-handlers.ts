@@ -3,6 +3,9 @@ import type { z } from 'zod'
 import type {
   CreateScreeningSessionRequest as InternalCreateScreeningSessionRequest,
   CloseScreeningSessionRequest as InternalCloseScreeningSessionRequest,
+  CurrentScreeningSessionLocation,
+  CurrentScreeningSessionService,
+  CurrentScreeningSessionSummary,
   GetScreeningSessionRequest as InternalGetScreeningSessionRequest,
   ListScreeningSessionsRequest as InternalListScreeningSessionsRequest,
   LocalAuthenticationSessionService,
@@ -15,15 +18,18 @@ import type { LocalUserRole, ScreeningSessionRecord } from '@main/database'
 import type { EntityId } from '@main/foundation/entity-id'
 import { getErrorType } from '@main/foundation/error-type'
 import { createAuthenticatedHandlerAuthorization } from '@main/ipc/authentication/authenticated-handler-authorization'
-import type { IpcSenderValidationEvent } from '@main/ipc/sender-policy'
+import { isIpcSenderAllowed, type IpcSenderValidationEvent } from '@main/ipc/sender-policy'
 import {
   createIpcSuccess,
+  createScreeningSessionEnsureCurrentStatusResult,
   createScreeningSessionFailure,
   ipcChannels,
   screeningSessionCloseRequestSchema,
   screeningSessionCloseResultSchema,
   screeningSessionCreateRequestSchema,
   screeningSessionCreateResultSchema,
+  screeningSessionEnsureCurrentRequestSchema,
+  screeningSessionEnsureCurrentResultSchema,
   screeningSessionGetByIdRequestSchema,
   screeningSessionGetByIdResultSchema,
   screeningSessionGetWorkspaceContextRequestSchema,
@@ -33,11 +39,14 @@ import {
   screeningSessionReopenRequestSchema,
   screeningSessionReopenResultSchema,
   type AuthenticationFailure,
+  type PublicCurrentScreeningSession,
   type PublicScreeningSession,
+  type PublicScreeningSessionWorkspaceLocation,
   type ScreeningSessionCloseRequest,
   type ScreeningSessionCloseResult,
   type ScreeningSessionCreateRequest,
   type ScreeningSessionCreateResult,
+  type ScreeningSessionEnsureCurrentResult,
   type ScreeningSessionErrorCode,
   type ScreeningSessionGetByIdRequest,
   type ScreeningSessionGetByIdResult,
@@ -57,6 +66,7 @@ export interface ScreeningSessionIpcOperationalLogger {
 export interface ScreeningSessionIpcHandlerDependencies {
   readonly navigationPolicy: NavigationPolicy
   readonly authenticationSessionService: LocalAuthenticationSessionService
+  readonly currentScreeningSessionService: CurrentScreeningSessionService
   readonly screeningSessionService: ScreeningSessionService
   readonly screeningSessionWorkspaceContextService: ScreeningSessionWorkspaceContextService
   readonly logger?: ScreeningSessionIpcOperationalLogger
@@ -67,6 +77,11 @@ export interface ScreeningSessionIpcHandlers {
     event: IpcSenderValidationEvent,
     request: unknown
   ): Promise<ScreeningSessionGetWorkspaceContextResult>
+  ensureCurrent(
+    event: IpcSenderValidationEvent,
+    request?: unknown,
+    ...unexpectedArguments: readonly unknown[]
+  ): Promise<ScreeningSessionEnsureCurrentResult>
   create(event: IpcSenderValidationEvent, request: unknown): Promise<ScreeningSessionCreateResult>
   close(event: IpcSenderValidationEvent, request: unknown): Promise<ScreeningSessionCloseResult>
   reopen(event: IpcSenderValidationEvent, request: unknown): Promise<ScreeningSessionReopenResult>
@@ -80,6 +95,7 @@ const reopenRoles = Object.freeze(['LOCAL_ADMIN', 'NURSE'] as const)
 export function createScreeningSessionIpcHandlers({
   navigationPolicy,
   authenticationSessionService,
+  currentScreeningSessionService,
   screeningSessionService,
   screeningSessionWorkspaceContextService,
   logger = console
@@ -114,6 +130,57 @@ export function createScreeningSessionIpcHandlers({
           })
         }
       })
+    },
+
+    async ensureCurrent(
+      event: IpcSenderValidationEvent,
+      request?: unknown,
+      ...unexpectedArguments: readonly unknown[]
+    ): Promise<ScreeningSessionEnsureCurrentResult> {
+      const channel = ipcChannels.screeningSessions.ensureCurrent
+
+      if (!isIpcSenderAllowed(event, navigationPolicy)) {
+        const failure = createScreeningSessionFailure('IPC_FORBIDDEN')
+        logScreeningSessionIpcFailure(logger, channel, 'IPC_FORBIDDEN')
+        return freezeIpcResult(failure) as ScreeningSessionEnsureCurrentResult
+      }
+
+      if (unexpectedArguments.length > 0) {
+        logScreeningSessionIpcFailure(logger, channel, 'VALIDATION_FAILED')
+        return freezeIpcResult(
+          createScreeningSessionFailure('VALIDATION_FAILED')
+        ) as ScreeningSessionEnsureCurrentResult
+      }
+
+      const requestResult = safeParseIpcValue(screeningSessionEnsureCurrentRequestSchema, request)
+
+      if (!requestResult.success) {
+        logScreeningSessionIpcFailure(logger, channel, 'VALIDATION_FAILED')
+        return freezeIpcResult(
+          createScreeningSessionFailure('VALIDATION_FAILED')
+        ) as ScreeningSessionEnsureCurrentResult
+      }
+
+      try {
+        const result = mapEnsureCurrentResult(
+          currentScreeningSessionService.ensureCurrentScreeningSession()
+        )
+        const resultEnvelope = safeParseIpcValue(screeningSessionEnsureCurrentResultSchema, result)
+
+        if (!resultEnvelope.success) {
+          logScreeningSessionIpcFailure(logger, channel, 'INTERNAL_ERROR')
+          return freezeIpcResult(
+            createScreeningSessionFailure('INTERNAL_ERROR')
+          ) as ScreeningSessionEnsureCurrentResult
+        }
+
+        return freezeIpcResult(resultEnvelope.data)
+      } catch (error) {
+        logScreeningSessionIpcFailure(logger, channel, 'INTERNAL_ERROR', error)
+        return freezeIpcResult(
+          createScreeningSessionFailure('INTERNAL_ERROR')
+        ) as ScreeningSessionEnsureCurrentResult
+      }
     },
 
     async create(
@@ -257,6 +324,60 @@ function handleScreeningSessionRequest<TRequest, TResult>({
     logScreeningSessionIpcFailure(logger, channel, 'INTERNAL_ERROR', error)
     return freezeIpcResult(createScreeningSessionFailure('INTERNAL_ERROR')) as TResult
   }
+}
+
+function mapEnsureCurrentResult(
+  result: ReturnType<CurrentScreeningSessionService['ensureCurrentScreeningSession']>
+): ScreeningSessionEnsureCurrentResult {
+  switch (result.status) {
+    case 'RESOLVED':
+    case 'CREATED':
+      return freezeSuccess({
+        status: result.status,
+        session: toPublicCurrentScreeningSession(result.session),
+        location: toPublicCurrentLocation(result.location)
+      }) as ScreeningSessionEnsureCurrentResult
+    case 'AUTHENTICATION_REQUIRED':
+    case 'FORBIDDEN':
+    case 'LOCATION_NOT_CONFIGURED':
+    case 'LOCATION_NOT_FOUND':
+    case 'LOCATION_INACTIVE':
+    case 'SESSION_CLOSED':
+    case 'SESSION_CONFLICT':
+    case 'NO_ACTIVE_PROTOCOL':
+    case 'UNAVAILABLE':
+      return createScreeningSessionEnsureCurrentStatusResult(
+        result.status
+      ) as ScreeningSessionEnsureCurrentResult
+    default:
+      throw new Error('Unexpected current screening-session result.')
+  }
+}
+
+function toPublicCurrentScreeningSession(
+  session: CurrentScreeningSessionSummary
+): PublicCurrentScreeningSession {
+  return Object.freeze({
+    id: session.id,
+    locationId: session.locationId,
+    protocolVersionId: session.protocolVersionId,
+    sessionDate: session.sessionDate,
+    status: session.status,
+    notes: null,
+    openedAt: session.openedAt,
+    closedAt: session.closedAt,
+    createdAt: session.createdAt,
+    rowVersion: session.rowVersion
+  })
+}
+
+function toPublicCurrentLocation(
+  location: CurrentScreeningSessionLocation
+): PublicScreeningSessionWorkspaceLocation {
+  return Object.freeze({
+    id: location.id,
+    name: location.displayName
+  })
 }
 
 function toInternalCreateRequest(

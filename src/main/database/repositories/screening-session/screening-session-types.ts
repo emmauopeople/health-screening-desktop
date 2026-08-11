@@ -102,6 +102,11 @@ export interface ScreeningSessionRepository {
     connection: DatabaseTransactionConnection,
     id: EntityId
   ): ScreeningSessionRecord | null
+  findByLocationAndDateForWrite(
+    connection: DatabaseTransactionConnection,
+    locationId: EntityId,
+    sessionDate: ScreeningSessionDate
+  ): ScreeningSessionRecord | null
   hasOpenForLocationForWrite(
     connection: DatabaseTransactionConnection,
     locationId: EntityId

@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createDevelopmentNavigationPolicy } from '@main/app/navigation-policy'
 import {
+  createCurrentScreeningSessionService,
+  createInstallationLocationService,
   createProductionFirstRunBootstrapService,
   createProductionLocalAuthenticationSessionService,
   createScreeningSessionService,
@@ -17,10 +19,12 @@ import {
 import {
   createAuditEventRepository,
   createDatabaseTransactionExecutor,
+  createInstallationLocationConfigurationRepository,
   createInstallationRepository,
   createLocationRepository,
   createProductionDatabaseMigrationRunner,
   createProtocolVersionRepository,
+  createScreeningEncounterRepository,
   createScreeningSessionOutboxRepository,
   createScreeningSessionRepository,
   type DatabaseTransactionLogger,
@@ -192,6 +196,55 @@ describe('screening-session IPC integration boundary', () => {
     })
   }, 20000)
 
+  it('ensures the current session through trusted IPC and production composition', async () => {
+    await withScreeningSessionIpc(async ({ connection, handlers, initialLocationId }) => {
+      const created = await handlers.ensureCurrent(createAllowedEvent(), undefined)
+      const resolved = await handlers.ensureCurrent(createAllowedEvent(), {})
+
+      expect(created).toMatchObject({
+        ok: true,
+        data: {
+          status: 'CREATED',
+          session: {
+            id: sessionId,
+            locationId: initialLocationId,
+            sessionDate: '2026-07-28',
+            status: 'OPEN',
+            notes: null
+          },
+          location: {
+            id: initialLocationId,
+            name: 'Central Church'
+          }
+        }
+      })
+      expect(resolved).toMatchObject({
+        ok: true,
+        data: {
+          status: 'RESOLVED',
+          session: {
+            id: sessionId,
+            locationId: initialLocationId,
+            sessionDate: '2026-07-28'
+          }
+        }
+      })
+      expect(readTableCount(connection, 'screening_sessions')).toBe(1)
+      expect(readScreeningAuditActions(connection)).toEqual(['SCREENING_SESSION_CREATED'])
+      expect(readScreeningOutboxOperations(connection)).toEqual(['SCREENING_SESSION_CREATED'])
+
+      await expect(
+        handlers.ensureCurrent(createAllowedEvent(), { locationId: activeLocationId })
+      ).resolves.toMatchObject({ ok: false, error: { code: 'VALIDATION_FAILED' } })
+      await expect(
+        handlers.ensureCurrent(createForbiddenEvent(), { locationId: initialLocationId })
+      ).resolves.toMatchObject({ ok: false, error: { code: 'IPC_FORBIDDEN' } })
+      expect(readTableCount(connection, 'screening_sessions')).toBe(1)
+      expect(readScreeningAuditActions(connection)).toEqual(['SCREENING_SESSION_CREATED'])
+      expect(readScreeningOutboxOperations(connection)).toEqual(['SCREENING_SESSION_CREATED'])
+    })
+  }, 20000)
+
   it('performs no writes for untrusted sender or invalid requests', async () => {
     await withScreeningSessionIpc(async ({ connection, handlers, initialLocationId }) => {
       await expect(
@@ -331,45 +384,73 @@ function createHandlers({
 }): ReturnType<typeof createScreeningSessionIpcHandlers> {
   const idQueue = [...ids]
   const timestampQueue = [...timestamps]
+  const transactionExecutor = createDatabaseTransactionExecutor({
+    connection,
+    idGenerator: createEntityIdGenerator(() => {
+      const next = idQueue.shift()
+
+      if (next === undefined) {
+        throw new Error('No screening-session IPC test ID remains.')
+      }
+
+      return next
+    }),
+    clock: createUtcClock(() => {
+      const next = timestampQueue.shift()
+
+      if (next === undefined) {
+        throw new Error('No screening-session IPC test timestamp remains.')
+      }
+
+      return next
+    }),
+    logger: createLogger()
+  })
+  const installationRepository = createInstallationRepository(connection)
+  const locationRepository = createLocationRepository(connection)
+  const screeningSessionRepository = createScreeningSessionRepository(connection)
+  const auditEventRepository = createAuditEventRepository(connection)
   const screeningSessionService = createScreeningSessionService({
-    installationRepository: createInstallationRepository(connection),
-    locationRepository: createLocationRepository(connection),
+    installationRepository,
+    locationRepository,
     protocolVersionRepository: createProtocolVersionRepository(connection),
-    screeningSessionRepository: createScreeningSessionRepository(connection),
+    screeningSessionRepository,
     screeningSessionOutboxRepository: createScreeningSessionOutboxRepository(connection),
-    auditEventRepository: createAuditEventRepository(connection),
-    transactionExecutor: createDatabaseTransactionExecutor({
-      connection,
-      idGenerator: createEntityIdGenerator(() => {
-        const next = idQueue.shift()
-
-        if (next === undefined) {
-          throw new Error('No screening-session IPC test ID remains.')
-        }
-
-        return next
-      }),
-      clock: createUtcClock(() => {
-        const next = timestampQueue.shift()
-
-        if (next === undefined) {
-          throw new Error('No screening-session IPC test timestamp remains.')
-        }
-
-        return next
-      }),
-      logger: createLogger()
-    })
+    auditEventRepository,
+    transactionExecutor
   })
   const workspaceContextService = createScreeningSessionWorkspaceContextService({
     installationRepository: createInstallationRepository(connection),
     locationRepository: createLocationRepository(connection),
     clock: createUtcClock(() => clockTimestamp)
   })
+  const installationLocationService = createInstallationLocationService({
+    authenticationSessionService,
+    installationRepository,
+    installationLocationConfigurationRepository:
+      createInstallationLocationConfigurationRepository(connection),
+    locationRepository,
+    screeningSessionRepository,
+    screeningEncounterRepository: createScreeningEncounterRepository(connection),
+    auditEventRepository,
+    transactionExecutor
+  })
+  const currentScreeningSessionService = createCurrentScreeningSessionService({
+    authenticationSessionService,
+    installationLocationService,
+    installationRepository,
+    locationRepository,
+    protocolVersionRepository: createProtocolVersionRepository(connection),
+    screeningSessionRepository,
+    screeningSessionOutboxRepository: createScreeningSessionOutboxRepository(connection),
+    auditEventRepository,
+    transactionExecutor
+  })
 
   return createScreeningSessionIpcHandlers({
     navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
     authenticationSessionService,
+    currentScreeningSessionService,
     screeningSessionService,
     screeningSessionWorkspaceContextService: workspaceContextService,
     logger: createLogger()

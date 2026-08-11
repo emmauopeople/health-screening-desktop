@@ -357,6 +357,7 @@ function createHarness(options: HarnessOptions = {}): Harness {
     getByIdForWrite: vi.fn(() => createSession()),
     hasOpenForLocationForWrite: vi.fn(() => false),
     hasAnyOpenForWrite: vi.fn(() => false),
+    findByLocationAndDateForWrite: vi.fn(() => null),
     list: vi.fn(
       () =>
         options.listResult ??
