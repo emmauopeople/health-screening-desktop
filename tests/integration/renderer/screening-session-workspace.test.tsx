@@ -248,6 +248,20 @@ describe('screening patient entry workspace', () => {
     expect(text(mounted)).toContain('Food')
     expect(text(mounted)).toContain('OTC')
     expect(text(mounted)).toContain('Review')
+    expect(vitalsTableHeaders(mounted)).toEqual([
+      'Reading',
+      'Systolic',
+      'Diastolic',
+      'Pulse',
+      'Arm',
+      'Position',
+      'Time'
+    ])
+    expect(text(mounted)).toContain('Blood pressure readings')
+    expect(text(mounted)).toContain('Weight (kg)')
+    expect(text(mounted)).toContain('Waist (optional)')
+    expect(text(mounted)).toContain('Notes')
+    expect(text(mounted)).not.toContain('Additional current measurements')
     expect(text(mounted)).toContain('Screening guidance—not a diagnosis.')
     expect(text(mounted)).toContain('Screening history unavailable.')
     expect(text(mounted)).not.toContain('151 / 93')
@@ -917,6 +931,12 @@ function screeningSearchInput(mounted: MountedWorkspace): HTMLInputElement {
 function tableHeaders(mounted: MountedWorkspace): string[] {
   return Array.from(
     mounted.container.querySelectorAll<HTMLTableCellElement>('.screening-patient-table th')
+  ).map((header) => header.textContent?.trim() ?? '')
+}
+
+function vitalsTableHeaders(mounted: MountedWorkspace): string[] {
+  return Array.from(
+    mounted.container.querySelectorAll<HTMLTableCellElement>('.screening-vitals-table thead th')
   ).map((header) => header.textContent?.trim() ?? '')
 }
 

@@ -955,16 +955,52 @@ function CurrentEncounterPanel({
           <span>{formatEncounterStatus(tab.encounter.status)}</span>
         </div>
 
-        <div className="screening-vitals-placeholder" aria-label="Vitals data unavailable">
-          <div>
-            <span>Blood pressure readings</span>
-            <strong>—</strong>
+        <section className="screening-vitals-entry" aria-label="Vitals data unavailable">
+          <h4>Blood pressure readings</h4>
+          <div className="screening-vitals-table-scroll">
+            <table className="screening-vitals-table">
+              <thead>
+                <tr>
+                  <th scope="col">Reading</th>
+                  <th scope="col">Systolic</th>
+                  <th scope="col">Diastolic</th>
+                  <th scope="col">Pulse</th>
+                  <th scope="col">Arm</th>
+                  <th scope="col">Position</th>
+                  <th scope="col">Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[1, 2, 3].map((reading) => (
+                  <tr key={reading}>
+                    <th scope="row">{reading}</th>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>—</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div>
-            <span>Additional current measurements</span>
-            <strong>—</strong>
+
+          <div className="screening-vitals-fields" aria-label="Additional vitals fields">
+            <label>
+              <span>Weight (kg)</span>
+              <input type="text" value="" placeholder="—" disabled readOnly />
+            </label>
+            <label>
+              <span>Waist (optional)</span>
+              <input type="text" value="" placeholder="—" disabled readOnly />
+            </label>
+            <label>
+              <span>Notes</span>
+              <textarea value="" placeholder="—" disabled readOnly />
+            </label>
           </div>
-        </div>
+        </section>
 
         <div className="screening-guidance-note" role="note">
           <strong>Screening guidance—not a diagnosis.</strong>
