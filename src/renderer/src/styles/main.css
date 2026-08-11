@@ -1994,7 +1994,7 @@ h1 {
 .screening-vitals-table th,
 .screening-vitals-table td {
   border: 1px solid var(--shell-border);
-  padding: 9px 10px;
+  padding: 7px 8px;
   text-align: left;
   font-size: 0.84rem;
   line-height: 1.25;
@@ -2009,6 +2009,24 @@ h1 {
 .screening-vitals-table tbody tr:nth-child(even) th,
 .screening-vitals-table tbody tr:nth-child(even) td {
   background: #f8fbfd;
+}
+
+.screening-vitals-table input,
+.screening-vitals-table select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--shell-border);
+  border-radius: 5px;
+  padding: 6px 8px;
+  color: var(--shell-text);
+  background: #ffffff;
+  font: inherit;
+}
+
+.screening-vitals-table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .screening-vitals-fields {
@@ -2034,8 +2052,8 @@ h1 {
   border: 1px solid var(--shell-border);
   border-radius: 6px;
   padding: 8px 10px;
-  color: var(--shell-secondary-text);
-  background: #f8fbfd;
+  color: var(--shell-text);
+  background: #ffffff;
   font: inherit;
   resize: vertical;
 }

@@ -77,6 +77,7 @@ type PatientSearchState =
 export interface PatientScreeningTab {
   readonly patient: PublicPatientSummary
   readonly encounter: PublicScreeningEncounterStartSummary
+  readonly vitalsDraft: VitalsDraft
 }
 
 type WorkspaceMessage = {
@@ -85,6 +86,28 @@ type WorkspaceMessage = {
 }
 
 type ScreeningWorkspaceTab = 'PATIENTS' | 'NEW_SCREENING'
+type ScreeningWorkflowStep = 'VITALS' | 'LIFESTYLE'
+type VitalsMeasurementSite = 'RIGHT_ARM' | 'LEFT_ARM' | 'LEFT_LEG' | 'RIGHT_LEG'
+type VitalsPosition = 'LYING' | 'STANDING' | 'SITTING'
+
+interface VitalsReadingDraft {
+  readonly id: string
+  readonly systolic: string
+  readonly diastolic: string
+  readonly pulse: string
+  readonly site: VitalsMeasurementSite | ''
+  readonly position: VitalsPosition | ''
+  readonly time: string
+}
+
+interface VitalsDraft {
+  readonly activeStep: ScreeningWorkflowStep
+  readonly readings: readonly VitalsReadingDraft[]
+  readonly weightKg: string
+  readonly waist: string
+  readonly notes: string
+  readonly saved: boolean
+}
 
 const initialSessionState: CurrentSessionState = Object.freeze({ status: 'LOADING' })
 const initialPatientSearchState: PatientSearchState = Object.freeze({ status: 'IDLE' })
@@ -94,6 +117,17 @@ const screeningSectionLabels = Object.freeze([
   'Food',
   'OTC',
   'Review'
+] as const)
+const vitalsSiteOptions = Object.freeze([
+  { value: 'RIGHT_ARM', label: 'Right arm' },
+  { value: 'LEFT_ARM', label: 'Left arm' },
+  { value: 'LEFT_LEG', label: 'Left leg' },
+  { value: 'RIGHT_LEG', label: 'Right leg' }
+] as const)
+const vitalsPositionOptions = Object.freeze([
+  { value: 'LYING', label: 'Lying' },
+  { value: 'STANDING', label: 'Standing' },
+  { value: 'SITTING', label: 'Sitting' }
 ] as const)
 
 export function ScreeningSessionWorkspace({
@@ -401,7 +435,7 @@ export function ScreeningSessionWorkspace({
               return currentTabs
             }
 
-            return [...currentTabs, { patient, encounter }]
+            return [...currentTabs, { patient, encounter, vitalsDraft: createInitialVitalsDraft() }]
           })
           onActivePatientIdChange(patient.id)
           selectWorkspaceTab('NEW_SCREENING')
@@ -454,6 +488,17 @@ export function ScreeningSessionWorkspace({
       setMessage(null)
     },
     [onActivePatientIdChange, onOpenTabsChange]
+  )
+
+  const updateVitalsDraft = useCallback(
+    (patientId: string, update: (draft: VitalsDraft) => VitalsDraft): void => {
+      onOpenTabsChange((currentTabs) =>
+        currentTabs.map((tab) =>
+          tab.patient.id === patientId ? { ...tab, vitalsDraft: update(tab.vitalsDraft) } : tab
+        )
+      )
+    },
+    [onOpenTabsChange]
   )
 
   const retrySession = useCallback((): void => {
@@ -535,6 +580,7 @@ export function ScreeningSessionWorkspace({
               onActivateTab={onActivePatientIdChange}
               onCloseTab={closePatientTab}
               onOpenPatients={() => selectWorkspaceTab('PATIENTS')}
+              onUpdateVitalsDraft={updateVitalsDraft}
             />
           )}
         </>
@@ -762,7 +808,8 @@ function NewScreeningWorkspace({
   session,
   onActivateTab,
   onCloseTab,
-  onOpenPatients
+  onOpenPatients,
+  onUpdateVitalsDraft
 }: {
   readonly activeTab: PatientScreeningTab | null
   readonly location: PublicScreeningSessionWorkspaceLocation
@@ -771,6 +818,7 @@ function NewScreeningWorkspace({
   onActivateTab(patientId: string): void
   onCloseTab(patientId: string): void
   onOpenPatients(): void
+  onUpdateVitalsDraft(patientId: string, update: (draft: VitalsDraft) => VitalsDraft): void
 }): React.JSX.Element {
   return (
     <section className="screening-new-screening-workspace" aria-label="New Screening workspace">
@@ -792,7 +840,12 @@ function NewScreeningWorkspace({
       ) : (
         <div className="screening-split-workspace">
           <PatientContextPanel tab={activeTab} />
-          <CurrentEncounterPanel location={location} session={session} tab={activeTab} />
+          <CurrentEncounterPanel
+            location={location}
+            session={session}
+            tab={activeTab}
+            onUpdateVitalsDraft={(update) => onUpdateVitalsDraft(activeTab.patient.id, update)}
+          />
         </div>
       )}
     </section>
@@ -920,13 +973,16 @@ function PatientContextPanel({ tab }: { readonly tab: PatientScreeningTab }): Re
 function CurrentEncounterPanel({
   location,
   session,
-  tab
+  tab,
+  onUpdateVitalsDraft
 }: {
   readonly location: PublicScreeningSessionWorkspaceLocation
   readonly session: PublicCurrentScreeningSession
   readonly tab: PatientScreeningTab
+  onUpdateVitalsDraft(update: (draft: VitalsDraft) => VitalsDraft): void
 }): React.JSX.Element {
   const displayName = formatPatientName(tab.patient)
+  const activeStepIndex = getActiveStepIndex(tab.vitalsDraft.activeStep)
 
   return (
     <section
@@ -942,82 +998,368 @@ function CurrentEncounterPanel({
 
       <ol className="screening-stepper" aria-label="Screening workflow steps">
         {screeningSectionLabels.map((label, index) => (
-          <li key={label} data-active={index === 0 ? 'true' : 'false'}>
+          <li key={label} data-active={index === activeStepIndex ? 'true' : 'false'}>
             <span>{index + 1}</span>
             <strong>{label}</strong>
           </li>
         ))}
       </ol>
 
-      <section className="screening-current-step" aria-labelledby="screening-vitals-step-title">
-        <div className="screening-current-step-header">
-          <h3 id="screening-vitals-step-title">Vitals</h3>
-          <span>{formatEncounterStatus(tab.encounter.status)}</span>
-        </div>
-
-        <section className="screening-vitals-entry" aria-label="Vitals data unavailable">
-          <h4>Blood pressure readings</h4>
-          <div className="screening-vitals-table-scroll">
-            <table className="screening-vitals-table">
-              <thead>
-                <tr>
-                  <th scope="col">Reading</th>
-                  <th scope="col">Systolic</th>
-                  <th scope="col">Diastolic</th>
-                  <th scope="col">Pulse</th>
-                  <th scope="col">Arm</th>
-                  <th scope="col">Position</th>
-                  <th scope="col">Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[1, 2, 3].map((reading) => (
-                  <tr key={reading}>
-                    <th scope="row">{reading}</th>
-                    <td>—</td>
-                    <td>—</td>
-                    <td>—</td>
-                    <td>—</td>
-                    <td>—</td>
-                    <td>—</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="screening-vitals-fields" aria-label="Additional vitals fields">
-            <label>
-              <span>Weight (kg)</span>
-              <input type="text" value="" placeholder="—" disabled readOnly />
-            </label>
-            <label>
-              <span>Waist (optional)</span>
-              <input type="text" value="" placeholder="—" disabled readOnly />
-            </label>
-            <label>
-              <span>Notes</span>
-              <textarea value="" placeholder="—" disabled readOnly />
-            </label>
-          </div>
-        </section>
-
-        <div className="screening-guidance-note" role="note">
-          <strong>Screening guidance—not a diagnosis.</strong>
-          <span>Current clinical fields unavailable.</span>
-        </div>
-
-        <div className="screening-encounter-actions">
-          <button className="button button-secondary" type="button" disabled>
-            Previous
-          </button>
-          <button className="button button-primary" type="button" disabled>
-            Continue to lifestyle
-          </button>
-        </div>
-      </section>
+      {tab.vitalsDraft.activeStep === 'VITALS' ? (
+        <VitalsStep
+          draft={tab.vitalsDraft}
+          encounterStatus={tab.encounter.status}
+          onUpdateDraft={onUpdateVitalsDraft}
+        />
+      ) : (
+        <LifestyleStep
+          encounterStatus={tab.encounter.status}
+          onBackToVitals={() => {
+            onUpdateVitalsDraft((draft) => ({ ...draft, activeStep: 'VITALS' }))
+          }}
+        />
+      )}
     </section>
   )
+}
+
+function VitalsStep({
+  draft,
+  encounterStatus,
+  onUpdateDraft
+}: {
+  readonly draft: VitalsDraft
+  readonly encounterStatus: PublicScreeningEncounterStartSummary['status']
+  onUpdateDraft(update: (draft: VitalsDraft) => VitalsDraft): void
+}): React.JSX.Element {
+  const vitalsComplete = isVitalsDraftComplete(draft)
+
+  return (
+    <section className="screening-current-step" aria-labelledby="screening-vitals-step-title">
+      <div className="screening-current-step-header">
+        <h3 id="screening-vitals-step-title">Vitals</h3>
+        <span>{formatEncounterStatus(encounterStatus)}</span>
+      </div>
+
+      <section className="screening-vitals-entry" aria-label="Vitals collection">
+        <h4>Blood pressure readings</h4>
+        <div className="screening-vitals-table-scroll">
+          <table className="screening-vitals-table">
+            <thead>
+              <tr>
+                <th scope="col">Reading</th>
+                <th scope="col">Systolic</th>
+                <th scope="col">Diastolic</th>
+                <th scope="col">Pulse</th>
+                <th scope="col">Site</th>
+                <th scope="col">Position</th>
+                <th scope="col">Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {draft.readings.map((reading, index) => (
+                <tr key={reading.id}>
+                  <th scope="row">{index + 1}</th>
+                  <td>
+                    <input
+                      aria-label={`Reading ${index + 1} systolic`}
+                      inputMode="numeric"
+                      type="number"
+                      min="0"
+                      value={reading.systolic}
+                      onChange={(event) => {
+                        onUpdateDraft((currentDraft) =>
+                          updateVitalsReading(currentDraft, reading.id, {
+                            systolic: event.currentTarget.value
+                          })
+                        )
+                      }}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      aria-label={`Reading ${index + 1} diastolic`}
+                      inputMode="numeric"
+                      type="number"
+                      min="0"
+                      value={reading.diastolic}
+                      onChange={(event) => {
+                        onUpdateDraft((currentDraft) =>
+                          updateVitalsReading(currentDraft, reading.id, {
+                            diastolic: event.currentTarget.value
+                          })
+                        )
+                      }}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      aria-label={`Reading ${index + 1} pulse`}
+                      inputMode="numeric"
+                      type="number"
+                      min="0"
+                      value={reading.pulse}
+                      onChange={(event) => {
+                        onUpdateDraft((currentDraft) =>
+                          updateVitalsReading(currentDraft, reading.id, {
+                            pulse: event.currentTarget.value
+                          })
+                        )
+                      }}
+                    />
+                  </td>
+                  <td>
+                    <select
+                      aria-label={`Reading ${index + 1} site`}
+                      value={reading.site}
+                      onChange={(event) => {
+                        onUpdateDraft((currentDraft) =>
+                          updateVitalsReading(currentDraft, reading.id, {
+                            site: event.currentTarget.value as VitalsReadingDraft['site']
+                          })
+                        )
+                      }}
+                    >
+                      <option value="">Select</option>
+                      {vitalsSiteOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      aria-label={`Reading ${index + 1} position`}
+                      value={reading.position}
+                      onChange={(event) => {
+                        onUpdateDraft((currentDraft) =>
+                          updateVitalsReading(currentDraft, reading.id, {
+                            position: event.currentTarget.value as VitalsReadingDraft['position']
+                          })
+                        )
+                      }}
+                    >
+                      <option value="">Select</option>
+                      {vitalsPositionOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <input
+                      aria-label={`Reading ${index + 1} time`}
+                      type="time"
+                      value={reading.time}
+                      onChange={(event) => {
+                        onUpdateDraft((currentDraft) =>
+                          updateVitalsReading(currentDraft, reading.id, {
+                            time: event.currentTarget.value
+                          })
+                        )
+                      }}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="screening-vitals-table-actions">
+          <button
+            className="button button-secondary"
+            type="button"
+            onClick={() => {
+              onUpdateDraft(addVitalsReading)
+            }}
+          >
+            Add reading
+          </button>
+          <button
+            className="button button-secondary"
+            type="button"
+            disabled={!vitalsComplete}
+            onClick={() => {
+              onUpdateDraft((currentDraft) => ({ ...currentDraft, saved: true }))
+            }}
+          >
+            Save draft
+          </button>
+        </div>
+
+        <div className="screening-vitals-fields" aria-label="Additional vitals fields">
+          <label>
+            <span>Weight (kg)</span>
+            <input
+              aria-label="Weight in kilograms"
+              type="number"
+              min="0"
+              value={draft.weightKg}
+              onChange={(event) => {
+                onUpdateDraft((currentDraft) => ({
+                  ...currentDraft,
+                  weightKg: event.currentTarget.value,
+                  saved: false
+                }))
+              }}
+            />
+          </label>
+          <label>
+            <span>Waist (optional)</span>
+            <input
+              aria-label="Waist optional"
+              type="number"
+              min="0"
+              value={draft.waist}
+              onChange={(event) => {
+                onUpdateDraft((currentDraft) => ({
+                  ...currentDraft,
+                  waist: event.currentTarget.value,
+                  saved: false
+                }))
+              }}
+            />
+          </label>
+          <label>
+            <span>Notes</span>
+            <textarea
+              aria-label="Vitals notes"
+              value={draft.notes}
+              onChange={(event) => {
+                onUpdateDraft((currentDraft) => ({
+                  ...currentDraft,
+                  notes: event.currentTarget.value,
+                  saved: false
+                }))
+              }}
+            />
+          </label>
+        </div>
+      </section>
+
+      <div className="screening-guidance-note" role="note">
+        <strong>Screening guidance—not a diagnosis.</strong>
+      </div>
+
+      <div className="screening-encounter-actions">
+        <button className="button button-secondary" type="button" disabled>
+          Previous
+        </button>
+        <button
+          className="button button-primary"
+          type="button"
+          disabled={!vitalsComplete}
+          onClick={() => {
+            onUpdateDraft((currentDraft) => ({
+              ...currentDraft,
+              activeStep: 'LIFESTYLE',
+              saved: currentDraft.saved || vitalsComplete
+            }))
+          }}
+        >
+          Continue to lifestyle
+        </button>
+      </div>
+    </section>
+  )
+}
+
+function LifestyleStep({
+  encounterStatus,
+  onBackToVitals
+}: {
+  readonly encounterStatus: PublicScreeningEncounterStartSummary['status']
+  onBackToVitals(): void
+}): React.JSX.Element {
+  return (
+    <section className="screening-current-step" aria-labelledby="screening-lifestyle-step-title">
+      <div className="screening-current-step-header">
+        <h3 id="screening-lifestyle-step-title">Lifestyle</h3>
+        <span>{formatEncounterStatus(encounterStatus)}</span>
+      </div>
+
+      <div className="screening-empty-state screening-compact-empty">
+        Lifestyle collection is not available in this build.
+      </div>
+
+      <div className="screening-encounter-actions">
+        <button className="button button-secondary" type="button" onClick={onBackToVitals}>
+          Previous
+        </button>
+        <button className="button button-primary" type="button" disabled>
+          Continue to food
+        </button>
+      </div>
+    </section>
+  )
+}
+
+function createInitialVitalsDraft(): VitalsDraft {
+  return {
+    activeStep: 'VITALS',
+    readings: [createVitalsReadingDraft(1)],
+    weightKg: '',
+    waist: '',
+    notes: '',
+    saved: false
+  }
+}
+
+function createVitalsReadingDraft(readingNumber: number): VitalsReadingDraft {
+  return {
+    id: `reading-${readingNumber}`,
+    systolic: '',
+    diastolic: '',
+    pulse: '',
+    site: '',
+    position: '',
+    time: ''
+  }
+}
+
+function addVitalsReading(draft: VitalsDraft): VitalsDraft {
+  return {
+    ...draft,
+    readings: [...draft.readings, createVitalsReadingDraft(draft.readings.length + 1)],
+    saved: false
+  }
+}
+
+function updateVitalsReading(
+  draft: VitalsDraft,
+  readingId: string,
+  update: Partial<Omit<VitalsReadingDraft, 'id'>>
+): VitalsDraft {
+  return {
+    ...draft,
+    readings: draft.readings.map((reading) =>
+      reading.id === readingId ? { ...reading, ...update } : reading
+    ),
+    saved: false
+  }
+}
+
+function isVitalsDraftComplete(draft: VitalsDraft): boolean {
+  return (
+    draft.readings.length > 0 &&
+    draft.weightKg.trim().length > 0 &&
+    draft.readings.every(
+      (reading) =>
+        reading.systolic.trim().length > 0 &&
+        reading.diastolic.trim().length > 0 &&
+        reading.pulse.trim().length > 0 &&
+        reading.site !== '' &&
+        reading.position !== '' &&
+        reading.time.trim().length > 0
+    )
+  )
+}
+
+function getActiveStepIndex(step: ScreeningWorkflowStep): number {
+  return step === 'LIFESTYLE' ? 1 : 0
 }
 
 function getEnsureCurrentBlockedState(

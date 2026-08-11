@@ -253,7 +253,7 @@ describe('screening patient entry workspace', () => {
       'Systolic',
       'Diastolic',
       'Pulse',
-      'Arm',
+      'Site',
       'Position',
       'Time'
     ])
@@ -266,6 +266,61 @@ describe('screening patient entry workspace', () => {
     expect(text(mounted)).toContain('Screening history unavailable.')
     expect(text(mounted)).not.toContain('151 / 93')
     expect(text(mounted)).not.toContain('158')
+
+    await mounted.unmount()
+  })
+
+  it('collects vitals in an editable readings table before moving to Lifestyle', async () => {
+    const api = createApi()
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+
+    expect(vitalsRows(mounted)).toHaveLength(1)
+    expect(buttonByText(mounted, 'Save draft').disabled).toBe(true)
+    expect(buttonByText(mounted, 'Continue to lifestyle').disabled).toBe(true)
+    expect(selectOptions(selectByLabel(mounted, 'Reading 1 site'))).toEqual([
+      'Select',
+      'Right arm',
+      'Left arm',
+      'Left leg',
+      'Right leg'
+    ])
+    expect(selectOptions(selectByLabel(mounted, 'Reading 1 position'))).toEqual([
+      'Select',
+      'Lying',
+      'Standing',
+      'Sitting'
+    ])
+
+    await clickButton(mounted, 'Add reading')
+
+    expect(vitalsRows(mounted)).toHaveLength(2)
+
+    await changeInput(inputByLabel(mounted, 'Reading 1 systolic'), '150')
+    await changeInput(inputByLabel(mounted, 'Reading 1 diastolic'), '92')
+    await changeInput(inputByLabel(mounted, 'Reading 1 pulse'), '80')
+    await changeSelect(selectByLabel(mounted, 'Reading 1 site'), 'RIGHT_ARM')
+    await changeSelect(selectByLabel(mounted, 'Reading 1 position'), 'SITTING')
+    await changeInput(inputByLabel(mounted, 'Reading 1 time'), '10:12')
+    await changeInput(inputByLabel(mounted, 'Reading 2 systolic'), '146')
+    await changeInput(inputByLabel(mounted, 'Reading 2 diastolic'), '88')
+    await changeInput(inputByLabel(mounted, 'Reading 2 pulse'), '78')
+    await changeSelect(selectByLabel(mounted, 'Reading 2 site'), 'LEFT_ARM')
+    await changeSelect(selectByLabel(mounted, 'Reading 2 position'), 'STANDING')
+    await changeInput(inputByLabel(mounted, 'Reading 2 time'), '10:18')
+    await changeInput(inputByLabel(mounted, 'Weight in kilograms'), '80.5')
+    await changeInput(inputByLabel(mounted, 'Waist optional'), '91')
+    await changeTextarea(textareaByLabel(mounted, 'Vitals notes'), 'Patient rested before reading.')
+
+    expect(buttonByText(mounted, 'Save draft').disabled).toBe(false)
+    expect(buttonByText(mounted, 'Continue to lifestyle').disabled).toBe(false)
+
+    await clickButton(mounted, 'Save draft')
+    await clickButton(mounted, 'Continue to lifestyle')
+
+    expect(text(mounted)).toContain('Lifestyle')
+    expect(text(mounted)).toContain('Lifestyle collection is not available in this build.')
 
     await mounted.unmount()
   })
@@ -893,6 +948,26 @@ async function changeInput(input: HTMLInputElement, value: string): Promise<void
   await flushReact()
 }
 
+async function changeTextarea(textarea: HTMLTextAreaElement, value: string): Promise<void> {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+    setter?.call(textarea, value)
+    textarea.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }))
+    await flushPromises()
+  })
+  await flushReact()
+}
+
+async function changeSelect(select: HTMLSelectElement, value: string): Promise<void> {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+    setter?.call(select, value)
+    select.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }))
+    await flushPromises()
+  })
+  await flushReact()
+}
+
 function rowByName(mounted: MountedWorkspace, name: string): HTMLTableRowElement {
   const row = Array.from(
     mounted.container.querySelectorAll<HTMLTableRowElement>('.screening-patient-row')
@@ -916,6 +991,52 @@ function buttonByText(mounted: MountedWorkspace, label: string): HTMLButtonEleme
   }
 
   return button
+}
+
+function inputByLabel(mounted: MountedWorkspace, label: string): HTMLInputElement {
+  const input = Array.from(mounted.container.querySelectorAll<HTMLInputElement>('input')).find(
+    (candidate) => candidate.getAttribute('aria-label') === label
+  )
+
+  if (input === undefined) {
+    throw new Error(`Expected input ${label} to be rendered.`)
+  }
+
+  return input
+}
+
+function selectByLabel(mounted: MountedWorkspace, label: string): HTMLSelectElement {
+  const select = Array.from(mounted.container.querySelectorAll<HTMLSelectElement>('select')).find(
+    (candidate) => candidate.getAttribute('aria-label') === label
+  )
+
+  if (select === undefined) {
+    throw new Error(`Expected select ${label} to be rendered.`)
+  }
+
+  return select
+}
+
+function textareaByLabel(mounted: MountedWorkspace, label: string): HTMLTextAreaElement {
+  const textarea = Array.from(
+    mounted.container.querySelectorAll<HTMLTextAreaElement>('textarea')
+  ).find((candidate) => candidate.getAttribute('aria-label') === label)
+
+  if (textarea === undefined) {
+    throw new Error(`Expected textarea ${label} to be rendered.`)
+  }
+
+  return textarea
+}
+
+function selectOptions(select: HTMLSelectElement): string[] {
+  return Array.from(select.options).map((option) => option.textContent?.trim() ?? '')
+}
+
+function vitalsRows(mounted: MountedWorkspace): HTMLTableRowElement[] {
+  return Array.from(
+    mounted.container.querySelectorAll<HTMLTableRowElement>('.screening-vitals-table tbody tr')
+  )
 }
 
 function screeningSearchInput(mounted: MountedWorkspace): HTMLInputElement {
