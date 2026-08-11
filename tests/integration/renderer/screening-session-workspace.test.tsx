@@ -7,30 +7,40 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   createIpcSuccess,
+  createPatientFailure,
+  createScreeningEncounterIpcFailure,
+  createScreeningEncounterStartStatusResult,
   createScreeningSessionFailure,
   type HealthScreeningApi,
   type LocalUserRole,
   type PublicCurrentScreeningSession,
-  type PublicScreeningSession,
+  type PublicPatientSummary,
+  type PublicScreeningEncounterStartSummary,
   type ScreeningSessionErrorCode
 } from '@shared/ipc'
 import { ScreeningSessionWorkspace } from '../../../src/renderer/src/app/screening/ScreeningSessionWorkspace'
 import type { WorkspaceNavigationGuard } from '../../../src/renderer/src/app/shell/application-shell-types'
 
-type MockedScreeningSessionApi = {
-  getWorkspaceContext: ReturnType<
-    typeof vi.fn<HealthScreeningApi['screeningSessions']['getWorkspaceContext']>
-  >
-  ensureCurrent: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['ensureCurrent']>>
-  create: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['create']>>
-  close: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['close']>>
-  reopen: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['reopen']>>
-  getById: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['getById']>>
-  list: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['list']>>
-}
-
 type MockedHealthScreeningApi = HealthScreeningApi & {
-  screeningSessions: MockedScreeningSessionApi
+  patient: {
+    search: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['search']>>
+  } & HealthScreeningApi['patient']
+  screeningEncounters: {
+    start: ReturnType<typeof vi.fn<HealthScreeningApi['screeningEncounters']['start']>>
+  } & HealthScreeningApi['screeningEncounters']
+  screeningSessions: {
+    getWorkspaceContext: ReturnType<
+      typeof vi.fn<HealthScreeningApi['screeningSessions']['getWorkspaceContext']>
+    >
+    ensureCurrent: ReturnType<
+      typeof vi.fn<HealthScreeningApi['screeningSessions']['ensureCurrent']>
+    >
+    create: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['create']>>
+    close: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['close']>>
+    reopen: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['reopen']>>
+    getById: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['getById']>>
+    list: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['list']>>
+  } & HealthScreeningApi['screeningSessions']
 }
 
 interface MountedWorkspace {
@@ -44,13 +54,18 @@ interface MountedWorkspace {
 }
 
 const locationId = '77777777-7777-4777-8777-777777777777'
-const secondLocationId = '88888888-8888-4888-8888-888888888888'
 const sessionId = '99999999-9999-4999-8999-999999999999'
 const protocolVersionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-const deploymentLocalDate = '2026-08-06'
+const encounterId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+const patientId = '11111111-1111-4111-8111-111111111111'
+const secondPatientId = '22222222-2222-4222-8222-222222222222'
+const thirdPatientId = '33333333-3333-4333-8333-333333333333'
+const fourthPatientId = '44444444-4444-4444-8444-444444444444'
+const fifthPatientId = '55555555-5555-4555-8555-555555555555'
+const operationalDate = '2026-08-06'
 const baseTimestamp = '2026-08-06T08:15:00.000Z'
 
-describe('screening session workspace', () => {
+describe('screening patient entry workspace', () => {
   beforeEach(() => {
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   })
@@ -61,49 +76,23 @@ describe('screening session workspace', () => {
     document.body.innerHTML = ''
   })
 
-  it('ensures the current session on entry without using renderer location authority', async () => {
-    const api = createApi()
-    const mounted = await mountWorkspace({ api })
-
-    expect(api.screeningSessions.ensureCurrent).toHaveBeenCalledOnce()
-    expect(api.screeningSessions.getWorkspaceContext).not.toHaveBeenCalled()
-    expect(api.screeningSessions.create).not.toHaveBeenCalled()
-    expect(api.screeningSessions.list).toHaveBeenCalledWith({
-      locationId,
-      status: null,
-      dateFrom: deploymentLocalDate,
-      dateTo: deploymentLocalDate,
-      page: 1,
-      pageSize: 25
-    })
-    expect(text(mounted)).toContain("Today's Screening Session")
-    expect(text(mounted)).toContain(deploymentLocalDate)
-    expect(text(mounted)).toContain('Configured location')
-    expect(text(mounted)).toContain('Bastos Hall')
-    expect(text(mounted)).toContain("Today's session is open.")
-    expect(text(mounted)).toContain('Selected for this workspace')
-    expect(mounted.container.querySelector('select[aria-label="Active screening location"]')).toBe(
-      null
-    )
-    expect(mounted.getRegisteredGuard()?.('PATIENTS_PATIENT_SEARCH')).toBe(true)
-
-    await mounted.unmount()
-  })
-
-  it('uses concise loading wording while ensure-current is pending', async () => {
-    const contextResult =
+  it('gates the Patients workspace on the trusted current screening session', async () => {
+    const ensureResult =
       createDeferred<
         Awaited<ReturnType<HealthScreeningApi['screeningSessions']['ensureCurrent']>>
       >()
     const api = createApi()
-    api.screeningSessions.ensureCurrent.mockReturnValueOnce(contextResult.promise)
+    api.screeningSessions.ensureCurrent.mockReturnValueOnce(ensureResult.promise)
 
     const mounted = await mountWorkspace({ api })
 
-    expect(text(mounted)).toContain("Resolving today's screening session...")
-    expect(text(mounted)).not.toContain('trusted screening-session context')
+    expect(api.screeningSessions.ensureCurrent).toHaveBeenCalledOnce()
+    expect(api.screeningSessions.ensureCurrent).toHaveBeenCalledWith()
+    expect(text(mounted)).toContain('Resolving screening session...')
+    expect(api.patient.search).not.toHaveBeenCalled()
+    expect(mounted.container.querySelector('#screening-patient-search')).toBeNull()
 
-    contextResult.resolve(
+    ensureResult.resolve(
       createIpcSuccess({
         status: 'RESOLVED',
         session: publicCurrentSession(),
@@ -112,586 +101,312 @@ describe('screening session workspace', () => {
     )
     await flushReact()
 
-    await mounted.unmount()
-  })
-
-  it('uses only the location returned by the ensure-current boundary', async () => {
-    const api = createApi({
-      activeLocations: [
-        { id: locationId, name: 'Bastos Hall' },
-        { id: secondLocationId, name: 'Mendankwe Clinic' }
-      ]
-    })
-    const mounted = await mountWorkspace({ api })
-
-    expect(api.screeningSessions.list).toHaveBeenCalledWith({
-      locationId,
-      status: null,
-      dateFrom: deploymentLocalDate,
-      dateTo: deploymentLocalDate,
-      page: 1,
-      pageSize: 25
-    })
-    expect(text(mounted)).toContain('Bastos Hall')
-    expect(text(mounted)).not.toContain('Mendankwe Clinic')
+    expectWorkspaceHeading(mounted, 'Patients')
+    expect(api.patient.search).toHaveBeenCalledWith({ query: '', page: 1, pageSize: 25 })
+    expect(text(mounted)).toContain('Ada Lovelace')
 
     await mounted.unmount()
   })
 
-  it('selects a newly created session returned by ensure-current without manual create IPC', async () => {
+  it('renders the approved Patients table without session controls or internal ids', async () => {
     const api = createApi()
-    const created = publicCurrentSession({ rowVersion: 1 })
-    api.screeningSessions.ensureCurrent.mockResolvedValueOnce(
-      createIpcSuccess({
-        status: 'CREATED',
-        session: created,
-        location: { id: locationId, name: 'Bastos Hall' }
-      })
-    )
-    api.screeningSessions.list.mockResolvedValue(
-      createIpcSuccess({ status: 'LISTED', items: [created], page: 1, pageSize: 25, total: 1 })
-    )
-
     const mounted = await mountWorkspace({ api })
 
-    expect(api.screeningSessions.ensureCurrent).toHaveBeenCalledOnce()
+    expect(tableHeaders(mounted)).toEqual(['Name', 'Sex', 'Age', 'Last Screening', 'Follow-up'])
+    expect(text(mounted)).toContain('Search patients')
+    expect(text(mounted)).toContain('Female')
+    expect(text(mounted)).toContain('36')
+    expect(text(mounted)).toContain('No previous screenings')
+    expect(text(mounted)).not.toContain('Action')
+    expect(text(mounted)).not.toContain('Select')
+    expect(text(mounted)).not.toContain('Close session')
+    expect(text(mounted)).not.toContain('Reopen session')
+    expect(text(mounted)).not.toContain(sessionId)
+    expect(api.screeningSessions.getWorkspaceContext).not.toHaveBeenCalled()
     expect(api.screeningSessions.create).not.toHaveBeenCalled()
-    expect(text(mounted)).toContain("Today's screening session is open.")
-    expect(text(mounted)).toContain('Selected for this workspace')
-    expect(text(mounted)).toContain("Today's session is open.")
+    expect(api.screeningSessions.list).not.toHaveBeenCalled()
 
     await mounted.unmount()
   })
 
-  it('shows controlled ensure-current failures and avoids list or create effects', async () => {
+  it('shows controlled session failures and supports safe retry after unavailable', async () => {
     const api = createApi()
-    api.screeningSessions.ensureCurrent.mockResolvedValueOnce(
-      createIpcSuccess({ status: 'LOCATION_NOT_CONFIGURED' })
-    )
+    api.screeningSessions.ensureCurrent
+      .mockResolvedValueOnce(createIpcSuccess({ status: 'LOCATION_NOT_CONFIGURED' }))
+      .mockResolvedValueOnce(createIpcSuccess({ status: 'UNAVAILABLE' }))
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          status: 'RESOLVED',
+          session: publicCurrentSession(),
+          location: { id: locationId, name: 'Bastos Hall' }
+        })
+      )
 
     const mounted = await mountWorkspace({ api })
 
     expect(text(mounted)).toContain(
       'This installation does not have a configured screening location.'
     )
-    expect(api.screeningSessions.list).not.toHaveBeenCalled()
-    expect(api.screeningSessions.create).not.toHaveBeenCalled()
+    expect(api.patient.search).not.toHaveBeenCalled()
 
     await mounted.unmount()
+
+    const retryMounted = await mountWorkspace({ api })
+
+    expect(text(retryMounted)).toContain('Session unavailable')
+    await clickButton(retryMounted, 'Retry')
+    expect(api.screeningSessions.ensureCurrent).toHaveBeenCalledTimes(3)
+    expect(text(retryMounted)).toContain('Ada Lovelace')
+
+    await retryMounted.unmount()
   })
 
-  it('closes and reopens with the current row version and no optimistic success state', async () => {
-    const open = publicCurrentSession()
-    const closed = publicSession({
-      status: 'CLOSED',
-      closedAt: '2026-08-06T15:00:00.000Z',
-      rowVersion: 2
-    })
-    const reopened = publicSession({
-      status: 'OPEN',
-      closedAt: null,
-      rowVersion: 3,
-      openedAt: '2026-08-06T15:30:00.000Z'
-    })
-    const api = createApi({ listItems: [open] })
-    api.screeningSessions.ensureCurrent.mockResolvedValue(
+  it('uses patient search with bounded requests and ignores stale results', async () => {
+    const oldSearch = createDeferred<Awaited<ReturnType<HealthScreeningApi['patient']['search']>>>()
+    const api = createApi()
+    const mounted = await mountWorkspace({ api })
+
+    api.patient.search.mockReturnValueOnce(oldSearch.promise).mockResolvedValueOnce(
       createIpcSuccess({
-        status: 'RESOLVED',
-        session: open,
-        location: { id: locationId, name: 'Bastos Hall' }
-      })
-    )
-    api.screeningSessions.getById.mockResolvedValue(
-      createIpcSuccess({ status: 'FOUND', session: open })
-    )
-    api.screeningSessions.close.mockResolvedValueOnce(
-      createIpcSuccess({ status: 'CLOSED', session: closed })
-    )
-    api.screeningSessions.reopen.mockResolvedValueOnce(
-      createIpcSuccess({ status: 'REOPENED', session: reopened })
-    )
-    api.screeningSessions.list
-      .mockResolvedValueOnce(
-        createIpcSuccess({ status: 'LISTED', items: [open], page: 1, pageSize: 25, total: 1 })
-      )
-      .mockResolvedValueOnce(
-        createIpcSuccess({ status: 'LISTED', items: [closed], page: 1, pageSize: 25, total: 1 })
-      )
-      .mockResolvedValueOnce(
-        createIpcSuccess({ status: 'LISTED', items: [reopened], page: 1, pageSize: 25, total: 1 })
-      )
-
-    const mounted = await mountWorkspace({ api })
-
-    await clickButton(mounted, 'Close session')
-    expect(text(mounted)).toContain('Close Bastos Hall on 2026-08-06')
-    expect(text(mounted)).toContain('Open')
-    await clickDialogButton(mounted, 'Close session')
-
-    expect(api.screeningSessions.close).toHaveBeenCalledWith({
-      id: sessionId,
-      expectedRowVersion: 1,
-      reason: null
-    })
-    expect(text(mounted)).toContain('Screening session closed.')
-    expect(text(mounted)).toContain('Closed')
-    expect(text(mounted)).toContain('Not selected')
-    expect(text(mounted)).toContain("Today's session is closed.")
-
-    await clickButton(mounted, 'Reopen session')
-    await clickDialogButton(mounted, 'Reopen session')
-    expect(api.screeningSessions.reopen).not.toHaveBeenCalled()
-    expect(text(mounted)).toContain('Reopen reason is required.')
-
-    await changeTextarea(textareaByLabel(mounted, 'Reopen reason required'), 'Closed in error')
-    await clickDialogButton(mounted, 'Reopen session')
-
-    expect(api.screeningSessions.reopen).toHaveBeenCalledWith({
-      id: sessionId,
-      expectedRowVersion: 2,
-      reason: 'Closed in error'
-    })
-    expect(text(mounted)).toContain('Screening session reopened.')
-    expect(text(mounted)).toContain('Selected for this workspace')
-
-    await mounted.unmount()
-  })
-
-  it('clears selected and active session state when authoritative results remove it', async () => {
-    const open = publicCurrentSession()
-    const api = createApi({ listItems: [open] })
-    api.screeningSessions.list
-      .mockResolvedValueOnce(
-        createIpcSuccess({ status: 'LISTED', items: [open], page: 1, pageSize: 25, total: 1 })
-      )
-      .mockResolvedValueOnce(
-        createIpcSuccess({ status: 'LISTED', items: [], page: 1, pageSize: 25, total: 0 })
-      )
-    api.screeningSessions.getById.mockResolvedValueOnce(createIpcSuccess({ status: 'NOT_FOUND' }))
-
-    const mounted = await mountWorkspace({ api })
-
-    expect(text(mounted)).toContain('Selected for this workspace')
-
-    await clickButton(mounted, 'Refresh')
-
-    expect(api.screeningSessions.getById).toHaveBeenCalledWith({ id: sessionId })
-    expect(text(mounted)).not.toContain('Selected for this workspace')
-    expect(text(mounted)).not.toContain('Current row version')
-    expect(text(mounted)).toContain("Today's screening session is not available.")
-
-    await mounted.unmount()
-  })
-
-  it('allows a current-date open session for the selected location to become active', async () => {
-    const open = publicSession()
-    const api = createApi({ listItems: [open] })
-    const mounted = await mountWorkspace({ api })
-
-    expect(text(mounted)).toContain("Today's session is open.")
-    expect(text(mounted)).toContain('Selected for this workspace')
-    expect(buttonByText(mounted, 'Select session').disabled).toBe(false)
-
-    await clickButton(mounted, 'Select session')
-
-    expect(text(mounted)).toContain('Session selected.')
-    expect(text(mounted)).toContain('Selected for this workspace')
-
-    await mounted.unmount()
-  })
-
-  it('keeps a historical open session inspectable without making it active', async () => {
-    const historicalOpen = publicSession({ sessionDate: '2026-08-05' })
-    const api = createApi({ listItems: [historicalOpen] })
-    api.screeningSessions.getById.mockResolvedValue(
-      createIpcSuccess({ status: 'FOUND', session: historicalOpen })
-    )
-
-    const mounted = await mountWorkspace({ api })
-
-    await clickButton(mounted, 'Inspect')
-
-    expect(text(mounted)).toContain('2026-08-05')
-    expect(text(mounted)).toContain('Current row version')
-    expect(text(mounted)).toContain('Not selected')
-    expect(buttonByText(mounted, 'Select session').disabled).toBe(true)
-    expect(text(mounted)).not.toContain('Selected for this workspace')
-
-    await mounted.unmount()
-  })
-
-  it('keeps a missing current-page session when getById confirms it is still valid', async () => {
-    const open = publicSession()
-    const api = createApi({ listItems: [open] })
-    api.screeningSessions.list
-      .mockResolvedValueOnce(
-        createIpcSuccess({ status: 'LISTED', items: [open], page: 1, pageSize: 25, total: 1 })
-      )
-      .mockResolvedValueOnce(
-        createIpcSuccess({ status: 'LISTED', items: [], page: 2, pageSize: 25, total: 26 })
-      )
-    api.screeningSessions.getById.mockResolvedValueOnce(
-      createIpcSuccess({ status: 'FOUND', session: open })
-    )
-
-    const mounted = await mountWorkspace({ api })
-
-    await clickButton(mounted, 'Select session')
-    expect(text(mounted)).toContain('Selected for this workspace')
-
-    await clickButton(mounted, 'Refresh')
-
-    expect(api.screeningSessions.getById).toHaveBeenCalledWith({ id: sessionId })
-    expect(text(mounted)).toContain('Selected for this workspace')
-    expect(text(mounted)).toContain('Current row version')
-
-    await mounted.unmount()
-  })
-
-  it('does not activate a historical session during pagination reconciliation', async () => {
-    const historicalOpen = publicSession({ sessionDate: '2026-08-05' })
-    const api = createApi({ listItems: [historicalOpen] })
-    api.screeningSessions.list
-      .mockResolvedValueOnce(
-        createIpcSuccess({
-          status: 'LISTED',
-          items: [historicalOpen],
-          page: 1,
-          pageSize: 25,
-          total: 26
-        })
-      )
-      .mockResolvedValueOnce(
-        createIpcSuccess({ status: 'LISTED', items: [], page: 2, pageSize: 25, total: 26 })
-      )
-    api.screeningSessions.getById.mockResolvedValue(
-      createIpcSuccess({ status: 'FOUND', session: historicalOpen })
-    )
-
-    const mounted = await mountWorkspace({ api })
-
-    await clickButton(mounted, 'Inspect')
-    expect(text(mounted)).toContain('Not selected')
-
-    await clickButton(mounted, 'Refresh')
-
-    expect(api.screeningSessions.getById).toHaveBeenCalledWith({ id: sessionId })
-    expect(text(mounted)).toContain('2026-08-05')
-    expect(text(mounted)).toContain('Current row version')
-    expect(text(mounted)).toContain('Not selected')
-    expect(buttonByText(mounted, 'Select session').disabled).toBe(true)
-
-    await mounted.unmount()
-  })
-
-  it('allows only an open session to become active while closed sessions remain inspectable', async () => {
-    const closed = publicSession({
-      status: 'CLOSED',
-      closedAt: '2026-08-06T15:00:00.000Z',
-      rowVersion: 2
-    })
-    const api = createApi({ listItems: [closed] })
-    api.screeningSessions.getById.mockResolvedValue(
-      createIpcSuccess({ status: 'FOUND', session: closed })
-    )
-
-    const mounted = await mountWorkspace({ api })
-
-    expect(text(mounted)).toContain("Today's session is closed.")
-    expect(text(mounted)).toContain('Current row version')
-    expect(text(mounted)).toContain('Not selected')
-    expect(buttonByText(mounted, 'Select session').disabled).toBe(true)
-
-    await mounted.unmount()
-  })
-
-  it('revalidates and clears an incompatible active session after deployment-local date rollover', async () => {
-    const open = publicCurrentSession()
-    const rolloverDate = '2026-08-07'
-    const rolloverSession = publicCurrentSession({ sessionDate: rolloverDate, rowVersion: 2 })
-    const api = createApi({ listItems: [open] })
-    api.screeningSessions.ensureCurrent
-      .mockResolvedValueOnce(
-        createIpcSuccess({
-          status: 'RESOLVED',
-          session: open,
-          location: { id: locationId, name: 'Bastos Hall' }
-        })
-      )
-      .mockResolvedValueOnce(
-        createIpcSuccess({
-          status: 'RESOLVED',
-          session: rolloverSession,
-          location: { id: locationId, name: 'Bastos Hall' }
-        })
-      )
-    api.screeningSessions.list
-      .mockResolvedValueOnce(
-        createIpcSuccess({ status: 'LISTED', items: [open], page: 1, pageSize: 25, total: 1 })
-      )
-      .mockResolvedValueOnce(
-        createIpcSuccess({
-          status: 'LISTED',
-          items: [rolloverSession],
-          page: 1,
-          pageSize: 25,
-          total: 1
-        })
-      )
-
-    const mounted = await mountWorkspace({ api })
-
-    expect(text(mounted)).toContain('Selected for this workspace')
-
-    await clickButton(mounted, 'Refresh')
-
-    expect(text(mounted)).toContain(rolloverDate)
-    expect(text(mounted)).toContain('Selected for this workspace')
-    expect(text(mounted)).toContain('Current row version')
-
-    await mounted.unmount()
-  })
-
-  it('does not make a reopened historical session active', async () => {
-    const historicalClosed = publicSession({
-      sessionDate: '2026-08-05',
-      status: 'CLOSED',
-      closedAt: '2026-08-05T15:00:00.000Z',
-      rowVersion: 2
-    })
-    const historicalReopened = publicSession({
-      sessionDate: '2026-08-05',
-      rowVersion: 3,
-      openedAt: '2026-08-05T15:30:00.000Z'
-    })
-    const api = createApi({ listItems: [historicalClosed] })
-    api.screeningSessions.getById.mockResolvedValue(
-      createIpcSuccess({ status: 'FOUND', session: historicalClosed })
-    )
-    api.screeningSessions.reopen.mockResolvedValueOnce(
-      createIpcSuccess({ status: 'REOPENED', session: historicalReopened })
-    )
-    api.screeningSessions.list.mockResolvedValue(
-      createIpcSuccess({
-        status: 'LISTED',
-        items: [historicalReopened],
+        items: [patientSummary({ id: secondPatientId, displayName: 'Grace Hopper' })],
         page: 1,
         pageSize: 25,
         total: 1
       })
     )
 
-    const mounted = await mountWorkspace({ api })
+    await changeInput(screeningSearchInput(mounted), 'old')
+    await changeInput(screeningSearchInput(mounted), 'new')
 
-    await clickButton(mounted, 'Inspect')
-    await clickButton(mounted, 'Reopen session')
-    await changeTextarea(textareaByLabel(mounted, 'Reopen reason required'), 'Correcting closure')
-    await clickDialogButton(mounted, 'Reopen session')
+    oldSearch.resolve(
+      createIpcSuccess({
+        items: [patientSummary({ id: thirdPatientId, displayName: 'Old Result' })],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    await flushReact()
 
-    expect(api.screeningSessions.reopen).toHaveBeenCalledWith({
-      id: sessionId,
-      expectedRowVersion: 2,
-      reason: 'Correcting closure'
-    })
-    expect(text(mounted)).toContain('Screening session reopened.')
-    expect(text(mounted)).toContain('2026-08-05')
-    expect(text(mounted)).toContain('Not selected')
-    expect(buttonByText(mounted, 'Select session').disabled).toBe(true)
+    expect(api.patient.search).toHaveBeenLastCalledWith({ query: 'new', page: 1, pageSize: 25 })
+    expect(api.screeningSessions.ensureCurrent).toHaveBeenCalledOnce()
+    expect(text(mounted)).toContain('Grace Hopper')
+    expect(text(mounted)).not.toContain('Old Result')
 
     await mounted.unmount()
   })
 
-  it('updates today-dependent filters after ensure-current date rollover', async () => {
-    const rolloverDate = '2026-08-07'
-    const open = publicCurrentSession()
-    const rolloverSession = publicCurrentSession({ sessionDate: rolloverDate, rowVersion: 2 })
+  it('clicking a patient row starts the approved encounter and opens one patient tab', async () => {
     const api = createApi()
-    api.screeningSessions.ensureCurrent
-      .mockResolvedValueOnce(
-        createIpcSuccess({
-          status: 'RESOLVED',
-          session: open,
-          location: { id: locationId, name: 'Bastos Hall' }
-        })
-      )
-      .mockResolvedValueOnce(
-        createIpcSuccess({
-          status: 'RESOLVED',
-          session: rolloverSession,
-          location: { id: locationId, name: 'Bastos Hall' }
-        })
-      )
-    api.screeningSessions.list
-      .mockResolvedValueOnce(
-        createIpcSuccess({ status: 'LISTED', items: [open], page: 1, pageSize: 25, total: 1 })
-      )
-      .mockResolvedValueOnce(
-        createIpcSuccess({
-          status: 'LISTED',
-          items: [rolloverSession],
-          page: 1,
-          pageSize: 25,
-          total: 1
-        })
-      )
-
     const mounted = await mountWorkspace({ api })
 
-    await changeSelect(selectByLabel(mounted, 'Status'), 'CLOSED')
-    await clickButton(mounted, 'Refresh')
+    await clickRow(mounted, 'Ada Lovelace')
 
-    expect(text(mounted)).toContain(rolloverDate)
-    expect(api.screeningSessions.list).toHaveBeenLastCalledWith({
-      locationId,
-      status: null,
-      dateFrom: rolloverDate,
-      dateTo: rolloverDate,
-      page: 1,
-      pageSize: 25
+    expect(api.screeningEncounters.start).toHaveBeenCalledOnce()
+    expect(api.screeningEncounters.start).toHaveBeenCalledWith({
+      patientId,
+      screeningSessionId: sessionId
     })
-
-    expect(api.screeningSessions.create).not.toHaveBeenCalled()
+    expect(api.screeningEncounters.start.mock.calls[0]?.[0]).not.toHaveProperty('locationId')
+    expect(api.screeningEncounters.start.mock.calls[0]?.[0]).not.toHaveProperty('role')
+    expect(api.screeningEncounters.start.mock.calls[0]?.[0]).not.toHaveProperty('actor')
+    expect(tabButtons(mounted).map((button) => button.textContent?.trim())).toContain(
+      'Ada Lovelace'
+    )
+    expect(text(mounted)).toContain('New Screening')
+    expect(text(mounted)).toContain('Vitals')
+    expect(text(mounted)).toContain('Screening guidance—not a diagnosis.')
 
     await mounted.unmount()
   })
 
-  it('uses the trusted ensure-current date instead of the renderer or operating-system clock', async () => {
-    const api = createApi({ deploymentLocalDate: '2030-01-02' })
+  it('supports Enter and Space activation without a Select button', async () => {
+    const api = createApi({
+      patients: [
+        patientSummary({ id: patientId, displayName: 'Ada Lovelace' }),
+        patientSummary({ id: secondPatientId, displayName: 'Grace Hopper' })
+      ]
+    })
     const mounted = await mountWorkspace({ api })
 
-    expect(api.screeningSessions.list).toHaveBeenCalledWith({
-      locationId,
-      status: null,
-      dateFrom: '2030-01-02',
-      dateTo: '2030-01-02',
-      page: 1,
-      pageSize: 25
-    })
-    expect(api.screeningSessions.create).not.toHaveBeenCalled()
+    await pressRow(mounted, 'Ada Lovelace', 'Enter')
+    await pressRow(mounted, 'Grace Hopper', ' ')
+
+    expect(api.screeningEncounters.start).toHaveBeenCalledTimes(2)
+    expect(rowByName(mounted, 'Ada Lovelace').tabIndex).toBe(0)
+    expect(rowByName(mounted, 'Ada Lovelace').getAttribute('aria-label')).toBe(
+      'New Screening for Ada Lovelace'
+    )
+    expect(mounted.container.querySelector('.screening-patient-table button')).toBeNull()
 
     await mounted.unmount()
   })
 
-  it('handles close version conflicts by requiring explicit retry with the latest row version', async () => {
-    const open = publicSession()
-    const latest = publicSession({ rowVersion: 2, notes: 'Updated by another workstation' })
-    const closed = publicSession({
-      status: 'CLOSED',
-      notes: 'Updated by another workstation',
-      closedAt: '2026-08-06T15:00:00.000Z',
-      rowVersion: 3
+  it('activates an existing patient tab without starting another encounter', async () => {
+    const api = createApi({
+      patients: [
+        patientSummary({ id: patientId, displayName: 'Ada Lovelace' }),
+        patientSummary({ id: secondPatientId, displayName: 'Grace Hopper' })
+      ]
     })
-    const api = createApi({ listItems: [open] })
-    api.screeningSessions.close
-      .mockResolvedValueOnce(
-        createIpcSuccess({ status: 'SESSION_VERSION_CONFLICT', session: latest })
-      )
-      .mockResolvedValueOnce(createIpcSuccess({ status: 'CLOSED', session: closed }))
-    api.screeningSessions.list
-      .mockResolvedValueOnce(
-        createIpcSuccess({ status: 'LISTED', items: [open], page: 1, pageSize: 25, total: 1 })
-      )
-      .mockResolvedValueOnce(
-        createIpcSuccess({ status: 'LISTED', items: [latest], page: 1, pageSize: 25, total: 1 })
-      )
-      .mockResolvedValueOnce(
-        createIpcSuccess({ status: 'LISTED', items: [closed], page: 1, pageSize: 25, total: 1 })
-      )
-
     const mounted = await mountWorkspace({ api })
 
-    await clickButton(mounted, 'Close session')
-    await clickDialogButton(mounted, 'Close session')
+    await clickRow(mounted, 'Ada Lovelace')
+    await clickRow(mounted, 'Grace Hopper')
+    await clickRow(mounted, 'Ada Lovelace')
 
-    expect(api.screeningSessions.close).toHaveBeenCalledTimes(1)
-    expect(text(mounted)).toContain('This screening session changed')
-    expect(text(mounted)).toContain('Updated by another workstation')
-
-    await clickButton(mounted, 'Close session')
-    await clickDialogButton(mounted, 'Close session')
-
-    expect(api.screeningSessions.close).toHaveBeenLastCalledWith({
-      id: sessionId,
-      expectedRowVersion: 2,
-      reason: null
-    })
-    expect(text(mounted)).toContain('Screening session closed.')
+    expect(api.screeningEncounters.start).toHaveBeenCalledTimes(2)
+    expect(
+      tabButtons(mounted).filter((button) => button.textContent?.trim() === 'Ada Lovelace')
+    ).toHaveLength(1)
+    expect(rowByName(mounted, 'Ada Lovelace').getAttribute('aria-selected')).toBe('true')
 
     await mounted.unmount()
   })
 
-  it('prevents trained screeners from activating reopen from the UI', async () => {
-    const closed = publicSession({
-      status: 'CLOSED',
-      closedAt: '2026-08-06T15:00:00.000Z',
-      rowVersion: 2
+  it('enforces the four-patient-tab limit without closing tabs or encounters', async () => {
+    const api = createApi({
+      patients: [
+        patientSummary({ id: patientId, displayName: 'Ada Lovelace' }),
+        patientSummary({ id: secondPatientId, displayName: 'Grace Hopper' }),
+        patientSummary({ id: thirdPatientId, displayName: 'Mary Jackson' }),
+        patientSummary({ id: fourthPatientId, displayName: 'Katherine Johnson' }),
+        patientSummary({ id: fifthPatientId, displayName: 'Dorothy Vaughan' })
+      ]
     })
-    const api = createApi({ listItems: [closed] })
-    api.screeningSessions.getById.mockResolvedValue(
-      createIpcSuccess({ status: 'FOUND', session: closed })
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+    await clickRow(mounted, 'Grace Hopper')
+    await clickRow(mounted, 'Mary Jackson')
+    await clickRow(mounted, 'Katherine Johnson')
+    await clickRow(mounted, 'Dorothy Vaughan')
+
+    expect(api.screeningEncounters.start).toHaveBeenCalledTimes(4)
+    expect(text(mounted)).toContain('Close one patient to continue')
+    expect(tabButtons(mounted)).toHaveLength(4)
+
+    await clickRow(mounted, 'Ada Lovelace')
+    expect(api.screeningEncounters.start).toHaveBeenCalledTimes(4)
+    expect(rowByName(mounted, 'Ada Lovelace').getAttribute('aria-selected')).toBe('true')
+
+    await clickButton(mounted, 'Close Ada Lovelace')
+    await clickRow(mounted, 'Dorothy Vaughan')
+
+    expect(api.screeningEncounters.start).toHaveBeenCalledTimes(5)
+    expect(tabButtons(mounted).map((button) => button.textContent?.trim())).toContain(
+      'Dorothy Vaughan'
     )
 
-    const mounted = await mountWorkspace({ api, userRole: 'TRAINED_SCREENER' })
+    await mounted.unmount()
+  })
 
-    const reopenButton = buttonByText(mounted, 'Reopen session')
-    expect(reopenButton.disabled).toBe(true)
-    expect(text(mounted)).toContain(
-      'Only nurses and local administrators can reopen a closed session.'
+  it('opens resumed canonical encounters and does not consume a tab slot on failure', async () => {
+    const api = createApi({
+      patients: [
+        patientSummary({ id: patientId, displayName: 'Ada Lovelace' }),
+        patientSummary({ id: secondPatientId, displayName: 'Grace Hopper' })
+      ]
+    })
+    api.screeningEncounters.start.mockResolvedValueOnce(
+      createScreeningEncounterStartStatusResult('PATIENT_NOT_FOUND')
     )
-    expect(api.screeningSessions.reopen).not.toHaveBeenCalled()
+    api.screeningEncounters.start.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'ALREADY_EXISTS',
+        encounter: encounterSummary({
+          patientId: secondPatientId,
+          screeningSessionId: sessionId,
+          recordVersion: 2
+        })
+      })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+
+    expect(text(mounted)).toContain('Patient not found.')
+    expect(tabButtons(mounted)).toHaveLength(0)
+
+    await clickRow(mounted, 'Grace Hopper')
+
+    expect(api.screeningEncounters.start).toHaveBeenCalledTimes(2)
+    expect(tabButtons(mounted).map((button) => button.textContent?.trim())).toContain(
+      'Grace Hopper'
+    )
+    expect(text(mounted)).toContain('In progress')
 
     await mounted.unmount()
   })
 
-  it('uses concise unavailable wording for patient enrollment', async () => {
-    const open = publicSession()
-    const api = createApi({ listItems: [open] })
-    const mounted = await mountWorkspace({ api, commandId: 'SCREENING_NEW_SCREENING' })
-
-    expect(text(mounted)).toContain('Patient enrollment is not available yet.')
-    expect(text(mounted)).not.toContain('approved screening workflow checkpoint')
-
-    await clickButton(mounted, 'New Screening')
-
-    expect(text(mounted)).toContain('Patient enrollment is not available yet.')
-    expect(text(mounted)).not.toContain('checkpoint')
-
-    await mounted.unmount()
-  })
-
-  it('clears workspace state for protected failures without rendering raw details', async () => {
+  it('prevents duplicate starts while a row is pending and drops late results after unmount', async () => {
+    const startResult =
+      createDeferred<Awaited<ReturnType<HealthScreeningApi['screeningEncounters']['start']>>>()
     const api = createApi()
-    api.screeningSessions.ensureCurrent.mockResolvedValueOnce(
-      createScreeningSessionFailure('IPC_FORBIDDEN')
-    )
-
+    api.screeningEncounters.start.mockReturnValueOnce(startResult.promise)
     const mounted = await mountWorkspace({ api })
 
-    expect(mounted.onAuthenticationFailure).toHaveBeenCalledWith('IPC_FORBIDDEN')
-    expect(text(mounted)).toContain('This window is not allowed to manage screening sessions.')
-    expect(text(mounted)).not.toContain(deploymentLocalDate)
-    expect(text(mounted)).not.toContain('Bastos Hall')
-    expect(text(mounted)).not.toContain(sessionId)
-    expect(text(mounted)).not.toContain('SELECT')
-    expect(text(mounted)).not.toContain('sqlite')
+    await clickRow(mounted, 'Ada Lovelace', { flush: false })
+    await clickRow(mounted, 'Ada Lovelace', { flush: false })
+    expect(api.screeningEncounters.start).toHaveBeenCalledOnce()
 
     await mounted.unmount()
+
+    startResult.resolve(
+      createIpcSuccess({
+        status: 'STARTED',
+        encounter: encounterSummary({ patientId, screeningSessionId: sessionId })
+      })
+    )
+    await flushReact()
   })
 
-  it('uses only in-memory state and introduces no browser persistence', async () => {
+  it('uses only in-memory workflow state and no browser persistence', async () => {
     const getItemSpy = vi.spyOn(Storage.prototype, 'getItem')
     const setItemSpy = vi.spyOn(Storage.prototype, 'setItem')
     const removeItemSpy = vi.spyOn(Storage.prototype, 'removeItem')
     const api = createApi()
     const mounted = await mountWorkspace({ api })
 
-    await clickButton(mounted, 'Refresh')
+    await clickRow(mounted, 'Ada Lovelace')
 
     expect(getItemSpy).not.toHaveBeenCalled()
     expect(setItemSpy).not.toHaveBeenCalled()
     expect(removeItemSpy).not.toHaveBeenCalled()
 
     await mounted.unmount()
+  })
+
+  it('sanitizes raw transport failures from session, patient, and encounter boundaries', async () => {
+    const api = createApi()
+    api.screeningSessions.ensureCurrent.mockResolvedValueOnce(
+      createScreeningSessionFailure('IPC_FORBIDDEN')
+    )
+    const blocked = await mountWorkspace({ api })
+
+    expect(blocked.onAuthenticationFailure).toHaveBeenCalledWith('IPC_FORBIDDEN')
+    expect(text(blocked)).toContain('This window is not allowed to open Screening.')
+    expect(text(blocked)).not.toContain('sqlite')
+    await blocked.unmount()
+
+    const patientApi = createApi()
+    patientApi.patient.search.mockResolvedValueOnce(createPatientFailure('IPC_UNAVAILABLE'))
+    const patientBlocked = await mountWorkspace({ api: patientApi })
+
+    expect(text(patientBlocked)).toContain('Patient search unavailable.')
+    await patientBlocked.unmount()
+
+    const encounterApi = createApi()
+    encounterApi.screeningEncounters.start.mockResolvedValueOnce(
+      createScreeningEncounterIpcFailure('INTERNAL_ERROR')
+    )
+    const encounterBlocked = await mountWorkspace({ api: encounterApi })
+
+    await clickRow(encounterBlocked, 'Ada Lovelace')
+    expect(text(encounterBlocked)).toContain('Session unavailable')
+    expect(text(encounterBlocked)).not.toContain('sqlite')
+
+    await encounterBlocked.unmount()
   })
 })
 
@@ -746,32 +461,48 @@ async function mountWorkspace({
 }
 
 function createApi({
-  activeLocations = [{ id: locationId, name: 'Bastos Hall' }],
-  listItems,
-  deploymentLocalDate: workspaceDate = deploymentLocalDate
+  patients = [patientSummary()],
+  session = publicCurrentSession()
 }: {
-  readonly activeLocations?: readonly { readonly id: string; readonly name: string }[]
-  readonly listItems?: readonly PublicScreeningSession[]
-  readonly deploymentLocalDate?: string
+  readonly patients?: readonly PublicPatientSummary[]
+  readonly session?: PublicCurrentScreeningSession
 } = {}): MockedHealthScreeningApi {
-  const ensuredLocation = activeLocations[0] ?? { id: locationId, name: 'Bastos Hall' }
-  const ensuredSession = publicCurrentSession({
-    locationId: ensuredLocation.id,
-    sessionDate: workspaceDate
-  })
-  const listedSessions = listItems ?? [ensuredSession]
-
   return {
+    patient: {
+      search: vi.fn(() =>
+        Promise.resolve(
+          createIpcSuccess({ items: patients, page: 1, pageSize: 25, total: patients.length })
+        )
+      )
+    },
+    screeningEncounters: {
+      start: vi.fn((request) =>
+        Promise.resolve(
+          createIpcSuccess({
+            status: 'STARTED',
+            encounter: encounterSummary({
+              patientId: request.patientId,
+              screeningSessionId: request.screeningSessionId
+            })
+          })
+        )
+      )
+    },
     screeningSessions: {
       getWorkspaceContext: vi.fn(() =>
-        Promise.resolve(createIpcSuccess({ deploymentLocalDate: workspaceDate, activeLocations }))
+        Promise.resolve(
+          createIpcSuccess({
+            deploymentLocalDate: session.sessionDate,
+            activeLocations: [{ id: locationId, name: 'Bastos Hall' }]
+          })
+        )
       ),
       ensureCurrent: vi.fn(() =>
         Promise.resolve(
           createIpcSuccess({
             status: 'RESOLVED',
-            session: ensuredSession,
-            location: ensuredLocation
+            session,
+            location: { id: locationId, name: 'Bastos Hall' }
           })
         )
       ),
@@ -783,10 +514,10 @@ function createApi({
         Promise.resolve(
           createIpcSuccess({
             status: 'LISTED',
-            items: listedSessions,
+            items: [],
             page: 1,
             pageSize: 25,
-            total: listedSessions.length
+            total: 0
           })
         )
       )
@@ -794,12 +525,14 @@ function createApi({
   } as unknown as MockedHealthScreeningApi
 }
 
-function publicSession(overrides: Partial<PublicScreeningSession> = {}): PublicScreeningSession {
+function publicCurrentSession(
+  overrides: Partial<PublicCurrentScreeningSession> = {}
+): PublicCurrentScreeningSession {
   return {
     id: sessionId,
     locationId,
     protocolVersionId,
-    sessionDate: deploymentLocalDate,
+    sessionDate: operationalDate,
     status: 'OPEN',
     notes: null,
     openedAt: baseTimestamp,
@@ -810,50 +543,108 @@ function publicSession(overrides: Partial<PublicScreeningSession> = {}): PublicS
   }
 }
 
-function publicCurrentSession(
-  overrides: Partial<PublicCurrentScreeningSession> = {}
-): PublicCurrentScreeningSession {
+function patientSummary(overrides: Partial<PublicPatientSummary> = {}): PublicPatientSummary {
   return {
-    ...publicSession(),
-    ...overrides,
-    status: 'OPEN',
-    closedAt: null
+    id: patientId,
+    patientCode: 'P-0001',
+    displayName: 'Ada Lovelace',
+    givenName: 'Ada',
+    familyName: 'Lovelace',
+    otherNames: null,
+    dateOfBirth: '1990-08-06',
+    approximateAgeYears: null,
+    ageAsOfDate: null,
+    sex: 'FEMALE',
+    village: null,
+    quarter: null,
+    phone: null,
+    status: 'ACTIVE',
+    rowVersion: 1,
+    updatedAt: baseTimestamp,
+    ...overrides
   }
+}
+
+function encounterSummary(
+  overrides: Partial<PublicScreeningEncounterStartSummary> = {}
+): PublicScreeningEncounterStartSummary {
+  return {
+    id: encounterId,
+    patientId,
+    screeningSessionId: sessionId,
+    status: 'DRAFT',
+    startedAt: baseTimestamp,
+    recordVersion: 1,
+    ...overrides
+  }
+}
+
+async function clickRow(
+  mounted: MountedWorkspace,
+  name: string,
+  options: { readonly flush?: boolean } = {}
+): Promise<void> {
+  await act(async () => {
+    rowByName(mounted, name).dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true })
+    )
+
+    if (options.flush !== false) {
+      await flushPromises()
+    }
+  })
+
+  if (options.flush !== false) {
+    await flushReact()
+  }
+}
+
+async function pressRow(mounted: MountedWorkspace, name: string, key: string): Promise<void> {
+  await act(async () => {
+    rowByName(mounted, name).dispatchEvent(
+      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    )
+    await flushPromises()
+  })
+  await flushReact()
 }
 
 async function clickButton(mounted: MountedWorkspace, label: string): Promise<void> {
+  const button = buttonByText(mounted, label)
+
   await act(async () => {
-    buttonByText(mounted, label).dispatchEvent(
-      new MouseEvent('click', { bubbles: true, cancelable: true })
-    )
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await flushPromises()
   })
   await flushReact()
 }
 
-async function clickDialogButton(mounted: MountedWorkspace, label: string): Promise<void> {
-  const dialog = mounted.container.querySelector<HTMLElement>('[role="dialog"]')
-
-  if (dialog === null) {
-    throw new Error('Expected dialog to be rendered.')
-  }
-
+async function changeInput(input: HTMLInputElement, value: string): Promise<void> {
   await act(async () => {
-    buttonByTextWithin(dialog, label).dispatchEvent(
-      new MouseEvent('click', { bubbles: true, cancelable: true })
-    )
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }))
     await flushPromises()
   })
   await flushReact()
+}
+
+function rowByName(mounted: MountedWorkspace, name: string): HTMLTableRowElement {
+  const row = Array.from(
+    mounted.container.querySelectorAll<HTMLTableRowElement>('.screening-patient-row')
+  ).find((candidate) => candidate.textContent?.includes(name))
+
+  if (row === undefined) {
+    throw new Error(`Expected patient row ${name} to be rendered.`)
+  }
+
+  return row
 }
 
 function buttonByText(mounted: MountedWorkspace, label: string): HTMLButtonElement {
-  return buttonByTextWithin(mounted.container, label)
-}
-
-function buttonByTextWithin(container: HTMLElement, label: string): HTMLButtonElement {
-  const button = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
-    (candidate) => normalizedText(candidate) === label
+  const button = Array.from(mounted.container.querySelectorAll<HTMLButtonElement>('button')).find(
+    (candidate) =>
+      candidate.textContent?.trim() === label || candidate.getAttribute('aria-label') === label
   )
 
   if (button === undefined) {
@@ -863,72 +654,63 @@ function buttonByTextWithin(container: HTMLElement, label: string): HTMLButtonEl
   return button
 }
 
-async function changeSelect(select: HTMLSelectElement, value: string): Promise<void> {
-  await act(async () => {
-    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
-    setter?.call(select, value)
-    select.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }))
-    await flushPromises()
-  })
-  await flushReact()
-}
+function screeningSearchInput(mounted: MountedWorkspace): HTMLInputElement {
+  const input = mounted.container.querySelector<HTMLInputElement>('#screening-patient-search')
 
-async function changeTextarea(textarea: HTMLTextAreaElement, value: string): Promise<void> {
-  await act(async () => {
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
-    setter?.call(textarea, value)
-    textarea.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }))
-    await flushPromises()
-  })
-  await flushReact()
-}
-
-function selectByLabel(mounted: MountedWorkspace, label: string): HTMLSelectElement {
-  const select = labeledControl<HTMLSelectElement>(mounted, label, 'select')
-
-  if (select === null) {
-    throw new Error(`Expected select ${label}`)
+  if (input === null) {
+    throw new Error('Expected Screening patient search input.')
   }
 
-  return select
+  return input
 }
 
-function textareaByLabel(mounted: MountedWorkspace, label: string): HTMLTextAreaElement {
-  const textarea = labeledControl<HTMLTextAreaElement>(mounted, label, 'textarea')
+function tableHeaders(mounted: MountedWorkspace): string[] {
+  return Array.from(
+    mounted.container.querySelectorAll<HTMLTableCellElement>('.screening-patient-table th')
+  ).map((header) => header.textContent?.trim() ?? '')
+}
 
-  if (textarea === null) {
-    throw new Error(`Expected textarea ${label}`)
+function tabButtons(mounted: MountedWorkspace): HTMLButtonElement[] {
+  return Array.from(mounted.container.querySelectorAll<HTMLButtonElement>('.screening-patient-tab'))
+}
+
+function workspaceHeading(mounted: MountedWorkspace): HTMLHeadingElement {
+  const heading = mounted.container.querySelector<HTMLHeadingElement>(
+    '#screening-workspace-heading'
+  )
+
+  if (heading === null) {
+    throw new Error('Expected workspace heading.')
   }
 
-  return textarea
+  return heading
 }
 
-function labeledControl<TElement extends HTMLElement>(
-  mounted: MountedWorkspace,
-  label: string,
-  selector: string
-): TElement | null {
-  for (const candidate of Array.from(
-    mounted.container.querySelectorAll<HTMLLabelElement>('label')
-  )) {
-    if (normalizedText(candidate.querySelector('span') ?? candidate) === label) {
-      return candidate.querySelector<TElement>(selector)
-    }
-  }
-
-  return null
-}
-
-function normalizedText(element: Element): string {
-  return (element.textContent ?? '').replace(/\s+/gu, ' ').trim()
+function expectWorkspaceHeading(mounted: MountedWorkspace, expected: string): void {
+  expect(workspaceHeading(mounted).textContent?.trim()).toBe(expected)
 }
 
 function text(mounted: MountedWorkspace): string {
   return mounted.container.textContent ?? ''
 }
 
+function createDeferred<T>(): {
+  readonly promise: Promise<T>
+  resolve(value: T): void
+  reject(error: unknown): void
+} {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+
+  return { promise, resolve, reject }
+}
+
 async function flushReact(): Promise<void> {
-  for (let index = 0; index < 4; index += 1) {
+  for (let index = 0; index < 6; index += 1) {
     await act(async () => {
       await flushPromises()
     })
@@ -938,21 +720,4 @@ async function flushReact(): Promise<void> {
 async function flushPromises(): Promise<void> {
   await Promise.resolve()
   await Promise.resolve()
-}
-
-function createDeferred<TValue>(): {
-  readonly promise: Promise<TValue>
-  resolve(value: TValue): void
-} {
-  let resolvePromise: ((value: TValue) => void) | null = null
-  const promise = new Promise<TValue>((resolve) => {
-    resolvePromise = resolve
-  })
-
-  return {
-    promise,
-    resolve(value: TValue): void {
-      resolvePromise?.(value)
-    }
-  }
 }

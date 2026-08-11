@@ -14,9 +14,10 @@ The shell receives only data that has already crossed reviewed boundaries:
 
 The shell does not call `app.getInfo()`, `app.getHealth()`, or
 `firstRun.getState()` again. It does not infer device, installation,
-organization, or user IDs. Screening-session location and session context is
-loaded only by the HSD-028C screening workspace through the validated preload
-API.
+organization, or user IDs. Screening location authority is resolved in the main
+process from the trusted installation-location configuration. The Screening
+renderer receives only the sanitized current daily-session context returned by
+the fixed preload API.
 
 ## Navigation Catalog
 
@@ -31,12 +32,12 @@ authorization remains authoritative for future protected operations.
 | `TRAINED_SCREENER` | Home, Patients, Screening, Referrals                          |
 
 `HOME_DASHBOARD`, patient registry commands, `HOME_TODAYS_SESSION`,
-`SCREENING_TODAYS_SESSION`, and `SCREENING_NEW_SCREENING` are available after
-the HSD-028C renderer checkpoint. The Home "Today's Session" shortcut routes to
-the same screening-session workspace as the Screening menu. Draft Encounters,
-Session Summary, and other unimplemented modules continue routing to the
-transparent planned-module workspace with the command label, "Not available in
-this build.", and the owning future work package.
+`SCREENING_TODAYS_SESSION`, and `SCREENING_NEW_SCREENING` are available. The
+Home patient-screening shortcut routes to the same Patients-based Screening
+workspace as the Screening menu. Draft Encounters, Session Summary, and other
+unimplemented modules continue routing to the transparent planned-module
+workspace with the command label, "Not available in this build.", and the
+owning future work package.
 
 ## Dashboard
 
@@ -46,44 +47,51 @@ actions, and an accessible worklist table with one empty-state row. It must not
 render sample patients, counts, dates, site names, session names, sync totals,
 or backup timestamps.
 
-## Screening Session Workspace
+## Screening Workspace
 
-The HSD-028C screening workspace is a renderer-only management surface for the
-HSD-027 lifecycle service. It calls only
-`window.healthScreening.screeningSessions` and keeps the active location,
-active session, selected row, filters, and pagination in memory. It does not
-persist those values to browser storage, URLs, files, or SQLite.
+The HSD-029C Screening workspace is a Patients-based encounter entry surface.
+On entry it invokes `window.healthScreening.screeningSessions.ensureCurrent()`
+with no request payload. The main process authenticates and authorizes the user,
+resolves the P0 configured location, derives the authoritative operational date,
+and returns or creates the current open daily screening session. The renderer
+does not choose the location, date, status, actor, or session.
 
-On entry the workspace requests trusted context, displays the main-process
-deployment-local date, and renders active locations only. One active location
-may be selected automatically; multiple active locations require an explicit
-choice. The renderer never calculates the authoritative screening date from the
-operating system.
+Until the P1 operation succeeds, the workspace remains unavailable and shows a
+controlled state such as sign-in required, forbidden, location not configured,
+configured location missing or inactive, closed daily session, or `Session
+unavailable` with a safe retry when appropriate. It never exposes raw database,
+IPC, stack, authentication, patient, or session internals.
 
-The workspace can open today's session for an active location, list sessions
-using the approved filters and page sizes, select a session, close an open
-session after confirmation, and reopen a closed session when the current role
-is `LOCAL_ADMIN` or `NURSE`. `TRAINED_SCREENER` users see the closed-session
-state and an explicit role-restricted reopen message, while main-process
-authorization remains authoritative.
+After the daily session is ready, the workspace displays:
 
-Version conflicts replace the visible selected session with the authoritative
-record returned by the desktop service and require the user to review before
-retrying. Lifecycle actions are never shown as successful until the validated
-preload result returns. Expected business outcomes use calm user-facing
-messages, and protected failures clear in-memory session state through the
-same authenticated-shell reconciliation path used by patient workflows.
+- `Patients`
+- `Search patients`
+- a table with `Name`, `Sex`, `Age`, `Last Screening`, and `Follow-up`
 
-The workspace follows the approved SVG visual system: deep-navy shell, white
-active primary menu, light-blue contextual strip, pale gray workspace
-background, white bordered cards, navy headings, teal accents, explicit status
-dots plus text, compact tables, and confirmation dialogs. It is designed for
-1280x720, 1366x768, and 1920x1080 desktop workspaces without horizontal page
-overflow.
+The table uses the existing patient-search preload boundary and a bounded page
+size. Patient rows are fully clickable and keyboard-accessible with Enter and
+Space. There is no Select button or Action column in this workspace; the
+separate Patient Search screen remains unchanged.
 
-It does not implement patient enrollment, screening encounters, measurements,
-protocol calculations, recommendations, referrals, reports, dashboard counts,
-sync networking, or fake operational records.
+Activating a patient row calls the approved HSD-029A/HSD-029B boundary
+`window.healthScreening.screeningEncounters.start({ patientId,
+screeningSessionId })`. The session id comes only from the sanitized P1 daily
+session context. The renderer never passes location, date, actor, role, status,
+or audit metadata. A successful `STARTED` or `ALREADY_EXISTS` result opens or
+activates one patient-name tab using the stable patient id as internal identity.
+Repeated clicks while pending cannot create duplicate tabs or duplicate start
+requests.
+
+The workspace enforces four simultaneously open patient tabs. A fifth unique
+patient is blocked with `Close one patient to continue`; an already open patient
+can still be activated. Closing a tab does not close, complete, cancel, or alter
+the encounter.
+
+Patient tab labels use safe formatted patient names. The clinical section labels
+are `Vitals`, `Lifestyle`, `Food`, `OTC Medications`, and `Review`, with the
+short disclaimer `Screening guidance—not a diagnosis.` Clinical persistence,
+recommendations, referrals, printing, reporting, sync, and FHIR behavior remain
+outside this renderer checkpoint.
 
 ## Keyboard Model
 
@@ -98,7 +106,8 @@ skips the absent patient-tab region and does not render an empty focus target.
 
 ## HSD-029 Boundary
 
-HSD-029 may add patient enrollment and encounter workflows inside an open
-screening session. That future work must continue to use reviewed preload
-boundaries and must not bypass the lifecycle service, audit event, or
-transactional outbox behavior.
+HSD-029C relies on P0 for installation-location authority, P1 for the current
+daily screening-session boundary, and HSD-029A/HSD-029B for encounter start or
+resume. The renderer does not create daily sessions directly, does not create
+encounters outside the approved boundary, and does not persist operational
+authority in browser storage.

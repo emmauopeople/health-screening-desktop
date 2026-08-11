@@ -23,22 +23,13 @@ describe('application navigation catalog', () => {
     expect(labelsForRole('LOCAL_ADMIN')).toEqual([
       [
         'Home',
-        [
-          'Dashboard',
-          'Today\u2019s Session',
-          'Quick Patient Search',
-          'Open Referrals',
-          'Sync Center'
-        ]
+        ['Dashboard', 'Patient Screening', 'Quick Patient Search', 'Open Referrals', 'Sync Center']
       ],
       [
         'Patients',
         ['Patient Search', 'Register New Patient', 'Recent Patients', 'Possible Duplicates']
       ],
-      [
-        'Screening',
-        ['Today\u2019s Session', 'New Screening', 'Draft Encounters', 'Session Summary']
-      ],
+      ['Screening', ['Patients', 'New Screening', 'Draft Encounters', 'Session Summary']],
       ['Referrals', ['Referral Worklist', 'Follow-up Due', 'Closed Referrals', 'Print Queue']],
       [
         'Reports',
@@ -59,25 +50,22 @@ describe('application navigation catalog', () => {
 
   it('filters menus and commands exactly by local role', () => {
     expect(labelsForRole('NURSE')).toEqual([
-      ['Home', ['Dashboard', 'Today\u2019s Session', 'Quick Patient Search', 'Open Referrals']],
+      ['Home', ['Dashboard', 'Patient Screening', 'Quick Patient Search', 'Open Referrals']],
       [
         'Patients',
         ['Patient Search', 'Register New Patient', 'Recent Patients', 'Possible Duplicates']
       ],
-      [
-        'Screening',
-        ['Today\u2019s Session', 'New Screening', 'Draft Encounters', 'Session Summary']
-      ],
+      ['Screening', ['Patients', 'New Screening', 'Draft Encounters', 'Session Summary']],
       ['Referrals', ['Referral Worklist', 'Follow-up Due', 'Closed Referrals', 'Print Queue']],
       ['Reports', ['Patient Reports', 'Session Reports', 'Referral Reports', 'Export / Print']]
     ])
     expect(labelsForRole('TRAINED_SCREENER')).toEqual([
-      ['Home', ['Dashboard', 'Today\u2019s Session', 'Quick Patient Search']],
+      ['Home', ['Dashboard', 'Patient Screening', 'Quick Patient Search']],
       [
         'Patients',
         ['Patient Search', 'Register New Patient', 'Recent Patients', 'Possible Duplicates']
       ],
-      ['Screening', ['Today\u2019s Session', 'New Screening', 'Draft Encounters']],
+      ['Screening', ['Patients', 'New Screening', 'Draft Encounters']],
       ['Referrals', ['Referral Worklist']]
     ])
     expect(getVisibleApplicationMenus('UNKNOWN')).toEqual([])

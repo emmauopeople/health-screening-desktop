@@ -188,21 +188,26 @@ select another location, assign or reconfigure the installation, reopen closed
 sessions automatically, rewrite historical attribution, create encounters, or
 perform clinical work.
 
-The workspace ensures the current daily session on entry, then supports listing,
-selecting, closing, and authorized reopening of sessions through the approved
-preload methods. It handles `RESOLVED`, `CREATED`, `ALREADY_EXISTS`,
-`SESSION_DATE_NOT_CURRENT`, `LOCATION_NOT_CONFIGURED`, `LOCATION_NOT_FOUND`,
-`LOCATION_INACTIVE`, `SESSION_CLOSED`, `NO_ACTIVE_PROTOCOL`, `CLOSED`,
-`REOPENED`, `NOT_FOUND`, `SESSION_VERSION_CONFLICT`, `ALREADY_CLOSED`,
-`ALREADY_OPEN`, `FORBIDDEN`, `VALIDATION_FAILED`, and `IPC_UNAVAILABLE` with
-user-facing messages. Expected lifecycle outcomes remain typed result data; the
-renderer does not infer audit or outbox state.
+The HSD-029C-P2 renderer now uses the ensured daily session only to gate patient
+screening entry. It no longer renders a daily-session list, manual session
+selection, manual session creation, close controls, or reopen controls in the
+Screening workspace. Controlled `ensureCurrent` outcomes keep the Patients
+workspace unavailable until `RESOLVED` or `CREATED` returns.
 
-The visible design follows the approved shell and screening-session design language: deep-navy top bar, light-blue contextual commands, pale gray background, white bordered cards, navy headings, teal interaction accents, explicit status text plus dots, compact desktop density, and dialog confirmation for lifecycle transitions. It is designed for the supported desktop range of 1280x720, 1366x768, and 1920x1080.
+Once ready, the workspace searches patients through the existing patient preload
+boundary and starts or resumes patient encounters through the approved
+HSD-029A/HSD-029B encounter-start boundary. The renderer passes only
+`patientId` and the sanitized P1 `screeningSessionId` to encounter start. It
+does not infer audit or outbox state, does not create daily sessions directly,
+and does not write the session context to browser storage.
 
-HSD-029C-P1 does not redesign the workspace, patient search, patient tabs,
-clinical panels, charts, or styling. It does not implement an admin settings UI.
-It still does not implement patient enrollment, screening encounters,
+The visible design follows the approved shell language: deep-navy top bar,
+light-blue contextual commands, pale gray background, white bordered cards,
+navy headings, teal interaction accents, compact desktop density, clickable
+patient rows, and patient tabs. It is designed for the supported desktop range
+of 1280x720, 1366x768, and 1920x1080.
+
+HSD-029C-P2 does not implement an admin settings UI, clinical persistence,
 measurements, protocol calculations, recommendations, referrals, reports,
 dashboard counts, sync networking, push subscriptions, fake records, or
 active-session persistence.
@@ -210,8 +215,8 @@ active-session persistence.
 ## HSD-029 Boundary
 
 HSD-029A and HSD-029B introduced the reviewed encounter-start service and
-IPC/preload boundary. Future patient-row work may use the ensured session as
-workflow context, but it must preserve those approved encounter-start authority
-checks, must not accept renderer-supplied location authority, and must not
-introduce arbitrary IPC. P0 administrative recovery remains separate for
-installations that return `LOCATION_NOT_CONFIGURED`.
+IPC/preload boundary. HSD-029C-P2 uses that boundary from clickable patient
+rows, preserves the approved authority checks, does not accept renderer-supplied
+location authority, and does not introduce arbitrary IPC. P0 administrative
+recovery remains separate for installations that return
+`LOCATION_NOT_CONFIGURED`.

@@ -59,7 +59,7 @@ const commandDefinitions = [
   command(
     'HOME_TODAYS_SESSION',
     'HOME',
-    'Today\u2019s Session',
+    'Patient Screening',
     allRoles,
     'AVAILABLE',
     plannedOwners.session
@@ -116,7 +116,7 @@ const commandDefinitions = [
   command(
     'SCREENING_TODAYS_SESSION',
     'SCREENING',
-    'Today\u2019s Session',
+    'Patients',
     allRoles,
     'AVAILABLE',
     plannedOwners.session
