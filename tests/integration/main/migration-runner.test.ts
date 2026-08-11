@@ -27,7 +27,7 @@ const fixedClock = {
 }
 
 describe('migration runner integration', () => {
-  it('upgrades a fresh HSD-006 database to schema version 5 and is idempotent', async () => {
+  it('upgrades a fresh HSD-006 database to schema version 6 and is idempotent', async () => {
     await withDatabase((connection) => {
       const logger = createLogger()
       const migrate = createProductionDatabaseMigrationRunner({
@@ -42,10 +42,10 @@ describe('migration runner integration', () => {
 
       expect(firstSummary).toEqual({
         previousVersion: 0,
-        currentVersion: 5,
-        appliedVersions: [1, 2, 3, 4, 5]
+        currentVersion: 6,
+        appliedVersions: [1, 2, 3, 4, 5, 6]
       })
-      expect(readUserVersion(connection)).toBe(5)
+      expect(readUserVersion(connection)).toBe(6)
       expect(readLedgerRows(connection)).toEqual(
         databaseMigrations.map((migration) => ({
           version: migration.version,
@@ -59,18 +59,18 @@ describe('migration runner integration', () => {
       const secondSummary = migrate(connection)
 
       expect(secondSummary).toEqual({
-        previousVersion: 5,
-        currentVersion: 5,
+        previousVersion: 6,
+        currentVersion: 6,
         appliedVersions: []
       })
-      expect(readLedgerRows(connection)).toHaveLength(5)
+      expect(readLedgerRows(connection)).toHaveLength(6)
       expect(logger.info.mock.calls.flat()).toContain(
-        'Database migrations current; schemaVersion=5'
+        'Database migrations current; schemaVersion=6'
       )
     })
   })
 
-  it('upgrades an existing schema version 3 database to schema version 5', async () => {
+  it('upgrades an existing schema version 3 database to schema version 6', async () => {
     await withDatabase((connection) => {
       runDatabaseMigrations({
         connection,
@@ -92,11 +92,11 @@ describe('migration runner integration', () => {
 
       expect(summary).toEqual({
         previousVersion: 3,
-        currentVersion: 5,
-        appliedVersions: [4, 5]
+        currentVersion: 6,
+        appliedVersions: [4, 5, 6]
       })
-      expect(readUserVersion(connection)).toBe(5)
-      expect(readLedgerRows(connection).map((row) => row.version)).toEqual([1, 2, 3, 4, 5])
+      expect(readUserVersion(connection)).toBe(6)
+      expect(readLedgerRows(connection).map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6])
     })
   })
 
@@ -120,8 +120,8 @@ describe('migration runner integration', () => {
       const secondSummary = secondRunner(connection)
 
       expect(secondSummary).toEqual({
-        previousVersion: 5,
-        currentVersion: 5,
+        previousVersion: 6,
+        currentVersion: 6,
         appliedVersions: []
       })
       expect(readLedgerRows(connection)).toEqual(originalLedger)
@@ -418,7 +418,7 @@ describe('migration runner integration', () => {
       connection.exec('DROP TABLE app_settings')
 
       expect(() => migrate(connection)).toThrow(MigrationCompatibilityError)
-      expect(readUserVersion(connection)).toBe(5)
+      expect(readUserVersion(connection)).toBe(6)
       expect(readLedgerRows(connection)).toEqual(originalLedger)
     })
   })
@@ -436,7 +436,7 @@ describe('migration runner integration', () => {
       connection.exec('DROP INDEX ix_locations_name_normalized')
 
       expect(() => migrate(connection)).toThrow(MigrationCompatibilityError)
-      expect(readUserVersion(connection)).toBe(5)
+      expect(readUserVersion(connection)).toBe(6)
       expect(readLedgerRows(connection)).toEqual(originalLedger)
     })
   })
@@ -498,7 +498,7 @@ describe('migration runner integration', () => {
             application_version
           ) VALUES (?, ?, ?, ?, ?)`
         )
-        .run(6, 'extra', 'a'.repeat(64), fixedClock.now(), '1.0.0')
+        .run(7, 'extra', 'a'.repeat(64), fixedClock.now(), '1.0.0')
 
       expectProductionMigrationCompatibilityFailure(connection)
     })
@@ -535,7 +535,7 @@ function expectProductionMigrationCompatibilityFailure(connection: Database.Data
       applicationVersion: '1.0.0',
       logger: createLogger(),
       clock: fixedClock,
-      expectedHighestVersion: 5
+      expectedHighestVersion: 6
     })
   ).toThrow(MigrationCompatibilityError)
 }

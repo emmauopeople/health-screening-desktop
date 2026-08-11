@@ -355,6 +355,8 @@ function createHarness(options: HarnessOptions = {}): Harness {
   const screeningSessionRepository: Harness['screeningSessionRepository'] = Object.freeze({
     getById: vi.fn(() => createSession()),
     getByIdForWrite: vi.fn(() => createSession()),
+    hasOpenForLocationForWrite: vi.fn(() => false),
+    hasAnyOpenForWrite: vi.fn(() => false),
     list: vi.fn(
       () =>
         options.listResult ??

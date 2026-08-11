@@ -18,7 +18,7 @@ describe('first-run renderer view model and source boundaries', () => {
     expect(firstRunFormCopy).toMatchObject({
       heading: 'Set up this screening installation.',
       statement:
-        'This one-time setup creates the local installation, first administrator, and initial screening location on this computer.',
+        'This one-time setup creates the local installation, first administrator, and configured screening location on this computer.',
       offlineStatement: 'Internet access is not required for this setup.',
       submitLabel: 'Initialize application',
       exitLabel: 'Exit application'
@@ -32,7 +32,7 @@ describe('first-run renderer view model and source boundaries', () => {
     expect(firstRunFormFieldsets.map((fieldset) => fieldset.legend)).toEqual([
       'Installation',
       'Administrator',
-      'Initial screening location'
+      'Configured screening location'
     ])
     expect(
       firstRunFormFieldsets.flatMap((fieldset) => fieldset.fields.map((field) => field.label))

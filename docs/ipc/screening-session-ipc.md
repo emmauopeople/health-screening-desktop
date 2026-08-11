@@ -54,7 +54,7 @@ The IPC handler passes only `{ userId, role }` from the authenticated main-proce
 - active locations ordered by the location repository;
 - each location's `id` and display `name`.
 
-The context does not return installation IDs, database timestamps, audit fields, normalized location names, inactive locations, repository metadata, or an active-location selection. Future renderer state may keep a selection in memory, but this checkpoint persists nothing.
+The context does not return installation IDs, database timestamps, audit fields, normalized location names, inactive locations, repository metadata, or an active-location selection. HSD-029C-P0 supersedes temporary renderer location selection as operational authority by adding a trusted persisted configured-location service in the main process; this HSD-028B IPC context still persists nothing and is not the authority for future background daily-session resolution.
 
 Invalid or missing installation/timezone state fails closed with a sanitized IPC error. The code never falls back to the operating-system timezone or UTC.
 

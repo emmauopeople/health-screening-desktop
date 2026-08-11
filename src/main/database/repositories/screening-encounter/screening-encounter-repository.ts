@@ -59,6 +59,8 @@ const screeningEncounterRowKeys = Object.freeze([
   'updated_at'
 ] as const)
 
+const existsRowKeys = Object.freeze(['has_any'] as const)
+
 const screeningEncounterColumns = `
   id,
   patient_id,
@@ -98,6 +100,25 @@ WHERE patient_id = ?
   AND screening_session_id = ?
   AND amendment_of_encounter_id IS NULL
 LIMIT 1;
+`
+
+const selectHasDraftScreeningEncounterForLocationSql = `
+SELECT EXISTS(
+  SELECT 1
+  FROM screening_encounters
+  WHERE location_id = ?
+    AND status = 'DRAFT'
+  LIMIT 1
+) AS has_any;
+`
+
+const selectHasAnyDraftScreeningEncounterSql = `
+SELECT EXISTS(
+  SELECT 1
+  FROM screening_encounters
+  WHERE status = 'DRAFT'
+  LIMIT 1
+) AS has_any;
 `
 
 const insertCanonicalRootSql = `
@@ -231,6 +252,55 @@ export function createScreeningEncounterRepository(
 
         if (error instanceof RepositoryValidationError) {
           throw new RepositoryValidationError(error.errorType)
+        }
+
+        if (error instanceof RepositoryDataIntegrityError) {
+          throw new RepositoryDataIntegrityError(error.errorType)
+        }
+
+        throw new RepositoryReadError(getRepositoryErrorType(error))
+      }
+    },
+
+    hasDraftForLocationForWrite(
+      scopedConnection: DatabaseTransactionConnection,
+      locationId: ScreeningEncounterRecord['locationId']
+    ): boolean {
+      assertActiveDatabaseTransactionConnection(scopedConnection)
+
+      try {
+        return decodeExistsRow(
+          scopedConnection
+            .prepare<[string]>(selectHasDraftScreeningEncounterForLocationSql)
+            .get(parseReadEntityId(locationId))
+        )
+      } catch (error) {
+        if (error instanceof DatabaseTransactionStateError) {
+          throw new DatabaseTransactionStateError(error.errorType)
+        }
+
+        if (error instanceof RepositoryValidationError) {
+          throw new RepositoryValidationError(error.errorType)
+        }
+
+        if (error instanceof RepositoryDataIntegrityError) {
+          throw new RepositoryDataIntegrityError(error.errorType)
+        }
+
+        throw new RepositoryReadError(getRepositoryErrorType(error))
+      }
+    },
+
+    hasAnyDraftForWrite(scopedConnection: DatabaseTransactionConnection): boolean {
+      assertActiveDatabaseTransactionConnection(scopedConnection)
+
+      try {
+        return decodeExistsRow(
+          scopedConnection.prepare(selectHasAnyDraftScreeningEncounterSql).get()
+        )
+      } catch (error) {
+        if (error instanceof DatabaseTransactionStateError) {
+          throw new DatabaseTransactionStateError(error.errorType)
         }
 
         if (error instanceof RepositoryDataIntegrityError) {
@@ -375,6 +445,28 @@ function decodeScreeningEncounterRow(row: unknown): ScreeningEncounterRecord {
       createdAt,
       updatedAt
     })
+  } catch (error) {
+    if (error instanceof RepositoryDataIntegrityError) {
+      throw new RepositoryDataIntegrityError(error.errorType)
+    }
+
+    throw new RepositoryDataIntegrityError(getRepositoryErrorType(error))
+  }
+}
+
+function decodeExistsRow(row: unknown): boolean {
+  try {
+    const data = readDataProperties(row, existsRowKeys)
+
+    if (data.has_any === 0) {
+      return false
+    }
+
+    if (data.has_any === 1) {
+      return true
+    }
+
+    throw new RepositoryDataIntegrityError()
   } catch (error) {
     if (error instanceof RepositoryDataIntegrityError) {
       throw new RepositoryDataIntegrityError(error.errorType)

@@ -7,7 +7,7 @@ export const reviewFormMessage = 'Review the form and correct missing or invalid
 export const firstRunFormCopy = {
   heading: 'Set up this screening installation.',
   statement:
-    'This one-time setup creates the local installation, first administrator, and initial screening location on this computer.',
+    'This one-time setup creates the local installation, first administrator, and configured screening location on this computer.',
   offlineStatement: 'Internet access is not required for this setup.',
   submitLabel: 'Initialize application',
   submittingLabel: 'Initializing local application...',
@@ -40,7 +40,7 @@ export const firstRunFormFieldsets = [
     ]
   },
   {
-    legend: 'Initial screening location',
+    legend: 'Configured screening location',
     fields: [
       { name: 'locationName', label: 'Location name', required: true },
       { name: 'locationType', label: 'Location type', required: true },

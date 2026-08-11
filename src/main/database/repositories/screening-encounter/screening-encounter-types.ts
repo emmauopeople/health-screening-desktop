@@ -63,6 +63,11 @@ export interface ScreeningEncounterRepository {
     patientId: EntityId,
     screeningSessionId: EntityId
   ): ScreeningEncounterRecord | null
+  hasDraftForLocationForWrite(
+    connection: DatabaseTransactionConnection,
+    locationId: EntityId
+  ): boolean
+  hasAnyDraftForWrite(connection: DatabaseTransactionConnection): boolean
   insertCanonicalRoot(
     connection: DatabaseTransactionConnection,
     input: InsertCanonicalRootScreeningEncounterInput

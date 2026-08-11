@@ -58,20 +58,32 @@ export function validateSchemaVersion5(
   }
 }
 
-function isSchemaVersion5Valid(
+export function hasRequiredSchemaVersion5Invariants(
   connection: MigrationConnection,
-  options: { readonly requireForeignKeyEnforcement: boolean }
+  options: {
+    readonly requireForeignKeyEnforcement: boolean
+    readonly namedIndexes?: readonly string[]
+    readonly tableNames?: readonly string[]
+  }
 ): boolean {
   try {
     return (
       hasRequiredSchemaVersion4Invariants(connection, {
         requireForeignKeyEnforcement: options.requireForeignKeyEnforcement,
-        namedIndexes: schemaVersion5NamedIndexes
+        namedIndexes: options.namedIndexes ?? schemaVersion5NamedIndexes,
+        tableNames: options.tableNames ?? schemaVersion5TableNames
       }) && hasRequiredRootEncounterIdentityIndex(connection)
     )
   } catch {
     return false
   }
+}
+
+function isSchemaVersion5Valid(
+  connection: MigrationConnection,
+  options: { readonly requireForeignKeyEnforcement: boolean }
+): boolean {
+  return hasRequiredSchemaVersion5Invariants(connection, options)
 }
 
 function hasRequiredRootEncounterIdentityIndex(connection: MigrationConnection): boolean {

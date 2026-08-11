@@ -4,6 +4,7 @@ import type {
   DatabaseTransactionExecutor,
   DeploymentName,
   IanaTimeZone,
+  InstallationLocationConfigurationRepository,
   InstallationRecord,
   InstallationRepository,
   LocalUserRepository,
@@ -75,6 +76,7 @@ export interface FirstRunBootstrapServiceDependencies {
   readonly installationRepository: InstallationRepository
   readonly localUserRepository: LocalUserRepository
   readonly locationRepository: LocationRepository
+  readonly installationLocationConfigurationRepository: InstallationLocationConfigurationRepository
   readonly auditEventRepository: AuditEventRepository
   readonly passwordCredentialService: PasswordCredentialService
   readonly transactionExecutor: DatabaseTransactionExecutor

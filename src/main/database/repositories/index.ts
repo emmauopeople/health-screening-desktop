@@ -3,6 +3,7 @@ export {
   InstallationAlreadyExistsError,
   LocalUserAuthenticationStateConflictError,
   LocalUserCredentialStateConflictError,
+  InstallationLocationConfigurationAlreadyExistsError,
   LocationAlreadyExistsError,
   ScreeningSessionAlreadyExistsError,
   RepositoryDataIntegrityError,
@@ -68,6 +69,17 @@ export {
   type Username,
   type UsernameIdentity
 } from './local-user'
+export {
+  createInstallationLocationConfigurationRepository,
+  parseInsertInstallationLocationConfigurationInput,
+  parseInstallationLocationConfigurationRowVersion,
+  parseUpdateInstallationLocationConfigurationInput,
+  type InsertInstallationLocationConfigurationInput,
+  type InstallationLocationConfigurationRecord,
+  type InstallationLocationConfigurationRepository,
+  type UpdateInstallationLocationConfigurationInput,
+  type UpdateInstallationLocationConfigurationResult
+} from './installation-location-configuration'
 export {
   createLocationRepository,
   decodeSqliteLocationBoolean,

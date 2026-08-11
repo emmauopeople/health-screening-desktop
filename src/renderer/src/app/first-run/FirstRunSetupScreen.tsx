@@ -231,7 +231,7 @@ export function FirstRunSetupScreen({
         </fieldset>
 
         <fieldset className="setup-fieldset" disabled={isSubmitting}>
-          <legend>Initial screening location</legend>
+          <legend>Configured screening location</legend>
           <div className="setup-grid">
             <div className="setup-field">
               <label htmlFor="locationName">Location name required</label>

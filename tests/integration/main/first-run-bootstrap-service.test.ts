@@ -17,6 +17,7 @@ import {
   AuditEventAlreadyExistsError,
   createAuditEventRepository,
   createDatabaseTransactionExecutor,
+  createInstallationLocationConfigurationRepository,
   createInstallationRepository,
   createLocalUserRepository,
   createLocationRepository,
@@ -26,6 +27,7 @@ import {
   RepositoryWriteError,
   type AuditEventRepository,
   type DatabaseTransactionExecutor,
+  type InstallationLocationConfigurationRepository,
   type InstallationRepository,
   type LocalUserRepository,
   type LocationRepository
@@ -50,13 +52,15 @@ const locationId = '33333333-3333-4333-8333-333333333333'
 const installationAuditId = '44444444-4444-4444-8444-444444444444'
 const userAuditId = '55555555-5555-4555-8555-555555555555'
 const locationAuditId = '66666666-6666-4666-8666-666666666666'
+const locationAssignmentAuditId = '77777777-7777-4777-8777-777777777777'
 const deterministicIds = Object.freeze([
   installationId,
   administratorId,
   locationId,
   installationAuditId,
   userAuditId,
-  locationAuditId
+  locationAuditId,
+  locationAssignmentAuditId
 ])
 
 describe('first-run bootstrap service', () => {
@@ -67,14 +71,15 @@ describe('first-run bootstrap service', () => {
         installation: 0,
         users: 0,
         locations: 0,
+        installation_location_configuration: 0,
         audit_log: 0,
         app_settings: 0,
         protocol_versions: 0,
         patients: 0,
         sync_outbox: 0
       })
-      expect(readUserVersion(connection)).toBe(5)
-      expect(readTableCount(connection, 'schema_migrations')).toBe(5)
+      expect(readUserVersion(connection)).toBe(6)
+      expect(readTableCount(connection, 'schema_migrations')).toBe(6)
       expect(readSource('src/main/app/lifecycle.ts')).not.toContain('first-run')
       expect(readSource('src/main/app/lifecycle.ts')).not.toContain(
         'createFirstRunBootstrapService'
@@ -83,7 +88,7 @@ describe('first-run bootstrap service', () => {
     })
   })
 
-  it('atomically creates installation, administrator, location, and three audit events', async () => {
+  it('atomically creates installation, administrator, location, configuration, and four audit events', async () => {
     await withMigratedDatabase(
       async ({ connection, service, passwordService, idGenerator, clock }) => {
         const result = await service.initialize(createValidCommand())
@@ -126,7 +131,8 @@ describe('first-run bootstrap service', () => {
         expect(result.auditEvents.map((event) => event.id)).toEqual([
           installationAuditId,
           userAuditId,
-          locationAuditId
+          locationAuditId,
+          locationAssignmentAuditId
         ])
         expect(Object.isFrozen(result)).toBe(true)
         expect(Object.isFrozen(result.auditEvents)).toBe(true)
@@ -140,7 +146,8 @@ describe('first-run bootstrap service', () => {
           installation: 1,
           users: 1,
           locations: 1,
-          audit_log: 3,
+          installation_location_configuration: 1,
+          audit_log: 4,
           app_settings: 0,
           protocol_versions: 0,
           patients: 0,
@@ -184,6 +191,16 @@ describe('first-run bootstrap service', () => {
           updated_by: administratorId,
           updated_at: bootstrapTimestamp
         })
+        expect(readRawConfiguration(connection)).toEqual({
+          singleton_id: 1,
+          installation_id: installationId,
+          location_id: locationId,
+          configured_at: bootstrapTimestamp,
+          configured_by: administratorId,
+          updated_at: bootstrapTimestamp,
+          updated_by: administratorId,
+          row_version: 1
+        })
         expect(readRawAuditRows(connection)).toEqual([
           {
             id: installationAuditId,
@@ -214,14 +231,26 @@ describe('first-run bootstrap service', () => {
             entity_id: locationId,
             occurred_at: bootstrapTimestamp,
             metadata_json: '{"bootstrap":true,"initial_location":true,"location_type":"CHURCH"}'
+          },
+          {
+            id: locationAssignmentAuditId,
+            installation_id: installationId,
+            user_id: administratorId,
+            action: 'INSTALLATION_LOCATION_ASSIGNED',
+            entity_type: 'INSTALLATION',
+            entity_id: installationId,
+            occurred_at: bootstrapTimestamp,
+            metadata_json:
+              '{"bootstrap":true,"location_id":"33333333-3333-4333-8333-333333333333","row_version":1}'
           }
         ])
         expect(result.auditEvents.map((event) => event.metadata)).toEqual([
           { bootstrap: true },
           { bootstrap: true, must_change_password: true, role: 'LOCAL_ADMIN' },
-          { bootstrap: true, initial_location: true, location_type: 'CHURCH' }
+          { bootstrap: true, initial_location: true, location_type: 'CHURCH' },
+          { bootstrap: true, location_id: locationId, row_version: 1 }
         ])
-        expect(idGenerator.calls).toBe(6)
+        expect(idGenerator.calls).toBe(7)
         expect(clock.calls).toBe(1)
         expect(passwordService.hash).toHaveBeenCalledTimes(1)
 
@@ -261,7 +290,8 @@ describe('first-run bootstrap service', () => {
           installation: 1,
           users: 1,
           locations: 1,
-          audit_log: 3
+          installation_location_configuration: 1,
+          audit_log: 4
         })
         expect(connection.inTransaction).toBe(false)
       }
@@ -340,6 +370,7 @@ describe('first-run bootstrap service', () => {
           installation: 0,
           users: 0,
           locations: 0,
+          installation_location_configuration: 0,
           audit_log: 0
         })
 
@@ -384,9 +415,11 @@ describe('first-run bootstrap service', () => {
       'installation insert',
       'administrator insert',
       'location insert',
+      'configuration insert',
       'installation audit insert',
       'user audit insert',
       'location audit insert',
+      'location assignment audit insert',
       'verification read'
     ] as const
 
@@ -407,6 +440,7 @@ describe('first-run bootstrap service', () => {
           installation: 0,
           users: 0,
           locations: 0,
+          installation_location_configuration: 0,
           audit_log: 0
         })
         expect(connection.inTransaction).toBe(false)
@@ -432,7 +466,7 @@ describe('first-run bootstrap service', () => {
         name: 'callback work',
         options: {
           wrapDependencies: (dependencies: BootstrapDependencies) =>
-            withWriteFailure(dependencies, 'location audit insert')
+            withWriteFailure(dependencies, 'location assignment audit insert')
         }
       },
       {
@@ -454,6 +488,7 @@ describe('first-run bootstrap service', () => {
           installation: 0,
           users: 0,
           locations: 0,
+          installation_location_configuration: 0,
           audit_log: 0
         })
         expect(connection.inTransaction).toBe(false)
@@ -508,6 +543,7 @@ interface BootstrapDependencies {
   readonly installationRepository: InstallationRepository
   readonly localUserRepository: LocalUserRepository
   readonly locationRepository: LocationRepository
+  readonly installationLocationConfigurationRepository: InstallationLocationConfigurationRepository
   readonly auditEventRepository: AuditEventRepository
   readonly passwordCredentialService: PasswordCredentialService
   readonly transactionExecutor: CountingTransactionExecutor
@@ -542,9 +578,11 @@ type FailureStage =
   | 'installation insert'
   | 'administrator insert'
   | 'location insert'
+  | 'configuration insert'
   | 'installation audit insert'
   | 'user audit insert'
   | 'location audit insert'
+  | 'location assignment audit insert'
   | 'verification read'
 
 async function withMigratedDatabase(
@@ -578,6 +616,8 @@ async function withMigratedDatabase(
       installationRepository: createInstallationRepository(connection),
       localUserRepository: createLocalUserRepository(connection),
       locationRepository: createLocationRepository(connection),
+      installationLocationConfigurationRepository:
+        createInstallationLocationConfigurationRepository(connection),
       auditEventRepository: createAuditEventRepository(connection),
       passwordCredentialService: passwordService,
       transactionExecutor
@@ -668,6 +708,16 @@ function withWriteFailure(
         return dependencies.locationRepository.insert(connection, input)
       }
     },
+    installationLocationConfigurationRepository: {
+      ...dependencies.installationLocationConfigurationRepository,
+      insert(connection, input) {
+        if (failureStage === 'configuration insert') {
+          throw new RepositoryWriteError('C:\\secret\\configuration.sqlite3')
+        }
+
+        return dependencies.installationLocationConfigurationRepository.insert(connection, input)
+      }
+    },
     auditEventRepository: {
       ...dependencies.auditEventRepository,
       insert(connection, input) {
@@ -676,7 +726,8 @@ function withWriteFailure(
         if (
           (failureStage === 'installation audit insert' && auditInsertCount === 1) ||
           (failureStage === 'user audit insert' && auditInsertCount === 2) ||
-          (failureStage === 'location audit insert' && auditInsertCount === 3)
+          (failureStage === 'location audit insert' && auditInsertCount === 3) ||
+          (failureStage === 'location assignment audit insert' && auditInsertCount === 4)
         ) {
           throw new AuditEventAlreadyExistsError('C:\\secret\\audit.sqlite3')
         }
@@ -888,6 +939,10 @@ function readBootstrapCounts(connection: Database.Database): Record<string, numb
     installation: readTableCount(connection, 'installation'),
     users: readTableCount(connection, 'users'),
     locations: readTableCount(connection, 'locations'),
+    installation_location_configuration: readTableCount(
+      connection,
+      'installation_location_configuration'
+    ),
     audit_log: readTableCount(connection, 'audit_log'),
     app_settings: readTableCount(connection, 'app_settings'),
     protocol_versions: readTableCount(connection, 'protocol_versions'),
@@ -906,6 +961,10 @@ function readRawUser(connection: Database.Database): unknown {
 
 function readRawLocation(connection: Database.Database): unknown {
   return connection.prepare('SELECT * FROM locations').get()
+}
+
+function readRawConfiguration(connection: Database.Database): unknown {
+  return connection.prepare('SELECT * FROM installation_location_configuration').get()
 }
 
 function readRawAuditRows(connection: Database.Database): readonly unknown[] {
@@ -950,6 +1009,7 @@ function expectSafeFirstRunError(error: unknown): void {
     installationAuditId,
     userAuditId,
     locationAuditId,
+    locationAssignmentAuditId,
     'Cameroon',
     'Africa/Douala',
     'Admin',
@@ -961,6 +1021,7 @@ function expectSafeFirstRunError(error: unknown): void {
     'bootstrap',
     'LOCAL_ADMIN',
     'INSTALLATION_INITIALIZED',
+    'INSTALLATION_LOCATION_ASSIGNED',
     'SELECT',
     'INSERT',
     'C:\\',

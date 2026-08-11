@@ -7,6 +7,7 @@ import {
 } from '@main/application'
 import type {
   AuditEventRepository,
+  InstallationLocationConfigurationRepository,
   InstallationRepository,
   LocalUserRepository,
   LocationRepository
@@ -234,6 +235,7 @@ function createValidationOnlyDependencies(): {
   installationRepository: InstallationRepository
   localUserRepository: LocalUserRepository
   locationRepository: LocationRepository
+  installationLocationConfigurationRepository: InstallationLocationConfigurationRepository
   auditEventRepository: AuditEventRepository
   passwordCredentialService: PasswordCredentialService & {
     hash: ReturnType<typeof vi.fn<PasswordCredentialService['hash']>>
@@ -262,6 +264,12 @@ function createValidationOnlyDependencies(): {
       listActive: vi.fn(),
       insert: vi.fn()
     } as unknown as LocationRepository,
+    installationLocationConfigurationRepository: {
+      get: vi.fn(),
+      getForWrite: vi.fn(),
+      insert: vi.fn(),
+      updateLocation: vi.fn()
+    } as unknown as InstallationLocationConfigurationRepository,
     auditEventRepository: {
       getById: vi.fn(),
       listRecent: vi.fn(),

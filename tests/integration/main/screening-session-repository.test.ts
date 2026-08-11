@@ -202,6 +202,41 @@ describe('screening session repository', () => {
     expect(fakeConnection.preparedSql).toEqual([])
   })
 
+  it('detects open sessions across the installation without a location filter', async () => {
+    await withScreeningSessionRepository(({ connection, repository, executor }) => {
+      insertReferences(connection)
+      insertRawLocation(connection, { id: secondLocationId, name: 'Second Site' })
+      insertRawSession(connection, {
+        id: secondSessionId,
+        location_id: secondLocationId,
+        status: 'CLOSED',
+        closed_by: userId,
+        closed_at: later,
+        row_version: 2
+      })
+
+      expect(executor.run((context) => repository.hasAnyOpenForWrite(context.connection))).toBe(
+        false
+      )
+
+      insertRawSession(connection, {
+        id: thirdSessionId,
+        location_id: secondLocationId,
+        session_date: '2026-07-30',
+        status: 'OPEN'
+      })
+
+      expect(executor.run((context) => repository.hasAnyOpenForWrite(context.connection))).toBe(
+        true
+      )
+      expect(
+        executor.run((context) =>
+          repository.hasOpenForLocationForWrite(context.connection, parseEntityId(locationId))
+        )
+      ).toBe(false)
+    })
+  })
+
   it('classifies only location/date uniqueness as ScreeningSessionAlreadyExistsError', async () => {
     await withScreeningSessionRepository(({ connection, repository, executor }) => {
       insertReferences(connection)

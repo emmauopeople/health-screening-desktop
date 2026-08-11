@@ -102,6 +102,11 @@ export interface ScreeningSessionRepository {
     connection: DatabaseTransactionConnection,
     id: EntityId
   ): ScreeningSessionRecord | null
+  hasOpenForLocationForWrite(
+    connection: DatabaseTransactionConnection,
+    locationId: EntityId
+  ): boolean
+  hasAnyOpenForWrite(connection: DatabaseTransactionConnection): boolean
   list(input: ScreeningSessionListInput): ScreeningSessionListResult
   insert(
     connection: DatabaseTransactionConnection,
