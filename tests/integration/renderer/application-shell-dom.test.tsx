@@ -25,6 +25,7 @@ import {
   type PublicPatientSummary,
   type PublicLockedAuthenticationSession,
   type PublicPasswordChangeRequiredAuthenticationSession,
+  type PublicScreeningEncounterStartSummary,
   type PublicSignedOutAuthenticationSession,
   type UtcTimestamp
 } from '@shared/ipc'
@@ -218,26 +219,26 @@ describe('application shell DOM integration', () => {
 
     expectCommandPanelLabels(mounted, [
       'Dashboard',
-      'Today\u2019s Session',
+      'Patient Screening',
       'Quick Patient Search',
       'Open Referrals',
       'Sync Center'
     ])
     expect(commandButtonByText(mounted, 'Dashboard').getAttribute('aria-current')).toBe('page')
 
-    await clickButton(mounted, 'Today\u2019s Session')
+    await clickButton(mounted, 'Patient Screening')
 
     expectCommandPanelLabels(mounted, [
       'Dashboard',
-      'Today\u2019s Session',
+      'Patient Screening',
       'Quick Patient Search',
       'Open Referrals',
       'Sync Center'
     ])
-    expect(commandButtonByText(mounted, 'Today\u2019s Session').getAttribute('aria-current')).toBe(
+    expect(commandButtonByText(mounted, 'Patient Screening').getAttribute('aria-current')).toBe(
       'page'
     )
-    expectWorkspaceHeading(mounted, "Today's Screening Session")
+    expectWorkspaceHeading(mounted, 'Patients')
 
     await clickButton(mounted, 'Patients')
     await clickButton(mounted, 'Patient Search')
@@ -255,7 +256,7 @@ describe('application shell DOM integration', () => {
 
     expectCommandPanelLabels(mounted, [
       'Dashboard',
-      'Today\u2019s Session',
+      'Patient Screening',
       'Quick Patient Search',
       'Open Referrals',
       'Sync Center'
@@ -290,11 +291,9 @@ describe('application shell DOM integration', () => {
     expect(commandButtonByText(mounted, 'Patient Search').getAttribute('aria-current')).toBe('page')
 
     await clickButton(mounted, 'Screening')
-    expectWorkspaceHeading(mounted, "Today's Screening Session")
+    expectWorkspaceHeading(mounted, 'Patients')
     expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Screening commands')
-    expect(commandButtonByText(mounted, 'Today\u2019s Session').getAttribute('aria-current')).toBe(
-      'page'
-    )
+    expect(commandButtonByText(mounted, 'Patients').getAttribute('aria-current')).toBe('page')
 
     await clickButton(mounted, 'Referrals')
     expectWorkspaceHeading(mounted, 'Referral Worklist')
@@ -379,7 +378,7 @@ describe('application shell DOM integration', () => {
 
     await dispatchKeyboard(menuButton(mounted, 'Screening'), 'Enter')
 
-    expectWorkspaceHeading(mounted, "Today's Screening Session")
+    expectWorkspaceHeading(mounted, 'Patients')
     expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Screening commands')
 
     menuButton(mounted, 'Home').focus()
@@ -490,11 +489,11 @@ describe('application shell DOM integration', () => {
     await clickDialogButton(saveCase.mounted, 'Save amendment')
 
     expect(saveCase.harness.api.patient.amendDemographics).toHaveBeenCalledOnce()
-    expectWorkspaceHeading(saveCase.mounted, "Today's Screening Session")
+    expectWorkspaceHeading(saveCase.mounted, 'Patients')
     expect(commandPanel(saveCase.mounted)?.getAttribute('aria-label')).toBe('Screening commands')
-    expect(
-      commandButtonByText(saveCase.mounted, 'Today\u2019s Session').getAttribute('aria-current')
-    ).toBe('page')
+    expect(commandButtonByText(saveCase.mounted, 'Patients').getAttribute('aria-current')).toBe(
+      'page'
+    )
 
     await saveCase.mounted.unmount()
 
@@ -1146,6 +1145,9 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
     getById: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['getById']>>
     list: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['list']>>
   } & HealthScreeningApi['screeningSessions']
+  screeningEncounters: {
+    start: ReturnType<typeof vi.fn<HealthScreeningApi['screeningEncounters']['start']>>
+  } & HealthScreeningApi['screeningEncounters']
 }
 
 interface AppApiHarness {
@@ -1296,6 +1298,19 @@ function createAppApi(initialSession: PublicAuthenticationSession): AppApiHarnes
             page: 1,
             pageSize: 25,
             total: 0
+          })
+        )
+      )
+    },
+    screeningEncounters: {
+      start: vi.fn((request) =>
+        Promise.resolve(
+          createIpcSuccess({
+            status: 'STARTED',
+            encounter: shellEncounterSummary({
+              patientId: request.patientId,
+              screeningSessionId: request.screeningSessionId
+            })
           })
         )
       )
@@ -1742,6 +1757,20 @@ function shellPatientDetail(overrides: Partial<PublicPatientDetail> = {}): Publi
     createdByDisplayName: 'Admin User',
     updatedByDisplayName: 'Admin User',
     clinicalStatus: 'NOT_AVAILABLE',
+    ...overrides
+  }
+}
+
+function shellEncounterSummary(
+  overrides: Partial<PublicScreeningEncounterStartSummary> = {}
+): PublicScreeningEncounterStartSummary {
+  return {
+    id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    patientId: '11111111-1111-4111-8111-111111111111',
+    screeningSessionId: '99999999-9999-4999-8999-999999999999',
+    status: 'DRAFT',
+    startedAt: futureTimestamp(0),
+    recordVersion: 1,
     ...overrides
   }
 }

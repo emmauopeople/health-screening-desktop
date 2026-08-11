@@ -45,8 +45,8 @@ const dashboardQuickActions = Object.freeze([
     commandId: 'PATIENTS_PATIENT_SEARCH' as const
   }),
   Object.freeze({
-    label: 'Start new screening',
-    support: 'Open or select today\u2019s session before future encounter entry',
+    label: 'New Screening',
+    support: 'Open the Screening patients workspace',
     commandId: 'SCREENING_NEW_SCREENING' as const
   }),
   Object.freeze({

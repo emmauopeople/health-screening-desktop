@@ -78,13 +78,13 @@ describe('application shell rendering', () => {
   it('filters dashboard quick actions by role', () => {
     expect(getVisibleDashboardQuickActions('LOCAL_ADMIN').map((action) => action.label)).toEqual([
       'Find or open patient',
-      'Start new screening',
+      'New Screening',
       'Record referral follow-up',
       'Print session summary'
     ])
     expect(
       getVisibleDashboardQuickActions('TRAINED_SCREENER').map((action) => action.label)
-    ).toEqual(['Find or open patient', 'Start new screening'])
+    ).toEqual(['Find or open patient', 'New Screening'])
   })
 
   it('defines viewport-constrained shell grid slots without a patient-tab row', () => {
