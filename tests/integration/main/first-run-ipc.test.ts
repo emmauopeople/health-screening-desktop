@@ -63,7 +63,7 @@ describe('first-run IPC integration', () => {
         locations: 0,
         audit_log: 0,
         app_settings: 0,
-        protocol_versions: 0,
+        protocol_versions: 1,
         patients: 0,
         sync_outbox: 0
       })
@@ -85,7 +85,7 @@ describe('first-run IPC integration', () => {
         locations: 1,
         audit_log: 4,
         app_settings: 0,
-        protocol_versions: 0,
+        protocol_versions: 1,
         patients: 0,
         sync_outbox: 0
       })

@@ -753,8 +753,17 @@ async function withMigratedDatabase(test: (connection: Database.Database) => voi
       logger: createLogger(),
       clock: fixedClock
     })(connection)
+    deactivateBaselineProtocol(connection)
     test(connection)
   })
+}
+
+function deactivateBaselineProtocol(connection: Database.Database): void {
+  connection
+    .prepare(
+      "UPDATE protocol_versions SET status = 'INACTIVE' WHERE protocol_key = 'health-screening-baseline'"
+    )
+    .run()
 }
 
 async function withVersion3Database(test: (connection: Database.Database) => void): Promise<void> {

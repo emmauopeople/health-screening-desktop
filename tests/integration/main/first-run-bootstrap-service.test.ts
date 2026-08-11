@@ -74,12 +74,12 @@ describe('first-run bootstrap service', () => {
         installation_location_configuration: 0,
         audit_log: 0,
         app_settings: 0,
-        protocol_versions: 0,
+        protocol_versions: 1,
         patients: 0,
         sync_outbox: 0
       })
-      expect(readUserVersion(connection)).toBe(6)
-      expect(readTableCount(connection, 'schema_migrations')).toBe(6)
+      expect(readUserVersion(connection)).toBe(7)
+      expect(readTableCount(connection, 'schema_migrations')).toBe(7)
       expect(readSource('src/main/app/lifecycle.ts')).not.toContain('first-run')
       expect(readSource('src/main/app/lifecycle.ts')).not.toContain(
         'createFirstRunBootstrapService'
@@ -149,7 +149,7 @@ describe('first-run bootstrap service', () => {
           installation_location_configuration: 1,
           audit_log: 4,
           app_settings: 0,
-          protocol_versions: 0,
+          protocol_versions: 1,
           patients: 0,
           sync_outbox: 0
         })

@@ -510,6 +510,7 @@ async function withStartService(
       logger: { info: vi.fn(), error: vi.fn() },
       clock: createUtcClock(() => now)
     })(connection)
+    deactivateBaselineProtocol(connection)
     const instance = createStartServiceInstance(connection, options)
 
     await test({ connection, ...instance })
@@ -536,6 +537,7 @@ async function withTwoConnectionStartServices(
       logger: { info: vi.fn(), error: vi.fn() },
       clock: createUtcClock(() => now)
     })(firstConnection)
+    deactivateBaselineProtocol(firstConnection)
     secondConnection = new Database(databasePath)
     configurePragmas(secondConnection)
     seedCoreGraph(firstConnection)
@@ -566,6 +568,14 @@ async function withTwoConnectionStartServices(
     }
     await rm(directory, { recursive: true, force: true })
   }
+}
+
+function deactivateBaselineProtocol(connection: Database.Database): void {
+  connection
+    .prepare(
+      "UPDATE protocol_versions SET status = 'INACTIVE' WHERE protocol_key = 'health-screening-baseline'"
+    )
+    .run()
 }
 
 function createStartServiceInstance(

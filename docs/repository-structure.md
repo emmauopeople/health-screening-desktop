@@ -68,6 +68,9 @@ per patient per screening session through
 amendment rows that reference a root encounter. HSD-029C-P0 adds schema version
 6, which creates the singleton `installation_location_configuration` table and
 leaves existing installations unassigned until explicit authorized assignment.
+HSD-029C-P4 adds migration version 7, a data-only baseline active protocol
+provisioning step that runs only when no protocol versions exist; it preserves
+existing protocol records and keeps the version-6 table structure unchanged.
 
 `src/main/database/transaction` contains the synchronous write transaction
 executor. Future repositories must use this boundary for `BEGIN IMMEDIATE`,

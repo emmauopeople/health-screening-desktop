@@ -828,6 +828,7 @@ async function withScreeningSessionService(
       logger: { info: vi.fn(), error: vi.fn() },
       clock: createUtcClock(() => now)
     })(connection)
+    deactivateBaselineProtocol(connection)
 
     const ids = [
       ...(options.generatedIds ?? [
@@ -1012,6 +1013,14 @@ function seedCoreRecords(
       status: options.protocol === 'inactive' ? 'INACTIVE' : 'ACTIVE'
     })
   }
+}
+
+function deactivateBaselineProtocol(connection: Database.Database): void {
+  connection
+    .prepare(
+      "UPDATE protocol_versions SET status = 'INACTIVE' WHERE protocol_key = 'health-screening-baseline'"
+    )
+    .run()
 }
 
 function insertInstallation(connection: Database.Database): void {

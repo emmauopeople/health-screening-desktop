@@ -44,6 +44,7 @@ const locationId = '71000000-0000-4000-8000-000000000006'
 const secondLocationId = '71000000-0000-4000-8000-000000000007'
 const inactiveLocationId = '71000000-0000-4000-8000-000000000008'
 const protocolId = '71000000-0000-4000-8000-000000000009'
+const baselineProtocolId = '00000000-0000-4000-8000-000000000007'
 const sessionId = '71000000-0000-4000-8000-000000000010'
 const secondSessionId = '71000000-0000-4000-8000-000000000011'
 const lifecycleHistoryId = '71000000-0000-4000-8000-000000000012'
@@ -102,6 +103,32 @@ describe('current screening session service integration', () => {
         })
       ])
     })
+  })
+
+  it('creates today session using the migration-provisioned baseline active protocol', async () => {
+    await withCurrentSessionService(
+      ({ connection, service }) => {
+        seedBaseGraph(connection, { protocol: 'migration-baseline' })
+        insertConfiguration(connection, locationId)
+
+        const result = service.ensureCurrentScreeningSession()
+
+        expect(result).toMatchObject({
+          status: 'CREATED',
+          session: {
+            id: sessionId,
+            locationId,
+            protocolVersionId: baselineProtocolId,
+            sessionDate: '2026-08-10',
+            status: 'OPEN'
+          }
+        })
+        expect(readTableCount(connection, 'screening_sessions')).toBe(1)
+        expect(readAuditRows(connection)).toHaveLength(1)
+        expect(readOutboxRows(connection)).toHaveLength(1)
+      },
+      { preserveBaselineProtocol: true }
+    )
   })
 
   it('returns today existing open session without duplicate session, audit, or outbox rows', async () => {
@@ -373,6 +400,7 @@ interface HarnessOptions {
   readonly timestamps?: readonly string[]
   readonly failureMode?: FailureMode
   readonly insertRace?: InsertRaceMode
+  readonly preserveBaselineProtocol?: boolean
 }
 
 interface CurrentSessionServiceHarness {
@@ -398,6 +426,9 @@ async function withCurrentSessionService(
       logger: { info: vi.fn(), error: vi.fn() },
       clock: createUtcClock(() => baseTimestamp)
     })(connection)
+    if (options.preserveBaselineProtocol !== true) {
+      deactivateBaselineProtocol(connection)
+    }
 
     const ids = [...(options.generatedIds ?? [sessionId, lifecycleHistoryId, auditId, outboxId])]
     const timestamps = [...(options.timestamps ?? Array.from({ length: 16 }, () => baseTimestamp))]
@@ -655,7 +686,10 @@ function configurePragmas(connection: Database.Database): void {
 
 function seedBaseGraph(
   connection: Database.Database,
-  options: { readonly timeZone?: string } = {}
+  options: {
+    readonly timeZone?: string
+    readonly protocol?: 'inserted' | 'migration-baseline'
+  } = {}
 ): void {
   insertInstallation(connection, options.timeZone ?? 'UTC')
   insertUser(connection, { id: adminId, username: 'admin', role: 'LOCAL_ADMIN' })
@@ -663,7 +697,17 @@ function seedBaseGraph(
   insertUser(connection, { id: screenerId, username: 'screener', role: 'TRAINED_SCREENER' })
   insertLocation(connection, { id: locationId, name: 'Site One', isActive: true })
   insertLocation(connection, { id: inactiveLocationId, name: 'Inactive Site', isActive: false })
-  insertProtocolVersion(connection, protocolId)
+  if (options.protocol !== 'migration-baseline') {
+    insertProtocolVersion(connection, protocolId)
+  }
+}
+
+function deactivateBaselineProtocol(connection: Database.Database): void {
+  connection
+    .prepare(
+      "UPDATE protocol_versions SET status = 'INACTIVE' WHERE protocol_key = 'health-screening-baseline'"
+    )
+    .run()
 }
 
 function insertInstallation(connection: Database.Database, timeZone: string): void {

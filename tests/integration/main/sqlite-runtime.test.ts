@@ -52,7 +52,7 @@ describe('SQLite runtime integration', () => {
       expect(connection.pragma('synchronous', { simple: true })).toBe(1)
       expect(connection.pragma('busy_timeout', { simple: true })).toBe(5000)
       expect(connection.pragma('trusted_schema', { simple: true })).toBe(0)
-      expect(connection.pragma('user_version', { simple: true })).toBe(6)
+      expect(connection.pragma('user_version', { simple: true })).toBe(7)
       expect(
         connection.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all()
       ).toContainEqual({ name: 'schema_migrations' })
@@ -74,7 +74,9 @@ describe('SQLite runtime integration', () => {
         'Database migration applied; version=5; name=screening-encounter-identity',
         'Database migration started; version=6; name=installation-location-configuration',
         'Database migration applied; version=6; name=installation-location-configuration',
-        'Database migrations current; schemaVersion=6',
+        'Database migration started; version=7; name=baseline-active-protocol',
+        'Database migration applied; version=7; name=baseline-active-protocol',
+        'Database migrations current; schemaVersion=7',
         'Database runtime initialized.',
         'Database runtime closed.'
       ])

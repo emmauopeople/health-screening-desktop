@@ -228,6 +228,7 @@ async function withScreeningEncounterRepository(
       logger: { info: vi.fn(), error: vi.fn() },
       clock: createFixedClock()
     })(connection)
+    deactivateBaselineProtocol(connection)
     await test({
       connection,
       repository: createScreeningEncounterRepository(connection),
@@ -239,6 +240,14 @@ async function withScreeningEncounterRepository(
     }
     await rm(directory, { recursive: true, force: true })
   }
+}
+
+function deactivateBaselineProtocol(connection: Database.Database): void {
+  connection
+    .prepare(
+      "UPDATE protocol_versions SET status = 'INACTIVE' WHERE protocol_key = 'health-screening-baseline'"
+    )
+    .run()
 }
 
 function createInsertInput(
