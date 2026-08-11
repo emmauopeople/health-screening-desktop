@@ -71,6 +71,9 @@ leaves existing installations unassigned until explicit authorized assignment.
 HSD-029C-P4 adds migration version 7, a data-only baseline active protocol
 provisioning step that runs only when no protocol versions exist; it preserves
 existing protocol records and keeps the version-6 table structure unchanged.
+HSD-030A adds migration version 8 for `screening_vitals_drafts` and
+`screening_vitals_draft_readings`, preserving existing data while enabling
+offline Vitals draft persistence for existing encounters.
 
 `src/main/database/transaction` contains the synchronous write transaction
 executor. Future repositories must use this boundary for `BEGIN IMMEDIATE`,
@@ -96,6 +99,10 @@ read by encounter ID, find the canonical root by patient/session, and insert a
 root `DRAFT` encounter using the schema-version-5 identity constraint as the
 final concurrency safeguard. It does not add generic updates, reporting,
 measurement, amendment, completion, void, IPC, preload, or renderer behavior.
+HSD-030A adds a focused screening-vitals-draft repository over
+`screening_vitals_drafts` and `screening_vitals_draft_readings`. It reads one
+draft by encounter, inserts the first draft, and replaces ordered readings on
+row-versioned updates without exposing a generic clinical-data mutation API.
 HSD-029C-P0 adds a typed installation-location configuration repository over
 the singleton configuration table. It reads the current row, inserts the initial
 assignment, and updates the configured location with row-version protection.
@@ -128,9 +135,12 @@ requests before IPC invocation, validates main-process responses before
 renderer delivery, deeply freezes returned screening-session results, and adds
 no push subscriptions. HSD-029B adds a fixed `screeningEncounters.start`
 method that accepts only patient and screening-session IDs, validates responses,
-and adds no lookup, mutation, measurement, referral, or push APIs. Preload does
-not expose raw `ipcRenderer`, generic send/execute APIs, Electron event
-objects, filesystem access, shell access, or dynamic channel dispatch.
+and adds no lookup, measurement, referral, or push APIs. HSD-030A adds fixed
+`screeningEncounters.vitals.getDraft`, `saveDraft`, and `completeStep` methods
+for one encounter-owned Vitals draft. They validate strict request and response
+schemas and expose no generic clinical-data mutation API. Preload does not
+expose raw `ipcRenderer`, generic send/execute APIs, Electron event objects,
+filesystem access, shell access, or dynamic channel dispatch.
 
 ## Renderer
 
@@ -170,9 +180,11 @@ preload group, renders active locations and deployment-local date from trusted
 workspace context, and keeps active location, active session, selected row,
 filters, and pagination in renderer memory only. It does not persist session
 context, calculate the authoritative local date, import Electron/main/preload
-modules, access SQLite, create fake records, or implement encounters,
-measurements, protocol calculations, reports, referrals, dashboards, sync
-transport, or networking.
+modules, access SQLite, or create fake records. HSD-030A uses the fixed
+Vitals draft preload methods to save and restore Vitals draft work locally for
+the active encounter. Lifestyle, Food, OTC, Review, protocol calculations,
+reports, referrals, dashboards, sync transport, and networking remain outside
+this renderer boundary.
 
 ## Shared Contracts
 

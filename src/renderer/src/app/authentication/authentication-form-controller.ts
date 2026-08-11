@@ -44,9 +44,8 @@ export interface UnlockFormValues {
 
 export const authenticationFormCopy = {
   reviewFormMessage: 'Review the form and correct missing or invalid values.',
-  loginHeading: 'Sign in to Health Screening.',
-  loginStatement: 'Use a local account for this screening installation.',
-  loginSubmitLabel: 'Sign in',
+  loginHeading: 'Login',
+  loginSubmitLabel: 'Sign In',
   loginSubmittingLabel: 'Signing in...',
   passwordChangeHeading: 'Change required password.',
   passwordChangeStatement: 'This local account must set a new password before work can continue.',
@@ -60,7 +59,8 @@ export const authenticationFormCopy = {
   lockingLabel: 'Locking...',
   signOutLabel: 'Sign out',
   signingOutLabel: 'Signing out...',
-  exitLabel: 'Exit application'
+  exitLabel: 'Exit application',
+  loginExitLabel: 'Exit Application'
 } as const
 
 export const authenticationPasswordHelp =

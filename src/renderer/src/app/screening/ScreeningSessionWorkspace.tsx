@@ -18,9 +18,13 @@ import type {
   PublicCurrentScreeningSession,
   PublicPatientSummary,
   PublicScreeningEncounterStartSummary,
+  PublicScreeningVitalsDraft,
   PublicScreeningSessionWorkspaceLocation,
   ScreeningEncounterIpcErrorCode,
   ScreeningEncounterStartSuccessData,
+  ScreeningVitalsCompleteStepSuccessData,
+  ScreeningVitalsGetDraftSuccessData,
+  ScreeningVitalsSaveDraftSuccessData,
   ScreeningSessionEnsureCurrentSuccessData,
   ScreeningSessionErrorCode
 } from '@shared/ipc'
@@ -89,6 +93,8 @@ type ScreeningWorkspaceTab = 'PATIENTS' | 'NEW_SCREENING'
 type ScreeningWorkflowStep = 'VITALS' | 'LIFESTYLE'
 type VitalsMeasurementSite = 'RIGHT_ARM' | 'LEFT_ARM' | 'LEFT_LEG' | 'RIGHT_LEG'
 type VitalsPosition = 'LYING' | 'STANDING' | 'SITTING'
+type VitalsDraftLoadStatus = 'NOT_LOADED' | 'LOADING' | 'READY' | 'ERROR'
+type VitalsDraftSaveStatus = 'IDLE' | 'SAVING' | 'SAVED' | 'ERROR'
 
 interface VitalsReadingDraft {
   readonly id: string
@@ -102,11 +108,21 @@ interface VitalsReadingDraft {
 
 interface VitalsDraft {
   readonly activeStep: ScreeningWorkflowStep
+  readonly loadStatus: VitalsDraftLoadStatus
+  readonly saveStatus: VitalsDraftSaveStatus
+  readonly draftId: string | null
+  readonly expectedVersion: number | null
   readonly readings: readonly VitalsReadingDraft[]
   readonly weightKg: string
   readonly waist: string
   readonly notes: string
-  readonly saved: boolean
+  readonly statusMessage: string | null
+  readonly validationErrors: readonly VitalsValidationError[]
+}
+
+interface VitalsValidationError {
+  readonly fieldId: string
+  readonly message: string
 }
 
 const initialSessionState: CurrentSessionState = Object.freeze({ status: 'LOADING' })
@@ -129,6 +145,7 @@ const vitalsPositionOptions = Object.freeze([
   { value: 'STANDING', label: 'Standing' },
   { value: 'SITTING', label: 'Sitting' }
 ] as const)
+let nextLocalVitalsReadingId = 1
 
 export function ScreeningSessionWorkspace({
   api,
@@ -146,6 +163,8 @@ export function ScreeningSessionWorkspace({
   const mountedRef = useMountedRef()
   const sessionRequestRef = useRef(0)
   const patientSearchRequestRef = useRef(0)
+  const vitalsLoadRequestRef = useRef<Map<string, number>>(new Map())
+  const vitalsSaveRequestRef = useRef<Map<string, number>>(new Map())
   const workspaceEpochRef = useRef(0)
   const pendingPatientIdsRef = useRef<Set<string>>(new Set())
   const messageRef = useRef<HTMLDivElement | null>(null)
@@ -176,6 +195,8 @@ export function ScreeningSessionWorkspace({
   const clearTransientWorkflowState = useCallback((): void => {
     workspaceEpochRef.current += 1
     patientSearchRequestRef.current += 1
+    vitalsLoadRequestRef.current.clear()
+    vitalsSaveRequestRef.current.clear()
     pendingPatientIdsRef.current.clear()
     setPatientSearchState(initialPatientSearchState)
     setPendingPatientIds(new Set())
@@ -345,10 +366,14 @@ export function ScreeningSessionWorkspace({
 
   useEffect(() => {
     const pendingPatientIds = pendingPatientIdsRef.current
+    const vitalsLoadRequests = vitalsLoadRequestRef.current
+    const vitalsSaveRequests = vitalsSaveRequestRef.current
 
     return () => {
       workspaceEpochRef.current += 1
       patientSearchRequestRef.current += 1
+      vitalsLoadRequests.clear()
+      vitalsSaveRequests.clear()
       pendingPatientIds.clear()
     }
   }, [])
@@ -501,6 +526,166 @@ export function ScreeningSessionWorkspace({
     [onOpenTabsChange]
   )
 
+  const loadVitalsDraft = useCallback(
+    async (patientId: string, encounterId: string): Promise<void> => {
+      const requestId = (vitalsLoadRequestRef.current.get(encounterId) ?? 0) + 1
+      vitalsLoadRequestRef.current.set(encounterId, requestId)
+      updateVitalsDraft(patientId, (draft) => ({
+        ...draft,
+        loadStatus: 'LOADING',
+        saveStatus: 'IDLE',
+        statusMessage: null,
+        validationErrors: []
+      }))
+
+      try {
+        const result = await api.screeningEncounters.vitals.getDraft({ encounterId })
+
+        if (!mountedRef.current || vitalsLoadRequestRef.current.get(encounterId) !== requestId) {
+          return
+        }
+
+        if (!result.ok) {
+          updateVitalsDraft(patientId, (draft) => ({
+            ...draft,
+            loadStatus: 'ERROR',
+            saveStatus: 'ERROR',
+            statusMessage: getEncounterTransportFailureMessage(result.error.code)
+          }))
+          return
+        }
+
+        const data = result.data
+
+        if (isVitalsDraftLoadedData(data)) {
+          const persistedDraft = data.draft
+
+          updateVitalsDraft(patientId, () =>
+            persistedDraft === null
+              ? createReadyEmptyVitalsDraft()
+              : createVitalsDraftFromPersisted(persistedDraft)
+          )
+          return
+        }
+
+        updateVitalsDraft(patientId, (draft) => ({
+          ...draft,
+          loadStatus: 'ERROR',
+          saveStatus: 'ERROR',
+          statusMessage: getVitalsStatusMessage(data)
+        }))
+      } catch {
+        if (mountedRef.current && vitalsLoadRequestRef.current.get(encounterId) === requestId) {
+          updateVitalsDraft(patientId, (draft) => ({
+            ...draft,
+            loadStatus: 'ERROR',
+            saveStatus: 'ERROR',
+            statusMessage: 'Draft could not be loaded. Try again.'
+          }))
+        }
+      }
+    },
+    [api, mountedRef, updateVitalsDraft]
+  )
+
+  const saveVitalsDraft = useCallback(
+    async (
+      patientId: string,
+      encounterId: string,
+      draft: VitalsDraft,
+      mode: 'SAVE_DRAFT' | 'COMPLETE_STEP'
+    ): Promise<void> => {
+      if (draft.loadStatus !== 'READY' || draft.saveStatus === 'SAVING') {
+        return
+      }
+
+      const validation = createVitalsSaveRequest(encounterId, draft, mode)
+
+      if (validation.status !== 'VALID') {
+        updateVitalsDraft(patientId, (currentDraft) => ({
+          ...currentDraft,
+          saveStatus: 'ERROR',
+          statusMessage: validation.message,
+          validationErrors: validation.errors
+        }))
+        focusMessage()
+        return
+      }
+
+      const requestId = (vitalsSaveRequestRef.current.get(encounterId) ?? 0) + 1
+      vitalsSaveRequestRef.current.set(encounterId, requestId)
+      updateVitalsDraft(patientId, (currentDraft) => ({
+        ...currentDraft,
+        saveStatus: 'SAVING',
+        statusMessage: mode === 'SAVE_DRAFT' ? 'Saving draft...' : 'Saving vitals...',
+        validationErrors: []
+      }))
+
+      try {
+        const result =
+          mode === 'SAVE_DRAFT'
+            ? await api.screeningEncounters.vitals.saveDraft(validation.request)
+            : await api.screeningEncounters.vitals.completeStep(validation.request)
+
+        if (!mountedRef.current || vitalsSaveRequestRef.current.get(encounterId) !== requestId) {
+          return
+        }
+
+        if (!result.ok) {
+          updateVitalsDraft(patientId, (currentDraft) => ({
+            ...currentDraft,
+            saveStatus: 'ERROR',
+            statusMessage: getEncounterTransportFailureMessage(result.error.code)
+          }))
+          return
+        }
+
+        const data = result.data
+
+        if (isVitalsDraftSavedData(data)) {
+          const persistedDraft = data.draft
+
+          updateVitalsDraft(patientId, () =>
+            createVitalsDraftFromPersisted(persistedDraft, {
+              activeStep: 'VITALS',
+              saveStatus: 'SAVED',
+              statusMessage: 'Draft saved'
+            })
+          )
+          return
+        }
+
+        if (isVitalsStepCompletedData(data)) {
+          const persistedDraft = data.draft
+
+          updateVitalsDraft(patientId, () =>
+            createVitalsDraftFromPersisted(persistedDraft, {
+              activeStep: 'LIFESTYLE',
+              saveStatus: 'SAVED',
+              statusMessage: null
+            })
+          )
+          return
+        }
+
+        updateVitalsDraft(patientId, (currentDraft) => ({
+          ...currentDraft,
+          saveStatus: 'ERROR',
+          statusMessage: getVitalsStatusMessage(data)
+        }))
+      } catch {
+        if (mountedRef.current && vitalsSaveRequestRef.current.get(encounterId) === requestId) {
+          updateVitalsDraft(patientId, (currentDraft) => ({
+            ...currentDraft,
+            saveStatus: 'ERROR',
+            statusMessage: 'Draft could not be saved. Try again.'
+          }))
+        }
+      }
+    },
+    [api, focusMessage, mountedRef, updateVitalsDraft]
+  )
+
   const retrySession = useCallback((): void => {
     void loadCurrentSession()
   }, [loadCurrentSession])
@@ -510,6 +695,18 @@ export function ScreeningSessionWorkspace({
     openTabs.find((tab) => tab.patient.id === activePatientId) ?? openTabs[0] ?? null
   const hasReadySession = sessionState.status === 'READY'
   const workspaceHeading = activeWorkspaceTab === 'PATIENTS' ? 'Patients' : 'New Screening'
+
+  useEffect(() => {
+    if (
+      activeWorkspaceTab !== 'NEW_SCREENING' ||
+      activeTab === null ||
+      activeTab.vitalsDraft.loadStatus !== 'NOT_LOADED'
+    ) {
+      return
+    }
+
+    void loadVitalsDraft(activeTab.patient.id, activeTab.encounter.id)
+  }, [activeTab, activeWorkspaceTab, loadVitalsDraft])
 
   return (
     <section className="screening-workspace" aria-labelledby={headingId}>
@@ -580,6 +777,7 @@ export function ScreeningSessionWorkspace({
               onActivateTab={onActivePatientIdChange}
               onCloseTab={closePatientTab}
               onOpenPatients={() => selectWorkspaceTab('PATIENTS')}
+              onSaveVitalsDraft={saveVitalsDraft}
               onUpdateVitalsDraft={updateVitalsDraft}
             />
           )}
@@ -809,6 +1007,7 @@ function NewScreeningWorkspace({
   onActivateTab,
   onCloseTab,
   onOpenPatients,
+  onSaveVitalsDraft,
   onUpdateVitalsDraft
 }: {
   readonly activeTab: PatientScreeningTab | null
@@ -818,6 +1017,12 @@ function NewScreeningWorkspace({
   onActivateTab(patientId: string): void
   onCloseTab(patientId: string): void
   onOpenPatients(): void
+  onSaveVitalsDraft(
+    patientId: string,
+    encounterId: string,
+    draft: VitalsDraft,
+    mode: 'SAVE_DRAFT' | 'COMPLETE_STEP'
+  ): void
   onUpdateVitalsDraft(patientId: string, update: (draft: VitalsDraft) => VitalsDraft): void
 }): React.JSX.Element {
   return (
@@ -844,6 +1049,14 @@ function NewScreeningWorkspace({
             location={location}
             session={session}
             tab={activeTab}
+            onSaveVitalsDraft={(mode) =>
+              onSaveVitalsDraft(
+                activeTab.patient.id,
+                activeTab.encounter.id,
+                activeTab.vitalsDraft,
+                mode
+              )
+            }
             onUpdateVitalsDraft={(update) => onUpdateVitalsDraft(activeTab.patient.id, update)}
           />
         </div>
@@ -931,8 +1144,7 @@ function PatientContextPanel({ tab }: { readonly tab: PatientScreeningTab }): Re
         <div>
           <h3>{displayName}</h3>
           <p>
-            Date of birth {formatPatientDateOfBirth(tab.patient)} •{' '}
-            {formatPatientSex(tab.patient.sex)}
+            {formatPatientContextDateOfBirth(tab.patient)} • {formatPatientSex(tab.patient.sex)}
             {villageQuarter === null ? '' : ` • ${villageQuarter}`} • {tab.patient.patientCode}
           </p>
         </div>
@@ -974,11 +1186,13 @@ function CurrentEncounterPanel({
   location,
   session,
   tab,
+  onSaveVitalsDraft,
   onUpdateVitalsDraft
 }: {
   readonly location: PublicScreeningSessionWorkspaceLocation
   readonly session: PublicCurrentScreeningSession
   readonly tab: PatientScreeningTab
+  onSaveVitalsDraft(mode: 'SAVE_DRAFT' | 'COMPLETE_STEP'): void
   onUpdateVitalsDraft(update: (draft: VitalsDraft) => VitalsDraft): void
 }): React.JSX.Element {
   const displayName = formatPatientName(tab.patient)
@@ -1009,6 +1223,11 @@ function CurrentEncounterPanel({
         <VitalsStep
           draft={tab.vitalsDraft}
           encounterStatus={tab.encounter.status}
+          onRetryLoad={() =>
+            onUpdateVitalsDraft((draft) => ({ ...draft, loadStatus: 'NOT_LOADED' }))
+          }
+          onSaveDraft={() => onSaveVitalsDraft('SAVE_DRAFT')}
+          onContinue={() => onSaveVitalsDraft('COMPLETE_STEP')}
           onUpdateDraft={onUpdateVitalsDraft}
         />
       ) : (
@@ -1026,13 +1245,48 @@ function CurrentEncounterPanel({
 function VitalsStep({
   draft,
   encounterStatus,
+  onContinue,
+  onRetryLoad,
+  onSaveDraft,
   onUpdateDraft
 }: {
   readonly draft: VitalsDraft
   readonly encounterStatus: PublicScreeningEncounterStartSummary['status']
+  onContinue(): void
+  onRetryLoad(): void
+  onSaveDraft(): void
   onUpdateDraft(update: (draft: VitalsDraft) => VitalsDraft): void
 }): React.JSX.Element {
-  const vitalsComplete = isVitalsDraftComplete(draft)
+  const controlsDisabled = draft.loadStatus !== 'READY' || draft.saveStatus === 'SAVING'
+
+  if (draft.loadStatus === 'LOADING' || draft.loadStatus === 'NOT_LOADED') {
+    return (
+      <section className="screening-current-step" aria-labelledby="screening-vitals-step-title">
+        <div className="screening-current-step-header">
+          <h3 id="screening-vitals-step-title">Vitals</h3>
+          <span>{formatEncounterStatus(encounterStatus)}</span>
+        </div>
+        <div className="screening-empty-state screening-compact-empty">Loading vitals.</div>
+      </section>
+    )
+  }
+
+  if (draft.loadStatus === 'ERROR') {
+    return (
+      <section className="screening-current-step" aria-labelledby="screening-vitals-step-title">
+        <div className="screening-current-step-header">
+          <h3 id="screening-vitals-step-title">Vitals</h3>
+          <span>{formatEncounterStatus(encounterStatus)}</span>
+        </div>
+        <div className="screening-empty-state screening-compact-empty" role="alert">
+          <p>{draft.statusMessage ?? 'Draft could not be loaded. Try again.'}</p>
+          <button className="button button-secondary" type="button" onClick={onRetryLoad}>
+            Retry
+          </button>
+        </div>
+      </section>
+    )
+  }
 
   return (
     <section className="screening-current-step" aria-labelledby="screening-vitals-step-title">
@@ -1054,6 +1308,7 @@ function VitalsStep({
                 <th scope="col">Site</th>
                 <th scope="col">Position</th>
                 <th scope="col">Time</th>
+                <th scope="col">Remove</th>
               </tr>
             </thead>
             <tbody>
@@ -1066,7 +1321,9 @@ function VitalsStep({
                       inputMode="numeric"
                       type="number"
                       min="0"
+                      aria-invalid={hasVitalsFieldError(draft, reading.id, 'systolic')}
                       value={reading.systolic}
+                      disabled={controlsDisabled}
                       onChange={(event) => {
                         const value = event.currentTarget.value
 
@@ -1084,7 +1341,9 @@ function VitalsStep({
                       inputMode="numeric"
                       type="number"
                       min="0"
+                      aria-invalid={hasVitalsFieldError(draft, reading.id, 'diastolic')}
                       value={reading.diastolic}
+                      disabled={controlsDisabled}
                       onChange={(event) => {
                         const value = event.currentTarget.value
 
@@ -1102,7 +1361,9 @@ function VitalsStep({
                       inputMode="numeric"
                       type="number"
                       min="0"
+                      aria-invalid={hasVitalsFieldError(draft, reading.id, 'pulse')}
                       value={reading.pulse}
+                      disabled={controlsDisabled}
                       onChange={(event) => {
                         const value = event.currentTarget.value
 
@@ -1117,7 +1378,9 @@ function VitalsStep({
                   <td>
                     <select
                       aria-label={`Reading ${index + 1} site`}
+                      aria-invalid={hasVitalsFieldError(draft, reading.id, 'site')}
                       value={reading.site}
+                      disabled={controlsDisabled}
                       onChange={(event) => {
                         const value = event.currentTarget.value as VitalsReadingDraft['site']
 
@@ -1139,7 +1402,9 @@ function VitalsStep({
                   <td>
                     <select
                       aria-label={`Reading ${index + 1} position`}
+                      aria-invalid={hasVitalsFieldError(draft, reading.id, 'position')}
                       value={reading.position}
+                      disabled={controlsDisabled}
                       onChange={(event) => {
                         const value = event.currentTarget.value as VitalsReadingDraft['position']
 
@@ -1162,7 +1427,9 @@ function VitalsStep({
                     <input
                       aria-label={`Reading ${index + 1} time`}
                       type="time"
+                      aria-invalid={hasVitalsFieldError(draft, reading.id, 'time')}
                       value={reading.time}
+                      disabled={controlsDisabled}
                       onChange={(event) => {
                         const value = event.currentTarget.value
 
@@ -1174,6 +1441,31 @@ function VitalsStep({
                       }}
                     />
                   </td>
+                  <td>
+                    {index === 0 ? (
+                      <span aria-label="Reading 1 cannot be removed">—</span>
+                    ) : (
+                      <button
+                        className="button button-secondary screening-reading-remove"
+                        type="button"
+                        disabled={controlsDisabled}
+                        onClick={() => {
+                          if (
+                            shouldConfirmVitalsReadingRemoval(reading) &&
+                            !window.confirm('Remove this reading?')
+                          ) {
+                            return
+                          }
+
+                          onUpdateDraft((currentDraft) =>
+                            removeVitalsReading(currentDraft, reading.id)
+                          )
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1184,6 +1476,7 @@ function VitalsStep({
           <button
             className="button button-secondary"
             type="button"
+            disabled={controlsDisabled}
             onClick={() => {
               onUpdateDraft(addVitalsReading)
             }}
@@ -1193,14 +1486,32 @@ function VitalsStep({
           <button
             className="button button-secondary"
             type="button"
-            disabled={!vitalsComplete}
-            onClick={() => {
-              onUpdateDraft((currentDraft) => ({ ...currentDraft, saved: true }))
-            }}
+            disabled={controlsDisabled}
+            onClick={onSaveDraft}
           >
-            Save draft
+            {draft.saveStatus === 'SAVING' ? 'Saving draft...' : 'Save draft'}
           </button>
         </div>
+
+        {draft.validationErrors.length > 0 ? (
+          <div className="screening-vitals-validation" role="alert">
+            {draft.statusMessage ?? 'Complete or remove the highlighted readings.'}
+            <ul className="screening-vitals-validation-list">
+              {draft.validationErrors.map((error) => (
+                <li key={`${error.fieldId}:${error.message}`}>{error.message}</li>
+              ))}
+            </ul>
+          </div>
+        ) : draft.statusMessage !== null ? (
+          <div
+            className={`screening-vitals-validation${
+              draft.saveStatus === 'ERROR' ? ' screening-vitals-validation-error' : ''
+            }`}
+            role={draft.saveStatus === 'ERROR' ? 'alert' : 'status'}
+          >
+            {draft.statusMessage}
+          </div>
+        ) : null}
 
         <div className="screening-vitals-fields" aria-label="Additional vitals fields">
           <label>
@@ -1209,14 +1520,20 @@ function VitalsStep({
               aria-label="Weight in kilograms"
               type="number"
               min="0"
+              aria-invalid={hasOptionalVitalsFieldError(draft, 'weight')}
               value={draft.weightKg}
+              disabled={controlsDisabled}
               onChange={(event) => {
                 const value = event.currentTarget.value
 
                 onUpdateDraft((currentDraft) => ({
                   ...currentDraft,
                   weightKg: value,
-                  saved: false
+                  saveStatus: 'IDLE',
+                  statusMessage: null,
+                  validationErrors: currentDraft.validationErrors.filter(
+                    (error) => error.fieldId !== 'weight'
+                  )
                 }))
               }}
             />
@@ -1227,14 +1544,20 @@ function VitalsStep({
               aria-label="Waist optional"
               type="number"
               min="0"
+              aria-invalid={hasOptionalVitalsFieldError(draft, 'waist')}
               value={draft.waist}
+              disabled={controlsDisabled}
               onChange={(event) => {
                 const value = event.currentTarget.value
 
                 onUpdateDraft((currentDraft) => ({
                   ...currentDraft,
                   waist: value,
-                  saved: false
+                  saveStatus: 'IDLE',
+                  statusMessage: null,
+                  validationErrors: currentDraft.validationErrors.filter(
+                    (error) => error.fieldId !== 'waist'
+                  )
                 }))
               }}
             />
@@ -1244,13 +1567,15 @@ function VitalsStep({
             <textarea
               aria-label="Vitals notes"
               value={draft.notes}
+              disabled={controlsDisabled}
               onChange={(event) => {
                 const value = event.currentTarget.value
 
                 onUpdateDraft((currentDraft) => ({
                   ...currentDraft,
                   notes: value,
-                  saved: false
+                  saveStatus: 'IDLE',
+                  statusMessage: null
                 }))
               }}
             />
@@ -1269,16 +1594,10 @@ function VitalsStep({
         <button
           className="button button-primary"
           type="button"
-          disabled={!vitalsComplete}
-          onClick={() => {
-            onUpdateDraft((currentDraft) => ({
-              ...currentDraft,
-              activeStep: 'LIFESTYLE',
-              saved: currentDraft.saved || vitalsComplete
-            }))
-          }}
+          disabled={controlsDisabled}
+          onClick={onContinue}
         >
-          Continue to lifestyle
+          {draft.saveStatus === 'SAVING' ? 'Saving vitals...' : 'Continue to Lifestyle'}
         </button>
       </div>
     </section>
@@ -1317,18 +1636,68 @@ function LifestyleStep({
 
 function createInitialVitalsDraft(): VitalsDraft {
   return {
+    ...createReadyEmptyVitalsDraft(),
+    loadStatus: 'NOT_LOADED'
+  }
+}
+
+function createReadyEmptyVitalsDraft(): VitalsDraft {
+  return {
     activeStep: 'VITALS',
+    loadStatus: 'READY',
+    saveStatus: 'IDLE',
+    draftId: null,
+    expectedVersion: null,
     readings: [createVitalsReadingDraft(1)],
     weightKg: '',
     waist: '',
     notes: '',
-    saved: false
+    statusMessage: null,
+    validationErrors: []
+  }
+}
+
+function createVitalsDraftFromPersisted(
+  persisted: PublicScreeningVitalsDraft,
+  options: Partial<
+    Pick<VitalsDraft, 'activeStep' | 'saveStatus' | 'statusMessage' | 'validationErrors'>
+  > = {}
+): VitalsDraft {
+  const readings: readonly VitalsReadingDraft[] =
+    persisted.readings.length === 0
+      ? [createVitalsReadingDraft(1)]
+      : persisted.readings
+          .slice()
+          .sort((left, right) => left.sequenceNumber - right.sequenceNumber)
+          .map((reading) => ({
+            id: reading.id,
+            systolic: formatOptionalNumericInput(reading.systolic),
+            diastolic: formatOptionalNumericInput(reading.diastolic),
+            pulse: formatOptionalNumericInput(reading.pulse),
+            site: (reading.measurementSite ?? '') as VitalsReadingDraft['site'],
+            position: (reading.patientPosition ?? '') as VitalsReadingDraft['position'],
+            time: reading.measurementTime ?? ''
+          }))
+
+  return {
+    activeStep:
+      options.activeStep ?? (persisted.status === 'VITALS_COMPLETE' ? 'LIFESTYLE' : 'VITALS'),
+    loadStatus: 'READY',
+    saveStatus: options.saveStatus ?? 'IDLE',
+    draftId: persisted.id,
+    expectedVersion: persisted.rowVersion,
+    readings,
+    weightKg: formatOptionalNumericInput(persisted.weightKg),
+    waist: formatOptionalNumericInput(persisted.waistCm),
+    notes: persisted.notes ?? '',
+    statusMessage: options.statusMessage ?? null,
+    validationErrors: options.validationErrors ?? []
   }
 }
 
 function createVitalsReadingDraft(readingNumber: number): VitalsReadingDraft {
   return {
-    id: `reading-${readingNumber}`,
+    id: `local-reading-${nextLocalVitalsReadingId++}-${readingNumber}`,
     systolic: '',
     diastolic: '',
     pulse: '',
@@ -1342,7 +1711,25 @@ function addVitalsReading(draft: VitalsDraft): VitalsDraft {
   return {
     ...draft,
     readings: [...draft.readings, createVitalsReadingDraft(draft.readings.length + 1)],
-    saved: false
+    saveStatus: 'IDLE',
+    statusMessage: null,
+    validationErrors: []
+  }
+}
+
+function removeVitalsReading(draft: VitalsDraft, readingId: string): VitalsDraft {
+  const readingIndex = draft.readings.findIndex((reading) => reading.id === readingId)
+
+  if (readingIndex <= 0) {
+    return draft
+  }
+
+  return {
+    ...draft,
+    readings: draft.readings.filter((reading) => reading.id !== readingId),
+    saveStatus: 'IDLE',
+    statusMessage: null,
+    validationErrors: []
   }
 }
 
@@ -1356,24 +1743,266 @@ function updateVitalsReading(
     readings: draft.readings.map((reading) =>
       reading.id === readingId ? { ...reading, ...update } : reading
     ),
-    saved: false
+    saveStatus: 'IDLE',
+    statusMessage: null,
+    validationErrors: draft.validationErrors.filter(
+      (error) => !error.fieldId.startsWith(`${readingId}:`)
+    )
   }
 }
 
-function isVitalsDraftComplete(draft: VitalsDraft): boolean {
-  return (
-    draft.readings.length > 0 &&
-    draft.weightKg.trim().length > 0 &&
-    draft.readings.every(
-      (reading) =>
-        reading.systolic.trim().length > 0 &&
-        reading.diastolic.trim().length > 0 &&
-        reading.pulse.trim().length > 0 &&
-        reading.site !== '' &&
-        reading.position !== '' &&
-        reading.time.trim().length > 0
-    )
+function createVitalsSaveRequest(
+  encounterId: string,
+  draft: VitalsDraft,
+  mode: 'SAVE_DRAFT' | 'COMPLETE_STEP'
+):
+  | {
+      readonly status: 'VALID'
+      readonly request: Parameters<
+        HealthScreeningApi['screeningEncounters']['vitals']['saveDraft']
+      >[0]
+    }
+  | {
+      readonly status: 'INVALID'
+      readonly message: string
+      readonly errors: readonly VitalsValidationError[]
+    } {
+  const errors: VitalsValidationError[] = []
+  const readings = draft.readings.map((reading, index) => {
+    const readingNumber = index + 1
+    const parsed = parseVitalsReadingForRequest(reading, readingNumber, mode, errors)
+
+    return {
+      id: isUuid(reading.id) ? reading.id : null,
+      sequenceNumber: readingNumber,
+      ...parsed
+    }
+  })
+  const weightKg = parseOptionalDecimal(draft.weightKg, 'weight', 'Weight', errors)
+  const waistCm = parseOptionalDecimal(draft.waist, 'waist', 'Waist', errors)
+
+  if (mode === 'COMPLETE_STEP' && !hasOneCompleteReading(readings)) {
+    errors.push({
+      fieldId: 'readings',
+      message: 'Complete Reading 1 before continuing.'
+    })
+  }
+
+  if (errors.length > 0) {
+    return {
+      status: 'INVALID',
+      message:
+        mode === 'COMPLETE_STEP'
+          ? 'Complete or remove the highlighted readings.'
+          : 'Draft could not be saved. Check the highlighted fields.',
+      errors
+    }
+  }
+
+  return {
+    status: 'VALID',
+    request: {
+      encounterId,
+      expectedVersion: draft.expectedVersion,
+      readings,
+      weightKg,
+      waistCm,
+      notes: draft.notes.trim().length === 0 ? null : draft.notes
+    }
+  }
+}
+
+function parseVitalsReadingForRequest(
+  reading: VitalsReadingDraft,
+  readingNumber: number,
+  mode: 'SAVE_DRAFT' | 'COMPLETE_STEP',
+  errors: VitalsValidationError[]
+): Omit<
+  Parameters<
+    HealthScreeningApi['screeningEncounters']['vitals']['saveDraft']
+  >[0]['readings'][number],
+  'id' | 'sequenceNumber'
+> {
+  const parsed = {
+    systolic: parseOptionalInteger(
+      reading.systolic,
+      `${reading.id}:systolic`,
+      `Reading ${readingNumber} systolic`,
+      errors
+    ),
+    diastolic: parseOptionalInteger(
+      reading.diastolic,
+      `${reading.id}:diastolic`,
+      `Reading ${readingNumber} diastolic`,
+      errors
+    ),
+    pulse: parseOptionalInteger(
+      reading.pulse,
+      `${reading.id}:pulse`,
+      `Reading ${readingNumber} pulse`,
+      errors
+    ),
+    measurementSite: reading.site === '' ? null : (reading.site as VitalsMeasurementSite),
+    patientPosition: reading.position === '' ? null : (reading.position as VitalsPosition),
+    measurementTime: reading.time.trim().length === 0 ? null : reading.time
+  }
+
+  if (
+    parsed.measurementTime !== null &&
+    !/^([01]\d|2[0-3]):[0-5]\d$/u.test(parsed.measurementTime)
+  ) {
+    errors.push({
+      fieldId: `${reading.id}:time`,
+      message: `Reading ${readingNumber} time must be a valid time.`
+    })
+  }
+
+  if (mode === 'COMPLETE_STEP') {
+    const missingFields: Array<keyof typeof parsed> = []
+
+    if (parsed.systolic === null) missingFields.push('systolic')
+    if (parsed.diastolic === null) missingFields.push('diastolic')
+    if (parsed.pulse === null) missingFields.push('pulse')
+    if (parsed.measurementSite === null) missingFields.push('measurementSite')
+    if (parsed.patientPosition === null) missingFields.push('patientPosition')
+    if (parsed.measurementTime === null) missingFields.push('measurementTime')
+
+    for (const field of missingFields) {
+      errors.push({
+        fieldId: `${reading.id}:${toVitalsFieldName(field)}`,
+        message: `Reading ${readingNumber} ${toVitalsFieldLabel(field)} is required.`
+      })
+    }
+  }
+
+  return parsed
+}
+
+function parseOptionalInteger(
+  value: string,
+  fieldId: string,
+  label: string,
+  errors: VitalsValidationError[]
+): number | null {
+  const trimmed = value.trim()
+
+  if (trimmed.length === 0) {
+    return null
+  }
+
+  if (!/^[1-9]\d*$/u.test(trimmed)) {
+    errors.push({ fieldId, message: `${label} must be a positive whole number.` })
+    return null
+  }
+
+  const parsed = Number(trimmed)
+
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    errors.push({ fieldId, message: `${label} must be a positive whole number.` })
+    return null
+  }
+
+  return parsed
+}
+
+function parseOptionalDecimal(
+  value: string,
+  fieldId: string,
+  label: string,
+  errors: VitalsValidationError[]
+): number | null {
+  const trimmed = value.trim()
+
+  if (trimmed.length === 0) {
+    return null
+  }
+
+  if (!/^(?:[1-9]\d*(?:\.\d+)?|0?\.\d*[1-9]\d*)$/u.test(trimmed)) {
+    errors.push({ fieldId, message: `${label} must be a positive number.` })
+    return null
+  }
+
+  const parsed = Number(trimmed)
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    errors.push({ fieldId, message: `${label} must be a positive number.` })
+    return null
+  }
+
+  return parsed
+}
+
+function hasOneCompleteReading(
+  readings: Parameters<
+    HealthScreeningApi['screeningEncounters']['vitals']['saveDraft']
+  >[0]['readings']
+): boolean {
+  return readings.some(
+    (reading) =>
+      reading.systolic !== null &&
+      reading.diastolic !== null &&
+      reading.pulse !== null &&
+      reading.measurementSite !== null &&
+      reading.patientPosition !== null &&
+      reading.measurementTime !== null
   )
+}
+
+function hasVitalsFieldError(draft: VitalsDraft, readingId: string, fieldName: string): boolean {
+  return draft.validationErrors.some((error) => error.fieldId === `${readingId}:${fieldName}`)
+}
+
+function hasOptionalVitalsFieldError(draft: VitalsDraft, fieldName: string): boolean {
+  return draft.validationErrors.some((error) => error.fieldId === fieldName)
+}
+
+function shouldConfirmVitalsReadingRemoval(reading: VitalsReadingDraft): boolean {
+  return isUuid(reading.id) || !isVitalsReadingDraftEmpty(reading)
+}
+
+function isVitalsReadingDraftEmpty(reading: VitalsReadingDraft): boolean {
+  return (
+    reading.systolic.trim().length === 0 &&
+    reading.diastolic.trim().length === 0 &&
+    reading.pulse.trim().length === 0 &&
+    reading.site === '' &&
+    reading.position === '' &&
+    reading.time.trim().length === 0
+  )
+}
+
+function toVitalsFieldName(field: string): string {
+  switch (field) {
+    case 'measurementSite':
+      return 'site'
+    case 'patientPosition':
+      return 'position'
+    case 'measurementTime':
+      return 'time'
+    default:
+      return field
+  }
+}
+
+function toVitalsFieldLabel(field: string): string {
+  switch (field) {
+    case 'measurementSite':
+      return 'site'
+    case 'patientPosition':
+      return 'position'
+    case 'measurementTime':
+      return 'time'
+    default:
+      return field
+  }
+}
+
+function formatOptionalNumericInput(value: number | null): string {
+  return value === null ? '' : String(value)
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value)
 }
 
 function getActiveStepIndex(step: ScreeningWorkflowStep): number {
@@ -1514,6 +2143,58 @@ function getEncounterStartStatusMessage(data: ScreeningEncounterStartSuccessData
   }
 }
 
+function getVitalsStatusMessage(
+  data:
+    | ScreeningVitalsGetDraftSuccessData
+    | ScreeningVitalsSaveDraftSuccessData
+    | ScreeningVitalsCompleteStepSuccessData
+): string {
+  switch (data.status) {
+    case 'LOADED':
+      return 'Draft could not be loaded. Try again.'
+    case 'SAVED':
+    case 'COMPLETED':
+      return 'Draft could not be saved. Try again.'
+    case 'AUTHENTICATION_REQUIRED':
+      return 'Sign in is required.'
+    case 'FORBIDDEN':
+      return 'The active session is not authorized for Screening.'
+    case 'VALIDATION_FAILED':
+      return 'Draft could not be saved. Check the highlighted fields.'
+    case 'VERSION_CONFLICT':
+      return 'Draft changed elsewhere. Reload and try again.'
+    case 'ENCOUNTER_NOT_FOUND':
+    case 'ENCOUNTER_NOT_EDITABLE':
+      return 'This screening encounter is unavailable.'
+    case 'LOCATION_NOT_CONFIGURED':
+    case 'LOCATION_NOT_FOUND':
+    case 'LOCATION_INACTIVE':
+    case 'SESSION_NOT_FOUND':
+    case 'SESSION_CLOSED':
+    case 'SESSION_NOT_CURRENT':
+    case 'UNAVAILABLE':
+      return 'Draft could not be saved. Try again.'
+  }
+}
+
+function isVitalsDraftLoadedData(
+  data: ScreeningVitalsGetDraftSuccessData
+): data is Extract<ScreeningVitalsGetDraftSuccessData, { readonly status: 'LOADED' }> {
+  return data.status === 'LOADED'
+}
+
+function isVitalsDraftSavedData(
+  data: ScreeningVitalsSaveDraftSuccessData | ScreeningVitalsCompleteStepSuccessData
+): data is Extract<ScreeningVitalsSaveDraftSuccessData, { readonly status: 'SAVED' }> {
+  return data.status === 'SAVED'
+}
+
+function isVitalsStepCompletedData(
+  data: ScreeningVitalsSaveDraftSuccessData | ScreeningVitalsCompleteStepSuccessData
+): data is Extract<ScreeningVitalsCompleteStepSuccessData, { readonly status: 'COMPLETED' }> {
+  return data.status === 'COMPLETED'
+}
+
 function formatPatientName(patient: PublicPatientSummary): string {
   return (
     patient.displayName.trim() ||
@@ -1539,8 +2220,18 @@ function formatPatientDateOfBirth(patient: PublicPatientSummary): string {
   return patient.dateOfBirth ?? '—'
 }
 
+function formatPatientContextDateOfBirth(patient: PublicPatientSummary): string {
+  if (patient.dateOfBirth === null) {
+    return '—'
+  }
+
+  const [year, month, day] = patient.dateOfBirth.split('-')
+
+  return `${month}/${day}/${year}`
+}
+
 function formatPatientTabLabel(patient: PublicPatientSummary): string {
-  return `${formatPatientName(patient)} • ${patient.patientCode}`
+  return formatPatientName(patient)
 }
 
 function formatPatientInitials(patient: PublicPatientSummary): string {

@@ -13,7 +13,8 @@ export {
   parseInsertCanonicalRootScreeningEncounterInput,
   parseNullableScreeningEncounterText,
   parseScreeningEncounterRecordVersion,
-  parseScreeningEncounterStatus
+  parseScreeningEncounterStatus,
+  readDataProperties
 } from './screening-encounter-validation'
 export type {
   InsertCanonicalRootScreeningEncounterInput,

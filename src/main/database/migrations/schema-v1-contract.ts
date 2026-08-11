@@ -5,7 +5,7 @@ import {
   type MigrationConnection
 } from './migration-types'
 
-type SqliteStorageType = 'INTEGER' | 'TEXT'
+type SqliteStorageType = 'INTEGER' | 'REAL' | 'TEXT'
 
 export interface SchemaVersion1ColumnContract {
   name: string

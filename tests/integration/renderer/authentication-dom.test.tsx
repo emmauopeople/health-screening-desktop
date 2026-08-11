@@ -57,7 +57,7 @@ describe('renderer authentication DOM integration', () => {
     harness.api.auth.login.mockResolvedValue(createIpcSuccess(activeSession(2)) as AuthLoginResult)
     const mounted = await mountApp(harness.api)
 
-    expect(text(mounted)).toContain('Sign in to Health Screening.')
+    expect(text(mounted)).toContain('Login')
 
     await submitLogin(mounted, ' Admin.User ', '  ValidPassword1!  ')
 
@@ -67,6 +67,20 @@ describe('renderer authentication DOM integration', () => {
     })
     expect(text(mounted)).toContain('Welcome, Admin User')
     expect(text(mounted)).toContain('Admin User')
+
+    await mounted.unmount()
+  })
+
+  it('keeps unavailable account recovery controlled in the renderer', async () => {
+    const harness = createAppApi(signedOutSession(1))
+    const mounted = await mountApp(harness.api)
+
+    await clickButton(mounted, 'Forgot username or password?')
+
+    expect(text(mounted)).toContain(
+      'Username and password recovery is not available in this build. Contact an authorized administrator.'
+    )
+    expect(harness.api.auth.login).not.toHaveBeenCalled()
 
     await mounted.unmount()
   })
@@ -94,8 +108,8 @@ describe('renderer authentication DOM integration', () => {
       {
         name: 'LOGIN_REQUIRED',
         initialSession: signedOutSession(2),
-        expectedClassName: 'foundation-shell setup-shell',
-        visibleText: 'Sign in to Health Screening.',
+        expectedClassName: 'auth-login-root',
+        visibleText: 'Login',
         hasRetry: false
       },
       {
@@ -256,7 +270,7 @@ describe('renderer authentication DOM integration', () => {
 
     await clickButton(activeMounted, 'Sign out')
 
-    expect(text(activeMounted)).toContain('Sign in to Health Screening.')
+    expect(text(activeMounted)).toContain('Login')
 
     await activeMounted.unmount()
 
@@ -268,7 +282,7 @@ describe('renderer authentication DOM integration', () => {
 
     await clickButton(lockedMounted, 'Sign out')
 
-    expect(text(lockedMounted)).toContain('Sign in to Health Screening.')
+    expect(text(lockedMounted)).toContain('Login')
 
     await lockedMounted.unmount()
   })
@@ -360,7 +374,7 @@ describe('renderer authentication DOM integration', () => {
     pendingReconcile.resolve(createIpcSuccess(signedOutSession(2)) as AuthGetSessionResult)
     await flushReact()
 
-    expect(text(mounted)).toContain('Sign in to Health Screening.')
+    expect(text(mounted)).toContain('Login')
 
     await mounted.unmount()
   })
@@ -450,7 +464,7 @@ describe('renderer authentication DOM integration', () => {
 
     expect(text(mounted)).toContain('Set up this screening installation.')
     expect(text(mounted)).toContain('Administrator username required')
-    expect(text(mounted)).not.toContain('Sign in to Health Screening.')
+    expect(text(mounted)).not.toContain('Login')
     expect(harness.api.auth.getSession).not.toHaveBeenCalled()
 
     await mounted.unmount()
@@ -757,7 +771,7 @@ describe('renderer authentication DOM integration', () => {
     await clickButton(mounted, 'Sign out')
 
     expect(harness.api.auth.getSession).toHaveBeenCalledTimes(2)
-    expect(text(mounted)).toContain('Sign in to Health Screening.')
+    expect(text(mounted)).toContain('Login')
 
     await mounted.unmount()
   })

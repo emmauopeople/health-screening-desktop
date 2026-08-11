@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { createDevelopmentNavigationPolicy } from '@main/app/navigation-policy'
-import type { ScreeningEncounterStartService } from '@main/application'
+import type { ScreeningEncounterStartService, ScreeningVitalsDraftService } from '@main/application'
 import { parseEntityId } from '@main/foundation/entity-id'
 import type { UtcTimestamp } from '@main/foundation/utc-clock'
 import {
@@ -14,13 +14,17 @@ import {
   createIpcSuccess,
   createScreeningEncounterIpcFailure,
   createScreeningEncounterStartStatusResult,
+  createScreeningVitalsGetDraftLoadedResult,
   type PublicScreeningEncounterStartSummary,
+  type PublicScreeningVitalsDraft,
   type ScreeningEncounterStartRequest
 } from '@shared/ipc'
 
 const patientId = '11111111-1111-4111-8111-111111111111'
 const screeningSessionId = '22222222-2222-4222-8222-222222222222'
 const encounterId = '33333333-3333-4333-8333-333333333333'
+const vitalsDraftId = '44444444-4444-4444-8444-444444444444'
+const vitalsReadingId = '55555555-5555-4555-8555-555555555555'
 const timestamp = '2026-08-06T12:00:00.000Z'
 const sensitiveValue = 'Private Patient Session C:\\secret\\database.sqlite SELECT'
 
@@ -44,6 +48,69 @@ const internalEncounter = Object.freeze({
   status: 'DRAFT' as const,
   startedAt: timestamp as UtcTimestamp,
   recordVersion: 1
+})
+const vitalsDraft: PublicScreeningVitalsDraft = {
+  id: vitalsDraftId,
+  encounterId,
+  status: 'DRAFT',
+  readings: [
+    {
+      id: vitalsReadingId,
+      sequenceNumber: 1,
+      systolic: 120,
+      diastolic: null,
+      pulse: null,
+      measurementSite: 'RIGHT_ARM',
+      patientPosition: null,
+      measurementTime: null
+    }
+  ],
+  weightKg: null,
+  waistCm: null,
+  notes: null,
+  rowVersion: 1,
+  updatedAt: timestamp
+}
+const internalVitalsDraft = Object.freeze({
+  id: parseEntityId(vitalsDraftId),
+  encounterId: parseEntityId(encounterId),
+  status: 'DRAFT' as const,
+  readings: Object.freeze([
+    Object.freeze({
+      id: parseEntityId(vitalsReadingId),
+      sequenceNumber: 1,
+      systolic: 120,
+      diastolic: null,
+      pulse: null,
+      measurementSite: 'RIGHT_ARM' as const,
+      patientPosition: null,
+      measurementTime: null
+    })
+  ]),
+  weightKg: null,
+  waistCm: null,
+  notes: null,
+  rowVersion: 1,
+  updatedAt: timestamp as UtcTimestamp
+})
+const vitalsSaveRequest = Object.freeze({
+  encounterId,
+  expectedVersion: null,
+  readings: Object.freeze([
+    Object.freeze({
+      id: null,
+      sequenceNumber: 1,
+      systolic: 120,
+      diastolic: null,
+      pulse: null,
+      measurementSite: 'RIGHT_ARM',
+      patientPosition: null,
+      measurementTime: null
+    })
+  ]),
+  weightKg: null,
+  waistCm: null,
+  notes: null
 })
 
 describe('screening encounter IPC handlers', () => {
@@ -150,11 +217,169 @@ describe('screening encounter IPC handlers', () => {
     expectLogsAreSafe(malformedHarness.logger)
     expectLogsAreSafe(thrownHarness.logger)
   })
+
+  it('maps validated Vitals draft requests through the fixed handlers', async () => {
+    const harness = createHarness()
+
+    harness.vitals.getVitalsDraft.mockReturnValue({
+      status: 'LOADED',
+      draft: internalVitalsDraft
+    })
+    harness.vitals.saveVitalsDraft.mockReturnValue({
+      status: 'SAVED',
+      draft: internalVitalsDraft
+    })
+    harness.vitals.completeVitalsStep.mockReturnValue({
+      status: 'COMPLETED',
+      draft: { ...internalVitalsDraft, status: 'VITALS_COMPLETE' }
+    })
+
+    await expect(
+      harness.handlers.getVitalsDraft(createAllowedEvent(), { encounterId })
+    ).resolves.toEqual(createScreeningVitalsGetDraftLoadedResult(vitalsDraft))
+    await expect(
+      harness.handlers.saveVitalsDraft(createAllowedEvent(), vitalsSaveRequest)
+    ).resolves.toEqual(createIpcSuccess({ status: 'SAVED', draft: vitalsDraft }))
+    await expect(
+      harness.handlers.completeVitalsStep(createAllowedEvent(), vitalsSaveRequest)
+    ).resolves.toEqual(
+      createIpcSuccess({
+        status: 'COMPLETED',
+        draft: { ...vitalsDraft, status: 'VITALS_COMPLETE' }
+      })
+    )
+
+    expect(harness.vitals.getVitalsDraft).toHaveBeenCalledWith({ encounterId })
+    expect(harness.vitals.saveVitalsDraft).toHaveBeenCalledWith(vitalsSaveRequest)
+    expect(harness.vitals.completeVitalsStep).toHaveBeenCalledWith(vitalsSaveRequest)
+    expect(harness.vitals.saveVitalsDraft.mock.calls[0]).toHaveLength(1)
+  })
+
+  it('rejects untrusted Vitals draft senders before parsing or service invocation', async () => {
+    const harness = createHarness()
+    let requestInspected = false
+    const hostileRequest = new Proxy(
+      {},
+      {
+        getOwnPropertyDescriptor() {
+          requestInspected = true
+          throw new Error(sensitiveValue)
+        }
+      }
+    )
+
+    await expect(
+      harness.handlers.saveVitalsDraft(createForbiddenEvent(), hostileRequest)
+    ).resolves.toEqual(createScreeningEncounterIpcFailure('IPC_FORBIDDEN'))
+    expect(requestInspected).toBe(false)
+    expect(harness.vitals.saveVitalsDraft).not.toHaveBeenCalled()
+  })
+
+  it('strictly rejects invalid or authority-bearing Vitals draft IPC requests', async () => {
+    for (const invalidGetRequest of [
+      {},
+      { encounterId: 'bad-id' },
+      { encounterId, actor: { userId: patientId } },
+      { encounterId, role: 'NURSE' },
+      { encounterId, patientId },
+      { encounterId, screeningSessionId },
+      { encounterId, locationId: patientId }
+    ]) {
+      const harness = createHarness()
+
+      await expect(
+        harness.handlers.getVitalsDraft(createAllowedEvent(), invalidGetRequest)
+      ).resolves.toEqual(createIpcSuccess({ status: 'VALIDATION_FAILED' }))
+      expect(harness.vitals.getVitalsDraft).not.toHaveBeenCalled()
+    }
+
+    for (const invalidSaveRequest of [
+      {},
+      { encounterId },
+      { ...vitalsSaveRequest, readings: [] },
+      { ...vitalsSaveRequest, expectedVersion: 0 },
+      { ...vitalsSaveRequest, readings: [{ ...vitalsSaveRequest.readings[0], pulse: 0 }] },
+      {
+        ...vitalsSaveRequest,
+        readings: [{ ...vitalsSaveRequest.readings[0], measurementSite: 'ARM' }]
+      },
+      {
+        ...vitalsSaveRequest,
+        readings: [{ ...vitalsSaveRequest.readings[0], measurementTime: '25:00' }]
+      },
+      { ...vitalsSaveRequest, patientId },
+      { ...vitalsSaveRequest, screeningSessionId },
+      { ...vitalsSaveRequest, locationId: patientId },
+      { ...vitalsSaveRequest, installationId: patientId },
+      { ...vitalsSaveRequest, actor: { userId: patientId } },
+      { ...vitalsSaveRequest, role: 'LOCAL_ADMIN' },
+      { ...vitalsSaveRequest, force: true },
+      { ...vitalsSaveRequest, bypass: true },
+      { ...vitalsSaveRequest, complete: true }
+    ]) {
+      const harness = createHarness()
+
+      await expect(
+        harness.handlers.saveVitalsDraft(createAllowedEvent(), invalidSaveRequest)
+      ).resolves.toEqual(createIpcSuccess({ status: 'VALIDATION_FAILED' }))
+      expect(harness.vitals.saveVitalsDraft).not.toHaveBeenCalled()
+    }
+  })
+
+  it('preserves controlled Vitals outcomes and sanitizes malformed Vitals failures', async () => {
+    for (const status of [
+      'AUTHENTICATION_REQUIRED',
+      'FORBIDDEN',
+      'VALIDATION_FAILED',
+      'LOCATION_NOT_CONFIGURED',
+      'LOCATION_NOT_FOUND',
+      'LOCATION_INACTIVE',
+      'ENCOUNTER_NOT_FOUND',
+      'ENCOUNTER_NOT_EDITABLE',
+      'SESSION_NOT_FOUND',
+      'SESSION_CLOSED',
+      'SESSION_NOT_CURRENT',
+      'VERSION_CONFLICT',
+      'UNAVAILABLE'
+    ] as const) {
+      const harness = createHarness()
+
+      harness.vitals.completeVitalsStep.mockReturnValue({ status })
+      await expect(
+        harness.handlers.completeVitalsStep(createAllowedEvent(), vitalsSaveRequest)
+      ).resolves.toEqual(createIpcSuccess({ status }))
+    }
+
+    const malformedHarness = createHarness()
+    const thrownHarness = createHarness()
+
+    malformedHarness.vitals.saveVitalsDraft.mockReturnValue({
+      status: 'SAVED',
+      draft: { ...internalVitalsDraft, rowVersion: 0 }
+    } as never)
+    thrownHarness.vitals.getVitalsDraft.mockImplementation(() => {
+      throw new Error(sensitiveValue)
+    })
+
+    await expect(
+      malformedHarness.handlers.saveVitalsDraft(createAllowedEvent(), vitalsSaveRequest)
+    ).resolves.toEqual(createIpcSuccess({ status: 'UNAVAILABLE' }))
+    await expect(
+      thrownHarness.handlers.getVitalsDraft(createAllowedEvent(), { encounterId })
+    ).resolves.toEqual(createIpcSuccess({ status: 'UNAVAILABLE' }))
+    expectLogsAreSafe(malformedHarness.logger)
+    expectLogsAreSafe(thrownHarness.logger)
+  })
 })
 
 interface HandlerHarness {
   readonly handlers: ScreeningEncounterIpcHandlers
   readonly start: ReturnType<typeof vi.fn>
+  readonly vitals: {
+    readonly getVitalsDraft: ReturnType<typeof vi.fn>
+    readonly saveVitalsDraft: ReturnType<typeof vi.fn>
+    readonly completeVitalsStep: ReturnType<typeof vi.fn>
+  }
   readonly logger: TestLogger
 }
 
@@ -175,13 +400,23 @@ function createHarness({
   const screeningEncounterStartService = {
     start
   } as unknown as ScreeningEncounterStartService
+  const vitals = createScreeningVitalsDraftService()
   const handlers = createScreeningEncounterIpcHandlers({
     navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
     screeningEncounterStartService,
+    screeningVitalsDraftService: vitals as unknown as ScreeningVitalsDraftService,
     logger
   })
 
-  return { handlers, start, logger }
+  return { handlers, start, vitals, logger }
+}
+
+function createScreeningVitalsDraftService(): HandlerHarness['vitals'] {
+  return {
+    getVitalsDraft: vi.fn(() => ({ status: 'UNAVAILABLE' })),
+    saveVitalsDraft: vi.fn(() => ({ status: 'UNAVAILABLE' })),
+    completeVitalsStep: vi.fn(() => ({ status: 'UNAVAILABLE' }))
+  }
 }
 
 function createAllowedEvent(): IpcSenderValidationEvent {

@@ -2196,20 +2196,29 @@ function PatientSummaryTable({
             <th scope="col">Sex</th>
             <th scope="col">Village / quarter</th>
             <th scope="col">Phone</th>
-            <th scope="col">Action</th>
           </tr>
         </thead>
         <tbody>
           {items.length === 0 ? (
             <tr>
-              <td colSpan={7}>{emptyText}</td>
+              <td colSpan={6}>{emptyText}</td>
             </tr>
           ) : (
             items.map((patient) => (
               <tr
                 key={patient.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`Open details for ${patient.displayName}`}
                 aria-selected={patient.id === selectedPatientId ? 'true' : 'false'}
                 data-selected={patient.id === selectedPatientId ? 'true' : 'false'}
+                onClick={() => onSelectPatient(patient.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    onSelectPatient(patient.id)
+                  }
+                }}
               >
                 <td>{patient.patientCode}</td>
                 <td>{patient.displayName}</td>
@@ -2217,15 +2226,6 @@ function PatientSummaryTable({
                 <td>{patient.sex}</td>
                 <td>{formatVillageQuarter(patient)}</td>
                 <td>{patient.phone ?? 'Not recorded'}</td>
-                <td>
-                  <button
-                    type="button"
-                    className="button button-secondary patient-row-action"
-                    onClick={() => onSelectPatient(patient.id)}
-                  >
-                    Select
-                  </button>
-                </td>
               </tr>
             ))
           )}
@@ -2376,7 +2376,7 @@ function PatientDetailPane({
               <h2>{patient.patientCode}</h2>
               <div className="patient-detail-actions">
                 <button type="button" className="button button-secondary" onClick={onEdit}>
-                  Amend demographics
+                  Edit demographics
                 </button>
                 <button
                   type="button"

@@ -116,7 +116,11 @@ function AuthenticationBoundary({
   }, [controller])
 
   const rootClassName =
-    route.status === 'SESSION_ACTIVE' ? 'application-root' : 'foundation-shell setup-shell'
+    route.status === 'SESSION_ACTIVE'
+      ? 'application-root'
+      : route.status === 'LOGIN_REQUIRED'
+        ? 'auth-login-root'
+        : 'foundation-shell setup-shell'
 
   return (
     <div className={rootClassName}>

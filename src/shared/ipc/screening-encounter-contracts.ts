@@ -8,10 +8,42 @@ const utcTimestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u
 export const screeningEncounterUuidSchema = z.string().uuid()
 export const screeningEncounterUtcTimestampSchema = z.string().refine(isUtcTimestamp)
 export const screeningEncounterStatusSchema = z.enum(['DRAFT', 'COMPLETED', 'AMENDED', 'VOID'])
+export const screeningVitalsDraftStatusSchema = z.enum(['DRAFT', 'VITALS_COMPLETE'])
+export const screeningVitalsMeasurementSiteSchema = z.enum([
+  'RIGHT_ARM',
+  'LEFT_ARM',
+  'LEFT_LEG',
+  'RIGHT_LEG'
+])
+export const screeningVitalsPatientPositionSchema = z.enum(['LYING', 'STANDING', 'SITTING'])
+export const screeningVitalsMeasurementTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u)
+export const screeningVitalsPositiveIntegerSchema = z.number().int().min(1).safe()
+export const screeningVitalsPositiveNumberSchema = z.number().positive()
 
 export const screeningEncounterStartRequestSchema = exactObject({
   patientId: screeningEncounterUuidSchema,
   screeningSessionId: screeningEncounterUuidSchema
+})
+export const screeningVitalsGetDraftRequestSchema = exactObject({
+  encounterId: screeningEncounterUuidSchema
+})
+export const screeningVitalsDraftReadingRequestSchema = exactObject({
+  id: screeningEncounterUuidSchema.nullable(),
+  sequenceNumber: screeningVitalsPositiveIntegerSchema,
+  systolic: screeningVitalsPositiveIntegerSchema.nullable(),
+  diastolic: screeningVitalsPositiveIntegerSchema.nullable(),
+  pulse: screeningVitalsPositiveIntegerSchema.nullable(),
+  measurementSite: screeningVitalsMeasurementSiteSchema.nullable(),
+  patientPosition: screeningVitalsPatientPositionSchema.nullable(),
+  measurementTime: screeningVitalsMeasurementTimeSchema.nullable()
+})
+export const screeningVitalsSaveDraftRequestSchema = exactObject({
+  encounterId: screeningEncounterUuidSchema,
+  expectedVersion: screeningVitalsPositiveIntegerSchema.nullable(),
+  readings: z.array(screeningVitalsDraftReadingRequestSchema).min(1).max(12),
+  weightKg: screeningVitalsPositiveNumberSchema.nullable(),
+  waistCm: screeningVitalsPositiveNumberSchema.nullable(),
+  notes: z.string().max(500).nullable()
 })
 
 export const publicScreeningEncounterStartSummarySchema = z
@@ -50,6 +82,73 @@ export const screeningEncounterStartSuccessDataSchema = z.discriminatedUnion('st
   z.object({ status: z.literal('AUTHENTICATION_REQUIRED') }).strict(),
   z.object({ status: z.literal('UNAVAILABLE') }).strict()
 ])
+export const screeningVitalsDraftReadingSchema = z
+  .object({
+    id: screeningEncounterUuidSchema,
+    sequenceNumber: screeningVitalsPositiveIntegerSchema,
+    systolic: screeningVitalsPositiveIntegerSchema.nullable(),
+    diastolic: screeningVitalsPositiveIntegerSchema.nullable(),
+    pulse: screeningVitalsPositiveIntegerSchema.nullable(),
+    measurementSite: screeningVitalsMeasurementSiteSchema.nullable(),
+    patientPosition: screeningVitalsPatientPositionSchema.nullable(),
+    measurementTime: screeningVitalsMeasurementTimeSchema.nullable()
+  })
+  .strict()
+export const publicScreeningVitalsDraftSchema = z
+  .object({
+    id: screeningEncounterUuidSchema,
+    encounterId: screeningEncounterUuidSchema,
+    status: screeningVitalsDraftStatusSchema,
+    readings: z.array(screeningVitalsDraftReadingSchema).min(1).max(12),
+    weightKg: screeningVitalsPositiveNumberSchema.nullable(),
+    waistCm: screeningVitalsPositiveNumberSchema.nullable(),
+    notes: z.string().max(500).nullable(),
+    rowVersion: screeningVitalsPositiveIntegerSchema,
+    updatedAt: screeningEncounterUtcTimestampSchema
+  })
+  .strict()
+const screeningVitalsControlledStatusSchemas = [
+  z.object({ status: z.literal('AUTHENTICATION_REQUIRED') }).strict(),
+  z.object({ status: z.literal('FORBIDDEN') }).strict(),
+  z.object({ status: z.literal('VALIDATION_FAILED') }).strict(),
+  z.object({ status: z.literal('LOCATION_NOT_CONFIGURED') }).strict(),
+  z.object({ status: z.literal('LOCATION_NOT_FOUND') }).strict(),
+  z.object({ status: z.literal('LOCATION_INACTIVE') }).strict(),
+  z.object({ status: z.literal('ENCOUNTER_NOT_FOUND') }).strict(),
+  z.object({ status: z.literal('ENCOUNTER_NOT_EDITABLE') }).strict(),
+  z.object({ status: z.literal('SESSION_NOT_FOUND') }).strict(),
+  z.object({ status: z.literal('SESSION_CLOSED') }).strict(),
+  z.object({ status: z.literal('SESSION_NOT_CURRENT') }).strict(),
+  z.object({ status: z.literal('VERSION_CONFLICT') }).strict(),
+  z.object({ status: z.literal('UNAVAILABLE') }).strict()
+] as const
+export const screeningVitalsGetDraftSuccessDataSchema = z.discriminatedUnion('status', [
+  z
+    .object({
+      status: z.literal('LOADED'),
+      draft: publicScreeningVitalsDraftSchema.nullable()
+    })
+    .strict(),
+  ...screeningVitalsControlledStatusSchemas
+])
+export const screeningVitalsSaveDraftSuccessDataSchema = z.discriminatedUnion('status', [
+  z
+    .object({
+      status: z.literal('SAVED'),
+      draft: publicScreeningVitalsDraftSchema
+    })
+    .strict(),
+  ...screeningVitalsControlledStatusSchemas
+])
+export const screeningVitalsCompleteStepSuccessDataSchema = z.discriminatedUnion('status', [
+  z
+    .object({
+      status: z.literal('COMPLETED'),
+      draft: publicScreeningVitalsDraftSchema
+    })
+    .strict(),
+  ...screeningVitalsControlledStatusSchemas
+])
 
 export const screeningEncounterIpcErrorCodeSchema = z.enum([
   'IPC_FORBIDDEN',
@@ -82,6 +181,24 @@ export const screeningEncounterStartResultSchema = withSafeTransportPreprocess(
     screeningEncounterFailureSchema
   ])
 )
+export const screeningVitalsGetDraftResultSchema = withSafeTransportPreprocess(
+  z.discriminatedUnion('ok', [
+    createIpcSuccessResultSchema(screeningVitalsGetDraftSuccessDataSchema),
+    screeningEncounterFailureSchema
+  ])
+)
+export const screeningVitalsSaveDraftResultSchema = withSafeTransportPreprocess(
+  z.discriminatedUnion('ok', [
+    createIpcSuccessResultSchema(screeningVitalsSaveDraftSuccessDataSchema),
+    screeningEncounterFailureSchema
+  ])
+)
+export const screeningVitalsCompleteStepResultSchema = withSafeTransportPreprocess(
+  z.discriminatedUnion('ok', [
+    createIpcSuccessResultSchema(screeningVitalsCompleteStepSuccessDataSchema),
+    screeningEncounterFailureSchema
+  ])
+)
 
 export type ScreeningEncounterStatus = z.infer<typeof screeningEncounterStatusSchema>
 export type ScreeningEncounterStartRequest = z.infer<typeof screeningEncounterStartRequestSchema>
@@ -92,6 +209,29 @@ export type ScreeningEncounterStartSuccessData = z.infer<
   typeof screeningEncounterStartSuccessDataSchema
 >
 export type ScreeningEncounterStartResult = z.infer<typeof screeningEncounterStartResultSchema>
+export type ScreeningVitalsDraftStatus = z.infer<typeof screeningVitalsDraftStatusSchema>
+export type ScreeningVitalsMeasurementSite = z.infer<typeof screeningVitalsMeasurementSiteSchema>
+export type ScreeningVitalsPatientPosition = z.infer<typeof screeningVitalsPatientPositionSchema>
+export type ScreeningVitalsDraftReadingRequest = z.infer<
+  typeof screeningVitalsDraftReadingRequestSchema
+>
+export type ScreeningVitalsGetDraftRequest = z.infer<typeof screeningVitalsGetDraftRequestSchema>
+export type ScreeningVitalsSaveDraftRequest = z.infer<typeof screeningVitalsSaveDraftRequestSchema>
+export type PublicScreeningVitalsDraft = z.infer<typeof publicScreeningVitalsDraftSchema>
+export type ScreeningVitalsGetDraftSuccessData = z.infer<
+  typeof screeningVitalsGetDraftSuccessDataSchema
+>
+export type ScreeningVitalsSaveDraftSuccessData = z.infer<
+  typeof screeningVitalsSaveDraftSuccessDataSchema
+>
+export type ScreeningVitalsCompleteStepSuccessData = z.infer<
+  typeof screeningVitalsCompleteStepSuccessDataSchema
+>
+export type ScreeningVitalsGetDraftResult = z.infer<typeof screeningVitalsGetDraftResultSchema>
+export type ScreeningVitalsSaveDraftResult = z.infer<typeof screeningVitalsSaveDraftResultSchema>
+export type ScreeningVitalsCompleteStepResult = z.infer<
+  typeof screeningVitalsCompleteStepResultSchema
+>
 
 export function createScreeningEncounterIpcFailure<TCode extends ScreeningEncounterIpcErrorCode>(
   code: TCode
@@ -116,6 +256,37 @@ export function createScreeningEncounterStartStatusResult<
     ScreeningEncounterStartSuccessData['status'],
     'STARTED' | 'ALREADY_EXISTS'
   >
+>(
+  status: TStatus
+): {
+  ok: true
+  data: { status: TStatus }
+} {
+  return createIpcSuccess({ status })
+}
+
+export function createScreeningVitalsGetDraftLoadedResult(
+  draft: PublicScreeningVitalsDraft | null
+): {
+  ok: true
+  data: { status: 'LOADED'; draft: PublicScreeningVitalsDraft | null }
+} {
+  return createIpcSuccess({ status: 'LOADED', draft })
+}
+
+export function createScreeningVitalsSaveDraftStatusResult<
+  TStatus extends Exclude<ScreeningVitalsSaveDraftSuccessData['status'], 'SAVED'>
+>(
+  status: TStatus
+): {
+  ok: true
+  data: { status: TStatus }
+} {
+  return createIpcSuccess({ status })
+}
+
+export function createScreeningVitalsCompleteStepStatusResult<
+  TStatus extends Exclude<ScreeningVitalsCompleteStepSuccessData['status'], 'COMPLETED'>
 >(
   status: TStatus
 ): {
@@ -176,10 +347,6 @@ function copySafeTransportValue(value: unknown, active = new WeakSet<object>()):
     return unsafeTransportValue
   }
 
-  if (isArrayValue) {
-    return unsafeTransportValue
-  }
-
   const objectValue = value as object
 
   if (active.has(objectValue)) {
@@ -189,6 +356,10 @@ function copySafeTransportValue(value: unknown, active = new WeakSet<object>()):
   active.add(objectValue)
 
   try {
+    if (isArrayValue) {
+      return copySafeTransportArray(objectValue, active)
+    }
+
     let prototype: object | null
     let descriptors: PropertyDescriptorMap
 
@@ -230,6 +401,65 @@ function copySafeTransportValue(value: unknown, active = new WeakSet<object>()):
   } finally {
     active.delete(objectValue)
   }
+}
+
+function copySafeTransportArray(value: object, active: WeakSet<object>): unknown {
+  let prototype: object | null
+  let descriptors: PropertyDescriptorMap
+
+  try {
+    prototype = Object.getPrototypeOf(value)
+    descriptors = Object.getOwnPropertyDescriptors(value)
+  } catch {
+    return unsafeTransportValue
+  }
+
+  if (prototype !== Array.prototype || Object.getOwnPropertySymbols(descriptors).length > 0) {
+    return unsafeTransportValue
+  }
+
+  const lengthDescriptor = descriptors['length']
+
+  if (
+    lengthDescriptor === undefined ||
+    !Object.prototype.hasOwnProperty.call(lengthDescriptor, 'value') ||
+    typeof lengthDescriptor.value !== 'number' ||
+    !Number.isSafeInteger(lengthDescriptor.value) ||
+    lengthDescriptor.value < 0
+  ) {
+    return unsafeTransportValue
+  }
+
+  const length = lengthDescriptor.value
+  const copy: unknown[] = []
+
+  for (const key of Object.getOwnPropertyNames(descriptors)) {
+    if (key === 'length') {
+      continue
+    }
+
+    if (!/^(0|[1-9]\d*)$/u.test(key) || Number(key) >= length) {
+      return unsafeTransportValue
+    }
+  }
+
+  for (let index = 0; index < length; index += 1) {
+    const descriptor = descriptors[String(index)]
+
+    if (descriptor === undefined || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+      return unsafeTransportValue
+    }
+
+    const copiedValue = copySafeTransportValue(descriptor.value, active)
+
+    if (copiedValue === unsafeTransportValue) {
+      return unsafeTransportValue
+    }
+
+    copy.push(copiedValue)
+  }
+
+  return copy
 }
 
 function isRejectedPrimitive(value: unknown): boolean {

@@ -638,7 +638,7 @@ describe('application shell DOM integration', () => {
     {
       code: 'AUTH_UNAUTHENTICATED' as const,
       session: signedOutSession(2),
-      expectedText: 'Sign in to Health Screening.'
+      expectedText: 'Login'
     }
   ])('reconciles $code patient failures through the authentication route', async (testCase) => {
     const harness = createAppApi(activeSession(1))
@@ -691,7 +691,7 @@ describe('application shell DOM integration', () => {
 
     await clickButton(logoutMounted, 'Sign out')
 
-    expect(text(logoutMounted)).toContain('Sign in to Health Screening.')
+    expect(text(logoutMounted)).toContain('Login')
     expect(text(logoutMounted)).not.toContain('Protected Patient')
 
     await logoutMounted.unmount()
@@ -806,7 +806,7 @@ describe('application shell DOM integration', () => {
 
     expect(text(mounted)).toContain('Protected Patient')
 
-    await clickButton(mounted, 'Amend demographics')
+    await clickButton(mounted, 'Edit demographics')
     await changeInput(patientFieldInput(mounted, 'Village'), 'Revision Village')
     await changeSelect(patientFieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
     await emitSession(harness, activeSession(2))
@@ -938,7 +938,7 @@ describe('application shell DOM integration', () => {
     const mounted = await mountApp(harness.api)
 
     await clickButton(mounted, 'Patients')
-    await clickButton(mounted, 'Amend demographics')
+    await clickButton(mounted, 'Edit demographics')
     await changeInput(patientFieldInput(mounted, 'Village'), 'Attempted Village')
     await changeSelect(patientFieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
     await clickButton(mounted, 'Save amendment')
@@ -964,7 +964,7 @@ describe('application shell DOM integration', () => {
     {
       name: 'SIGNED_OUT',
       session: signedOutSession(2),
-      expectedText: 'Sign in to Health Screening.'
+      expectedText: 'Login'
     },
     {
       name: 'PASSWORD_CHANGE_REQUIRED',
@@ -1531,7 +1531,7 @@ async function mountDirtyPatientWorkspace(
   const mounted = await mountApp(harness.api)
 
   await clickButton(mounted, 'Patients')
-  await clickButton(mounted, 'Amend demographics')
+  await clickButton(mounted, 'Edit demographics')
   await changeInput(patientFieldInput(mounted, 'Given name'), 'Protected Changed')
   await changeSelect(patientFieldSelect(mounted, 'Reason'), 'DATA_ENTRY_CORRECTION')
 

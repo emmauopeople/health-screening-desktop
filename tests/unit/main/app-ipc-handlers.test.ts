@@ -27,6 +27,7 @@ import type {
   PatientDemographicAmendmentService,
   PatientRegistryService,
   ScreeningEncounterStartService,
+  ScreeningVitalsDraftService,
   ScreeningSessionService,
   ScreeningSessionWorkspaceContextService
 } from '@main/application'
@@ -80,7 +81,10 @@ const applicationOwnedHandlerChannels = Object.freeze([
   ipcChannels.screeningSessions.reopen,
   ipcChannels.screeningSessions.getById,
   ipcChannels.screeningSessions.list,
-  ipcChannels.screeningEncounters.start
+  ipcChannels.screeningEncounters.start,
+  ipcChannels.screeningEncounters.getVitalsDraft,
+  ipcChannels.screeningEncounters.saveVitalsDraft,
+  ipcChannels.screeningEncounters.completeVitalsStep
 ])
 
 describe('application IPC handlers', () => {
@@ -196,7 +200,7 @@ describe('application IPC handler registration', () => {
 
     const dispose = registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(33)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(36)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
@@ -224,6 +228,9 @@ describe('application IPC handler registration', () => {
       'health-screening:patient:record-acknowledgment',
       'health-screening:patient:search',
       'health-screening:screening-encounters:start',
+      'health-screening:screening-encounters:vitals:complete-step',
+      'health-screening:screening-encounters:vitals:get-draft',
+      'health-screening:screening-encounters:vitals:save-draft',
       'health-screening:screening-sessions:close',
       'health-screening:screening-sessions:create',
       'health-screening:screening-sessions:ensure-current',
@@ -246,7 +253,7 @@ describe('application IPC handler registration', () => {
     registerApplicationIpcHandlers(ipcMain, createDependencies())
     registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(66)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(72)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getHealth)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
@@ -278,6 +285,9 @@ describe('application IPC handler registration', () => {
       'health-screening:patient:record-acknowledgment',
       'health-screening:patient:search',
       'health-screening:screening-encounters:start',
+      'health-screening:screening-encounters:vitals:complete-step',
+      'health-screening:screening-encounters:vitals:get-draft',
+      'health-screening:screening-encounters:vitals:save-draft',
       'health-screening:screening-sessions:close',
       'health-screening:screening-sessions:create',
       'health-screening:screening-sessions:ensure-current',
@@ -594,8 +604,11 @@ describe('application IPC handler registration', () => {
     )
     const firstHandlers = new Map(ipcMain.handlers)
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(1)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(4)
     expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.start)).toBe(true)
+    expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.getVitalsDraft)).toBe(true)
+    expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.saveVitalsDraft)).toBe(true)
+    expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.completeVitalsStep)).toBe(true)
 
     dispose()
 
@@ -624,8 +637,15 @@ describe('application IPC handler registration', () => {
       registerScreeningEncounterIpcHandlers(ipcMain, createDependencies().screeningEncounters)
     ).toThrow(ApplicationIpcRegistrationError)
 
+    const ownedEncounterChannels = new Set<string>([
+      ipcChannels.screeningEncounters.start,
+      ipcChannels.screeningEncounters.getVitalsDraft,
+      ipcChannels.screeningEncounters.saveVitalsDraft,
+      ipcChannels.screeningEncounters.completeVitalsStep
+    ])
+
     for (const [channel, handler] of firstHandlers) {
-      if (channel !== ipcChannels.screeningEncounters.start) {
+      if (!ownedEncounterChannels.has(channel)) {
         expect(ipcMain.handlers.get(channel)).toBe(handler)
       }
     }
@@ -793,6 +813,7 @@ function createDependencies(): ApplicationIpcHandlerDependencies {
     screeningEncounters: {
       navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
       screeningEncounterStartService: createScreeningEncounterStartService(),
+      screeningVitalsDraftService: createScreeningVitalsDraftService(),
       logger: createLogger()
     },
     installationSettings: {
@@ -879,6 +900,14 @@ function createScreeningEncounterStartService(): ScreeningEncounterStartService 
   return {
     start: vi.fn()
   } as unknown as ScreeningEncounterStartService
+}
+
+function createScreeningVitalsDraftService(): ScreeningVitalsDraftService {
+  return {
+    getVitalsDraft: vi.fn(() => ({ status: 'UNAVAILABLE' })),
+    saveVitalsDraft: vi.fn(() => ({ status: 'UNAVAILABLE' })),
+    completeVitalsStep: vi.fn(() => ({ status: 'UNAVAILABLE' }))
+  } as unknown as ScreeningVitalsDraftService
 }
 
 function createInstallationLocationService(): InstallationLocationService {

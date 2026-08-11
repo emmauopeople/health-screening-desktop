@@ -579,7 +579,12 @@ function createApi({
       list: vi.fn(async () => createScreeningSessionFailure('IPC_UNAVAILABLE'))
     },
     screeningEncounters: {
-      start: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+      start: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+      vitals: {
+        getDraft: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+        saveDraft: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+        completeStep: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+      }
     },
     installationSettings: {
       getConfiguredLocation: vi.fn(async () =>

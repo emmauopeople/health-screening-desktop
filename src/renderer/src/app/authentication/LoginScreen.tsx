@@ -3,7 +3,6 @@ import type { HealthScreeningApi } from '@shared/ipc'
 
 import {
   authenticationFormCopy,
-  authenticationPasswordHelp,
   clearAuthenticationPasswordFields,
   createAuthenticationFormController,
   createLoginRequest,
@@ -21,6 +20,9 @@ import type { RendererAuthenticationRouteController } from './authentication-rou
 import { AuthenticationLayout } from './AuthenticationLayout'
 import { mapLoginRejectionMessage } from './authentication-message-mapping'
 
+const recoveryUnavailableMessage =
+  'Username and password recovery is not available in this build. Contact an authorized administrator.'
+
 interface LoginScreenProps {
   readonly api: HealthScreeningApi
   readonly controller: RendererAuthenticationRouteController
@@ -31,6 +33,7 @@ export function LoginScreen({ api, controller, onExit }: LoginScreenProps): Reac
   const [operationState, setOperationState] = useState<AuthenticationOperationState>({
     status: 'IDLE'
   })
+  const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null)
   const formRef = useRef<HTMLFormElement | null>(null)
   const alertRef = useRef<HTMLDivElement | null>(null)
   const formControllerRef = useRef<AuthenticationFormController | null>(null)
@@ -57,6 +60,7 @@ export function LoginScreen({ api, controller, onExit }: LoginScreenProps): Reac
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
+    setRecoveryMessage(null)
 
     const form = event.currentTarget
 
@@ -121,76 +125,106 @@ export function LoginScreen({ api, controller, onExit }: LoginScreenProps): Reac
   }
 
   return (
-    <AuthenticationLayout
-      headingId="auth-login-heading"
-      heading={authenticationFormCopy.loginHeading}
-      statement={authenticationFormCopy.loginStatement}
-      busy={isSubmitting}
-    >
-      <form
-        ref={formRef}
-        className="auth-form"
-        aria-busy={isSubmitting}
-        aria-describedby="auth-login-guidance"
-        onSubmit={(event) => {
-          void handleSubmit(event)
-        }}
-      >
-        <p id="auth-login-guidance" className="auth-helper">
-          Fields marked required must be completed.
-        </p>
-        {operationState.status === 'ERROR' ? (
-          <div ref={alertRef} className="auth-alert" role="alert" tabIndex={-1}>
-            {operationState.message}
-          </div>
-        ) : null}
-        <fieldset className="auth-fieldset" disabled={isSubmitting}>
-          <legend>Local account</legend>
-          <div className="auth-field">
-            <label htmlFor="username">Username required</label>
-            <input
-              id="username"
-              name="username"
-              type="text"
-              required
-              maxLength={128}
-              autoComplete="username"
-              spellCheck={false}
-            />
-          </div>
-          <div className="auth-field">
-            <label htmlFor="password">Password required</label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              required
-              minLength={12}
-              maxLength={128}
-              autoComplete="current-password"
-              aria-describedby="auth-login-password-help"
-            />
-            <p id="auth-login-password-help" className="auth-helper">
-              {authenticationPasswordHelp}
-            </p>
-          </div>
-        </fieldset>
-        <div className="auth-actions">
-          <button className="button button-primary" type="submit" disabled={isSubmitting}>
-            {isSubmitting
-              ? authenticationFormCopy.loginSubmittingLabel
-              : authenticationFormCopy.loginSubmitLabel}
-          </button>
-          <button
-            className="button button-secondary"
-            type="button"
-            onClick={onExit}
-            disabled={isSubmitting}
-          >
-            {authenticationFormCopy.exitLabel}
-          </button>
+    <div className="auth-login-page">
+      <div className="auth-login-content">
+        <div className="auth-login-intro">
+          <p className="auth-login-welcome">Welcome to Community Health Screening</p>
+          <p className="auth-login-tagline">The One Place to Track Your Health</p>
         </div>
-      </form>
-    </AuthenticationLayout>
+        <AuthenticationLayout
+          headingId="auth-login-heading"
+          heading={authenticationFormCopy.loginHeading}
+          showEyebrow={false}
+          className="auth-login-card"
+          busy={isSubmitting}
+        >
+          <form
+            ref={formRef}
+            className="auth-form"
+            aria-busy={isSubmitting}
+            onSubmit={(event) => {
+              void handleSubmit(event)
+            }}
+          >
+            {operationState.status === 'ERROR' ? (
+              <div ref={alertRef} className="auth-alert" role="alert" tabIndex={-1}>
+                {operationState.message}
+              </div>
+            ) : null}
+            <fieldset className="auth-fieldset" disabled={isSubmitting}>
+              <div className="auth-field">
+                <label htmlFor="username">
+                  Username <RequiredFieldIndicator />
+                </label>
+                <input
+                  id="username"
+                  name="username"
+                  type="text"
+                  required
+                  maxLength={128}
+                  autoComplete="username"
+                  spellCheck={false}
+                />
+              </div>
+              <div className="auth-field">
+                <label htmlFor="password">
+                  Password <RequiredFieldIndicator />
+                </label>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  required
+                  minLength={12}
+                  maxLength={128}
+                  autoComplete="current-password"
+                />
+              </div>
+            </fieldset>
+            <div className="auth-recovery">
+              <button
+                className="auth-recovery-action"
+                type="button"
+                onClick={() => setRecoveryMessage(recoveryUnavailableMessage)}
+                disabled={isSubmitting}
+              >
+                Forgot username or password?
+              </button>
+              {recoveryMessage !== null ? (
+                <div className="auth-recovery-message" role="alert" tabIndex={-1}>
+                  {recoveryMessage}
+                </div>
+              ) : null}
+            </div>
+            <div className="auth-actions">
+              <button className="button button-primary" type="submit" disabled={isSubmitting}>
+                {isSubmitting
+                  ? authenticationFormCopy.loginSubmittingLabel
+                  : authenticationFormCopy.loginSubmitLabel}
+              </button>
+              <button
+                className="button button-secondary"
+                type="button"
+                onClick={onExit}
+                disabled={isSubmitting}
+              >
+                {authenticationFormCopy.loginExitLabel}
+              </button>
+            </div>
+          </form>
+        </AuthenticationLayout>
+      </div>
+    </div>
+  )
+}
+
+function RequiredFieldIndicator(): React.JSX.Element {
+  return (
+    <>
+      <span className="auth-required-indicator" aria-hidden="true">
+        *
+      </span>
+      <span className="visually-hidden"> required</span>
+    </>
   )
 }

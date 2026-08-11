@@ -3,15 +3,20 @@ import { describe, expect, it, vi } from 'vitest'
 import { createHealthScreeningApi } from '@preload/api'
 import {
   createIpcSuccess,
+  createScreeningVitalsGetDraftLoadedResult,
   createScreeningEncounterIpcFailure,
   ipcChannels,
   type PublicScreeningEncounterStartSummary,
-  type ScreeningEncounterStartRequest
+  type PublicScreeningVitalsDraft,
+  type ScreeningEncounterStartRequest,
+  type ScreeningVitalsSaveDraftRequest
 } from '@shared/ipc'
 
 const patientId = '11111111-1111-4111-8111-111111111111'
 const screeningSessionId = '22222222-2222-4222-8222-222222222222'
 const encounterId = '33333333-3333-4333-8333-333333333333'
+const vitalsDraftId = '44444444-4444-4444-8444-444444444444'
+const vitalsReadingId = '55555555-5555-4555-8555-555555555555'
 const startedAt = '2026-08-06T12:00:00.000Z'
 const sensitiveValue = 'Sensitive Patient C:\\secret\\screening.sqlite SELECT'
 
@@ -28,14 +33,61 @@ const encounter: PublicScreeningEncounterStartSummary = {
   startedAt,
   recordVersion: 1
 }
+const vitalsDraft: PublicScreeningVitalsDraft = {
+  id: vitalsDraftId,
+  encounterId,
+  status: 'DRAFT',
+  readings: [
+    {
+      id: vitalsReadingId,
+      sequenceNumber: 1,
+      systolic: 120,
+      diastolic: null,
+      pulse: null,
+      measurementSite: 'RIGHT_ARM',
+      patientPosition: null,
+      measurementTime: null
+    }
+  ],
+  weightKg: null,
+  waistCm: null,
+  notes: null,
+  rowVersion: 1,
+  updatedAt: startedAt
+}
+const vitalsSaveRequest: ScreeningVitalsSaveDraftRequest = {
+  encounterId,
+  expectedVersion: null,
+  readings: [
+    {
+      id: null,
+      sequenceNumber: 1,
+      systolic: 120,
+      diastolic: null,
+      pulse: null,
+      measurementSite: 'RIGHT_ARM',
+      patientPosition: null,
+      measurementTime: null
+    }
+  ],
+  weightKg: null,
+  waistCm: null,
+  notes: null
+}
 
 describe('preload screening-encounter API', () => {
-  it('exposes exactly the frozen screeningEncounters start method', () => {
+  it('exposes exactly the frozen screeningEncounters start and vitals methods', () => {
     const api = createHealthScreeningApi(vi.fn())
 
-    expect(Object.keys(api.screeningEncounters)).toEqual(['start'])
+    expect(Object.keys(api.screeningEncounters)).toEqual(['start', 'vitals'])
+    expect(Object.keys(api.screeningEncounters.vitals)).toEqual([
+      'getDraft',
+      'saveDraft',
+      'completeStep'
+    ])
     expect(Object.isFrozen(api)).toBe(true)
     expect(Object.isFrozen(api.screeningEncounters)).toBe(true)
+    expect(Object.isFrozen(api.screeningEncounters.vitals)).toBe(true)
 
     for (const transportName of [
       'invoke',
@@ -49,6 +101,7 @@ describe('preload screening-encounter API', () => {
       'channel'
     ]) {
       expect(transportName in api.screeningEncounters).toBe(false)
+      expect(transportName in api.screeningEncounters.vitals).toBe(false)
     }
   })
 
@@ -227,6 +280,140 @@ describe('preload screening-encounter API', () => {
     expect(Object.isFrozen(result.ok && 'encounter' in result.data && result.data.encounter)).toBe(
       true
     )
+  })
+
+  it('invokes only the fixed Vitals channels with parsed requests', async () => {
+    const getResponse = createScreeningVitalsGetDraftLoadedResult(vitalsDraft)
+    const saveResponse = createIpcSuccess({ status: 'SAVED' as const, draft: vitalsDraft })
+    const completeResponse = createIpcSuccess({
+      status: 'COMPLETED' as const,
+      draft: { ...vitalsDraft, status: 'VITALS_COMPLETE' as const }
+    })
+    const invoke = vi
+      .fn()
+      .mockResolvedValueOnce(getResponse)
+      .mockResolvedValueOnce(saveResponse)
+      .mockResolvedValueOnce(completeResponse)
+    const api = createHealthScreeningApi(invoke)
+
+    await expect(api.screeningEncounters.vitals.getDraft({ encounterId })).resolves.toEqual(
+      getResponse
+    )
+    await expect(api.screeningEncounters.vitals.saveDraft(vitalsSaveRequest)).resolves.toEqual(
+      saveResponse
+    )
+    await expect(api.screeningEncounters.vitals.completeStep(vitalsSaveRequest)).resolves.toEqual(
+      completeResponse
+    )
+
+    expect(invoke).toHaveBeenNthCalledWith(1, ipcChannels.screeningEncounters.getVitalsDraft, {
+      encounterId
+    })
+    expect(invoke).toHaveBeenNthCalledWith(
+      2,
+      ipcChannels.screeningEncounters.saveVitalsDraft,
+      vitalsSaveRequest
+    )
+    expect(invoke).toHaveBeenNthCalledWith(
+      3,
+      ipcChannels.screeningEncounters.completeVitalsStep,
+      vitalsSaveRequest
+    )
+    expect(invoke).not.toHaveBeenCalledWith('attacker:channel', expect.anything())
+  })
+
+  it('rejects invalid and authority-bearing Vitals requests locally without IPC invocation', async () => {
+    for (const invalidGetRequest of [
+      {},
+      { encounterId: 'bad-id' },
+      { encounterId, actor: { userId: patientId } },
+      { encounterId, role: 'NURSE' },
+      { encounterId, patientId },
+      { encounterId, screeningSessionId },
+      { encounterId, locationId: patientId }
+    ]) {
+      const invoke = vi.fn()
+      const result = await createHealthScreeningApi(invoke).screeningEncounters.vitals.getDraft(
+        invalidGetRequest as never
+      )
+
+      expect(result).toEqual(createIpcSuccess({ status: 'VALIDATION_FAILED' as const }))
+      expect(invoke).not.toHaveBeenCalled()
+    }
+
+    for (const invalidSaveRequest of [
+      {},
+      { encounterId },
+      { ...vitalsSaveRequest, readings: [] },
+      { ...vitalsSaveRequest, expectedVersion: 0 },
+      { ...vitalsSaveRequest, readings: [{ ...vitalsSaveRequest.readings[0], pulse: 0 }] },
+      {
+        ...vitalsSaveRequest,
+        readings: [{ ...vitalsSaveRequest.readings[0], measurementSite: 'ARM' }]
+      },
+      {
+        ...vitalsSaveRequest,
+        readings: [{ ...vitalsSaveRequest.readings[0], measurementTime: '25:00' }]
+      },
+      { ...vitalsSaveRequest, patientId },
+      { ...vitalsSaveRequest, screeningSessionId },
+      { ...vitalsSaveRequest, locationId: patientId },
+      { ...vitalsSaveRequest, installationId: patientId },
+      { ...vitalsSaveRequest, actor: { userId: patientId } },
+      { ...vitalsSaveRequest, role: 'LOCAL_ADMIN' },
+      { ...vitalsSaveRequest, force: true },
+      { ...vitalsSaveRequest, bypass: true },
+      { ...vitalsSaveRequest, complete: true }
+    ]) {
+      const invoke = vi.fn()
+      const result = await createHealthScreeningApi(invoke).screeningEncounters.vitals.saveDraft(
+        invalidSaveRequest as never
+      )
+
+      expect(result).toEqual(createIpcSuccess({ status: 'VALIDATION_FAILED' as const }))
+      expect(Object.isFrozen(result)).toBe(true)
+      expect(invoke).not.toHaveBeenCalled()
+    }
+  })
+
+  it('maps Vitals invoke failures and malformed responses to frozen UNAVAILABLE results', async () => {
+    const malformedResponses = [
+      createIpcSuccess({
+        status: 'SAVED',
+        draft: { ...vitalsDraft, rowVersion: 0 }
+      }),
+      createIpcSuccess({ status: 'UNKNOWN' }),
+      {
+        ok: false,
+        error: {
+          code: 'IPC_FORBIDDEN',
+          message: sensitiveValue
+        }
+      },
+      new Proxy(createIpcSuccess({ status: 'SAVED', draft: vitalsDraft }), {
+        ownKeys() {
+          throw new Error(sensitiveValue)
+        }
+      })
+    ]
+
+    for (const response of malformedResponses) {
+      const result = await createHealthScreeningApi(
+        vi.fn().mockResolvedValue(response)
+      ).screeningEncounters.vitals.saveDraft(vitalsSaveRequest)
+
+      expect(result).toEqual(createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+      expect(Object.isFrozen(result)).toBe(true)
+      expectFailureIsSafe(result)
+    }
+
+    const thrown = await createHealthScreeningApi(
+      vi.fn().mockRejectedValue(new Error(sensitiveValue))
+    ).screeningEncounters.vitals.completeStep(vitalsSaveRequest)
+
+    expect(thrown).toEqual(createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+    expect(Object.isFrozen(thrown)).toBe(true)
+    expectFailureIsSafe(thrown)
   })
 })
 

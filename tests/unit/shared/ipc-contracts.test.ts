@@ -104,7 +104,10 @@ describe('shared IPC contracts', () => {
         list: 'health-screening:screening-sessions:list'
       },
       screeningEncounters: {
-        start: 'health-screening:screening-encounters:start'
+        start: 'health-screening:screening-encounters:start',
+        getVitalsDraft: 'health-screening:screening-encounters:vitals:get-draft',
+        saveVitalsDraft: 'health-screening:screening-encounters:vitals:save-draft',
+        completeVitalsStep: 'health-screening:screening-encounters:vitals:complete-step'
       },
       installationSettings: {
         getConfiguredLocation: 'health-screening:installation-settings:get-configured-location',
@@ -123,7 +126,7 @@ describe('shared IPC contracts', () => {
         ...Object.values(ipcChannels.screeningEncounters),
         ...Object.values(ipcChannels.installationSettings)
       ]).size
-    ).toBe(34)
+    ).toBe(37)
   })
 
   it('keeps patient requests strict and main-process-authored', () => {

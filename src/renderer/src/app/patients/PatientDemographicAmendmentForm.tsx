@@ -107,7 +107,7 @@ export function PatientDemographicAmendmentForm({
     <form className="patient-amendment-form" noValidate onSubmit={submit}>
       <div className="patient-detail-header">
         <h2 ref={headingRef} tabIndex={-1}>
-          Amend demographics
+          Edit Demographic
         </h2>
         <span>{pending ? 'Saving' : 'Draft amendment'}</span>
       </div>
@@ -205,7 +205,6 @@ export function PatientDemographicAmendmentForm({
           role="group"
           aria-labelledby="patient-amendment-name-label"
           aria-describedby={joinDescriptionIds(
-            'patient-amendment-name-help',
             validationErrors.name !== undefined ? 'patient-amendment-name-error' : undefined
           )}
           aria-required="true"
@@ -213,16 +212,12 @@ export function PatientDemographicAmendmentForm({
           <div id="patient-amendment-name-label" className="patient-field-group-label">
             Patient name <RequiredIndicator />
           </div>
-          <p id="patient-amendment-name-help" className="patient-field-help">
-            At least one name field is required.
-          </p>
           <div className="patient-field-group-grid">
             <TextField
               label="Given name"
               value={draft.givenName}
               invalid={validationErrors.name !== undefined}
               describedBy={joinDescriptionIds(
-                'patient-amendment-name-help',
                 validationErrors.name !== undefined ? 'patient-amendment-name-error' : undefined
               )}
               onChange={(value) => update('givenName', value)}
@@ -232,7 +227,6 @@ export function PatientDemographicAmendmentForm({
               value={draft.familyName}
               invalid={validationErrors.name !== undefined}
               describedBy={joinDescriptionIds(
-                'patient-amendment-name-help',
                 validationErrors.name !== undefined ? 'patient-amendment-name-error' : undefined
               )}
               onChange={(value) => update('familyName', value)}
@@ -242,7 +236,6 @@ export function PatientDemographicAmendmentForm({
               value={draft.otherNames}
               invalid={validationErrors.name !== undefined}
               describedBy={joinDescriptionIds(
-                'patient-amendment-name-help',
                 validationErrors.name !== undefined ? 'patient-amendment-name-error' : undefined
               )}
               onChange={(value) => update('otherNames', value)}
@@ -254,7 +247,6 @@ export function PatientDemographicAmendmentForm({
         <div
           className="patient-field-group patient-field-wide"
           role="group"
-          aria-labelledby="patient-amendment-age-label"
           aria-describedby={joinDescriptionIds(
             validationErrors.dateOfBirth !== undefined
               ? 'patient-amendment-date-of-birth-error'
@@ -268,14 +260,12 @@ export function PatientDemographicAmendmentForm({
           )}
           aria-required="true"
         >
-          <div id="patient-amendment-age-label" className="patient-field-group-label">
-            Date of birth or approximate age <RequiredIndicator />
-          </div>
           <div className="patient-field-group-grid">
             <DateField
               label="Date of birth"
               value={draft.dateOfBirth}
               disabled={approximateAgeActive}
+              required={!approximateAgeActive}
               invalid={validationErrors.dateOfBirth !== undefined}
               describedBy={
                 validationErrors.dateOfBirth !== undefined
@@ -288,9 +278,9 @@ export function PatientDemographicAmendmentForm({
               label="Approximate age"
               value={draft.approximateAgeYears}
               disabled={exactDobActive}
+              required={!exactDobActive}
               invalid={validationErrors.approximateAgeYears !== undefined}
               describedBy={joinDescriptionIds(
-                exactDobActive ? 'patient-amendment-exact-dob-note' : undefined,
                 validationErrors.approximateAgeYears !== undefined
                   ? 'patient-amendment-approximate-age-error'
                   : undefined
@@ -304,7 +294,6 @@ export function PatientDemographicAmendmentForm({
               required={approximateAgeActive}
               invalid={validationErrors.ageAsOfDate !== undefined}
               describedBy={joinDescriptionIds(
-                exactDobActive ? 'patient-amendment-exact-dob-note' : undefined,
                 validationErrors.ageAsOfDate !== undefined
                   ? 'patient-amendment-age-as-of-date-error'
                   : undefined
@@ -312,16 +301,6 @@ export function PatientDemographicAmendmentForm({
               onChange={(value) => update('ageAsOfDate', value)}
             />
           </div>
-          {exactDobActive ? (
-            <p id="patient-amendment-exact-dob-note" className="patient-field-help">
-              Clear date of birth before entering approximate age.
-            </p>
-          ) : null}
-          {approximateAgeActive ? (
-            <p className="patient-field-help">
-              Clear approximate age before entering date of birth.
-            </p>
-          ) : null}
           <ValidationMessage
             id="patient-amendment-date-of-birth-error"
             message={validationErrors.dateOfBirth}
@@ -548,6 +527,7 @@ function NumberField({
   label,
   value,
   disabled = false,
+  required = false,
   invalid = false,
   describedBy,
   onChange
@@ -555,19 +535,21 @@ function NumberField({
   readonly label: string
   readonly value: number | null
   readonly disabled?: boolean
+  readonly required?: boolean
   readonly invalid?: boolean
   readonly describedBy?: string
   onChange(value: number | null): void
 }): React.JSX.Element {
   return (
     <label>
-      <span className="patient-field-label-text">{label}</span>
+      <FieldLabelText label={label} required={required} />
       <input
         type="number"
         min={0}
         max={120}
         value={value ?? ''}
         disabled={disabled}
+        aria-required={required || undefined}
         aria-invalid={invalid || undefined}
         aria-describedby={describedBy}
         onChange={(event) =>
