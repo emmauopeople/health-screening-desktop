@@ -6,6 +6,8 @@ import type { AppIpcHandlerDependencies } from '@main/ipc/handlers/app-handlers'
 import { createAppIpcHandlers } from '@main/ipc/handlers/app-handlers'
 import type { FirstRunIpcHandlerDependencies } from '@main/ipc/handlers/first-run-handlers'
 import { createFirstRunIpcHandlers } from '@main/ipc/handlers/first-run-handlers'
+import type { InstallationSettingsIpcHandlerDependencies } from '@main/ipc/handlers/installation-settings-handlers'
+import { createInstallationSettingsIpcHandlers } from '@main/ipc/handlers/installation-settings-handlers'
 import type { PatientIpcHandlerDependencies } from '@main/ipc/handlers/patient-handlers'
 import { createPatientIpcHandlers } from '@main/ipc/handlers/patient-handlers'
 import type { ScreeningEncounterIpcHandlerDependencies } from '@main/ipc/handlers/screening-encounter-handlers'
@@ -14,6 +16,7 @@ import type { ScreeningSessionIpcHandlerDependencies } from '@main/ipc/handlers/
 import { createScreeningSessionIpcHandlers } from '@main/ipc/handlers/screening-session-handlers'
 import {
   ipcChannels,
+  type InstallationSettingsIpcChannel,
   type ScreeningEncounterIpcChannel,
   type ScreeningSessionIpcChannel
 } from '@shared/ipc'
@@ -49,6 +52,12 @@ const screeningSessionIpcChannels: readonly ScreeningSessionIpcChannel[] = Objec
   ipcChannels.screeningSessions.getById,
   ipcChannels.screeningSessions.list
 ])
+const installationSettingsIpcChannels: readonly InstallationSettingsIpcChannel[] = Object.freeze([
+  ipcChannels.installationSettings.getConfiguredLocation,
+  ipcChannels.installationSettings.listEligibleLocations,
+  ipcChannels.installationSettings.assignInitialLocation,
+  ipcChannels.installationSettings.reconfigureLocation
+])
 const activeScreeningSessionRegistrations = new WeakMap<
   ApplicationIpcMain,
   ScreeningSessionRegistrationOwnership
@@ -71,6 +80,7 @@ export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependen
   readonly patient: PatientIpcHandlerDependencies
   readonly screeningSessions: ScreeningSessionIpcHandlerDependencies
   readonly screeningEncounters: ScreeningEncounterIpcHandlerDependencies
+  readonly installationSettings: InstallationSettingsIpcHandlerDependencies
 }
 
 export function registerApplicationIpcHandlers(
@@ -88,6 +98,9 @@ export function registerApplicationIpcHandlers(
     const firstRunHandlers = createFirstRunIpcHandlers(dependencies.firstRun)
     const authenticationHandlers = createAuthenticationIpcHandlers(dependencies.auth)
     const patientHandlers = createPatientIpcHandlers(dependencies.patient)
+    const installationSettingsHandlers = createInstallationSettingsIpcHandlers(
+      dependencies.installationSettings
+    )
 
     const registrations: ReadonlyArray<readonly [string, ApplicationIpcListener]> = [
       [ipcChannels.app.getInfo, appHandlers.getInfo],
@@ -113,7 +126,23 @@ export function registerApplicationIpcHandlers(
       [ipcChannels.patient.listAcknowledgmentHistory, patientHandlers.listAcknowledgmentHistory],
       [ipcChannels.patient.listRecent, patientHandlers.listRecent],
       [ipcChannels.patient.findDuplicates, patientHandlers.findDuplicates],
-      [ipcChannels.patient.markNotDuplicate, patientHandlers.markNotDuplicate]
+      [ipcChannels.patient.markNotDuplicate, patientHandlers.markNotDuplicate],
+      [
+        ipcChannels.installationSettings.getConfiguredLocation,
+        installationSettingsHandlers.getConfiguredLocation
+      ],
+      [
+        ipcChannels.installationSettings.listEligibleLocations,
+        installationSettingsHandlers.listEligibleLocations
+      ],
+      [
+        ipcChannels.installationSettings.assignInitialLocation,
+        installationSettingsHandlers.assignInitialLocation
+      ],
+      [
+        ipcChannels.installationSettings.reconfigureLocation,
+        installationSettingsHandlers.reconfigureLocation
+      ]
     ]
 
     for (const [channel, listener] of registrations) {
@@ -281,6 +310,9 @@ function disposeApplicationOwnedIpcHandlers(applicationIpcMain: ApplicationIpcMa
   applicationIpcMain.removeHandler(ipcChannels.patient.listRecent)
   applicationIpcMain.removeHandler(ipcChannels.patient.findDuplicates)
   applicationIpcMain.removeHandler(ipcChannels.patient.markNotDuplicate)
+  for (const channel of installationSettingsIpcChannels) {
+    applicationIpcMain.removeHandler(channel)
+  }
   disposeScreeningSessionIpcHandlers(applicationIpcMain)
   disposeScreeningEncounterIpcHandlers(applicationIpcMain)
 }

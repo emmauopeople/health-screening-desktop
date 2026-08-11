@@ -2,11 +2,13 @@ import type { RefObject } from 'react'
 import { useState } from 'react'
 import type {
   HealthScreeningApi,
+  InstallationSettingsErrorCode,
   PatientErrorCode,
   PublicPatientDetail,
   ScreeningSessionErrorCode
 } from '@shared/ipc'
 
+import { InstallationLocationAdministrationWorkspace } from '../administration/InstallationLocationAdministrationWorkspace'
 import { PatientRegistryWorkspace } from '../patients/PatientRegistryWorkspace'
 import { ScreeningSessionWorkspace } from '../screening/ScreeningSessionWorkspace'
 import { DashboardWorkspace } from './DashboardWorkspace'
@@ -28,7 +30,7 @@ interface ApplicationWorkspaceProps {
   readonly headingRef: RefObject<HTMLHeadingElement | null>
   onSelectCommand(commandId: ApplicationCommandId): void
   onProtectedWorkspaceAuthenticationFailure(
-    code: PatientErrorCode | ScreeningSessionErrorCode
+    code: PatientErrorCode | ScreeningSessionErrorCode | InstallationSettingsErrorCode
   ): void
   registerNavigationGuard(guard: PatientWorkspaceNavigationGuard | null): void
 }
@@ -86,6 +88,14 @@ export function ApplicationWorkspace({
           userRole={user.role}
           onScreeningSessionAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
           registerNavigationGuard={registerNavigationGuard}
+        />
+      ) : route.status === 'ADMINISTRATION' ? (
+        <InstallationLocationAdministrationWorkspace
+          api={api}
+          headingId={workspaceHeadingId}
+          headingRef={headingRef}
+          userRole={user.role}
+          onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
         />
       ) : (
         <PlannedModuleWorkspace

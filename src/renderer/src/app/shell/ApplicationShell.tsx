@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { HealthScreeningApi, PatientErrorCode, ScreeningSessionErrorCode } from '@shared/ipc'
+import type {
+  HealthScreeningApi,
+  InstallationSettingsErrorCode,
+  PatientErrorCode,
+  ScreeningSessionErrorCode
+} from '@shared/ipc'
 
 import {
   getDefaultApplicationCommand,
@@ -37,7 +42,7 @@ interface ApplicationShellProps {
   onLock(): void
   onLogout(): void
   onProtectedWorkspaceAuthenticationFailure(
-    code: PatientErrorCode | ScreeningSessionErrorCode
+    code: PatientErrorCode | ScreeningSessionErrorCode | InstallationSettingsErrorCode
   ): void
 }
 

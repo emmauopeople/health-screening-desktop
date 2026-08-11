@@ -98,9 +98,9 @@ records.
 
 ## Reconfiguration
 
-`reconfigureInstallationLocation({ locationId })` is a main-process application
-service for a future admin settings screen. P0 intentionally does not expose a
-renderer IPC/preload method or build a settings UI.
+`reconfigureInstallationLocation({ locationId })` is the main-process
+application service used by the Administration `Screening Location` workspace
+when an authorized administrator changes the configured location.
 
 The service:
 
@@ -132,6 +132,36 @@ The service does not close sessions, cancel encounters, move records, rewrite
 historical location attribution, create daily sessions, create encounters, or
 perform clinical calculations.
 
+## Administration Boundary
+
+HSD-029C-P3 exposes a focused renderer administration surface at
+Administration > Screening Location. The workspace is visible only to users with
+the `LOCAL_ADMIN` role according to the renderer navigation catalog; main
+process authentication and authorization remain authoritative for every command.
+
+The fixed preload namespace is:
+
+- `window.healthScreening.installationSettings.getConfiguredLocation()`
+- `window.healthScreening.installationSettings.listEligibleLocations()`
+- `window.healthScreening.installationSettings.assignInitialLocation({ locationId })`
+- `window.healthScreening.installationSettings.reconfigureLocation({ locationId })`
+
+The read operations accept an empty request, and the mutation operations
+strictly accept exactly `{ locationId }`. Unexpected fields such as actor, role,
+installation ID, timestamp, `force`, `bypass`, or `override` are rejected before
+they can become operational authority. The renderer may submit only the selected
+location identifier required by the P0 command contract; identity, role,
+installation context, validation, active-work protection, audit attribution, and
+persistence are resolved in the main process.
+
+The Administration workspace displays `Not configured` when the singleton row is
+absent, displays only the safe location name when configured, lists active
+eligible locations from the approved location repository boundary, requires an
+explicit Save action after selection, and preserves the existing assignment
+until a P0 command succeeds. It does not create, edit, activate, or deactivate
+locations; it does not manually open daily sessions; and it does not create
+patient encounters.
+
 ## Result Boundary
 
 Resolver, initial-assignment, and reconfiguration results use existing `status`
@@ -157,23 +187,11 @@ Mutation controlled statuses are:
 - `CONFIGURATION_CONFLICT`
 - `UNAVAILABLE`
 
-## Future Boundaries
-
-Future renderer settings work may expose one fixed typed preload method such as
-`window.healthScreening.installationSettings.reconfigureLocation({ locationId })`.
-It may also expose
-`window.healthScreening.installationSettings.assignInitialLocation({ locationId })`
-for upgraded-installation recovery. Those future IPC boundaries must enforce
-trusted-sender validation before parsing, strictly accept only `locationId`,
-resolve authentication and authorization in the main process, and return only
-the sanitized service result.
-
-No admin settings UI is implemented by P0 or the P0 correction.
-
 HSD-029C-P1 consumes `resolveConfiguredInstallationLocation()` as the trusted
 location authority for `ensureCurrentScreeningSession()` while still resolving
 date, auth, status, audit, and outbox authority inside the main process. If an
 existing installation still has no configured location, P1 returns
 `LOCATION_NOT_CONFIGURED`; recovery remains the separate authenticated
-`LOCAL_ADMIN` assignment operation described above and is not invoked
+`LOCAL_ADMIN` assignment operation described above. HSD-029C-P3 gives
+administrators a UI for that assignment, but it is still not invoked
 automatically by the Screening workflow.

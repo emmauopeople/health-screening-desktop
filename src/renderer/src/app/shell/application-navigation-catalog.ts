@@ -41,7 +41,7 @@ export const defaultApplicationCommands: Readonly<
   SCREENING: 'SCREENING_TODAYS_SESSION',
   REFERRALS: 'REFERRALS_REFERRAL_WORKLIST',
   REPORTS: 'REPORTS_PATIENT_REPORTS',
-  ADMINISTRATION: 'ADMINISTRATION_USERS'
+  ADMINISTRATION: 'ADMINISTRATION_LOCATIONS'
 })
 
 const plannedOwners = Object.freeze({
@@ -228,10 +228,10 @@ const commandDefinitions = [
   command(
     'ADMINISTRATION_LOCATIONS',
     'ADMINISTRATION',
-    'Locations',
+    'Screening Location',
     adminOnlyRoles,
-    'PLANNED',
-    plannedOwners.administration
+    'AVAILABLE',
+    null
   ),
   command(
     'ADMINISTRATION_PROTOCOLS',

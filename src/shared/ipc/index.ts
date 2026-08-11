@@ -5,6 +5,7 @@ export {
   type FirstRunIpcChannel,
   type PatientIpcChannel,
   type ScreeningEncounterIpcChannel,
+  type InstallationSettingsIpcChannel,
   type ScreeningSessionIpcChannel
 } from './channels'
 export {
@@ -234,6 +235,40 @@ export {
   type ScreeningEncounterStartSuccessData,
   type ScreeningEncounterStatus
 } from './screening-encounter-contracts'
+export {
+  createInstallationSettingsFailure,
+  installationSettingsAssignInitialLocationRequestSchema,
+  installationSettingsAssignInitialLocationResultSchema,
+  installationSettingsAssignInitialLocationSuccessDataSchema,
+  installationSettingsErrorCodeSchema,
+  installationSettingsFailureSchema,
+  installationSettingsGetConfiguredLocationRequestSchema,
+  installationSettingsGetConfiguredLocationResultSchema,
+  installationSettingsGetConfiguredLocationSuccessDataSchema,
+  installationSettingsListEligibleLocationsRequestSchema,
+  installationSettingsListEligibleLocationsResultSchema,
+  installationSettingsListEligibleLocationsSuccessDataSchema,
+  installationSettingsReconfigureLocationRequestSchema,
+  installationSettingsReconfigureLocationResultSchema,
+  installationSettingsReconfigureLocationSuccessDataSchema,
+  installationSettingsSafeErrorMessages,
+  installationSettingsUuidSchema,
+  publicInstallationSettingsLocationSchema,
+  type InstallationSettingsAssignInitialLocationRequest,
+  type InstallationSettingsAssignInitialLocationResult,
+  type InstallationSettingsAssignInitialLocationSuccessData,
+  type InstallationSettingsErrorCode,
+  type InstallationSettingsGetConfiguredLocationRequest,
+  type InstallationSettingsGetConfiguredLocationResult,
+  type InstallationSettingsGetConfiguredLocationSuccessData,
+  type InstallationSettingsListEligibleLocationsRequest,
+  type InstallationSettingsListEligibleLocationsResult,
+  type InstallationSettingsListEligibleLocationsSuccessData,
+  type InstallationSettingsReconfigureLocationRequest,
+  type InstallationSettingsReconfigureLocationResult,
+  type InstallationSettingsReconfigureLocationSuccessData,
+  type PublicInstallationSettingsLocation
+} from './installation-settings-contracts'
 export {
   createScreeningSessionFailure,
   createScreeningSessionEnsureCurrentStatusResult,

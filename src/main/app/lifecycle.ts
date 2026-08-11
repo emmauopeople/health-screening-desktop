@@ -14,6 +14,7 @@ import { registerApplicationShutdown } from '@main/app/shutdown'
 import {
   createProductionFirstRunBootstrapService,
   createProductionCurrentScreeningSessionService,
+  createProductionInstallationLocationService,
   createProductionLocalAuthenticationSessionService,
   createProductionPatientAcknowledgmentService,
   createProductionPatientDemographicAmendmentService,
@@ -26,6 +27,7 @@ import {
   createDatabaseHealthProvider,
   createDatabaseRuntime,
   createProductionDatabaseMigrationRunner,
+  createLocationRepository,
   getDatabasePath,
   type DatabaseRuntime
 } from '@main/database'
@@ -116,6 +118,12 @@ export function startApplicationLifecycle(): void {
         createProductionScreeningSessionWorkspaceContextService({
           connection: databaseRuntime.getConnection()
         })
+      const installationLocationService = createProductionInstallationLocationService({
+        connection: databaseRuntime.getConnection(),
+        authenticationSessionService,
+        logger: console
+      })
+      const locationRepository = createLocationRepository(databaseRuntime.getConnection())
       const authenticationSessionPublisher = createAuthenticationSessionPublisher({
         navigationPolicy,
         getWebContents: getMainWindowWebContents
@@ -154,6 +162,13 @@ export function startApplicationLifecycle(): void {
         screeningEncounters: {
           navigationPolicy,
           screeningEncounterStartService,
+          logger: console
+        },
+        installationSettings: {
+          navigationPolicy,
+          authenticationSessionService,
+          installationLocationService,
+          locationRepository,
           logger: console
         },
         logger: console

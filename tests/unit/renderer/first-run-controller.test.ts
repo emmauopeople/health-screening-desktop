@@ -5,6 +5,7 @@ import {
   createFirstRunFailure,
   createIpcFailure,
   createIpcSuccess,
+  createInstallationSettingsFailure,
   createPatientFailure,
   createScreeningSessionFailure,
   type AppGetHealthResult,
@@ -579,6 +580,18 @@ function createApi({
     },
     screeningEncounters: {
       start: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+    },
+    installationSettings: {
+      getConfiguredLocation: vi.fn(async () =>
+        createInstallationSettingsFailure('IPC_UNAVAILABLE')
+      ),
+      listEligibleLocations: vi.fn(async () =>
+        createInstallationSettingsFailure('IPC_UNAVAILABLE')
+      ),
+      assignInitialLocation: vi.fn(async () =>
+        createInstallationSettingsFailure('IPC_UNAVAILABLE')
+      ),
+      reconfigureLocation: vi.fn(async () => createInstallationSettingsFailure('IPC_UNAVAILABLE'))
     }
   }
 }

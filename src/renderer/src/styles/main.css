@@ -1135,6 +1135,111 @@ h1 {
   margin-top: 18px;
 }
 
+.administration-workspace {
+  display: grid;
+  gap: 16px;
+  max-width: 760px;
+}
+
+.administration-location-card {
+  min-width: 0;
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 18px;
+}
+
+.administration-section-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.administration-section-header h2 {
+  margin: 0;
+  color: var(--shell-navy);
+  font-size: 1.08rem;
+}
+
+.administration-definition-list {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #d8e3ee;
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: #344054;
+  background: #f8fbfd;
+  font-size: 0.88rem;
+  font-weight: 760;
+}
+
+.administration-definition-list strong {
+  color: var(--shell-navy);
+  font-size: 1rem;
+}
+
+.administration-location-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.administration-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #344054;
+  font-size: 0.88rem;
+  font-weight: 760;
+}
+
+.administration-field select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  padding: 9px 11px;
+  color: var(--shell-text);
+  background: #ffffff;
+  font-size: 0.95rem;
+}
+
+.administration-confirmation,
+.administration-message,
+.administration-empty-state {
+  border: 1px solid #d8e3ee;
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: var(--shell-secondary-text);
+  background: #f8fbfd;
+  font-size: 0.94rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.administration-confirmation {
+  display: grid;
+  gap: 4px;
+}
+
+.administration-confirmation strong {
+  color: var(--shell-navy);
+}
+
+.administration-message-alert {
+  border-color: #d98b7b;
+  color: #7a271a;
+  background: #fff1ed;
+}
+
+.administration-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .screening-workspace {
   display: grid;
   gap: 16px;

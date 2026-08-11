@@ -150,9 +150,8 @@ describe('screening patient entry workspace', () => {
 
     const mounted = await mountWorkspace({ api })
 
-    expect(text(mounted)).toContain(
-      'This installation does not have a configured screening location.'
-    )
+    expect(countTextOccurrences(mounted, 'Screening location is not configured.')).toBe(1)
+    expect(mounted.container.querySelector('.screening-patient-table')).toBeNull()
     expect(api.patient.search).not.toHaveBeenCalled()
 
     await mounted.unmount()
@@ -704,6 +703,10 @@ function expectWorkspaceHeading(mounted: MountedWorkspace, expected: string): vo
 
 function text(mounted: MountedWorkspace): string {
   return mounted.container.textContent ?? ''
+}
+
+function countTextOccurrences(mounted: MountedWorkspace, phrase: string): number {
+  return text(mounted).split(phrase).length - 1
 }
 
 function createDeferred<T>(): {

@@ -60,6 +60,10 @@ export type ApplicationWorkspaceRoute =
         'HOME_TODAYS_SESSION' | 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING'
     }
   | {
+      readonly status: 'ADMINISTRATION'
+      readonly commandId: 'ADMINISTRATION_LOCATIONS'
+    }
+  | {
       readonly status: 'PLANNED_MODULE'
       readonly commandId: ApplicationCommandId
       readonly heading: string

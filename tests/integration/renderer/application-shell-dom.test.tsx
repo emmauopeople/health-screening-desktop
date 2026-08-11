@@ -310,9 +310,13 @@ describe('application shell DOM integration', () => {
     )
 
     await clickButton(mounted, 'Administration')
-    expectWorkspaceHeading(mounted, 'Users')
+    expectWorkspaceHeading(mounted, 'Administration')
+    expect(text(mounted)).toContain('Screening Location')
+    expect(text(mounted)).toContain('Assigned location')
     expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Administration commands')
-    expect(commandButtonByText(mounted, 'Users').getAttribute('aria-current')).toBe('page')
+    expect(commandButtonByText(mounted, 'Screening Location').getAttribute('aria-current')).toBe(
+      'page'
+    )
 
     await mounted.unmount()
   })
@@ -1148,6 +1152,20 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
   screeningEncounters: {
     start: ReturnType<typeof vi.fn<HealthScreeningApi['screeningEncounters']['start']>>
   } & HealthScreeningApi['screeningEncounters']
+  installationSettings: {
+    getConfiguredLocation: ReturnType<
+      typeof vi.fn<HealthScreeningApi['installationSettings']['getConfiguredLocation']>
+    >
+    listEligibleLocations: ReturnType<
+      typeof vi.fn<HealthScreeningApi['installationSettings']['listEligibleLocations']>
+    >
+    assignInitialLocation: ReturnType<
+      typeof vi.fn<HealthScreeningApi['installationSettings']['assignInitialLocation']>
+    >
+    reconfigureLocation: ReturnType<
+      typeof vi.fn<HealthScreeningApi['installationSettings']['reconfigureLocation']>
+    >
+  } & HealthScreeningApi['installationSettings']
 }
 
 interface AppApiHarness {
@@ -1311,6 +1329,54 @@ function createAppApi(initialSession: PublicAuthenticationSession): AppApiHarnes
               patientId: request.patientId,
               screeningSessionId: request.screeningSessionId
             })
+          })
+        )
+      )
+    },
+    installationSettings: {
+      getConfiguredLocation: vi.fn(() =>
+        Promise.resolve(
+          createIpcSuccess({
+            status: 'RESOLVED',
+            location: {
+              id: '77777777-7777-4777-8777-777777777777',
+              name: 'Bastos Hall'
+            }
+          })
+        )
+      ),
+      listEligibleLocations: vi.fn(() =>
+        Promise.resolve(
+          createIpcSuccess({
+            status: 'LISTED',
+            locations: [
+              {
+                id: '77777777-7777-4777-8777-777777777777',
+                name: 'Bastos Hall'
+              }
+            ]
+          })
+        )
+      ),
+      assignInitialLocation: vi.fn(() =>
+        Promise.resolve(
+          createIpcSuccess({
+            status: 'ASSIGNED',
+            location: {
+              id: '77777777-7777-4777-8777-777777777777',
+              name: 'Bastos Hall'
+            }
+          })
+        )
+      ),
+      reconfigureLocation: vi.fn(() =>
+        Promise.resolve(
+          createIpcSuccess({
+            status: 'UPDATED',
+            location: {
+              id: '77777777-7777-4777-8777-777777777777',
+              name: 'Bastos Hall'
+            }
           })
         )
       )

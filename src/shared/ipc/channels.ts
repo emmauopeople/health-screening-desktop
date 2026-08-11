@@ -40,6 +40,12 @@ export const ipcChannels = {
   },
   screeningEncounters: {
     start: 'health-screening:screening-encounters:start'
+  },
+  installationSettings: {
+    getConfiguredLocation: 'health-screening:installation-settings:get-configured-location',
+    listEligibleLocations: 'health-screening:installation-settings:list-eligible-locations',
+    assignInitialLocation: 'health-screening:installation-settings:assign-initial-location',
+    reconfigureLocation: 'health-screening:installation-settings:reconfigure-location'
   }
 } as const
 
@@ -51,3 +57,5 @@ export type ScreeningSessionIpcChannel =
   (typeof ipcChannels.screeningSessions)[keyof typeof ipcChannels.screeningSessions]
 export type ScreeningEncounterIpcChannel =
   (typeof ipcChannels.screeningEncounters)[keyof typeof ipcChannels.screeningEncounters]
+export type InstallationSettingsIpcChannel =
+  (typeof ipcChannels.installationSettings)[keyof typeof ipcChannels.installationSettings]
