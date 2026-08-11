@@ -3,9 +3,11 @@ import {
   useEffect,
   useRef,
   useState,
+  type Dispatch,
   type MutableRefObject,
   type ReactNode,
-  type RefObject
+  type RefObject,
+  type SetStateAction
 } from 'react'
 
 import type {
@@ -35,8 +37,13 @@ interface ScreeningSessionWorkspaceProps {
   readonly commandId: ScreeningSessionWorkspaceCommandId
   readonly headingId: string
   readonly headingRef: RefObject<HTMLHeadingElement | null>
+  readonly openTabs: readonly PatientScreeningTab[]
+  readonly activePatientId: string | null
   readonly userRole: LocalUserRole
+  onActivePatientIdChange: Dispatch<SetStateAction<string | null>>
+  onOpenTabsChange: Dispatch<SetStateAction<readonly PatientScreeningTab[]>>
   onScreeningSessionAuthenticationFailure(code: ScreeningSessionErrorCode): void
+  onSelectCommand(commandId: 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING'): void
   registerNavigationGuard(guard: WorkspaceNavigationGuard | null): void
 }
 
@@ -67,7 +74,7 @@ type PatientSearchState =
   | { readonly status: 'EMPTY'; readonly page: number; readonly pageSize: 25 }
   | { readonly status: 'ERROR'; readonly message: string }
 
-interface PatientScreeningTab {
+export interface PatientScreeningTab {
   readonly patient: PublicPatientSummary
   readonly encounter: PublicScreeningEncounterStartSummary
 }
@@ -77,21 +84,29 @@ type WorkspaceMessage = {
   readonly text: string
 }
 
+type ScreeningWorkspaceTab = 'PATIENTS' | 'NEW_SCREENING'
+
 const initialSessionState: CurrentSessionState = Object.freeze({ status: 'LOADING' })
 const initialPatientSearchState: PatientSearchState = Object.freeze({ status: 'IDLE' })
 const screeningSectionLabels = Object.freeze([
   'Vitals',
   'Lifestyle',
   'Food',
-  'OTC Medications',
+  'OTC',
   'Review'
 ] as const)
 
 export function ScreeningSessionWorkspace({
   api,
+  activePatientId,
+  commandId,
   headingId,
   headingRef,
+  openTabs,
+  onActivePatientIdChange,
+  onOpenTabsChange,
   onScreeningSessionAuthenticationFailure,
+  onSelectCommand,
   registerNavigationGuard
 }: ScreeningSessionWorkspaceProps): React.JSX.Element {
   const mountedRef = useMountedRef()
@@ -105,8 +120,6 @@ export function ScreeningSessionWorkspace({
     useState<PatientSearchState>(initialPatientSearchState)
   const [patientSearchQuery, setPatientSearchQuery] = useState('')
   const [patientSearchPage, setPatientSearchPage] = useState(1)
-  const [openTabs, setOpenTabs] = useState<readonly PatientScreeningTab[]>([])
-  const [activePatientId, setActivePatientId] = useState<string | null>(null)
   const [pendingPatientIds, setPendingPatientIds] = useState<ReadonlySet<string>>(() => new Set())
   const [message, setMessage] = useState<WorkspaceMessage | null>(null)
 
@@ -126,20 +139,25 @@ export function ScreeningSessionWorkspace({
     [focusMessage]
   )
 
-  const clearWorkflowState = useCallback((): void => {
+  const clearTransientWorkflowState = useCallback((): void => {
     workspaceEpochRef.current += 1
     patientSearchRequestRef.current += 1
     pendingPatientIdsRef.current.clear()
     setPatientSearchState(initialPatientSearchState)
-    setOpenTabs([])
-    setActivePatientId(null)
     setPendingPatientIds(new Set())
   }, [])
+
+  const selectWorkspaceTab = useCallback(
+    (tab: ScreeningWorkspaceTab): void => {
+      onSelectCommand(tab === 'PATIENTS' ? 'SCREENING_TODAYS_SESSION' : 'SCREENING_NEW_SCREENING')
+    },
+    [onSelectCommand]
+  )
 
   const loadCurrentSession = useCallback(async (): Promise<void> => {
     const requestId = sessionRequestRef.current + 1
     sessionRequestRef.current = requestId
-    clearWorkflowState()
+    clearTransientWorkflowState()
     setSessionState(initialSessionState)
     setMessage(null)
 
@@ -165,6 +183,25 @@ export function ScreeningSessionWorkspace({
 
       if (data.status === 'RESOLVED' || data.status === 'CREATED') {
         workspaceEpochRef.current += 1
+        const readySessionId = data.session.id
+        onOpenTabsChange((currentTabs) => {
+          const currentSessionTabs = currentTabs.filter(
+            (tab) => tab.encounter.screeningSessionId === readySessionId
+          )
+
+          onActivePatientIdChange((currentActivePatientId) => {
+            if (
+              currentActivePatientId !== null &&
+              currentSessionTabs.some((tab) => tab.patient.id === currentActivePatientId)
+            ) {
+              return currentActivePatientId
+            }
+
+            return currentSessionTabs[0]?.patient.id ?? null
+          })
+
+          return currentSessionTabs
+        })
         setSessionState({
           status: 'READY',
           session: data.session,
@@ -188,7 +225,14 @@ export function ScreeningSessionWorkspace({
         retryable: true
       })
     }
-  }, [api, clearWorkflowState, mountedRef, onScreeningSessionAuthenticationFailure])
+  }, [
+    api,
+    clearTransientWorkflowState,
+    mountedRef,
+    onActivePatientIdChange,
+    onOpenTabsChange,
+    onScreeningSessionAuthenticationFailure
+  ])
 
   const loadPatients = useCallback(
     async (query: string, page: number, sessionId: string, epoch: number): Promise<void> => {
@@ -297,8 +341,9 @@ export function ScreeningSessionWorkspace({
       const existingTab = openTabs.find((tab) => tab.patient.id === patient.id)
 
       if (existingTab !== undefined) {
-        setActivePatientId(existingTab.patient.id)
+        onActivePatientIdChange(existingTab.patient.id)
         setMessage(null)
+        selectWorkspaceTab('NEW_SCREENING')
         return
       }
 
@@ -344,7 +389,7 @@ export function ScreeningSessionWorkspace({
         if (result.data.status === 'STARTED' || result.data.status === 'ALREADY_EXISTS') {
           const encounter = result.data.encounter
 
-          setOpenTabs((currentTabs) => {
+          onOpenTabsChange((currentTabs) => {
             const currentExistingTab = currentTabs.find((tab) => tab.patient.id === patient.id)
 
             if (currentExistingTab !== undefined) {
@@ -358,7 +403,8 @@ export function ScreeningSessionWorkspace({
 
             return [...currentTabs, { patient, encounter }]
           })
-          setActivePatientId(patient.id)
+          onActivePatientIdChange(patient.id)
+          selectWorkspaceTab('NEW_SCREENING')
           return
         }
 
@@ -375,42 +421,57 @@ export function ScreeningSessionWorkspace({
         }
       }
     },
-    [api, mountedRef, openTabs, sessionState, setWorkspaceMessage]
+    [
+      api,
+      mountedRef,
+      onActivePatientIdChange,
+      onOpenTabsChange,
+      openTabs,
+      selectWorkspaceTab,
+      sessionState,
+      setWorkspaceMessage
+    ]
   )
 
-  const closePatientTab = useCallback((patientId: string): void => {
-    setOpenTabs((currentTabs) => {
-      const nextTabs = currentTabs.filter((tab) => tab.patient.id !== patientId)
+  const closePatientTab = useCallback(
+    (patientId: string): void => {
+      onOpenTabsChange((currentTabs) => {
+        const nextTabs = currentTabs.filter((tab) => tab.patient.id !== patientId)
 
-      setActivePatientId((currentActivePatientId) => {
-        if (currentActivePatientId !== patientId) {
-          return currentActivePatientId
-        }
+        onActivePatientIdChange((currentActivePatientId) => {
+          if (currentActivePatientId !== patientId) {
+            return currentActivePatientId
+          }
 
-        const closedIndex = currentTabs.findIndex((tab) => tab.patient.id === patientId)
-        const nextTab = nextTabs[Math.min(closedIndex, Math.max(nextTabs.length - 1, 0))]
+          const closedIndex = currentTabs.findIndex((tab) => tab.patient.id === patientId)
+          const nextTab = nextTabs[Math.min(closedIndex, Math.max(nextTabs.length - 1, 0))]
 
-        return nextTab?.patient.id ?? null
+          return nextTab?.patient.id ?? null
+        })
+
+        return nextTabs
       })
-
-      return nextTabs
-    })
-    setMessage(null)
-  }, [])
+      setMessage(null)
+    },
+    [onActivePatientIdChange, onOpenTabsChange]
+  )
 
   const retrySession = useCallback((): void => {
     void loadCurrentSession()
   }, [loadCurrentSession])
 
-  const activeTab = openTabs.find((tab) => tab.patient.id === activePatientId) ?? null
+  const activeWorkspaceTab = getWorkspaceTabForCommand(commandId)
+  const activeTab =
+    openTabs.find((tab) => tab.patient.id === activePatientId) ?? openTabs[0] ?? null
   const hasReadySession = sessionState.status === 'READY'
+  const workspaceHeading = activeWorkspaceTab === 'PATIENTS' ? 'Patients' : 'New Screening'
 
   return (
     <section className="screening-workspace" aria-labelledby={headingId}>
       <div className="screening-workspace-heading">
         <div>
           <h1 id={headingId} ref={headingRef}>
-            Patients
+            {workspaceHeading}
           </h1>
         </div>
         {sessionState.status === 'READY' ? (
@@ -448,55 +509,35 @@ export function ScreeningSessionWorkspace({
           ) : null}
         </SessionGatePanel>
       ) : (
-        <div className="screening-patients-layout">
-          <section
-            className="screening-patient-list-card"
-            aria-labelledby="screening-patients-title"
-          >
-            <div className="screening-card-header">
-              <div>
-                <h2 id="screening-patients-title">Patients</h2>
-              </div>
-              <span className="screening-session-date">{sessionState.session.sessionDate}</span>
-            </div>
-
-            <label className="screening-patient-search" htmlFor="screening-patient-search">
-              <span>Search patients</span>
-              <input
-                id="screening-patient-search"
-                type="search"
-                value={patientSearchQuery}
-                placeholder="Search patients..."
-                disabled={!hasReadySession}
-                onChange={(event) => {
-                  setPatientSearchQuery(event.currentTarget.value)
-                  setPatientSearchPage(1)
-                }}
-              />
-            </label>
-
-            <PatientTable
+        <>
+          {activeWorkspaceTab === 'PATIENTS' ? (
+            <PatientsWorkspace
               activePatientId={activePatientId}
-              operationalDate={sessionState.session.sessionDate}
+              hasReadySession={hasReadySession}
+              patientSearchQuery={patientSearchQuery}
               pendingPatientIds={pendingPatientIds}
               searchState={patientSearchState}
+              sessionDate={sessionState.session.sessionDate}
               onActivatePatient={activatePatient}
+              onNextPage={() => setPatientSearchPage((page) => page + 1)}
+              onPreviousPage={() => setPatientSearchPage((page) => Math.max(1, page - 1))}
+              onSearchQueryChange={(query) => {
+                setPatientSearchQuery(query)
+                setPatientSearchPage(1)
+              }}
             />
-
-            <PatientSearchPager
-              searchState={patientSearchState}
-              onPrevious={() => setPatientSearchPage((page) => Math.max(1, page - 1))}
-              onNext={() => setPatientSearchPage((page) => page + 1)}
+          ) : (
+            <NewScreeningWorkspace
+              activeTab={activeTab}
+              location={sessionState.location}
+              openTabs={openTabs}
+              session={sessionState.session}
+              onActivateTab={onActivePatientIdChange}
+              onCloseTab={closePatientTab}
+              onOpenPatients={() => selectWorkspaceTab('PATIENTS')}
             />
-          </section>
-
-          <PatientTabs
-            activeTab={activeTab}
-            openTabs={openTabs}
-            onActivateTab={setActivePatientId}
-            onCloseTab={closePatientTab}
-          />
-        </div>
+          )}
+        </>
       )}
     </section>
   )
@@ -523,15 +564,77 @@ function SessionGatePanel({
   )
 }
 
+function PatientsWorkspace({
+  activePatientId,
+  hasReadySession,
+  patientSearchQuery,
+  pendingPatientIds,
+  searchState,
+  sessionDate,
+  onActivatePatient,
+  onNextPage,
+  onPreviousPage,
+  onSearchQueryChange
+}: {
+  readonly activePatientId: string | null
+  readonly hasReadySession: boolean
+  readonly patientSearchQuery: string
+  readonly pendingPatientIds: ReadonlySet<string>
+  readonly searchState: PatientSearchState
+  readonly sessionDate: string
+  onActivatePatient(patient: PublicPatientSummary): Promise<void>
+  onNextPage(): void
+  onPreviousPage(): void
+  onSearchQueryChange(query: string): void
+}): React.JSX.Element {
+  return (
+    <div className="screening-patients-layout">
+      <section className="screening-patient-list-card" aria-labelledby="screening-patients-title">
+        <div className="screening-card-header">
+          <div>
+            <h2 id="screening-patients-title">Patients</h2>
+          </div>
+          <span className="screening-session-date">{sessionDate}</span>
+        </div>
+
+        <label className="screening-patient-search" htmlFor="screening-patient-search">
+          <span>Search patients</span>
+          <input
+            id="screening-patient-search"
+            type="search"
+            value={patientSearchQuery}
+            placeholder="Search patients..."
+            disabled={!hasReadySession}
+            onChange={(event) => {
+              onSearchQueryChange(event.currentTarget.value)
+            }}
+          />
+        </label>
+
+        <PatientTable
+          activePatientId={activePatientId}
+          pendingPatientIds={pendingPatientIds}
+          searchState={searchState}
+          onActivatePatient={onActivatePatient}
+        />
+
+        <PatientSearchPager
+          searchState={searchState}
+          onPrevious={onPreviousPage}
+          onNext={onNextPage}
+        />
+      </section>
+    </div>
+  )
+}
+
 function PatientTable({
   activePatientId,
-  operationalDate,
   pendingPatientIds,
   searchState,
   onActivatePatient
 }: {
   readonly activePatientId: string | null
-  readonly operationalDate: string
   readonly pendingPatientIds: ReadonlySet<string>
   readonly searchState: PatientSearchState
   onActivatePatient(patient: PublicPatientSummary): Promise<void>
@@ -554,10 +657,9 @@ function PatientTable({
         <thead>
           <tr>
             <th scope="col">Name</th>
+            <th scope="col">Date of birth</th>
+            <th scope="col">Patient ID</th>
             <th scope="col">Sex</th>
-            <th scope="col">Age</th>
-            <th scope="col">Last Screening</th>
-            <th scope="col">Follow-up</th>
           </tr>
         </thead>
         <tbody>
@@ -571,7 +673,7 @@ function PatientTable({
                 key={patient.id}
                 className="screening-patient-row"
                 tabIndex={0}
-                aria-label={`New Screening for ${displayName}`}
+                aria-label={`New Screening for ${displayName}, Patient ID ${patient.patientCode}`}
                 aria-selected={isActive}
                 aria-busy={isPending}
                 data-active={isActive ? 'true' : 'false'}
@@ -596,10 +698,9 @@ function PatientTable({
                   <strong className="screening-patient-name">{displayName}</strong>
                   {isPending ? <span className="screening-row-status">Starting...</span> : null}
                 </td>
+                <td>{formatPatientDateOfBirth(patient)}</td>
+                <td>{patient.patientCode}</td>
                 <td>{formatPatientSex(patient.sex)}</td>
-                <td>{formatPatientAge(patient, operationalDate)}</td>
-                <td aria-label="Screening history unavailable">—</td>
-                <td aria-label="No follow-up status">—</td>
               </tr>
             )
           })}
@@ -654,103 +755,231 @@ function PatientSearchPager({
   )
 }
 
-function PatientTabs({
+function NewScreeningWorkspace({
   activeTab,
+  location,
   openTabs,
+  session,
   onActivateTab,
-  onCloseTab
+  onCloseTab,
+  onOpenPatients
 }: {
   readonly activeTab: PatientScreeningTab | null
+  readonly location: PublicScreeningSessionWorkspaceLocation
   readonly openTabs: readonly PatientScreeningTab[]
+  readonly session: PublicCurrentScreeningSession
   onActivateTab(patientId: string): void
   onCloseTab(patientId: string): void
+  onOpenPatients(): void
 }): React.JSX.Element {
   return (
-    <section className="screening-encounter-card" aria-labelledby="screening-tabs-title">
-      <div className="screening-card-header">
-        <div>
-          <h2 id="screening-tabs-title">New Screening</h2>
+    <section className="screening-new-screening-workspace" aria-label="New Screening workspace">
+      <OpenPatientTabStrip
+        activeTab={activeTab}
+        openTabs={openTabs}
+        onActivateTab={onActivateTab}
+        onCloseTab={onCloseTab}
+        onOpenPatients={onOpenPatients}
+      />
+
+      {openTabs.length === 0 || activeTab === null ? (
+        <div className="screening-empty-state screening-new-screening-empty">
+          <p>Select a patient from the Patients tab to begin screening.</p>
+          <button className="button button-secondary" type="button" onClick={onOpenPatients}>
+            Patients
+          </button>
         </div>
-        <span className="screening-tab-count">
-          {openTabs.length}/{screeningPatientTabLimit}
-        </span>
-      </div>
-
-      {openTabs.length === 0 ? (
-        <div className="screening-empty-state">Choose a patient to begin.</div>
       ) : (
-        <>
-          <div
-            className="screening-patient-tabs"
-            role="tablist"
-            aria-label="Open patient screenings"
-          >
-            {openTabs.map((tab) => {
-              const isSelected = activeTab?.patient.id === tab.patient.id
-              const displayName = formatPatientName(tab.patient)
-
-              return (
-                <div
-                  className="screening-patient-tab-shell"
-                  key={tab.patient.id}
-                  data-selected={isSelected ? 'true' : 'false'}
-                >
-                  <button
-                    className="screening-patient-tab"
-                    type="button"
-                    role="tab"
-                    aria-selected={isSelected}
-                    onClick={() => onActivateTab(tab.patient.id)}
-                  >
-                    {displayName}
-                  </button>
-                  <button
-                    className="screening-patient-tab-close"
-                    type="button"
-                    aria-label={`Close ${displayName}`}
-                    onClick={() => onCloseTab(tab.patient.id)}
-                  >
-                    x
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-
-          {activeTab !== null ? <PatientScreeningPanel tab={activeTab} /> : null}
-        </>
+        <div className="screening-split-workspace">
+          <PatientContextPanel tab={activeTab} />
+          <CurrentEncounterPanel location={location} session={session} tab={activeTab} />
+        </div>
       )}
     </section>
   )
 }
 
-function PatientScreeningPanel({ tab }: { readonly tab: PatientScreeningTab }): React.JSX.Element {
+function OpenPatientTabStrip({
+  activeTab,
+  openTabs,
+  onActivateTab,
+  onCloseTab,
+  onOpenPatients
+}: {
+  readonly activeTab: PatientScreeningTab | null
+  readonly openTabs: readonly PatientScreeningTab[]
+  onActivateTab(patientId: string): void
+  onCloseTab(patientId: string): void
+  onOpenPatients(): void
+}): React.JSX.Element {
+  return (
+    <div className="screening-open-patient-strip">
+      <div className="screening-patient-tabs" role="tablist" aria-label="Open patient screenings">
+        {openTabs.map((tab) => {
+          const isSelected = activeTab?.patient.id === tab.patient.id
+          const displayName = formatPatientName(tab.patient)
+          const tabLabel = formatPatientTabLabel(tab.patient)
+
+          return (
+            <div
+              className="screening-patient-tab-shell"
+              key={tab.patient.id}
+              data-selected={isSelected ? 'true' : 'false'}
+            >
+              <button
+                className="screening-patient-tab"
+                type="button"
+                role="tab"
+                aria-selected={isSelected}
+                onClick={() => onActivateTab(tab.patient.id)}
+              >
+                {tabLabel}
+              </button>
+              <button
+                className="screening-patient-tab-close"
+                type="button"
+                aria-label={`Close ${displayName}`}
+                onClick={() => onCloseTab(tab.patient.id)}
+              >
+                ×
+              </button>
+            </div>
+          )
+        })}
+      </div>
+      <div className="screening-open-patient-controls">
+        <button className="screening-open-patient-action" type="button" onClick={onOpenPatients}>
+          Search / open patient
+        </button>
+        <span className="screening-tab-count">
+          {openTabs.length}/{screeningPatientTabLimit}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function PatientContextPanel({ tab }: { readonly tab: PatientScreeningTab }): React.JSX.Element {
+  const displayName = formatPatientName(tab.patient)
+  const villageQuarter = formatVillageQuarter(tab.patient)
+
+  return (
+    <section className="screening-context-panel" aria-labelledby="screening-patient-context-title">
+      <header className="screening-card-header">
+        <div>
+          <h2 id="screening-patient-context-title">Patient context</h2>
+        </div>
+      </header>
+
+      <div className="screening-patient-context-identity">
+        <span className="screening-patient-initials" aria-hidden="true">
+          {formatPatientInitials(tab.patient)}
+        </span>
+        <div>
+          <h3>{displayName}</h3>
+          <p>
+            Date of birth {formatPatientDateOfBirth(tab.patient)} •{' '}
+            {formatPatientSex(tab.patient.sex)}
+            {villageQuarter === null ? '' : ` • ${villageQuarter}`} • {tab.patient.patientCode}
+          </p>
+        </div>
+      </div>
+
+      <section className="screening-context-section" aria-labelledby="screening-history-title">
+        <h3 id="screening-history-title">Last three screening readings</h3>
+        <div className="screening-empty-state screening-compact-empty">
+          Screening history unavailable.
+        </div>
+      </section>
+
+      <div className="screening-context-metrics">
+        <section aria-labelledby="screening-average-title">
+          <h3 id="screening-average-title">30-day average BP</h3>
+          <strong>—</strong>
+        </section>
+        <section aria-labelledby="screening-referral-title">
+          <h3 id="screening-referral-title">Referral status</h3>
+          <strong>—</strong>
+          <span>Last contact: —</span>
+        </section>
+      </div>
+
+      <section className="screening-context-section" aria-labelledby="screening-bp-trend-title">
+        <h3 id="screening-bp-trend-title">Blood pressure trend</h3>
+        <div className="screening-empty-state screening-compact-empty">Trend unavailable.</div>
+      </section>
+
+      <section className="screening-context-section" aria-labelledby="screening-weight-trend-title">
+        <h3 id="screening-weight-trend-title">Weight trend</h3>
+        <div className="screening-empty-state screening-compact-empty">Trend unavailable.</div>
+      </section>
+    </section>
+  )
+}
+
+function CurrentEncounterPanel({
+  location,
+  session,
+  tab
+}: {
+  readonly location: PublicScreeningSessionWorkspaceLocation
+  readonly session: PublicCurrentScreeningSession
+  readonly tab: PatientScreeningTab
+}): React.JSX.Element {
   const displayName = formatPatientName(tab.patient)
 
   return (
-    <section className="screening-patient-panel" aria-label={`New Screening for ${displayName}`}>
-      <header className="screening-patient-panel-header">
-        <div>
-          <h3>{displayName}</h3>
-          <span>{formatEncounterStatus(tab.encounter.status)}</span>
-        </div>
-        <span className="screening-disclaimer">Screening guidance—not a diagnosis.</span>
+    <section
+      className="screening-current-encounter-panel"
+      aria-label={`Current screening encounter for ${displayName}`}
+    >
+      <header className="screening-current-encounter-header">
+        <h2>Current screening encounter</h2>
+        <span>
+          Session: {session.sessionDate} • {location.name}
+        </span>
       </header>
 
-      <div className="screening-clinical-tabs" role="tablist" aria-label="Screening sections">
+      <ol className="screening-stepper" aria-label="Screening workflow steps">
         {screeningSectionLabels.map((label, index) => (
-          <button
-            key={label}
-            className="screening-clinical-tab"
-            type="button"
-            role="tab"
-            aria-selected={index === 0}
-            tabIndex={index === 0 ? 0 : -1}
-          >
-            {label}
-          </button>
+          <li key={label} data-active={index === 0 ? 'true' : 'false'}>
+            <span>{index + 1}</span>
+            <strong>{label}</strong>
+          </li>
         ))}
-      </div>
+      </ol>
+
+      <section className="screening-current-step" aria-labelledby="screening-vitals-step-title">
+        <div className="screening-current-step-header">
+          <h3 id="screening-vitals-step-title">Vitals</h3>
+          <span>{formatEncounterStatus(tab.encounter.status)}</span>
+        </div>
+
+        <div className="screening-vitals-placeholder" aria-label="Vitals data unavailable">
+          <div>
+            <span>Blood pressure readings</span>
+            <strong>—</strong>
+          </div>
+          <div>
+            <span>Additional current measurements</span>
+            <strong>—</strong>
+          </div>
+        </div>
+
+        <div className="screening-guidance-note" role="note">
+          <strong>Screening guidance—not a diagnosis.</strong>
+          <span>Current clinical fields unavailable.</span>
+        </div>
+
+        <div className="screening-encounter-actions">
+          <button className="button button-secondary" type="button" disabled>
+            Previous
+          </button>
+          <button className="button button-primary" type="button" disabled>
+            Continue to lifestyle
+          </button>
+        </div>
+      </section>
     </section>
   )
 }
@@ -830,6 +1059,12 @@ function isProtectedScreeningSessionFailure(code: ScreeningSessionErrorCode): bo
   )
 }
 
+function getWorkspaceTabForCommand(
+  commandId: ScreeningSessionWorkspaceCommandId
+): ScreeningWorkspaceTab {
+  return commandId === 'SCREENING_NEW_SCREENING' ? 'NEW_SCREENING' : 'PATIENTS'
+}
+
 function getPatientSearchFailureMessage(code: PatientErrorCode): string {
   switch (code) {
     case 'AUTH_UNAUTHENTICATED':
@@ -904,49 +1139,37 @@ function formatPatientSex(sex: PatientSex): string {
   }
 }
 
-function formatPatientAge(patient: PublicPatientSummary, operationalDate: string): string {
-  if (patient.dateOfBirth !== null) {
-    return formatAgeFromDateOfBirth(patient.dateOfBirth, operationalDate)
-  }
-
-  if (patient.approximateAgeYears !== null) {
-    return patient.ageAsOfDate === null
-      ? `${patient.approximateAgeYears}`
-      : `${patient.approximateAgeYears} as of ${patient.ageAsOfDate}`
-  }
-
-  return 'Not recorded'
+function formatPatientDateOfBirth(patient: PublicPatientSummary): string {
+  return patient.dateOfBirth ?? '—'
 }
 
-function formatAgeFromDateOfBirth(dateOfBirth: string, operationalDate: string): string {
-  const birthYear = Number(dateOfBirth.slice(0, 4))
-  const birthMonth = Number(dateOfBirth.slice(5, 7))
-  const birthDay = Number(dateOfBirth.slice(8, 10))
-  const operationalYear = Number(operationalDate.slice(0, 4))
-  const operationalMonth = Number(operationalDate.slice(5, 7))
-  const operationalDay = Number(operationalDate.slice(8, 10))
+function formatPatientTabLabel(patient: PublicPatientSummary): string {
+  return `${formatPatientName(patient)} • ${patient.patientCode}`
+}
 
-  if (
-    !Number.isInteger(birthYear) ||
-    !Number.isInteger(birthMonth) ||
-    !Number.isInteger(birthDay) ||
-    !Number.isInteger(operationalYear) ||
-    !Number.isInteger(operationalMonth) ||
-    !Number.isInteger(operationalDay)
-  ) {
-    return dateOfBirth
+function formatPatientInitials(patient: PublicPatientSummary): string {
+  const sourceNames = [patient.givenName, patient.familyName].filter(
+    (name): name is string => name !== null && name.trim().length > 0
+  )
+
+  if (sourceNames.length > 0) {
+    return sourceNames
+      .slice(0, 2)
+      .map((name) => name.trim().charAt(0).toUpperCase())
+      .join('')
   }
 
-  let age = operationalYear - birthYear
+  const fallbackInitial = formatPatientName(patient).trim().charAt(0).toUpperCase()
 
-  if (
-    operationalMonth < birthMonth ||
-    (operationalMonth === birthMonth && operationalDay < birthDay)
-  ) {
-    age -= 1
-  }
+  return fallbackInitial.length > 0 ? fallbackInitial : 'P'
+}
 
-  return age >= 0 && age <= 120 ? `${age}` : dateOfBirth
+function formatVillageQuarter(patient: PublicPatientSummary): string | null {
+  const value = [patient.village, patient.quarter]
+    .filter((part): part is string => part !== null && part.trim().length > 0)
+    .join(' / ')
+
+  return value.length > 0 ? value : null
 }
 
 function formatEncounterStatus(status: PublicScreeningEncounterStartSummary['status']): string {

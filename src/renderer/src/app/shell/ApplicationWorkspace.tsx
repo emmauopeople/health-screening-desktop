@@ -10,7 +10,10 @@ import type {
 
 import { InstallationLocationAdministrationWorkspace } from '../administration/InstallationLocationAdministrationWorkspace'
 import { PatientRegistryWorkspace } from '../patients/PatientRegistryWorkspace'
-import { ScreeningSessionWorkspace } from '../screening/ScreeningSessionWorkspace'
+import {
+  ScreeningSessionWorkspace,
+  type PatientScreeningTab
+} from '../screening/ScreeningSessionWorkspace'
 import { DashboardWorkspace } from './DashboardWorkspace'
 import { PlannedModuleWorkspace } from './PlannedModuleWorkspace'
 import type {
@@ -49,6 +52,10 @@ export function ApplicationWorkspace({
   registerNavigationGuard
 }: ApplicationWorkspaceProps): React.JSX.Element {
   const [selectedPatient, setSelectedPatient] = useState<PublicPatientDetail | null>(null)
+  const [openScreeningPatientTabs, setOpenScreeningPatientTabs] = useState<
+    readonly PatientScreeningTab[]
+  >([])
+  const [activeScreeningPatientId, setActiveScreeningPatientId] = useState<string | null>(null)
 
   return (
     <main
@@ -82,11 +89,16 @@ export function ApplicationWorkspace({
       ) : route.status === 'SCREENING_SESSIONS' ? (
         <ScreeningSessionWorkspace
           api={api}
+          activePatientId={activeScreeningPatientId}
           commandId={route.commandId}
           headingId={workspaceHeadingId}
           headingRef={headingRef}
+          openTabs={openScreeningPatientTabs}
           userRole={user.role}
+          onActivePatientIdChange={setActiveScreeningPatientId}
+          onOpenTabsChange={setOpenScreeningPatientTabs}
           onScreeningSessionAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
+          onSelectCommand={onSelectCommand}
           registerNavigationGuard={registerNavigationGuard}
         />
       ) : route.status === 'ADMINISTRATION' ? (
