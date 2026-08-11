@@ -39,6 +39,11 @@ unimplemented modules continue routing to the transparent planned-module
 workspace with the command label, "Not available in this build.", and the
 owning future work package.
 
+`ADMINISTRATION_LOCATIONS` routes authorized local administrators to the
+Screening Location workspace. The renderer catalog controls visibility only;
+P0-backed main-process handlers enforce `LOCAL_ADMIN` authorization for reading,
+assigning, and reconfiguring the installation location.
+
 ## Dashboard
 
 The dashboard is an honest empty operational surface. It renders deployment and
@@ -46,6 +51,27 @@ time-zone context, five noninteractive summary cards, role-filtered quick
 actions, and an accessible worklist table with one empty-state row. It must not
 render sample patients, counts, dates, site names, session names, sync totals,
 or backup timestamps.
+
+## Administration Workspace
+
+The Administration Screening Location workspace displays the current configured
+location as either the safe location name or `Not configured`. Authorized local
+administrators can choose one active eligible location from the approved
+location-list boundary, confirm with Save, or Cancel without changing the
+assignment.
+
+Initial assignment calls
+`window.healthScreening.installationSettings.assignInitialLocation({ locationId })`.
+Changing an existing assignment calls
+`window.healthScreening.installationSettings.reconfigureLocation({ locationId })`.
+The renderer never supplies actor, role, installation identity, active-work
+state, audit metadata, `force`, `bypass`, or `override` fields. P0 keeps
+validation, authorization, transaction, audit, and active-work protection in the
+main process.
+
+The workspace does not create or edit locations, does not open daily sessions,
+does not start encounters, and does not rewrite historical session or encounter
+attribution.
 
 ## Screening Workspace
 
@@ -61,6 +87,11 @@ controlled state such as sign-in required, forbidden, location not configured,
 configured location missing or inactive, closed daily session, or `Session
 unavailable` with a safe retry when appropriate. It never exposes raw database,
 IPC, stack, authentication, patient, or session internals.
+
+Each controlled session failure is presented once. For example, an unconfigured
+installation shows `Screening location is not configured.` in the unavailable
+workspace state without repeating the same message in a second content panel.
+The Patients table is not rendered while the daily session is unavailable.
 
 After the daily session is ready, the workspace displays:
 

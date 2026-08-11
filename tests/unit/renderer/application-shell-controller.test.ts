@@ -34,7 +34,7 @@ describe('application shell controller', () => {
       'SCREENING_TODAYS_SESSION',
       'REFERRALS_REFERRAL_WORKLIST',
       'REPORTS_PATIENT_REPORTS',
-      'ADMINISTRATION_USERS',
+      'ADMINISTRATION_LOCATIONS',
       'HOME_DASHBOARD'
     ])
     expect(states.every((state) => state.activeMenu === state.commandPanelMenu)).toBe(true)
@@ -94,6 +94,22 @@ describe('application shell controller', () => {
       route: {
         status: 'PATIENTS',
         commandId: 'PATIENTS_PATIENT_SEARCH'
+      }
+    })
+  })
+
+  it('routes Administration location settings as the available admin workspace', () => {
+    const controller = createApplicationShellController({ role: 'LOCAL_ADMIN' })
+
+    controller.selectCommand('ADMINISTRATION_LOCATIONS')
+
+    expect(controller.getSnapshot()).toEqual({
+      activeMenu: 'ADMINISTRATION',
+      commandPanelMenu: 'ADMINISTRATION',
+      selectedCommandId: 'ADMINISTRATION_LOCATIONS',
+      route: {
+        status: 'ADMINISTRATION',
+        commandId: 'ADMINISTRATION_LOCATIONS'
       }
     })
   })

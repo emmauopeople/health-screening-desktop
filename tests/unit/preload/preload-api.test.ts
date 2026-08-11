@@ -4,6 +4,7 @@ import { createHealthScreeningApi } from '@preload/api'
 import {
   createFirstRunFailure,
   createIpcSuccess,
+  createInstallationSettingsFailure,
   createPatientFailure,
   ipcChannels,
   type AppHealth,
@@ -129,7 +130,8 @@ describe('preload API factory', () => {
       'auth',
       'patient',
       'screeningSessions',
-      'screeningEncounters'
+      'screeningEncounters',
+      'installationSettings'
     ])
     expect(Object.keys(api.app)).toEqual(['getInfo', 'getHealth'])
     expect(Object.keys(api.firstRun)).toEqual(['getState', 'initialize'])
@@ -162,6 +164,7 @@ describe('preload API factory', () => {
     expect(Object.isFrozen(api.patient)).toBe(true)
     expect(Object.isFrozen(api.screeningSessions)).toBe(true)
     expect(Object.isFrozen(api.screeningEncounters)).toBe(true)
+    expect(Object.isFrozen(api.installationSettings)).toBe(true)
     expect('invoke' in api).toBe(false)
     expect('send' in api).toBe(false)
     expect('on' in api).toBe(false)
@@ -173,6 +176,93 @@ describe('preload API factory', () => {
     expect('channel' in api.patient).toBe(false)
     expect('channel' in api.screeningSessions).toBe(false)
     expect('channel' in api.screeningEncounters).toBe(false)
+    expect('channel' in api.installationSettings).toBe(false)
+  })
+
+  it('exposes fixed installation-settings methods without arbitrary IPC access', () => {
+    const api = createHealthScreeningApi(vi.fn())
+
+    expect(Object.keys(api.installationSettings)).toEqual([
+      'getConfiguredLocation',
+      'listEligibleLocations',
+      'assignInitialLocation',
+      'reconfigureLocation'
+    ])
+    expect(Object.isFrozen(api.installationSettings)).toBe(true)
+    expect('invoke' in api.installationSettings).toBe(false)
+    expect('send' in api.installationSettings).toBe(false)
+    expect('ipcRenderer' in api.installationSettings).toBe(false)
+  })
+
+  it('invokes installation-settings methods over exact fixed channels', async () => {
+    const assignedLocation = {
+      id: '77777777-7777-4777-8777-777777777777',
+      name: 'Bastos Hall'
+    }
+    const invoke = vi
+      .fn()
+      .mockResolvedValueOnce(createIpcSuccess({ status: 'RESOLVED', location: assignedLocation }))
+      .mockResolvedValueOnce(createIpcSuccess({ status: 'LISTED', locations: [assignedLocation] }))
+      .mockResolvedValueOnce(createIpcSuccess({ status: 'ASSIGNED', location: assignedLocation }))
+      .mockResolvedValueOnce(createIpcSuccess({ status: 'UPDATED', location: assignedLocation }))
+    const api = createHealthScreeningApi(invoke)
+
+    await expect(api.installationSettings.getConfiguredLocation()).resolves.toEqual(
+      createIpcSuccess({ status: 'RESOLVED', location: assignedLocation })
+    )
+    await expect(api.installationSettings.listEligibleLocations()).resolves.toEqual(
+      createIpcSuccess({ status: 'LISTED', locations: [assignedLocation] })
+    )
+    await expect(
+      api.installationSettings.assignInitialLocation({ locationId: assignedLocation.id })
+    ).resolves.toEqual(createIpcSuccess({ status: 'ASSIGNED', location: assignedLocation }))
+    await expect(
+      api.installationSettings.reconfigureLocation({ locationId: assignedLocation.id })
+    ).resolves.toEqual(createIpcSuccess({ status: 'UPDATED', location: assignedLocation }))
+
+    expect(invoke).toHaveBeenNthCalledWith(
+      1,
+      ipcChannels.installationSettings.getConfiguredLocation,
+      {}
+    )
+    expect(invoke).toHaveBeenNthCalledWith(
+      2,
+      ipcChannels.installationSettings.listEligibleLocations,
+      {}
+    )
+    expect(invoke).toHaveBeenNthCalledWith(
+      3,
+      ipcChannels.installationSettings.assignInitialLocation,
+      { locationId: assignedLocation.id }
+    )
+    expect(invoke).toHaveBeenNthCalledWith(
+      4,
+      ipcChannels.installationSettings.reconfigureLocation,
+      { locationId: assignedLocation.id }
+    )
+  })
+
+  it('rejects invalid installation-settings mutation requests locally', async () => {
+    const invoke = vi.fn()
+    const api = createHealthScreeningApi(invoke)
+
+    for (const request of [
+      {},
+      { locationId: '' },
+      { locationId: 'not-a-uuid' },
+      { locationId: '77777777-7777-4777-8777-777777777777', role: 'LOCAL_ADMIN' },
+      { locationId: '77777777-7777-4777-8777-777777777777', force: true },
+      { locationId: '77777777-7777-4777-8777-777777777777', bypass: true }
+    ]) {
+      await expect(
+        api.installationSettings.assignInitialLocation(request as never)
+      ).resolves.toEqual(createInstallationSettingsFailure('VALIDATION_FAILED'))
+      await expect(api.installationSettings.reconfigureLocation(request as never)).resolves.toEqual(
+        createInstallationSettingsFailure('VALIDATION_FAILED')
+      )
+    }
+
+    expect(invoke).not.toHaveBeenCalled()
   })
 
   it('invokes patient.search over the exact fixed channel with a parsed request', async () => {

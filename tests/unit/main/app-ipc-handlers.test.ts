@@ -21,6 +21,7 @@ import { ipcChannels, type AppHealth, type AppInfo } from '@shared/ipc'
 import type {
   FirstRunBootstrapService,
   CurrentScreeningSessionService,
+  InstallationLocationService,
   LocalAuthenticationSessionService,
   PatientAcknowledgmentService,
   PatientDemographicAmendmentService,
@@ -29,6 +30,7 @@ import type {
   ScreeningSessionService,
   ScreeningSessionWorkspaceContextService
 } from '@main/application'
+import type { LocationRepository } from '@main/database'
 
 const validInfo: AppInfo = {
   applicationName: 'Health Screening Offline Desktop',
@@ -50,6 +52,10 @@ const applicationOwnedHandlerChannels = Object.freeze([
   ipcChannels.app.getHealth,
   ipcChannels.firstRun.getState,
   ipcChannels.firstRun.initialize,
+  ipcChannels.installationSettings.getConfiguredLocation,
+  ipcChannels.installationSettings.listEligibleLocations,
+  ipcChannels.installationSettings.assignInitialLocation,
+  ipcChannels.installationSettings.reconfigureLocation,
   ipcChannels.auth.getSession,
   ipcChannels.auth.login,
   ipcChannels.auth.changeRequiredPassword,
@@ -190,7 +196,7 @@ describe('application IPC handler registration', () => {
 
     const dispose = registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(29)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(33)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
@@ -203,6 +209,10 @@ describe('application IPC handler registration', () => {
       'health-screening:auth:unlock',
       'health-screening:first-run:get-state',
       'health-screening:first-run:initialize',
+      'health-screening:installation-settings:assign-initial-location',
+      'health-screening:installation-settings:get-configured-location',
+      'health-screening:installation-settings:list-eligible-locations',
+      'health-screening:installation-settings:reconfigure-location',
       'health-screening:patient:amend-demographics',
       'health-screening:patient:create',
       'health-screening:patient:find-duplicates',
@@ -236,7 +246,7 @@ describe('application IPC handler registration', () => {
     registerApplicationIpcHandlers(ipcMain, createDependencies())
     registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(58)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(66)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getHealth)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
@@ -253,6 +263,10 @@ describe('application IPC handler registration', () => {
       'health-screening:auth:unlock',
       'health-screening:first-run:get-state',
       'health-screening:first-run:initialize',
+      'health-screening:installation-settings:assign-initial-location',
+      'health-screening:installation-settings:get-configured-location',
+      'health-screening:installation-settings:list-eligible-locations',
+      'health-screening:installation-settings:reconfigure-location',
       'health-screening:patient:amend-demographics',
       'health-screening:patient:create',
       'health-screening:patient:find-duplicates',
@@ -781,6 +795,13 @@ function createDependencies(): ApplicationIpcHandlerDependencies {
       screeningEncounterStartService: createScreeningEncounterStartService(),
       logger: createLogger()
     },
+    installationSettings: {
+      navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
+      authenticationSessionService: createAuthenticationSessionService(),
+      installationLocationService: createInstallationLocationService(),
+      locationRepository: createLocationRepository(),
+      logger: createLogger()
+    },
     logger: createLogger()
   }
 }
@@ -858,6 +879,20 @@ function createScreeningEncounterStartService(): ScreeningEncounterStartService 
   return {
     start: vi.fn()
   } as unknown as ScreeningEncounterStartService
+}
+
+function createInstallationLocationService(): InstallationLocationService {
+  return {
+    resolveConfiguredInstallationLocation: vi.fn(() => ({ status: 'LOCATION_NOT_CONFIGURED' })),
+    assignInitialInstallationLocation: vi.fn(() => ({ status: 'UNAVAILABLE' })),
+    reconfigureInstallationLocation: vi.fn(() => ({ status: 'UNAVAILABLE' }))
+  } as unknown as InstallationLocationService
+}
+
+function createLocationRepository(): LocationRepository {
+  return {
+    listActive: vi.fn(() => [])
+  } as unknown as LocationRepository
 }
 
 function createApplicationInfoProvider(): ApplicationInfoProvider {

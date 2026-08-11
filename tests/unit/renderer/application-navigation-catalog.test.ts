@@ -43,7 +43,7 @@ describe('application navigation catalog', () => {
       ],
       [
         'Administration',
-        ['Users', 'Locations', 'Protocols', 'Sync Center', 'Backup / Restore', 'Audit']
+        ['Users', 'Screening Location', 'Protocols', 'Sync Center', 'Backup / Restore', 'Audit']
       ]
     ])
   })
@@ -92,7 +92,8 @@ describe('application navigation catalog', () => {
       'PATIENTS_RECENT_PATIENTS',
       'PATIENTS_POSSIBLE_DUPLICATES',
       'SCREENING_TODAYS_SESSION',
-      'SCREENING_NEW_SCREENING'
+      'SCREENING_NEW_SCREENING',
+      'ADMINISTRATION_LOCATIONS'
     ])
   })
 
@@ -103,7 +104,7 @@ describe('application navigation catalog', () => {
       SCREENING: 'SCREENING_TODAYS_SESSION',
       REFERRALS: 'REFERRALS_REFERRAL_WORKLIST',
       REPORTS: 'REPORTS_PATIENT_REPORTS',
-      ADMINISTRATION: 'ADMINISTRATION_USERS'
+      ADMINISTRATION: 'ADMINISTRATION_LOCATIONS'
     })
 
     for (const menu of primaryApplicationMenus) {

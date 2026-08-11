@@ -5,6 +5,7 @@ export {
 export { createInstallationLocationService } from './installation-location-service'
 export type {
   ConfiguredInstallationLocation,
+  AssignInitialInstallationLocationResult,
   InstallationLocationService,
   InstallationLocationServiceDependencies,
   ReconfigureInstallationLocationResult,

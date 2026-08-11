@@ -167,6 +167,13 @@ function createRouteForCommand(
     })
   }
 
+  if (definition.id === 'ADMINISTRATION_LOCATIONS') {
+    return Object.freeze({
+      status: 'ADMINISTRATION',
+      commandId: definition.id
+    })
+  }
+
   return Object.freeze({
     status: 'PLANNED_MODULE',
     commandId: definition.id,

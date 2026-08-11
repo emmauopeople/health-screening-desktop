@@ -153,7 +153,6 @@ export function ScreeningSessionWorkspace({
       if (!result.ok) {
         const message = getScreeningSessionTransportFailureMessage(result.error.code)
         setSessionState({ status: 'BLOCKED', message, retryable: true })
-        setWorkspaceMessage(message, 'ALERT')
 
         if (isProtectedScreeningSessionFailure(result.error.code)) {
           onScreeningSessionAuthenticationFailure(result.error.code)
@@ -178,7 +177,6 @@ export function ScreeningSessionWorkspace({
 
       const blocked = getEnsureCurrentBlockedState(data)
       setSessionState(blocked)
-      setWorkspaceMessage(blocked.message, 'ALERT')
     } catch {
       if (!mountedRef.current || sessionRequestRef.current !== requestId) {
         return
@@ -189,15 +187,8 @@ export function ScreeningSessionWorkspace({
         message: 'Session unavailable',
         retryable: true
       })
-      setWorkspaceMessage('Session unavailable', 'ALERT')
     }
-  }, [
-    api,
-    clearWorkflowState,
-    mountedRef,
-    onScreeningSessionAuthenticationFailure,
-    setWorkspaceMessage
-  ])
+  }, [api, clearWorkflowState, mountedRef, onScreeningSessionAuthenticationFailure])
 
   const loadPatients = useCallback(
     async (query: string, page: number, sessionId: string, epoch: number): Promise<void> => {
@@ -449,7 +440,7 @@ export function ScreeningSessionWorkspace({
       {sessionState.status === 'LOADING' ? (
         <SessionGatePanel message="Resolving screening session..." />
       ) : sessionState.status === 'BLOCKED' ? (
-        <SessionGatePanel message={sessionState.message}>
+        <SessionGatePanel message={sessionState.message} alert>
           {sessionState.retryable ? (
             <button className="button button-secondary" type="button" onClick={retrySession}>
               Retry
@@ -513,13 +504,19 @@ export function ScreeningSessionWorkspace({
 
 function SessionGatePanel({
   message,
+  alert = false,
   children
 }: {
   readonly message: string
+  readonly alert?: boolean
   readonly children?: ReactNode
 }): React.JSX.Element {
   return (
-    <section className="screening-empty-state" aria-live="polite">
+    <section
+      className="screening-empty-state"
+      aria-live={alert ? undefined : 'polite'}
+      role={alert ? 'alert' : undefined}
+    >
       <p>{message}</p>
       {children}
     </section>
@@ -776,7 +773,7 @@ function getEnsureCurrentBlockedState(
     case 'LOCATION_NOT_CONFIGURED':
       return {
         status: 'BLOCKED',
-        message: 'This installation does not have a configured screening location.',
+        message: 'Screening location is not configured.',
         retryable: false
       }
     case 'LOCATION_NOT_FOUND':

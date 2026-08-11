@@ -19,6 +19,14 @@ import type {
   FirstRunInitializeResult as SharedFirstRunInitializeResult
 } from './first-run-contracts'
 import type {
+  InstallationSettingsAssignInitialLocationRequest,
+  InstallationSettingsAssignInitialLocationResult,
+  InstallationSettingsGetConfiguredLocationResult,
+  InstallationSettingsListEligibleLocationsResult,
+  InstallationSettingsReconfigureLocationRequest,
+  InstallationSettingsReconfigureLocationResult
+} from './installation-settings-contracts'
+import type {
   PatientAmendDemographicsRequest,
   PatientAmendDemographicsResult,
   PatientCreateRequest,
@@ -149,5 +157,15 @@ export interface HealthScreeningApi {
   }
   screeningEncounters: {
     start(request: ScreeningEncounterStartRequest): Promise<ScreeningEncounterStartResult>
+  }
+  installationSettings: {
+    getConfiguredLocation(): Promise<InstallationSettingsGetConfiguredLocationResult>
+    listEligibleLocations(): Promise<InstallationSettingsListEligibleLocationsResult>
+    assignInitialLocation(
+      request: InstallationSettingsAssignInitialLocationRequest
+    ): Promise<InstallationSettingsAssignInitialLocationResult>
+    reconfigureLocation(
+      request: InstallationSettingsReconfigureLocationRequest
+    ): Promise<InstallationSettingsReconfigureLocationResult>
   }
 }
