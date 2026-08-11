@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /// <reference lib="dom" />
 
-import { act, createElement, type RefObject } from 'react'
+import { act, createElement, useState, type RefObject } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -18,7 +18,10 @@ import {
   type PublicScreeningEncounterStartSummary,
   type ScreeningSessionErrorCode
 } from '@shared/ipc'
-import { ScreeningSessionWorkspace } from '../../../src/renderer/src/app/screening/ScreeningSessionWorkspace'
+import {
+  ScreeningSessionWorkspace,
+  type PatientScreeningTab
+} from '../../../src/renderer/src/app/screening/ScreeningSessionWorkspace'
 import type { WorkspaceNavigationGuard } from '../../../src/renderer/src/app/shell/application-shell-types'
 
 type MockedHealthScreeningApi = HealthScreeningApi & {
@@ -46,10 +49,16 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
 interface MountedWorkspace {
   readonly api: MockedHealthScreeningApi
   readonly container: HTMLElement
+  readonly onSelectCommand: ReturnType<
+    typeof vi.fn<(commandId: 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING') => void>
+  >
   readonly onAuthenticationFailure: ReturnType<
     typeof vi.fn<(code: ScreeningSessionErrorCode) => void>
   >
   getRegisteredGuard(): WorkspaceNavigationGuard | null
+  setCommandId(commandId: 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING'): Promise<void>
+  hideWorkspace(): Promise<void>
+  showWorkspace(commandId?: 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING'): Promise<void>
   unmount(): Promise<void>
 }
 
@@ -104,6 +113,7 @@ describe('screening patient entry workspace', () => {
     expectWorkspaceHeading(mounted, 'Patients')
     expect(api.patient.search).toHaveBeenCalledWith({ query: '', page: 1, pageSize: 25 })
     expect(text(mounted)).toContain('Ada Lovelace')
+    expect(mounted.container.querySelector('.screening-current-encounter-panel')).toBeNull()
 
     await mounted.unmount()
   })
@@ -112,22 +122,29 @@ describe('screening patient entry workspace', () => {
     const api = createApi()
     const mounted = await mountWorkspace({ api })
 
-    expect(tableHeaders(mounted)).toEqual(['Name', 'Sex', 'Age', 'Last Screening', 'Follow-up'])
+    expect(tableHeaders(mounted)).toEqual(['Name', 'Date of birth', 'Patient ID', 'Sex'])
     expect(text(mounted)).toContain('Search patients')
+    expect(text(mounted)).toContain(operationalDate)
     expect(text(mounted)).toContain('Female')
-    expect(text(mounted)).toContain('36')
     expect(patientRowCells(mounted, 'Ada Lovelace')).toEqual([
       'Ada Lovelace',
-      'Female',
-      '36',
-      '—',
-      '—'
+      '1990-08-06',
+      'PT-000001',
+      'Female'
     ])
     expect(text(mounted)).not.toContain('Action')
     expect(text(mounted)).not.toContain('Select')
+    expect(text(mounted)).not.toContain('Last Screening')
+    expect(text(mounted)).not.toContain('Follow-up')
+    expect(text(mounted)).not.toContain('Vitals')
+    expect(text(mounted)).not.toContain('Lifestyle')
+    expect(text(mounted)).not.toContain('Food')
+    expect(text(mounted)).not.toContain('OTC')
+    expect(text(mounted)).not.toContain('Review')
     expect(text(mounted)).not.toContain('Close session')
     expect(text(mounted)).not.toContain('Reopen session')
     expect(text(mounted)).not.toContain(sessionId)
+    expect(mounted.container.querySelector('.screening-current-encounter-panel')).toBeNull()
     expect(api.screeningSessions.getWorkspaceContext).not.toHaveBeenCalled()
     expect(api.screeningSessions.create).not.toHaveBeenCalled()
     expect(api.screeningSessions.list).not.toHaveBeenCalled()
@@ -201,7 +218,7 @@ describe('screening patient entry workspace', () => {
     await mounted.unmount()
   })
 
-  it('clicking a patient row starts the approved encounter and opens one patient tab', async () => {
+  it('clicking a patient row starts the approved encounter and switches to New Screening', async () => {
     const api = createApi()
     const mounted = await mountWorkspace({ api })
 
@@ -215,12 +232,223 @@ describe('screening patient entry workspace', () => {
     expect(api.screeningEncounters.start.mock.calls[0]?.[0]).not.toHaveProperty('locationId')
     expect(api.screeningEncounters.start.mock.calls[0]?.[0]).not.toHaveProperty('role')
     expect(api.screeningEncounters.start.mock.calls[0]?.[0]).not.toHaveProperty('actor')
+    expect(mounted.onSelectCommand).toHaveBeenCalledWith('SCREENING_NEW_SCREENING')
+    expectWorkspaceHeading(mounted, 'New Screening')
     expect(tabButtons(mounted).map((button) => button.textContent?.trim())).toContain(
-      'Ada Lovelace'
+      'Ada Lovelace • PT-000001'
     )
-    expect(text(mounted)).toContain('New Screening')
+    expect(mounted.container.querySelector('.screening-patient-table')).toBeNull()
+    expect(mounted.container.querySelector('.screening-context-panel')).not.toBeNull()
+    expect(mounted.container.querySelector('.screening-current-encounter-panel')).not.toBeNull()
+    expect(text(mounted)).toContain('Patient context')
+    expect(text(mounted)).toContain('Current screening encounter')
+    expect(text(mounted)).toContain('Date of birth 1990-08-06')
     expect(text(mounted)).toContain('Vitals')
+    expect(text(mounted)).toContain('Lifestyle')
+    expect(text(mounted)).toContain('Food')
+    expect(text(mounted)).toContain('OTC')
+    expect(text(mounted)).toContain('Review')
+    expect(vitalsTableHeaders(mounted)).toEqual([
+      'Reading',
+      'Systolic',
+      'Diastolic',
+      'Pulse',
+      'Site',
+      'Position',
+      'Time'
+    ])
+    expect(text(mounted)).toContain('Blood pressure readings')
+    expect(text(mounted)).toContain('Weight (kg)')
+    expect(text(mounted)).toContain('Waist (optional)')
+    expect(text(mounted)).toContain('Notes')
+    expect(text(mounted)).not.toContain('Additional current measurements')
     expect(text(mounted)).toContain('Screening guidance—not a diagnosis.')
+    expect(text(mounted)).toContain('Screening history unavailable.')
+    expect(text(mounted)).not.toContain('151 / 93')
+    expect(text(mounted)).not.toContain('158')
+
+    await mounted.unmount()
+  })
+
+  it('collects vitals in an editable readings table before moving to Lifestyle', async () => {
+    const api = createApi()
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+
+    expect(vitalsRows(mounted)).toHaveLength(1)
+    expect(buttonByText(mounted, 'Save draft').disabled).toBe(true)
+    expect(buttonByText(mounted, 'Continue to lifestyle').disabled).toBe(true)
+    expect(selectOptions(selectByLabel(mounted, 'Reading 1 site'))).toEqual([
+      'Select',
+      'Right arm',
+      'Left arm',
+      'Left leg',
+      'Right leg'
+    ])
+    expect(selectOptions(selectByLabel(mounted, 'Reading 1 position'))).toEqual([
+      'Select',
+      'Lying',
+      'Standing',
+      'Sitting'
+    ])
+
+    await clickButton(mounted, 'Add reading')
+
+    expect(vitalsRows(mounted)).toHaveLength(2)
+
+    await changeInput(inputByLabel(mounted, 'Reading 1 systolic'), '150')
+    await changeInput(inputByLabel(mounted, 'Reading 1 diastolic'), '92')
+    await changeInput(inputByLabel(mounted, 'Reading 1 pulse'), '80')
+    await changeSelect(selectByLabel(mounted, 'Reading 1 site'), 'RIGHT_ARM')
+    await changeSelect(selectByLabel(mounted, 'Reading 1 position'), 'SITTING')
+    await changeInput(inputByLabel(mounted, 'Reading 1 time'), '10:12')
+    await changeInput(inputByLabel(mounted, 'Reading 2 systolic'), '146')
+    await changeInput(inputByLabel(mounted, 'Reading 2 diastolic'), '88')
+    await changeInput(inputByLabel(mounted, 'Reading 2 pulse'), '78')
+    await changeSelect(selectByLabel(mounted, 'Reading 2 site'), 'LEFT_ARM')
+    await changeSelect(selectByLabel(mounted, 'Reading 2 position'), 'STANDING')
+    await changeInput(inputByLabel(mounted, 'Reading 2 time'), '10:18')
+    await changeInput(inputByLabel(mounted, 'Weight in kilograms'), '80.5')
+    await changeInput(inputByLabel(mounted, 'Waist optional'), '91')
+    await changeTextarea(textareaByLabel(mounted, 'Vitals notes'), 'Patient rested before reading.')
+
+    expect(buttonByText(mounted, 'Save draft').disabled).toBe(false)
+    expect(buttonByText(mounted, 'Continue to lifestyle').disabled).toBe(false)
+
+    await clickButton(mounted, 'Save draft')
+    await clickButton(mounted, 'Continue to lifestyle')
+
+    expect(text(mounted)).toContain('Lifestyle')
+    expect(text(mounted)).toContain('Lifestyle collection is not available in this build.')
+
+    await mounted.unmount()
+  })
+
+  it('keeps the screening workspace open when vitals fields update with React tab state', async () => {
+    const api = createApi()
+    const mounted = await mountWorkspaceWithReactTabState({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+
+    expectWorkspaceHeading(mounted, 'New Screening')
+    expect(text(mounted)).toContain('Ada Lovelace')
+    expect(text(mounted)).toContain('PT-000001')
+
+    await changeInput(inputByLabel(mounted, 'Reading 1 systolic'), '150')
+    await changeSelect(selectByLabel(mounted, 'Reading 1 site'), 'RIGHT_ARM')
+    await changeTextarea(textareaByLabel(mounted, 'Vitals notes'), 'Patient rested.')
+
+    expectWorkspaceHeading(mounted, 'New Screening')
+    expect(inputByLabel(mounted, 'Reading 1 systolic').value).toBe('150')
+    expect(selectByLabel(mounted, 'Reading 1 site').value).toBe('RIGHT_ARM')
+    expect(textareaByLabel(mounted, 'Vitals notes').value).toBe('Patient rested.')
+    expect(text(mounted)).toContain('Ada Lovelace')
+    expect(text(mounted)).toContain('PT-000001')
+    expect(mounted.container.querySelector('.screening-current-encounter-panel')).not.toBeNull()
+
+    await mounted.unmount()
+  })
+
+  it('renders New Screening only in its separate subtab and shows the empty state without a patient', async () => {
+    const api = createApi()
+    const mounted = await mountWorkspace({ api, commandId: 'SCREENING_NEW_SCREENING' })
+
+    expectWorkspaceHeading(mounted, 'New Screening')
+    expect(text(mounted)).toContain('Select a patient from the Patients tab to begin screening.')
+    expect(mounted.container.querySelector('.screening-patient-table')).toBeNull()
+    expect(mounted.container.querySelector('.screening-context-panel')).toBeNull()
+    expect(mounted.container.querySelector('.screening-current-encounter-panel')).toBeNull()
+    expect(api.screeningEncounters.start).not.toHaveBeenCalled()
+
+    await clickButton(mounted, 'Patients')
+
+    expectWorkspaceHeading(mounted, 'Patients')
+    expect(mounted.container.querySelector('.screening-patient-table')).not.toBeNull()
+
+    await mounted.unmount()
+  })
+
+  it('preserves open patient tabs when returning between Patients and New Screening', async () => {
+    const api = createApi({
+      patients: [
+        patientSummary({ id: patientId, displayName: 'Ada Lovelace', patientCode: 'PT-000001' }),
+        patientSummary({
+          id: secondPatientId,
+          displayName: 'Grace Hopper',
+          patientCode: 'PT-000002'
+        })
+      ]
+    })
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+    await clickButton(mounted, 'Search / open patient')
+    await clickRow(mounted, 'Grace Hopper')
+
+    expectWorkspaceHeading(mounted, 'New Screening')
+    expect(tabButtons(mounted).map((button) => button.textContent?.trim())).toEqual([
+      'Ada Lovelace • PT-000001',
+      'Grace Hopper • PT-000002'
+    ])
+
+    await clickButton(mounted, 'Search / open patient')
+
+    expectWorkspaceHeading(mounted, 'Patients')
+    expect(mounted.container.querySelector('.screening-current-encounter-panel')).toBeNull()
+
+    await mounted.setCommandId('SCREENING_NEW_SCREENING')
+
+    expectWorkspaceHeading(mounted, 'New Screening')
+    expect(tabButtons(mounted).map((button) => button.textContent?.trim())).toEqual([
+      'Ada Lovelace • PT-000001',
+      'Grace Hopper • PT-000002'
+    ])
+    expect(text(mounted)).toContain('Current screening encounter')
+
+    await clickButton(mounted, 'Close Grace Hopper')
+    await clickButton(mounted, 'Close Ada Lovelace')
+
+    expect(text(mounted)).toContain('Select a patient from the Patients tab to begin screening.')
+
+    await mounted.unmount()
+  })
+
+  it('preserves open patient tabs after leaving and remounting the Screening workspace', async () => {
+    const api = createApi({
+      patients: [
+        patientSummary({ id: patientId, displayName: 'Ada Lovelace', patientCode: 'PT-000001' }),
+        patientSummary({
+          id: secondPatientId,
+          displayName: 'Grace Hopper',
+          patientCode: 'PT-000002'
+        })
+      ]
+    })
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+    await clickButton(mounted, 'Search / open patient')
+    await clickRow(mounted, 'Grace Hopper')
+
+    expect(tabButtons(mounted).map((button) => button.textContent?.trim())).toEqual([
+      'Ada Lovelace • PT-000001',
+      'Grace Hopper • PT-000002'
+    ])
+
+    await mounted.hideWorkspace()
+
+    expect(text(mounted)).toContain('Draft Encounters')
+
+    await mounted.showWorkspace('SCREENING_NEW_SCREENING')
+
+    expectWorkspaceHeading(mounted, 'New Screening')
+    expect(api.screeningEncounters.start).toHaveBeenCalledTimes(2)
+    expect(tabButtons(mounted).map((button) => button.textContent?.trim())).toEqual([
+      'Ada Lovelace • PT-000001',
+      'Grace Hopper • PT-000002'
+    ])
+    expect(text(mounted)).toContain('Current screening encounter')
 
     await mounted.unmount()
   })
@@ -228,21 +456,28 @@ describe('screening patient entry workspace', () => {
   it('supports Enter and Space activation without a Select button', async () => {
     const api = createApi({
       patients: [
-        patientSummary({ id: patientId, displayName: 'Ada Lovelace' }),
-        patientSummary({ id: secondPatientId, displayName: 'Grace Hopper' })
+        patientSummary({ id: patientId, displayName: 'Ada Lovelace', patientCode: 'PT-000001' }),
+        patientSummary({
+          id: secondPatientId,
+          displayName: 'Grace Hopper',
+          patientCode: 'PT-000002'
+        })
       ]
     })
     const mounted = await mountWorkspace({ api })
 
     await pressRow(mounted, 'Ada Lovelace', 'Enter')
+    expectWorkspaceHeading(mounted, 'New Screening')
+    await clickButton(mounted, 'Search / open patient')
+    expectWorkspaceHeading(mounted, 'Patients')
+    expect(rowByName(mounted, 'Grace Hopper').tabIndex).toBe(0)
+    expect(rowByName(mounted, 'Grace Hopper').getAttribute('aria-label')).toBe(
+      'New Screening for Grace Hopper, Patient ID PT-000002'
+    )
+    expect(mounted.container.querySelector('.screening-patient-table button')).toBeNull()
     await pressRow(mounted, 'Grace Hopper', ' ')
 
     expect(api.screeningEncounters.start).toHaveBeenCalledTimes(2)
-    expect(rowByName(mounted, 'Ada Lovelace').tabIndex).toBe(0)
-    expect(rowByName(mounted, 'Ada Lovelace').getAttribute('aria-label')).toBe(
-      'New Screening for Ada Lovelace'
-    )
-    expect(mounted.container.querySelector('.screening-patient-table button')).toBeNull()
 
     await mounted.unmount()
   })
@@ -250,21 +485,30 @@ describe('screening patient entry workspace', () => {
   it('activates an existing patient tab without starting another encounter', async () => {
     const api = createApi({
       patients: [
-        patientSummary({ id: patientId, displayName: 'Ada Lovelace' }),
-        patientSummary({ id: secondPatientId, displayName: 'Grace Hopper' })
+        patientSummary({ id: patientId, displayName: 'Ada Lovelace', patientCode: 'PT-000001' }),
+        patientSummary({
+          id: secondPatientId,
+          displayName: 'Grace Hopper',
+          patientCode: 'PT-000002'
+        })
       ]
     })
     const mounted = await mountWorkspace({ api })
 
     await clickRow(mounted, 'Ada Lovelace')
+    await clickButton(mounted, 'Search / open patient')
     await clickRow(mounted, 'Grace Hopper')
+    await clickButton(mounted, 'Search / open patient')
     await clickRow(mounted, 'Ada Lovelace')
 
     expect(api.screeningEncounters.start).toHaveBeenCalledTimes(2)
     expect(
-      tabButtons(mounted).filter((button) => button.textContent?.trim() === 'Ada Lovelace')
+      tabButtons(mounted).filter(
+        (button) => button.textContent?.trim() === 'Ada Lovelace • PT-000001'
+      )
     ).toHaveLength(1)
-    expect(rowByName(mounted, 'Ada Lovelace').getAttribute('aria-selected')).toBe('true')
+    expectWorkspaceHeading(mounted, 'New Screening')
+    expect(text(mounted)).toContain('Current screening encounter')
 
     await mounted.unmount()
   })
@@ -272,36 +516,59 @@ describe('screening patient entry workspace', () => {
   it('enforces the four-patient-tab limit without closing tabs or encounters', async () => {
     const api = createApi({
       patients: [
-        patientSummary({ id: patientId, displayName: 'Ada Lovelace' }),
-        patientSummary({ id: secondPatientId, displayName: 'Grace Hopper' }),
-        patientSummary({ id: thirdPatientId, displayName: 'Mary Jackson' }),
-        patientSummary({ id: fourthPatientId, displayName: 'Katherine Johnson' }),
-        patientSummary({ id: fifthPatientId, displayName: 'Dorothy Vaughan' })
+        patientSummary({ id: patientId, displayName: 'Ada Lovelace', patientCode: 'PT-000001' }),
+        patientSummary({
+          id: secondPatientId,
+          displayName: 'Grace Hopper',
+          patientCode: 'PT-000002'
+        }),
+        patientSummary({
+          id: thirdPatientId,
+          displayName: 'Mary Jackson',
+          patientCode: 'PT-000003'
+        }),
+        patientSummary({
+          id: fourthPatientId,
+          displayName: 'Katherine Johnson',
+          patientCode: 'PT-000004'
+        }),
+        patientSummary({
+          id: fifthPatientId,
+          displayName: 'Dorothy Vaughan',
+          patientCode: 'PT-000005'
+        })
       ]
     })
     const mounted = await mountWorkspace({ api })
 
     await clickRow(mounted, 'Ada Lovelace')
+    await clickButton(mounted, 'Search / open patient')
     await clickRow(mounted, 'Grace Hopper')
+    await clickButton(mounted, 'Search / open patient')
     await clickRow(mounted, 'Mary Jackson')
+    await clickButton(mounted, 'Search / open patient')
     await clickRow(mounted, 'Katherine Johnson')
+    await clickButton(mounted, 'Search / open patient')
     await clickRow(mounted, 'Dorothy Vaughan')
 
     expect(api.screeningEncounters.start).toHaveBeenCalledTimes(4)
     expect(text(mounted)).toContain('Close one patient to continue')
+    await mounted.setCommandId('SCREENING_NEW_SCREENING')
     expect(tabButtons(mounted)).toHaveLength(4)
 
+    await clickButton(mounted, 'Search / open patient')
     await clickRow(mounted, 'Ada Lovelace')
     expect(api.screeningEncounters.start).toHaveBeenCalledTimes(4)
-    expect(rowByName(mounted, 'Ada Lovelace').getAttribute('aria-selected')).toBe('true')
+    expectWorkspaceHeading(mounted, 'New Screening')
 
     await clickButton(mounted, 'Close Ada Lovelace')
+    await clickButton(mounted, 'Search / open patient')
     await clickRow(mounted, 'Dorothy Vaughan')
 
     expect(api.screeningEncounters.start).toHaveBeenCalledTimes(5)
-    expect(tabButtons(mounted).map((button) => button.textContent?.trim())).toContain(
-      'Dorothy Vaughan'
-    )
+    expect(
+      tabButtons(mounted).some((button) => button.textContent?.includes('Dorothy Vaughan'))
+    ).toBe(true)
 
     await mounted.unmount()
   })
@@ -309,8 +576,12 @@ describe('screening patient entry workspace', () => {
   it('opens resumed canonical encounters and does not consume a tab slot on failure', async () => {
     const api = createApi({
       patients: [
-        patientSummary({ id: patientId, displayName: 'Ada Lovelace' }),
-        patientSummary({ id: secondPatientId, displayName: 'Grace Hopper' })
+        patientSummary({ id: patientId, displayName: 'Ada Lovelace', patientCode: 'PT-000001' }),
+        patientSummary({
+          id: secondPatientId,
+          displayName: 'Grace Hopper',
+          patientCode: 'PT-000002'
+        })
       ]
     })
     api.screeningEncounters.start.mockResolvedValueOnce(
@@ -331,13 +602,15 @@ describe('screening patient entry workspace', () => {
     await clickRow(mounted, 'Ada Lovelace')
 
     expect(text(mounted)).toContain('Patient not found.')
+    expectWorkspaceHeading(mounted, 'Patients')
+    expect(mounted.container.querySelector('.screening-patient-table')).not.toBeNull()
     expect(tabButtons(mounted)).toHaveLength(0)
 
     await clickRow(mounted, 'Grace Hopper')
 
     expect(api.screeningEncounters.start).toHaveBeenCalledTimes(2)
-    expect(tabButtons(mounted).map((button) => button.textContent?.trim())).toContain(
-      'Grace Hopper'
+    expect(tabButtons(mounted).some((button) => button.textContent?.includes('Grace Hopper'))).toBe(
+      true
     )
     expect(text(mounted)).toContain('In progress')
 
@@ -430,22 +703,61 @@ async function mountWorkspace({
   const root = createRoot(container)
   const headingRef = { current: null } as RefObject<HTMLHeadingElement | null>
   let registeredGuard: WorkspaceNavigationGuard | null = null
+  let currentCommandId = commandId
+  let openTabs: readonly PatientScreeningTab[] = []
+  let activePatientId: string | null = null
   const onAuthenticationFailure = vi.fn<(code: ScreeningSessionErrorCode) => void>()
+  const onSelectCommand = vi.fn(
+    (nextCommandId: 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING') => {
+      currentCommandId = nextCommandId
+      renderWorkspace()
+    }
+  )
 
-  await act(async () => {
+  const setOpenTabs = (
+    nextTabs:
+      | readonly PatientScreeningTab[]
+      | ((currentTabs: readonly PatientScreeningTab[]) => readonly PatientScreeningTab[])
+  ): void => {
+    openTabs = typeof nextTabs === 'function' ? nextTabs(openTabs) : nextTabs
+    renderWorkspace()
+  }
+
+  const setActivePatientId = (
+    nextPatientId: string | null | ((currentPatientId: string | null) => string | null)
+  ): void => {
+    activePatientId =
+      typeof nextPatientId === 'function' ? nextPatientId(activePatientId) : nextPatientId
+    renderWorkspace()
+  }
+
+  function renderWorkspace(): void {
     root.render(
       createElement(ScreeningSessionWorkspace, {
         api,
-        commandId,
+        activePatientId,
+        commandId: currentCommandId,
         headingId: 'screening-workspace-heading',
         headingRef,
+        openTabs,
         userRole,
+        onActivePatientIdChange: setActivePatientId,
+        onOpenTabsChange: setOpenTabs,
         onScreeningSessionAuthenticationFailure: onAuthenticationFailure,
+        onSelectCommand,
         registerNavigationGuard: (guard) => {
           registeredGuard = guard
         }
       })
     )
+  }
+
+  function renderPlaceholder(): void {
+    root.render(createElement('section', null, 'Draft Encounters'))
+  }
+
+  await act(async () => {
+    renderWorkspace()
     await flushPromises()
   })
   await flushReact()
@@ -453,8 +765,138 @@ async function mountWorkspace({
   return {
     api,
     container,
+    onSelectCommand,
     onAuthenticationFailure,
     getRegisteredGuard: () => registeredGuard,
+    async setCommandId(nextCommandId): Promise<void> {
+      currentCommandId = nextCommandId
+      await act(async () => {
+        renderWorkspace()
+        await flushPromises()
+      })
+      await flushReact()
+    },
+    async hideWorkspace(): Promise<void> {
+      await act(async () => {
+        renderPlaceholder()
+        await flushPromises()
+      })
+      await flushReact()
+    },
+    async showWorkspace(
+      nextCommandId:
+        'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING' = 'SCREENING_NEW_SCREENING'
+    ): Promise<void> {
+      currentCommandId = nextCommandId
+      await act(async () => {
+        renderWorkspace()
+        await flushPromises()
+      })
+      await flushReact()
+    },
+    async unmount(): Promise<void> {
+      await act(async () => {
+        root.unmount()
+        await flushPromises()
+      })
+      container.remove()
+    }
+  }
+}
+
+async function mountWorkspaceWithReactTabState({
+  api = createApi(),
+  userRole = 'LOCAL_ADMIN',
+  commandId = 'SCREENING_TODAYS_SESSION'
+}: {
+  readonly api?: MockedHealthScreeningApi
+  readonly userRole?: LocalUserRole
+  readonly commandId?:
+    'HOME_TODAYS_SESSION' | 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING'
+} = {}): Promise<MountedWorkspace> {
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  const headingRef = { current: null } as RefObject<HTMLHeadingElement | null>
+  let registeredGuard: WorkspaceNavigationGuard | null = null
+  let setCommandIdFromHarness:
+    ((commandId: 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING') => void) | null = null
+  let setVisibleFromHarness: ((visible: boolean) => void) | null = null
+  const onAuthenticationFailure = vi.fn<(code: ScreeningSessionErrorCode) => void>()
+  const onSelectCommand = vi.fn(
+    (nextCommandId: 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING') => {
+      setCommandIdFromHarness?.(nextCommandId)
+    }
+  )
+
+  function WorkspaceHarness(): React.JSX.Element {
+    const [currentCommandId, setCurrentCommandId] = useState(commandId)
+    const [visible, setVisible] = useState(true)
+    const [openTabs, setOpenTabs] = useState<readonly PatientScreeningTab[]>([])
+    const [activePatientId, setActivePatientId] = useState<string | null>(null)
+
+    setCommandIdFromHarness = setCurrentCommandId
+    setVisibleFromHarness = setVisible
+
+    if (!visible) {
+      return createElement('section', null, 'Draft Encounters')
+    }
+
+    return createElement(ScreeningSessionWorkspace, {
+      api,
+      activePatientId,
+      commandId: currentCommandId,
+      headingId: 'screening-workspace-heading',
+      headingRef,
+      openTabs,
+      userRole,
+      onActivePatientIdChange: setActivePatientId,
+      onOpenTabsChange: setOpenTabs,
+      onScreeningSessionAuthenticationFailure: onAuthenticationFailure,
+      onSelectCommand,
+      registerNavigationGuard: (guard) => {
+        registeredGuard = guard
+      }
+    })
+  }
+
+  await act(async () => {
+    root.render(createElement(WorkspaceHarness))
+    await flushPromises()
+  })
+  await flushReact()
+
+  return {
+    api,
+    container,
+    onSelectCommand,
+    onAuthenticationFailure,
+    getRegisteredGuard: () => registeredGuard,
+    async setCommandId(nextCommandId): Promise<void> {
+      await act(async () => {
+        setCommandIdFromHarness?.(nextCommandId)
+        await flushPromises()
+      })
+      await flushReact()
+    },
+    async hideWorkspace(): Promise<void> {
+      await act(async () => {
+        setVisibleFromHarness?.(false)
+        await flushPromises()
+      })
+      await flushReact()
+    },
+    async showWorkspace(
+      nextCommandId:
+        'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING' = 'SCREENING_NEW_SCREENING'
+    ): Promise<void> {
+      await act(async () => {
+        setCommandIdFromHarness?.(nextCommandId)
+        setVisibleFromHarness?.(true)
+        await flushPromises()
+      })
+      await flushReact()
+    },
     async unmount(): Promise<void> {
       await act(async () => {
         root.unmount()
@@ -551,7 +993,7 @@ function publicCurrentSession(
 function patientSummary(overrides: Partial<PublicPatientSummary> = {}): PublicPatientSummary {
   return {
     id: patientId,
-    patientCode: 'P-0001',
+    patientCode: 'PT-000001',
     displayName: 'Ada Lovelace',
     givenName: 'Ada',
     familyName: 'Lovelace',
@@ -634,6 +1076,26 @@ async function changeInput(input: HTMLInputElement, value: string): Promise<void
   await flushReact()
 }
 
+async function changeTextarea(textarea: HTMLTextAreaElement, value: string): Promise<void> {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+    setter?.call(textarea, value)
+    textarea.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }))
+    await flushPromises()
+  })
+  await flushReact()
+}
+
+async function changeSelect(select: HTMLSelectElement, value: string): Promise<void> {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+    setter?.call(select, value)
+    select.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }))
+    await flushPromises()
+  })
+  await flushReact()
+}
+
 function rowByName(mounted: MountedWorkspace, name: string): HTMLTableRowElement {
   const row = Array.from(
     mounted.container.querySelectorAll<HTMLTableRowElement>('.screening-patient-row')
@@ -659,6 +1121,52 @@ function buttonByText(mounted: MountedWorkspace, label: string): HTMLButtonEleme
   return button
 }
 
+function inputByLabel(mounted: MountedWorkspace, label: string): HTMLInputElement {
+  const input = Array.from(mounted.container.querySelectorAll<HTMLInputElement>('input')).find(
+    (candidate) => candidate.getAttribute('aria-label') === label
+  )
+
+  if (input === undefined) {
+    throw new Error(`Expected input ${label} to be rendered.`)
+  }
+
+  return input
+}
+
+function selectByLabel(mounted: MountedWorkspace, label: string): HTMLSelectElement {
+  const select = Array.from(mounted.container.querySelectorAll<HTMLSelectElement>('select')).find(
+    (candidate) => candidate.getAttribute('aria-label') === label
+  )
+
+  if (select === undefined) {
+    throw new Error(`Expected select ${label} to be rendered.`)
+  }
+
+  return select
+}
+
+function textareaByLabel(mounted: MountedWorkspace, label: string): HTMLTextAreaElement {
+  const textarea = Array.from(
+    mounted.container.querySelectorAll<HTMLTextAreaElement>('textarea')
+  ).find((candidate) => candidate.getAttribute('aria-label') === label)
+
+  if (textarea === undefined) {
+    throw new Error(`Expected textarea ${label} to be rendered.`)
+  }
+
+  return textarea
+}
+
+function selectOptions(select: HTMLSelectElement): string[] {
+  return Array.from(select.options).map((option) => option.textContent?.trim() ?? '')
+}
+
+function vitalsRows(mounted: MountedWorkspace): HTMLTableRowElement[] {
+  return Array.from(
+    mounted.container.querySelectorAll<HTMLTableRowElement>('.screening-vitals-table tbody tr')
+  )
+}
+
 function screeningSearchInput(mounted: MountedWorkspace): HTMLInputElement {
   const input = mounted.container.querySelector<HTMLInputElement>('#screening-patient-search')
 
@@ -672,6 +1180,12 @@ function screeningSearchInput(mounted: MountedWorkspace): HTMLInputElement {
 function tableHeaders(mounted: MountedWorkspace): string[] {
   return Array.from(
     mounted.container.querySelectorAll<HTMLTableCellElement>('.screening-patient-table th')
+  ).map((header) => header.textContent?.trim() ?? '')
+}
+
+function vitalsTableHeaders(mounted: MountedWorkspace): string[] {
+  return Array.from(
+    mounted.container.querySelectorAll<HTMLTableCellElement>('.screening-vitals-table thead th')
   ).map((header) => header.textContent?.trim() ?? '')
 }
 

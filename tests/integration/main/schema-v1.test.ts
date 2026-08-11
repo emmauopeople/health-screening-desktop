@@ -16,13 +16,13 @@ import {
   type SchemaVersion1ColumnContract
 } from '@main/database/migrations/schema-v1-contract'
 import {
-  schemaVersion6NamedIndexes,
-  schemaVersion6TableContracts,
-  schemaVersion6TableNames,
-  schemaVersion6TriggerNames,
+  schemaVersion7NamedIndexes,
+  schemaVersion7TableContracts,
+  schemaVersion7TableNames,
+  schemaVersion7TriggerNames,
   validateSchemaVersion3,
   validateSchemaVersion4,
-  validateSchemaVersion6
+  validateSchemaVersion7
 } from '@main/database/migrations'
 
 const now = '2026-07-29T00:00:00Z'
@@ -60,25 +60,31 @@ const prohibitedDemographicAmendmentFields = Object.freeze([
   'row_version'
 ] as const)
 
-describe('schema version 6', () => {
+describe('schema version 7', () => {
   it('creates exactly the required empty strict tables and named indexes', async () => {
     await withMigratedDatabase((connection) => {
-      expect(readUserVersion(connection)).toBe(6)
-      expect(readTableNames(connection)).toEqual([...schemaVersion6TableNames])
-      expect(readNamedIndexNames(connection)).toEqual([...schemaVersion6NamedIndexes])
-      expect(readTriggerNames(connection)).toEqual([...schemaVersion6TriggerNames])
+      expect(readUserVersion(connection)).toBe(7)
+      expect(readTableNames(connection)).toEqual([...schemaVersion7TableNames])
+      expect(readNamedIndexNames(connection)).toEqual([...schemaVersion7NamedIndexes])
+      expect(readTriggerNames(connection)).toEqual([...schemaVersion7TriggerNames])
 
       const strictByTable = readStrictByTable(connection)
 
-      for (const tableName of schemaVersion6TableNames) {
+      for (const tableName of schemaVersion7TableNames) {
         expect(strictByTable.get(tableName)).toBe(1)
       }
 
-      for (const tableName of schemaVersion6TableNames) {
+      for (const tableName of schemaVersion7TableNames) {
         const rowCount = readTableCount(connection, tableName)
 
         expect(rowCount).toBe(
-          tableName === 'schema_migrations' ? 6 : tableName === 'patient_local_sequence' ? 1 : 0
+          tableName === 'schema_migrations'
+            ? 7
+            : tableName === 'patient_local_sequence'
+              ? 1
+              : tableName === 'protocol_versions'
+                ? 1
+                : 0
         )
       }
     })
@@ -86,7 +92,7 @@ describe('schema version 6', () => {
 
   it('matches exact ordered table_xinfo metadata for every required table', async () => {
     await withMigratedDatabase((connection) => {
-      for (const tableContract of schemaVersion6TableContracts) {
+      for (const tableContract of schemaVersion7TableContracts) {
         expect(readTableXInfo(connection, tableContract.name)).toEqual(tableContract.columns)
       }
     })
@@ -598,9 +604,9 @@ describe('schema version 6', () => {
     })
   })
 
-  it('accepts the exact schema version 6 contract and rejects required object drift', async () => {
+  it('accepts the exact schema version 7 contract and rejects required object drift', async () => {
     await withMigratedDatabase((connection) => {
-      expect(() => validateSchemaVersion6(connection, 'compatibility')).not.toThrow()
+      expect(() => validateSchemaVersion7(connection, 'compatibility')).not.toThrow()
     })
 
     await expectCurrentSchemaDrift(
@@ -901,6 +907,7 @@ function normalizeSchemaSql(sql: string): string {
 
 function insertValidGraph(connection: Database.Database): void {
   insertUser(connection, 'user-1', 'admin', 'LOCAL_ADMIN')
+  deactivateBaselineProtocol(connection)
 
   connection
     .prepare(
@@ -1027,6 +1034,14 @@ function insertValidGraph(connection: Database.Database): void {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run('bp-1', 'encounter-1', 1, 120, 80, now, 'ACTIVE', 'LOCAL', 'user-1', now)
+}
+
+function deactivateBaselineProtocol(connection: Database.Database): void {
+  connection
+    .prepare(
+      "UPDATE protocol_versions SET status = 'INACTIVE' WHERE protocol_key = 'health-screening-baseline'"
+    )
+    .run()
 }
 
 function insertUser(
@@ -1294,7 +1309,7 @@ async function expectCurrentSchemaDrift(
   await withMigratedDatabase((connection) => {
     mutate(connection)
 
-    expect(() => validateSchemaVersion6(connection, 'compatibility'), label).toThrow(
+    expect(() => validateSchemaVersion7(connection, 'compatibility'), label).toThrow(
       MigrationCompatibilityError
     )
   })

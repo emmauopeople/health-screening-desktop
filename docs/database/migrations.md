@@ -11,9 +11,18 @@ under `src/main/database/migrations/sql/`.
 - Use positive integer versions beginning at `1` with no gaps.
 - Use stable lowercase kebab-case names.
 - Import SQL with `?raw` so the text is bundled into the Electron main output.
-- The current production target is schema version `5`.
+- The current production target is migration version `7`.
 - Version `5`, `screening-encounter-identity`, adds the root encounter identity
   constraint `ux_screening_encounters_root_session_patient`.
+- Version `6`, `installation-location-configuration`, adds the singleton
+  trusted installation-location table and leaves existing installations
+  unconfigured until authorized assignment.
+- Version `7`, `baseline-active-protocol`, is a data-only compatibility
+  migration. It inserts one deterministic baseline `ACTIVE` protocol row only
+  when `protocol_versions` is empty, allowing the trusted P1 current-session
+  service to create the first daily screening session without manual database
+  repair. Existing protocol rows are preserved and are not overwritten,
+  reinterpreted, or replaced.
 - Do not export raw SQL through preload, renderer, or shared contracts.
 
 ## Checksums
@@ -64,6 +73,9 @@ all migrations finish, and on every idempotent current-version startup. The
 validator checks the exact non-internal table set, strict mode, exact named
 index set, exact table column metadata, `schema_migrations` structure, and
 `foreign_keys=ON`.
+
+Version `7` does not change the physical table/index/trigger schema; its
+schema validator intentionally delegates to the version-6 structural contract.
 
 ## Compatibility Rules
 

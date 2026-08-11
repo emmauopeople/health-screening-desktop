@@ -47,6 +47,12 @@ observed.
 When first-run state is not `SETUP_COMPLETE`, the HSD-016 behavior is unchanged.
 After setup completes, `App.tsx` mounts the authentication route controller and
 renders `AuthenticationExperience`.
+The component defers final controller disposal across the immediate React
+development Strict Mode effect replay and cancels that disposal when the same
+controller is remounted. A real unmount or API-controller replacement still
+disposes the owned subscription. This prevents the startup route from remaining
+indefinitely in `AUTH_LOADING` after the first replay cleanup marks the
+controller disposed.
 
 `AuthenticationExperience` selects one concrete screen for loading,
 unavailable, login, required password change, locked session, or active session.

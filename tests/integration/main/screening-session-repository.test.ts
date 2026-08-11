@@ -1134,6 +1134,7 @@ async function withScreeningSessionRepository(
       },
       clock: createFixedClock()
     })(connection)
+    deactivateBaselineProtocol(connection)
     await test({
       connection,
       repository: createScreeningSessionRepository(connection),
@@ -1145,6 +1146,14 @@ async function withScreeningSessionRepository(
     }
     await rm(directory, { recursive: true, force: true })
   }
+}
+
+function deactivateBaselineProtocol(connection: Database.Database): void {
+  connection
+    .prepare(
+      "UPDATE protocol_versions SET status = 'INACTIVE' WHERE protocol_key = 'health-screening-baseline'"
+    )
+    .run()
 }
 
 function createInsertInput(

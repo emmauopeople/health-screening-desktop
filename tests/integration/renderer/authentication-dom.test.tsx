@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /// <reference lib="dom" />
 
-import { act, createElement } from 'react'
+import { StrictMode, act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -156,6 +156,17 @@ describe('renderer authentication DOM integration', () => {
 
       await mounted.unmount()
     }
+  })
+
+  it('restores the local session under React development Strict Mode effect replay', async () => {
+    const harness = createAppApi(activeSession(1))
+    const mounted = await mountApp(harness.api, { strictMode: true })
+
+    expect(text(mounted)).toContain('Welcome, Admin User')
+    expect(text(mounted)).not.toContain('Checking local session.')
+    expect(harness.api.auth.getSession).toHaveBeenCalled()
+
+    await mounted.unmount()
   })
 
   it('moves from temporary-password login through required password change to ACTIVE', async () => {
@@ -898,13 +909,17 @@ function createAppApi(
   }
 }
 
-async function mountApp(api: HealthScreeningApi): Promise<MountedApp> {
+async function mountApp(
+  api: HealthScreeningApi,
+  options: { readonly strictMode?: boolean } = {}
+): Promise<MountedApp> {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
+  const app = createElement(App, { api })
 
   await act(async () => {
-    root.render(createElement(App, { api }))
+    root.render(options.strictMode === true ? createElement(StrictMode, null, app) : app)
     await flushPromises()
   })
   await flushReact()

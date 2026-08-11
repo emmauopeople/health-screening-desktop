@@ -770,6 +770,7 @@ async function withService(
       logger: { info: vi.fn(), error: vi.fn() },
       clock: createUtcClock(() => now)
     })(connection)
+    deactivateBaselineProtocol(connection)
 
     const authenticationSessionService = createAuthenticationSessionService({
       userId: options.sessionUserId ?? adminId,
@@ -863,6 +864,14 @@ function wrapAuditEventRepository(
       return repository.insert(connection, input)
     }
   })
+}
+
+function deactivateBaselineProtocol(connection: Database.Database): void {
+  connection
+    .prepare(
+      "UPDATE protocol_versions SET status = 'INACTIVE' WHERE protocol_key = 'health-screening-baseline'"
+    )
+    .run()
 }
 
 function createAuthenticationSessionService({

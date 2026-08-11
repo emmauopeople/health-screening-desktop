@@ -24,6 +24,11 @@ interface AppProps {
   api?: HealthScreeningApi
 }
 
+interface PendingAuthenticationControllerDisposal {
+  readonly controller: RendererAuthenticationRouteController
+  readonly timeoutId: ReturnType<typeof setTimeout>
+}
+
 function App({ api = window.healthScreening }: AppProps): React.JSX.Element {
   const { startupState, retryStartupLoad, setStartupState } = useStartupState(api)
   const handleExit = useCallback(() => {
@@ -79,12 +84,34 @@ function AuthenticationBoundary({
       }),
     [api]
   )
+  const pendingDisposalRef = useRef<PendingAuthenticationControllerDisposal | null>(null)
 
   useEffect(() => {
+    const pendingDisposal = pendingDisposalRef.current
+
+    if (pendingDisposal !== null) {
+      clearTimeout(pendingDisposal.timeoutId)
+      pendingDisposalRef.current = null
+
+      if (pendingDisposal.controller !== controller) {
+        pendingDisposal.controller.dispose()
+      }
+    }
+
     void controller.load()
 
     return () => {
-      controller.dispose()
+      const pendingDisposal: PendingAuthenticationControllerDisposal = {
+        controller,
+        timeoutId: setTimeout(() => {
+          if (pendingDisposalRef.current === pendingDisposal) {
+            pendingDisposalRef.current = null
+            controller.dispose()
+          }
+        }, 0)
+      }
+
+      pendingDisposalRef.current = pendingDisposal
     }
   }, [controller])
 

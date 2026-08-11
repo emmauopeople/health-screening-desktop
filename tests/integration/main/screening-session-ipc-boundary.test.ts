@@ -292,6 +292,7 @@ async function withScreeningSessionIpc(
       logger,
       clock: createUtcClock(() => clockTimestamp)
     })(connection)
+    deactivateBaselineProtocol(connection)
 
     const firstRunService = createProductionFirstRunBootstrapService({
       connection,
@@ -568,6 +569,14 @@ function insertLocation(
       adminId,
       clockTimestamp
     )
+}
+
+function deactivateBaselineProtocol(connection: Database.Database): void {
+  connection
+    .prepare(
+      "UPDATE protocol_versions SET status = 'INACTIVE' WHERE protocol_key = 'health-screening-baseline'"
+    )
+    .run()
 }
 
 function readInitialLocationId(connection: Database.Database): string {

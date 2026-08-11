@@ -482,6 +482,15 @@ function migrateToCurrent(connection: Database.Database): void {
     logger: createLogger(),
     clock: fixedClock
   })(connection)
+  deactivateBaselineProtocol(connection)
+}
+
+function deactivateBaselineProtocol(connection: Database.Database): void {
+  connection
+    .prepare(
+      "UPDATE protocol_versions SET status = 'INACTIVE' WHERE protocol_key = 'health-screening-baseline'"
+    )
+    .run()
 }
 
 function insertReferenceGraph(connection: Database.Database): void {

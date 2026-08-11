@@ -57,6 +57,14 @@ active location, reads renderer memory, uses browser storage, reads an
 environment-variable override, silently assigns a location, or calls the P0
 admin recovery/reconfiguration operations.
 
+Creating a missing daily session also requires one active protocol version,
+because `screening_sessions.protocol_version_id` is required and retained for
+encounter attribution. HSD-029C-P4 adds migration version 7 to provision one
+deterministic baseline active protocol only for databases with no protocol
+versions. Databases that already contain protocol rows are left unchanged; if
+they have no active protocol, the service continues to return the sanitized
+`NO_ACTIVE_PROTOCOL` result rather than choosing or rewriting protocol state.
+
 The database uniqueness invariant remains
 `ux_screening_sessions_location_date(location_id, session_date)`. Creation runs
 inside the existing transaction executor with session state, lifecycle history,

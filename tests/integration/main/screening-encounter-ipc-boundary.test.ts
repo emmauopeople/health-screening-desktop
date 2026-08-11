@@ -215,6 +215,7 @@ async function withScreeningEncounterIpc(
       logger: createLogger(),
       clock: createUtcClock(() => now)
     })(connection)
+    deactivateBaselineProtocol(connection)
     seedCoreGraph(connection)
 
     const idQueue = [encounterId, auditId, outboxId]
@@ -333,6 +334,14 @@ function configurePragmas(connection: Database.Database): void {
   connection.pragma('synchronous = NORMAL')
   connection.pragma('busy_timeout = 5000')
   connection.pragma('trusted_schema = OFF')
+}
+
+function deactivateBaselineProtocol(connection: Database.Database): void {
+  connection
+    .prepare(
+      "UPDATE protocol_versions SET status = 'INACTIVE' WHERE protocol_key = 'health-screening-baseline'"
+    )
+    .run()
 }
 
 function seedCoreGraph(connection: Database.Database): void {

@@ -27,7 +27,7 @@ const fixedClock = {
 }
 
 describe('migration runner integration', () => {
-  it('upgrades a fresh HSD-006 database to schema version 6 and is idempotent', async () => {
+  it('upgrades a fresh HSD-006 database to schema version 7 and is idempotent', async () => {
     await withDatabase((connection) => {
       const logger = createLogger()
       const migrate = createProductionDatabaseMigrationRunner({
@@ -42,10 +42,18 @@ describe('migration runner integration', () => {
 
       expect(firstSummary).toEqual({
         previousVersion: 0,
-        currentVersion: 6,
-        appliedVersions: [1, 2, 3, 4, 5, 6]
+        currentVersion: 7,
+        appliedVersions: [1, 2, 3, 4, 5, 6, 7]
       })
-      expect(readUserVersion(connection)).toBe(6)
+      expect(readUserVersion(connection)).toBe(7)
+      expect(readBaselineProtocolRows(connection)).toEqual([
+        {
+          id: '00000000-0000-4000-8000-000000000007',
+          protocol_key: 'health-screening-baseline',
+          version_label: '1',
+          status: 'ACTIVE'
+        }
+      ])
       expect(readLedgerRows(connection)).toEqual(
         databaseMigrations.map((migration) => ({
           version: migration.version,
@@ -59,18 +67,18 @@ describe('migration runner integration', () => {
       const secondSummary = migrate(connection)
 
       expect(secondSummary).toEqual({
-        previousVersion: 6,
-        currentVersion: 6,
+        previousVersion: 7,
+        currentVersion: 7,
         appliedVersions: []
       })
-      expect(readLedgerRows(connection)).toHaveLength(6)
+      expect(readLedgerRows(connection)).toHaveLength(7)
       expect(logger.info.mock.calls.flat()).toContain(
-        'Database migrations current; schemaVersion=6'
+        'Database migrations current; schemaVersion=7'
       )
     })
   })
 
-  it('upgrades an existing schema version 3 database to schema version 6', async () => {
+  it('upgrades an existing schema version 3 database to schema version 7', async () => {
     await withDatabase((connection) => {
       runDatabaseMigrations({
         connection,
@@ -92,11 +100,100 @@ describe('migration runner integration', () => {
 
       expect(summary).toEqual({
         previousVersion: 3,
-        currentVersion: 6,
-        appliedVersions: [4, 5, 6]
+        currentVersion: 7,
+        appliedVersions: [4, 5, 6, 7]
       })
+      expect(readUserVersion(connection)).toBe(7)
+      expect(readLedgerRows(connection).map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7])
+    })
+  })
+
+  it('upgrades an existing schema version 6 database by adding the missing baseline protocol', async () => {
+    await withDatabase((connection) => {
+      runDatabaseMigrations({
+        connection,
+        migrations: databaseMigrations.slice(0, 6),
+        applicationVersion: '1.0.0',
+        logger: createLogger(),
+        clock: fixedClock,
+        expectedHighestVersion: 6
+      })
+
       expect(readUserVersion(connection)).toBe(6)
-      expect(readLedgerRows(connection).map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6])
+      expect(readBaselineProtocolRows(connection)).toEqual([])
+
+      const summary = createProductionDatabaseMigrationRunner({
+        applicationVersion: '1.0.0',
+        logger: createLogger(),
+        clock: fixedClock
+      })(connection)
+
+      expect(summary).toEqual({
+        previousVersion: 6,
+        currentVersion: 7,
+        appliedVersions: [7]
+      })
+      expect(readUserVersion(connection)).toBe(7)
+      expect(readBaselineProtocolRows(connection)).toEqual([
+        {
+          id: '00000000-0000-4000-8000-000000000007',
+          protocol_key: 'health-screening-baseline',
+          version_label: '1',
+          status: 'ACTIVE'
+        }
+      ])
+    })
+  })
+
+  it('does not alter existing protocol rows when applying the baseline protocol migration', async () => {
+    await withDatabase((connection) => {
+      runDatabaseMigrations({
+        connection,
+        migrations: databaseMigrations.slice(0, 6),
+        applicationVersion: '1.0.0',
+        logger: createLogger(),
+        clock: fixedClock,
+        expectedHighestVersion: 6
+      })
+      connection
+        .prepare(
+          `INSERT INTO protocol_versions (
+            id,
+            protocol_key,
+            version_label,
+            status,
+            effective_at,
+            configuration_json,
+            checksum,
+            imported_by,
+            imported_at,
+            activated_by,
+            activated_at,
+            created_at
+          ) VALUES (?, ?, ?, 'INACTIVE', NULL, '{}', ?, NULL, ?, NULL, NULL, ?)`
+        )
+        .run(
+          '10000000-0000-4000-8000-000000000007',
+          'existing-protocol',
+          'legacy',
+          'checksum',
+          fixedClock.now(),
+          fixedClock.now()
+        )
+      const protocolRowsBefore = readProtocolRows(connection)
+
+      const summary = createProductionDatabaseMigrationRunner({
+        applicationVersion: '1.0.0',
+        logger: createLogger(),
+        clock: fixedClock
+      })(connection)
+
+      expect(summary).toEqual({
+        previousVersion: 6,
+        currentVersion: 7,
+        appliedVersions: [7]
+      })
+      expect(readProtocolRows(connection)).toEqual(protocolRowsBefore)
     })
   })
 
@@ -120,8 +217,8 @@ describe('migration runner integration', () => {
       const secondSummary = secondRunner(connection)
 
       expect(secondSummary).toEqual({
-        previousVersion: 6,
-        currentVersion: 6,
+        previousVersion: 7,
+        currentVersion: 7,
         appliedVersions: []
       })
       expect(readLedgerRows(connection)).toEqual(originalLedger)
@@ -418,7 +515,7 @@ describe('migration runner integration', () => {
       connection.exec('DROP TABLE app_settings')
 
       expect(() => migrate(connection)).toThrow(MigrationCompatibilityError)
-      expect(readUserVersion(connection)).toBe(6)
+      expect(readUserVersion(connection)).toBe(7)
       expect(readLedgerRows(connection)).toEqual(originalLedger)
     })
   })
@@ -436,14 +533,14 @@ describe('migration runner integration', () => {
       connection.exec('DROP INDEX ix_locations_name_normalized')
 
       expect(() => migrate(connection)).toThrow(MigrationCompatibilityError)
-      expect(readUserVersion(connection)).toBe(6)
+      expect(readUserVersion(connection)).toBe(7)
       expect(readLedgerRows(connection)).toEqual(originalLedger)
     })
   })
 
   it('refuses newer and inconsistent migration metadata without repair', async () => {
     await withDatabase((connection) => {
-      connection.exec('PRAGMA user_version = 6')
+      connection.exec('PRAGMA user_version = 7')
 
       expect(() =>
         runDatabaseMigrations({
@@ -455,7 +552,7 @@ describe('migration runner integration', () => {
         })
       ).toThrow(MigrationCompatibilityError)
 
-      expect(readUserVersion(connection)).toBe(6)
+      expect(readUserVersion(connection)).toBe(7)
       expect(hasTable(connection, 'schema_migrations')).toBe(false)
     })
 
@@ -498,7 +595,7 @@ describe('migration runner integration', () => {
             application_version
           ) VALUES (?, ?, ?, ?, ?)`
         )
-        .run(7, 'extra', 'a'.repeat(64), fixedClock.now(), '1.0.0')
+        .run(8, 'extra', 'a'.repeat(64), fixedClock.now(), '1.0.0')
 
       expectProductionMigrationCompatibilityFailure(connection)
     })
@@ -535,7 +632,7 @@ function expectProductionMigrationCompatibilityFailure(connection: Database.Data
       applicationVersion: '1.0.0',
       logger: createLogger(),
       clock: fixedClock,
-      expectedHighestVersion: 6
+      expectedHighestVersion: 7
     })
   ).toThrow(MigrationCompatibilityError)
 }
@@ -563,6 +660,47 @@ function readLedgerRows(connection: Database.Database): Array<{
     checksum: string
     applied_at: string
     application_version: string
+  }>
+}
+
+function readBaselineProtocolRows(connection: Database.Database): Array<{
+  id: string
+  protocol_key: string
+  version_label: string
+  status: string
+}> {
+  return connection
+    .prepare(
+      `SELECT id, protocol_key, version_label, status
+       FROM protocol_versions
+       WHERE protocol_key = 'health-screening-baseline'
+       ORDER BY id`
+    )
+    .all() as Array<{
+    id: string
+    protocol_key: string
+    version_label: string
+    status: string
+  }>
+}
+
+function readProtocolRows(connection: Database.Database): Array<{
+  id: string
+  protocol_key: string
+  version_label: string
+  status: string
+}> {
+  return connection
+    .prepare(
+      `SELECT id, protocol_key, version_label, status
+       FROM protocol_versions
+       ORDER BY id`
+    )
+    .all() as Array<{
+    id: string
+    protocol_key: string
+    version_label: string
+    status: string
   }>
 }
 
