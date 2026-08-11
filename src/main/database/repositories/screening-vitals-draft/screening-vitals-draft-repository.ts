@@ -141,9 +141,35 @@ SET
 WHERE id = ?
   AND row_version = ?;
 `
-const deleteReadingsSql = `
+const selectReadingOwnerSql = `
+SELECT vitals_draft_id
+FROM screening_vitals_draft_readings
+WHERE id = ?;
+`
+const deleteReadingSql = `
 DELETE FROM screening_vitals_draft_readings
-WHERE vitals_draft_id = ?;
+WHERE id = ?
+  AND vitals_draft_id = ?;
+`
+const moveReadingSequenceSql = `
+UPDATE screening_vitals_draft_readings
+SET sequence_number = ?
+WHERE id = ?
+  AND vitals_draft_id = ?;
+`
+const updateReadingSql = `
+UPDATE screening_vitals_draft_readings
+SET
+  sequence_number = ?,
+  systolic = ?,
+  diastolic = ?,
+  pulse = ?,
+  measurement_site = ?,
+  patient_position = ?,
+  measurement_time = ?,
+  updated_at = ?
+WHERE id = ?
+  AND vitals_draft_id = ?;
 `
 const insertReadingSql = `
 INSERT INTO screening_vitals_draft_readings (
@@ -294,8 +320,7 @@ export function createScreeningVitalsDraftRepository(
           return Object.freeze({ status: 'VERSION_CONFLICT' as const, draft: current })
         }
 
-        scopedConnection.prepare<[string]>(deleteReadingsSql).run(parsed.id)
-        insertReadings(scopedConnection, parsed.id, parsed.readings, parsed.updatedAt)
+        reconcileReadings(scopedConnection, parsed.id, parsed.readings, parsed.updatedAt)
 
         return Object.freeze({
           status: 'UPDATED' as const,
@@ -322,8 +347,106 @@ function insertReadings(
   readings: readonly ParsedScreeningVitalsDraftReadingInput[],
   occurredAt: string
 ): void {
-  const statement =
-    connection.prepare<
+  for (const reading of readings) {
+    insertReading(connection, draftId, reading, reading.sequenceNumber, occurredAt)
+  }
+}
+
+function reconcileReadings(
+  connection: DatabaseTransactionConnection,
+  draftId: string,
+  readings: readonly ParsedScreeningVitalsDraftReadingInput[],
+  occurredAt: string
+): void {
+  const currentDraft = readDraftAggregate(connection, selectDraftByIdSql, [draftId])
+
+  if (currentDraft === null) {
+    throw new RepositoryDataIntegrityError()
+  }
+
+  const existingById = new Map<string, (typeof currentDraft.readings)[number]>(
+    currentDraft.readings.map((reading) => [reading.id, reading])
+  )
+
+  for (const reading of readings) {
+    if (existingById.has(reading.id)) {
+      continue
+    }
+
+    const ownerRow = connection.prepare(selectReadingOwnerSql).get(reading.id)
+
+    if (ownerRow !== undefined) {
+      throw new RepositoryValidationError()
+    }
+  }
+
+  const firstReading = currentDraft.readings.find((reading) => reading.sequenceNumber === 1)
+
+  if (firstReading !== undefined && !readings.some((reading) => reading.id === firstReading.id)) {
+    throw new RepositoryValidationError()
+  }
+
+  const submittedIds = new Set<string>(readings.map((reading) => reading.id))
+
+  for (const reading of currentDraft.readings) {
+    if (!submittedIds.has(reading.id)) {
+      const deleteResult = connection
+        .prepare<[string, string]>(deleteReadingSql)
+        .run(reading.id, draftId)
+
+      if (deleteResult.changes !== 1) {
+        throw new RepositoryDataIntegrityError()
+      }
+    }
+  }
+
+  const temporarySequenceStart = 1_000_000
+  const retainedReadings = currentDraft.readings.filter((reading) => submittedIds.has(reading.id))
+
+  retainedReadings.forEach((reading, index) => {
+    moveReadingSequence(connection, draftId, reading.id, temporarySequenceStart + index + 1)
+  })
+
+  let nextTemporarySequence = temporarySequenceStart + retainedReadings.length + 1
+
+  for (const reading of readings) {
+    if (existingById.has(reading.id)) {
+      continue
+    }
+
+    insertReading(connection, draftId, reading, nextTemporarySequence, occurredAt)
+    nextTemporarySequence += 1
+  }
+
+  for (const reading of readings) {
+    updateReading(connection, draftId, reading, reading.sequenceNumber, occurredAt)
+  }
+}
+
+function moveReadingSequence(
+  connection: DatabaseTransactionConnection,
+  draftId: string,
+  readingId: string,
+  sequenceNumber: number
+): void {
+  const result = connection
+    .prepare<[number, string, string]>(moveReadingSequenceSql)
+    .run(sequenceNumber, readingId, draftId)
+
+  if (result.changes !== 1) {
+    throw new RepositoryDataIntegrityError()
+  }
+}
+
+function insertReading(
+  connection: DatabaseTransactionConnection,
+  draftId: string,
+  reading: ParsedScreeningVitalsDraftReadingInput,
+  sequenceNumber: number,
+  occurredAt: string
+): void {
+  connection
+    .prepare<
       [
         string,
         string,
@@ -338,12 +461,10 @@ function insertReadings(
         string
       ]
     >(insertReadingSql)
-
-  for (const reading of readings) {
-    statement.run(
+    .run(
       reading.id,
       draftId,
-      reading.sequenceNumber,
+      sequenceNumber,
       reading.systolic,
       reading.diastolic,
       reading.pulse,
@@ -353,6 +474,45 @@ function insertReadings(
       occurredAt,
       occurredAt
     )
+}
+
+function updateReading(
+  connection: DatabaseTransactionConnection,
+  draftId: string,
+  reading: ParsedScreeningVitalsDraftReadingInput,
+  sequenceNumber: number,
+  occurredAt: string
+): void {
+  const result = connection
+    .prepare<
+      [
+        number,
+        number | null,
+        number | null,
+        number | null,
+        string | null,
+        string | null,
+        string | null,
+        string,
+        string,
+        string
+      ]
+    >(updateReadingSql)
+    .run(
+      sequenceNumber,
+      reading.systolic,
+      reading.diastolic,
+      reading.pulse,
+      reading.measurementSite,
+      reading.patientPosition,
+      reading.measurementTime,
+      occurredAt,
+      reading.id,
+      draftId
+    )
+
+  if (result.changes !== 1) {
+    throw new RepositoryDataIntegrityError()
   }
 }
 

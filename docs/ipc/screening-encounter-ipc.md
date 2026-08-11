@@ -117,10 +117,12 @@ failures or malformed responses to sanitized `UNAVAILABLE` results.
 
 The main-process handlers validate the trusted sender before request parsing,
 then call the Vitals draft application service. The service resolves
-authentication and screening authorization, P0 configured location, current
-daily session, encounter ownership, timestamps, audit actor, and transaction
-ownership in the main process. The renderer cannot provide any of those
-authorities.
+authentication and screening authorization, P0 configured location, persisted
+encounter ownership and lifecycle, timestamps, audit actor, and transaction
+ownership in the main process. Existing Vitals recovery does not require the
+persisted session date to equal the current daily date; new encounter creation
+remains behind the P1 current-daily-session boundary. The renderer cannot
+provide any of those authorities.
 
 Successful `saveDraft` returns `SAVED` with the sanitized draft and does not
 advance the workflow. Successful `completeStep` returns `COMPLETED` with the

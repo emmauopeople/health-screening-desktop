@@ -45,6 +45,9 @@ const secondPatientId = '93000000-0000-4000-8000-000000000007'
 const sessionId = '93000000-0000-4000-8000-000000000008'
 const encounterId = '93000000-0000-4000-8000-000000000009'
 const secondEncounterId = '93000000-0000-4000-8000-000000000010'
+const later = '2026-08-06T13:00:00.000Z'
+const newReadingAt = '2026-08-06T14:00:00.000Z'
+const nextDeploymentDate = '2026-08-07T12:00:00.000Z'
 
 describe('screening vitals draft service integration', () => {
   it('loads no draft for a current editable encounter without creating an empty record', async () => {
@@ -60,6 +63,74 @@ describe('screening vitals draft service integration', () => {
       expect(readTableCount(connection, 'audit_log')).toBe(0)
       expect(readTableCount(connection, 'sync_outbox')).toBe(0)
     })
+  })
+
+  it('restores an editable earlier-session draft without changing historical attribution', async () => {
+    await withVitalsService(
+      ({ connection, service }) => {
+        seedCoreGraph(connection)
+
+        const saved = service.saveVitalsDraft(
+          createVitalsRequest({
+            readings: [completeReading(1)],
+            notes: 'Earlier-session draft'
+          })
+        )
+
+        if (saved.status !== 'SAVED') {
+          throw new Error('Expected the earlier-session draft to save.')
+        }
+
+        const sessionsBeforeRecovery = readSessionRows(connection)
+        const encountersBeforeRecovery = readEncounterRows(connection)
+        const installationBeforeRecovery = readInstallationRows(connection)
+        const configurationBeforeRecovery = readLocationConfigurationRows(connection)
+        const recovered = service.getVitalsDraft({ encounterId: parseEntityId(encounterId) })
+
+        expect(recovered).toMatchObject({
+          status: 'LOADED',
+          draft: {
+            id: saved.draft.id,
+            encounterId,
+            rowVersion: saved.draft.rowVersion,
+            notes: 'Earlier-session draft',
+            readings: [
+              expect.objectContaining({
+                id: saved.draft.readings[0]!.id,
+                sequenceNumber: 1
+              })
+            ]
+          }
+        })
+        expect(readSessionRows(connection)).toEqual(sessionsBeforeRecovery)
+        expect(readEncounterRows(connection)).toEqual(encountersBeforeRecovery)
+        expect(readInstallationRows(connection)).toEqual(installationBeforeRecovery)
+        expect(readLocationConfigurationRows(connection)).toEqual(configurationBeforeRecovery)
+        expect(readTableCount(connection, 'screening_sessions')).toBe(1)
+        expect(readTableCount(connection, 'screening_encounters')).toBe(1)
+        expect(readDraftRows(connection)).toEqual([
+          expect.objectContaining({
+            encounter_id: encounterId
+          })
+        ])
+      },
+      { timestamps: [now, nextDeploymentDate] }
+    )
+  })
+
+  it('blocks non-editable encounter lifecycle states during draft recovery', async () => {
+    for (const status of ['COMPLETED', 'AMENDED', 'VOID'] as const) {
+      await withVitalsService(({ connection, service }) => {
+        seedCoreGraph(connection)
+        connection
+          .prepare('UPDATE screening_encounters SET status = ? WHERE id = ?')
+          .run(status, encounterId)
+
+        expect(service.getVitalsDraft({ encounterId: parseEntityId(encounterId) })).toEqual({
+          status: 'ENCOUNTER_NOT_EDITABLE'
+        })
+      })
+    }
   })
 
   it('saves incomplete local drafts transactionally with trusted actor, audit, and outbox', async () => {
@@ -143,92 +214,223 @@ describe('screening vitals draft service integration', () => {
     })
   })
 
-  it('updates the same encounter draft, clears optional values, and persists removed readings', async () => {
-    await withVitalsService(({ connection, service }) => {
-      seedCoreGraph(connection)
+  it('updates the same encounter draft, preserves reading creation times, and persists removals', async () => {
+    await withVitalsService(
+      ({ connection, service }) => {
+        seedCoreGraph(connection)
 
-      const first = service.saveVitalsDraft(
-        createVitalsRequest({
-          readings: [completeReading(1), completeReading(2)],
-          weightKg: 80.5,
-          waistCm: 91,
-          notes: 'Initial note'
-        })
-      )
+        const first = service.saveVitalsDraft(
+          createVitalsRequest({
+            readings: [completeReading(1), completeReading(2)],
+            weightKg: 80.5,
+            waistCm: 91,
+            notes: 'Initial note'
+          })
+        )
 
-      if (first.status !== 'SAVED') {
-        throw new Error('Expected first save to succeed.')
-      }
+        if (first.status !== 'SAVED') {
+          throw new Error('Expected first save to succeed.')
+        }
 
-      const firstReadingId = first.draft.readings[0]!.id
-      const secondReadingId = first.draft.readings[1]!.id
-      const second = service.saveVitalsDraft(
-        createVitalsRequest({
-          expectedVersion: first.draft.rowVersion,
-          readings: [{ ...completeReading(1), id: firstReadingId, systolic: 142 }],
-          weightKg: null,
-          waistCm: null,
-          notes: null
-        })
-      )
+        const firstReadingId = first.draft.readings[0]!.id
+        const secondReadingId = first.draft.readings[1]!.id
+        const firstReadingCreatedAt = readReadingRows(connection).find(
+          (reading) => reading.id === firstReadingId
+        )?.created_at
 
-      expect(second).toMatchObject({
-        status: 'SAVED',
-        draft: {
-          id: first.draft.id,
-          rowVersion: 2,
-          weightKg: null,
-          waistCm: null,
-          notes: null,
-          readings: [
-            expect.objectContaining({
-              id: firstReadingId,
-              sequenceNumber: 1,
-              systolic: 142
+        expect(
+          service.saveVitalsDraft(
+            createVitalsRequest({
+              expectedVersion: first.draft.rowVersion,
+              readings: [{ ...completeReading(1), id: null }]
             })
-          ]
-        }
-      })
-      expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(1)
-      expect(readReadingRows(connection)).toEqual([
-        expect.objectContaining({
-          id: firstReadingId,
-          sequence_number: 1,
-          systolic: 142
-        })
-      ])
-      expect(JSON.stringify(readReadingRows(connection))).not.toContain(secondReadingId)
-      expect(readAuditRows(connection).map((row) => row.action)).toEqual([
-        'SCREENING_VITALS_DRAFT_SAVED',
-        'SCREENING_VITALS_DRAFT_SAVED'
-      ])
+          )
+        ).toEqual({ status: 'VALIDATION_FAILED' })
 
-      const identical = service.saveVitalsDraft(
-        createVitalsRequest({
-          expectedVersion: 2,
-          readings: [{ ...completeReading(1), id: firstReadingId, systolic: 142 }],
-          weightKg: null,
-          waistCm: null,
-          notes: null
-        })
-      )
+        const second = service.saveVitalsDraft(
+          createVitalsRequest({
+            expectedVersion: first.draft.rowVersion,
+            readings: [{ ...completeReading(1), id: firstReadingId, systolic: 142 }],
+            weightKg: null,
+            waistCm: null,
+            notes: null
+          })
+        )
 
-      expect(identical).toMatchObject({
-        status: 'SAVED',
-        draft: {
-          id: first.draft.id,
-          rowVersion: 2
+        expect(second).toMatchObject({
+          status: 'SAVED',
+          draft: {
+            id: first.draft.id,
+            rowVersion: 2,
+            weightKg: null,
+            waistCm: null,
+            notes: null,
+            readings: [
+              expect.objectContaining({
+                id: firstReadingId,
+                sequenceNumber: 1,
+                systolic: 142
+              })
+            ]
+          }
+        })
+        expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(1)
+        expect(readReadingRows(connection)).toEqual([
+          expect.objectContaining({
+            id: firstReadingId,
+            sequence_number: 1,
+            systolic: 142,
+            created_at: firstReadingCreatedAt,
+            updated_at: later
+          })
+        ])
+        expect(JSON.stringify(readReadingRows(connection))).not.toContain(secondReadingId)
+        expect(readAuditRows(connection).map((row) => row.action)).toEqual([
+          'SCREENING_VITALS_DRAFT_SAVED',
+          'SCREENING_VITALS_DRAFT_SAVED'
+        ])
+
+        const identical = service.saveVitalsDraft(
+          createVitalsRequest({
+            expectedVersion: 2,
+            readings: [{ ...completeReading(1), id: firstReadingId, systolic: 142 }],
+            weightKg: null,
+            waistCm: null,
+            notes: null
+          })
+        )
+
+        expect(identical).toMatchObject({
+          status: 'SAVED',
+          draft: {
+            id: first.draft.id,
+            rowVersion: 2
+          }
+        })
+        expect(readAuditRows(connection).map((row) => row.action)).toEqual([
+          'SCREENING_VITALS_DRAFT_SAVED',
+          'SCREENING_VITALS_DRAFT_SAVED'
+        ])
+        expect(readOutboxRows(connection).map((row) => row.operation)).toEqual([
+          'SCREENING_VITALS_DRAFT_SAVED',
+          'SCREENING_VITALS_DRAFT_SAVED'
+        ])
+      },
+      { timestamps: [now, now, later] }
+    )
+  })
+
+  it('reorders stable readings, adds new timestamps, and removes later readings transactionally', async () => {
+    await withVitalsService(
+      ({ connection, service }) => {
+        seedCoreGraph(connection)
+
+        const first = service.saveVitalsDraft(
+          createVitalsRequest({ readings: [completeReading(1), completeReading(2)] })
+        )
+
+        if (first.status !== 'SAVED') {
+          throw new Error('Expected the initial readings to save.')
         }
-      })
-      expect(readAuditRows(connection).map((row) => row.action)).toEqual([
-        'SCREENING_VITALS_DRAFT_SAVED',
-        'SCREENING_VITALS_DRAFT_SAVED'
-      ])
-      expect(readOutboxRows(connection).map((row) => row.operation)).toEqual([
-        'SCREENING_VITALS_DRAFT_SAVED',
-        'SCREENING_VITALS_DRAFT_SAVED'
-      ])
-    })
+
+        const firstReading = first.draft.readings[0]!
+        const secondReading = first.draft.readings[1]!
+        const firstReadingCreatedAt = readReadingRows(connection).find(
+          (reading) => reading.id === firstReading.id
+        )?.created_at
+        const secondReadingCreatedAt = readReadingRows(connection).find(
+          (reading) => reading.id === secondReading.id
+        )?.created_at
+        const reordered = service.saveVitalsDraft(
+          createVitalsRequest({
+            expectedVersion: first.draft.rowVersion,
+            readings: [
+              { ...completeReading(1), id: secondReading.id, sequenceNumber: 1 },
+              { ...completeReading(2), id: firstReading.id, sequenceNumber: 2 }
+            ]
+          })
+        )
+
+        if (reordered.status !== 'SAVED') {
+          throw new Error('Expected the reordered readings to save.')
+        }
+
+        expect(reordered.draft.readings.map((reading) => reading.id)).toEqual([
+          secondReading.id,
+          firstReading.id
+        ])
+        expect(readReadingRows(connection)).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ id: secondReading.id, created_at: secondReadingCreatedAt }),
+            expect.objectContaining({ id: firstReading.id, created_at: firstReadingCreatedAt })
+          ])
+        )
+
+        const added = service.saveVitalsDraft(
+          createVitalsRequest({
+            expectedVersion: reordered.draft.rowVersion,
+            readings: [
+              { ...completeReading(1), id: secondReading.id, sequenceNumber: 1 },
+              { ...completeReading(2), id: firstReading.id, sequenceNumber: 2 },
+              completeReading(3)
+            ]
+          })
+        )
+
+        if (added.status !== 'SAVED') {
+          throw new Error('Expected the new reading to save.')
+        }
+
+        const newReading = added.draft.readings[2]!
+        const newReadingRow = readReadingRows(connection).find(
+          (reading) => reading.id === newReading.id
+        )
+        expect(newReading.id).not.toBe(firstReading.id)
+        expect(newReading.id).not.toBe(secondReading.id)
+        expect(newReadingRow).toEqual(
+          expect.objectContaining({ created_at: newReadingAt, updated_at: newReadingAt })
+        )
+        expect(readReadingRows(connection)).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ id: secondReading.id, created_at: secondReadingCreatedAt }),
+            expect.objectContaining({ id: firstReading.id, created_at: firstReadingCreatedAt })
+          ])
+        )
+
+        const removed = service.saveVitalsDraft(
+          createVitalsRequest({
+            expectedVersion: added.draft.rowVersion,
+            readings: [
+              { ...completeReading(1), id: secondReading.id, sequenceNumber: 1 },
+              { ...completeReading(2), id: newReading.id, sequenceNumber: 2 }
+            ]
+          })
+        )
+
+        expect(removed).toMatchObject({
+          status: 'SAVED',
+          draft: {
+            readings: [
+              { id: secondReading.id, sequenceNumber: 1 },
+              { id: newReading.id, sequenceNumber: 2 }
+            ]
+          }
+        })
+        expect(readReadingRows(connection)).toEqual([
+          expect.objectContaining({
+            id: secondReading.id,
+            sequence_number: 1,
+            created_at: secondReadingCreatedAt
+          }),
+          expect.objectContaining({
+            id: newReading.id,
+            sequence_number: 2,
+            created_at: newReadingAt
+          })
+        ])
+      },
+      { timestamps: [now, later, newReadingAt, nextDeploymentDate] }
+    )
   })
 
   it('requires one complete reading to complete Vitals but keeps optional fields optional', async () => {
@@ -320,6 +522,14 @@ describe('screening vitals draft service integration', () => {
       })
       expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(0)
 
+      expect(
+        service.saveVitalsDraft(
+          createVitalsRequest({
+            readings: [{ ...completeReading(1), createdAt: now }]
+          } as never)
+        )
+      ).toEqual({ status: 'VALIDATION_FAILED' })
+
       const saved = service.saveVitalsDraft(createVitalsRequest({ readings: [completeReading(1)] }))
 
       if (saved.status !== 'SAVED') {
@@ -327,7 +537,23 @@ describe('screening vitals draft service integration', () => {
       }
 
       expect(
-        service.saveVitalsDraft(createVitalsRequest({ readings: [completeReading(1)] }))
+        service.saveVitalsDraft(
+          createVitalsRequest({
+            expectedVersion: saved.draft.rowVersion,
+            readings: [
+              { ...completeReading(1), id: saved.draft.readings[0]!.id, sequenceNumber: 1 },
+              { ...completeReading(2), id: saved.draft.readings[0]!.id, sequenceNumber: 2 }
+            ]
+          })
+        )
+      ).toEqual({ status: 'VALIDATION_FAILED' })
+
+      expect(
+        service.saveVitalsDraft(
+          createVitalsRequest({
+            readings: [{ ...completeReading(1), id: saved.draft.readings[0]!.id, systolic: 122 }]
+          })
+        )
       ).toEqual({
         status: 'VERSION_CONFLICT'
       })
@@ -375,6 +601,41 @@ describe('screening vitals draft service integration', () => {
       { failOutboxInsert: true }
     )
   })
+
+  it('rolls back parent and reading reconciliation when the outbox write fails', async () => {
+    await withVitalsService(
+      ({ connection, service }) => {
+        seedCoreGraph(connection)
+
+        const first = service.saveVitalsDraft(
+          createVitalsRequest({ readings: [completeReading(1), completeReading(2)] })
+        )
+
+        if (first.status !== 'SAVED') {
+          throw new Error('Expected the first draft save to succeed.')
+        }
+
+        const draftBeforeFailure = readDraftRows(connection)
+        const readingsBeforeFailure = readReadingRows(connection)
+        const failed = service.saveVitalsDraft(
+          createVitalsRequest({
+            expectedVersion: first.draft.rowVersion,
+            readings: [{ ...completeReading(1), id: first.draft.readings[0]!.id, systolic: 155 }]
+          })
+        )
+
+        expect(failed).toEqual({ status: 'UNAVAILABLE' })
+        expect(readDraftRows(connection)).toEqual(draftBeforeFailure)
+        expect(readReadingRows(connection)).toEqual(readingsBeforeFailure)
+        expect(readAuditRows(connection)).toHaveLength(1)
+        expect(readOutboxRows(connection)).toHaveLength(1)
+      },
+      {
+        failOutboxOnInsertNumber: 2,
+        timestamps: [now, later]
+      }
+    )
+  })
 })
 
 interface Harness {
@@ -391,6 +652,8 @@ async function withVitalsService(
     readonly sessionRole?: LocalUserRole
     readonly sessionFailure?: unknown
     readonly failOutboxInsert?: boolean
+    readonly failOutboxOnInsertNumber?: number
+    readonly timestamps?: readonly string[]
   } = {}
 ): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), 'hsd030a-vitals-service-'))
@@ -398,6 +661,8 @@ async function withVitalsService(
   const connection = new Database(databasePath)
 
   try {
+    const timestamps = [...(options.timestamps ?? [])]
+
     createProductionDatabaseMigrationRunner({
       applicationVersion: '1.0.0',
       logger: createLogger(),
@@ -412,7 +677,7 @@ async function withVitalsService(
     const transactionExecutor = createDatabaseTransactionExecutor({
       connection,
       idGenerator: createEntityIdGenerator(createQueuedIdGenerator()),
-      clock: createUtcClock(() => now),
+      clock: createUtcClock(() => (timestamps.shift() ?? now) as UtcTimestamp),
       logger: createLogger()
     })
     const installationRepository = createInstallationRepository(connection)
@@ -420,7 +685,11 @@ async function withVitalsService(
     const screeningSessionRepository = createScreeningSessionRepository(connection)
     const screeningEncounterRepository = createScreeningEncounterRepository(connection)
     const auditEventRepository = createAuditEventRepository(connection)
-    const outboxRepository = createOutboxRepository(connection, options.failOutboxInsert === true)
+    const outboxRepository = createOutboxRepository(
+      connection,
+      options.failOutboxInsert === true,
+      options.failOutboxOnInsertNumber
+    )
     const installationLocationService = createInstallationLocationService({
       authenticationSessionService,
       installationRepository,
@@ -456,18 +725,27 @@ async function withVitalsService(
 
 function createOutboxRepository(
   connection: Database.Database,
-  failInsert: boolean
+  failInsert: boolean,
+  failOnInsertNumber?: number
 ): ScreeningEncounterOutboxRepository {
   const repository = createScreeningEncounterOutboxRepository(connection)
 
-  if (!failInsert) {
+  if (!failInsert && failOnInsertNumber === undefined) {
     return repository
   }
 
+  let insertCount = 0
+
   return {
     ...repository,
-    insert: vi.fn(() => {
-      throw new RepositoryWriteError()
+    insert: vi.fn((...args: Parameters<ScreeningEncounterOutboxRepository['insert']>) => {
+      insertCount += 1
+
+      if (failInsert || insertCount === failOnInsertNumber) {
+        throw new RepositoryWriteError()
+      }
+
+      return repository.insert(...args)
     })
   } as unknown as ScreeningEncounterOutboxRepository
 }
@@ -746,6 +1024,44 @@ function readTableCount(connection: Database.Database, tableName: string): numbe
   }
 
   return row.total
+}
+
+function readSessionRows(connection: Database.Database): Array<Record<string, unknown>> {
+  return connection
+    .prepare(
+      `SELECT id, location_id, session_date, status, row_version, closed_at
+       FROM screening_sessions
+       ORDER BY id`
+    )
+    .all() as Array<Record<string, unknown>>
+}
+
+function readInstallationRows(connection: Database.Database): Array<Record<string, unknown>> {
+  return connection
+    .prepare('SELECT singleton_id, id, timezone FROM installation ORDER BY singleton_id')
+    .all() as Array<Record<string, unknown>>
+}
+
+function readLocationConfigurationRows(
+  connection: Database.Database
+): Array<Record<string, unknown>> {
+  return connection
+    .prepare(
+      `SELECT singleton_id, installation_id, location_id, row_version
+       FROM installation_location_configuration
+       ORDER BY singleton_id`
+    )
+    .all() as Array<Record<string, unknown>>
+}
+
+function readEncounterRows(connection: Database.Database): Array<Record<string, unknown>> {
+  return connection
+    .prepare(
+      `SELECT id, patient_id, screening_session_id, location_id, status, record_version
+       FROM screening_encounters
+       ORDER BY id`
+    )
+    .all() as Array<Record<string, unknown>>
 }
 
 function readDraftRows(connection: Database.Database): Array<Record<string, unknown>> {

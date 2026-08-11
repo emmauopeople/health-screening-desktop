@@ -4,7 +4,6 @@ import {
   parseAuditActionCode,
   parseAuditEntityType,
   parseNullableScreeningEncounterText,
-  parseScreeningSessionDate,
   parseScreeningVitalsDraftRowVersion,
   parseVitalsMeasurementSite,
   parseVitalsMeasurementTime,
@@ -18,7 +17,7 @@ import {
   type ScreeningVitalsDraftRecord
 } from '@main/database'
 import { parseEntityId, type EntityId } from '@main/foundation/entity-id'
-import { parseUtcTimestamp, type UtcTimestamp } from '@main/foundation/utc-clock'
+import type { UtcTimestamp } from '@main/foundation/utc-clock'
 
 import {
   LocalSessionAuthorizationError,
@@ -142,11 +141,9 @@ export function createScreeningVitalsDraftService({
 
       try {
         return transactionExecutor.run((context) => {
-          const occurredAt = context.nowUtc()
           const encounterContext = validateEncounterContext({
             command: commandResult.command,
             configuredLocationId: locationResult.location.id,
-            occurredAt,
             dependencies: {
               installationRepository,
               locationRepository,
@@ -273,7 +270,6 @@ function saveOrCompleteVitalsDraft({
       const encounterContext = validateEncounterContext({
         command: commandResult.command,
         configuredLocationId: locationResult.location.id,
-        occurredAt,
         dependencies: {
           installationRepository,
           locationRepository,
@@ -423,13 +419,11 @@ function updateExistingDraft({
 function validateEncounterContext({
   command,
   configuredLocationId,
-  occurredAt,
   dependencies,
   connection
 }: {
   readonly command: ParsedGetCommand
   readonly configuredLocationId: EntityId
-  readonly occurredAt: UtcTimestamp
   readonly dependencies: Pick<
     ScreeningVitalsDraftServiceDependencies,
     | 'installationRepository'
@@ -444,7 +438,6 @@ function validateEncounterContext({
   | { readonly status: 'VALID'; readonly context: ValidatedEncounterContext }
   | { readonly status: 'INVALID'; readonly statusCode: VitalsDraftControlledStatus } {
   const installation = readInitializedInstallation(dependencies.installationRepository)
-  const deploymentLocalDate = getDeploymentLocalDate(occurredAt, installation)
   const encounter = dependencies.screeningEncounterRepository.getByIdForWrite(
     connection,
     command.encounterId
@@ -482,7 +475,6 @@ function validateEncounterContext({
   }
 
   if (
-    session.sessionDate !== deploymentLocalDate ||
     session.locationId !== configuredLocationId ||
     encounter.locationId !== configuredLocationId ||
     encounter.screeningSessionId !== session.id
@@ -667,6 +659,12 @@ function validateReadingOwnership(
 
   const existingIds = new Set(existing.readings.map((reading) => reading.id))
 
+  const firstReading = existing.readings.find((reading) => reading.sequenceNumber === 1)
+
+  if (firstReading !== undefined && !readings.some((reading) => reading.id === firstReading.id)) {
+    return 'VALIDATION_FAILED'
+  }
+
   return readings.some((reading) => reading.id !== null && !existingIds.has(reading.id))
     ? 'VALIDATION_FAILED'
     : 'VALID'
@@ -762,42 +760,6 @@ function readInitializedInstallation(
   }
 
   return installation
-}
-
-function getDeploymentLocalDate(
-  utcTimestamp: UtcTimestamp,
-  installation: InstallationRecord
-): ReturnType<typeof parseScreeningSessionDate> {
-  try {
-    const parsedTimestamp = parseUtcTimestamp(utcTimestamp)
-    const instant = new Date(parsedTimestamp)
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: installation.timeZone,
-      calendar: 'gregory',
-      numberingSystem: 'latn',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    })
-    const parts = formatter.formatToParts(instant)
-    const year = readDatePart(parts, 'year')
-    const month = readDatePart(parts, 'month')
-    const day = readDatePart(parts, 'day')
-
-    return parseScreeningSessionDate(`${year}-${month}-${day}`)
-  } catch {
-    throw new RepositoryDataIntegrityError()
-  }
-}
-
-function readDatePart(parts: readonly Intl.DateTimeFormatPart[], type: string): string {
-  const part = parts.find((candidate) => candidate.type === type)
-
-  if (part === undefined || !/^\d{2,4}$/u.test(part.value)) {
-    throw new RepositoryDataIntegrityError()
-  }
-
-  return part.value
 }
 
 function insertAuditEvent({

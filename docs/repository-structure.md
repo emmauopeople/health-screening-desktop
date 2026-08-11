@@ -101,8 +101,9 @@ final concurrency safeguard. It does not add generic updates, reporting,
 measurement, amendment, completion, void, IPC, preload, or renderer behavior.
 HSD-030A adds a focused screening-vitals-draft repository over
 `screening_vitals_drafts` and `screening_vitals_draft_readings`. It reads one
-draft by encounter, inserts the first draft, and replaces ordered readings on
-row-versioned updates without exposing a generic clinical-data mutation API.
+draft by encounter, inserts the first draft, and reconciles ordered readings by
+stable ID on row-versioned updates, preserving existing reading creation
+timestamps without exposing a generic clinical-data mutation API.
 HSD-029C-P0 adds a typed installation-location configuration repository over
 the singleton configuration table. It reads the current row, inserts the initial
 assignment, and updates the configured location with row-version protection.

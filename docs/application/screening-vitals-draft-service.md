@@ -16,16 +16,22 @@ The main-process service exposes three focused operations:
 The renderer may provide only the encounter identifier returned by the approved
 encounter-start boundary and the draft form fields. The main process resolves
 the authenticated actor, authorization, configured installation location,
-current daily screening session, encounter ownership, lifecycle state, audit
-actor, timestamps, and transaction ownership. Requests that include actor, role,
-installation, location, session, patient, audit, force, bypass, override, or
-sync authority are rejected by the fixed IPC contract.
+encounter ownership, lifecycle state, audit actor, timestamps, and transaction
+ownership. Existing encounter recovery validates the persisted session and
+location attribution without requiring the persisted session date to equal
+today. Requests that include actor, role, installation, location, session,
+patient, audit, force, bypass, override, or sync authority are rejected by the
+fixed IPC contract.
 
 `LOCAL_ADMIN`, `NURSE`, and `TRAINED_SCREENER` are authorized to load and edit
-Vitals drafts when the encounter is a canonical root `DRAFT` encounter in the
-current open daily session for the configured location. Non-draft encounters,
-amendment rows, closed sessions, stale sessions, missing or inactive locations,
-and absent authentication return sanitized controlled outcomes.
+Vitals drafts when the encounter is a canonical root `DRAFT` encounter in its
+persisted `OPEN` session, the encounter and session retain the configured
+location attribution, and the location remains active. An existing editable
+encounter may belong to an earlier session date; its session, location, and
+historical attribution are never reassigned. Non-draft encounters, amendment
+rows, closed sessions, missing or inactive locations, and absent authentication
+return sanitized controlled outcomes. New encounter creation remains under P1
+and continues to require the authoritative current daily session.
 
 ## Draft Rules
 
@@ -57,8 +63,12 @@ diagnoses, referrals, or recommendations are introduced by this task.
 
 ## Transactions And Concurrency
 
-Draft creation, draft update, reading replacement, audit, and outbox writes use
-one caller-owned write transaction. Updates use the persisted draft row version.
+A draft creation, draft update, reading reconciliation, audit, and outbox write
+use one caller-owned write transaction. Updates use the persisted draft row
+version. Existing readings are reconciled by stable reading ID: their
+`created_at` values are preserved while mutable fields, order, and `updated_at`
+are changed; new readings receive new database-managed creation timestamps; and
+omitted readings are removed in the same transaction.
 A stale version returns `VERSION_CONFLICT` unless the request is an idempotent
 repeat of the current persisted draft. Identical saves return the current draft
 without duplicating audit or outbox rows.
@@ -83,7 +93,8 @@ logged or emitted through audit/outbox metadata.
 When a patient tab becomes active in New Screening, the renderer loads the
 authoritative draft through the fixed preload method. It shows a loading state
 without stale data from another patient, restores persisted readings and
-optional fields, and ignores stale completion after unmount or tab changes.
+optional fields from the same encounter even when its session date is earlier
+than today, and ignores stale completion after unmount or tab changes.
 
 `Save draft` remains on Vitals. `Continue to Lifestyle` validates the form,
 persists the Vitals step, and advances only after local persistence succeeds.
