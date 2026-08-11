@@ -21,7 +21,7 @@ const validMigration: DatabaseMigration = {
 }
 
 describe('migration manifest', () => {
-  it('defines the exact immutable production catalog through HSD-029A-DB', () => {
+  it('defines the exact immutable production catalog through HSD-029C-P0', () => {
     const resolved = validateMigrationManifest(databaseMigrations, {
       expectedHighestVersion: targetSchemaVersion
     })
@@ -39,9 +39,10 @@ describe('migration manifest', () => {
       { version: 2, name: 'patient-registry-management', checksumLength: 64 },
       { version: 3, name: 'patient-demographic-amendment-history', checksumLength: 64 },
       { version: 4, name: 'screening-session-lifecycle-foundation', checksumLength: 64 },
-      { version: 5, name: 'screening-encounter-identity', checksumLength: 64 }
+      { version: 5, name: 'screening-encounter-identity', checksumLength: 64 },
+      { version: 6, name: 'installation-location-configuration', checksumLength: 64 }
     ])
-    expect(targetSchemaVersion).toBe(5)
+    expect(targetSchemaVersion).toBe(6)
     expect(resolved[0]?.checksum).toBe(
       '36bb5114185c0a691c8ba8dc1fdfc749a6f5a7069cbcb5efb88a6b55dd6e5fed'
     )
@@ -56,6 +57,9 @@ describe('migration manifest', () => {
     )
     expect(resolved[4]?.checksum).toBe(
       '24193da971afd3512901d6e97dff7390fcfb71a106aa1371d3939277ab34023d'
+    )
+    expect(resolved[5]?.checksum).toBe(
+      'c606fe5521c4d9f2820515baaedd62c5161d4ba4f82c9b8eea2980889e7ab7da'
     )
   })
 

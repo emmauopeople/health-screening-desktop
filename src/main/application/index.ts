@@ -25,6 +25,7 @@ export {
   type ParsedFirstRunLocationInput,
   type ProductionFirstRunBootstrapServiceOptions
 } from './first-run'
+export * from './installation-location'
 export * from './authentication'
 export * from './patients'
 export * from './screening-encounters'

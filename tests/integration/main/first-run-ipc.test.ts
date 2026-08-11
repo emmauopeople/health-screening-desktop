@@ -58,6 +58,7 @@ describe('first-run IPC integration', () => {
       expect(service.getState).toHaveBeenCalledTimes(1)
       expect(readBootstrapCounts(connection)).toMatchObject({
         installation: 0,
+        installation_location_configuration: 0,
         users: 0,
         locations: 0,
         audit_log: 0,
@@ -79,9 +80,10 @@ describe('first-run IPC integration', () => {
       expect(service.initialize).toHaveBeenCalledTimes(1)
       expect(readBootstrapCounts(connection)).toMatchObject({
         installation: 1,
+        installation_location_configuration: 1,
         users: 1,
         locations: 1,
-        audit_log: 3,
+        audit_log: 4,
         app_settings: 0,
         protocol_versions: 0,
         patients: 0,
@@ -90,7 +92,8 @@ describe('first-run IPC integration', () => {
       expect(readRawAuditRows(connection).map((row) => row.action)).toEqual([
         'INSTALLATION_INITIALIZED',
         'LOCAL_USER_CREATED',
-        'LOCATION_CREATED'
+        'LOCATION_CREATED',
+        'INSTALLATION_LOCATION_ASSIGNED'
       ])
 
       await expect(handlers.getState(createAllowedEvent(), {})).resolves.toEqual(
@@ -106,9 +109,10 @@ describe('first-run IPC integration', () => {
       )
       expect(readBootstrapCounts(connection)).toMatchObject({
         installation: 1,
+        installation_location_configuration: 1,
         users: 1,
         locations: 1,
-        audit_log: 3
+        audit_log: 4
       })
 
       const countsBeforeForbidden = readBootstrapCounts(connection)
@@ -186,6 +190,10 @@ async function withMigratedDatabase(
 function readBootstrapCounts(connection: Database.Database): Record<string, number> {
   return {
     installation: readTableCount(connection, 'installation'),
+    installation_location_configuration: readTableCount(
+      connection,
+      'installation_location_configuration'
+    ),
     users: readTableCount(connection, 'users'),
     locations: readTableCount(connection, 'locations'),
     audit_log: readTableCount(connection, 'audit_log'),

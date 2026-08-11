@@ -63,6 +63,7 @@ const screeningSessionRowKeys = Object.freeze([
 ] as const)
 
 const countRowKeys = Object.freeze(['total'] as const)
+const existsRowKeys = Object.freeze(['has_any'] as const)
 
 const screeningSessionColumns = `
   id,
@@ -87,6 +88,16 @@ SELECT
 ${screeningSessionColumns}
 FROM screening_sessions
 WHERE id = ?;
+`
+
+const selectHasOpenScreeningSessionForLocationSql = `
+SELECT EXISTS(
+  SELECT 1
+  FROM screening_sessions
+  WHERE location_id = ?
+    AND status = 'OPEN'
+  LIMIT 1
+) AS has_any;
 `
 
 const insertScreeningSessionSql = `
@@ -187,6 +198,35 @@ export function createScreeningSessionRepository(
           scopedConnection,
           parseReadEntityId(id),
           (error) => new RepositoryReadError(error)
+        )
+      } catch (error) {
+        if (error instanceof DatabaseTransactionStateError) {
+          throw new DatabaseTransactionStateError(error.errorType)
+        }
+
+        if (error instanceof RepositoryValidationError) {
+          throw new RepositoryValidationError(error.errorType)
+        }
+
+        if (error instanceof RepositoryDataIntegrityError) {
+          throw new RepositoryDataIntegrityError(error.errorType)
+        }
+
+        throw new RepositoryReadError(getRepositoryErrorType(error))
+      }
+    },
+
+    hasOpenForLocationForWrite(
+      scopedConnection: DatabaseTransactionConnection,
+      locationId: ScreeningSessionRecord['locationId']
+    ): boolean {
+      assertActiveDatabaseTransactionConnection(scopedConnection)
+
+      try {
+        return decodeExistsRow(
+          scopedConnection
+            .prepare<[string]>(selectHasOpenScreeningSessionForLocationSql)
+            .get(parseReadEntityId(locationId))
         )
       } catch (error) {
         if (error instanceof DatabaseTransactionStateError) {
@@ -686,6 +726,28 @@ function decodeCountRow(row: unknown): number {
     }
 
     return data.total
+  } catch (error) {
+    if (error instanceof RepositoryDataIntegrityError) {
+      throw new RepositoryDataIntegrityError(error.errorType)
+    }
+
+    throw new RepositoryDataIntegrityError(getRepositoryErrorType(error))
+  }
+}
+
+function decodeExistsRow(row: unknown): boolean {
+  try {
+    const data = readDataProperties(row, existsRowKeys)
+
+    if (data.has_any === 0) {
+      return false
+    }
+
+    if (data.has_any === 1) {
+      return true
+    }
+
+    throw new RepositoryDataIntegrityError()
   } catch (error) {
     if (error instanceof RepositoryDataIntegrityError) {
       throw new RepositoryDataIntegrityError(error.errorType)

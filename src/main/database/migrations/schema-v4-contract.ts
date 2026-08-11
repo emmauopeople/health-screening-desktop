@@ -304,13 +304,14 @@ export function hasRequiredSchemaVersion4Invariants(
   options: {
     readonly requireForeignKeyEnforcement: boolean
     readonly namedIndexes?: readonly string[]
+    readonly tableNames?: readonly string[]
   }
 ): boolean {
   try {
     return (
       (!options.requireForeignKeyEnforcement || isForeignKeyEnforcementEnabled(connection)) &&
-      hasExactTableNames(connection) &&
-      hasExactStrictTables(connection) &&
+      hasExactTableNames(connection, options.tableNames ?? schemaVersion4TableNames) &&
+      hasExactStrictTables(connection, options.tableNames ?? schemaVersion4TableNames) &&
       hasExactNamedIndexes(connection, options.namedIndexes ?? schemaVersion4NamedIndexes) &&
       hasExactTriggerNames(connection) &&
       hasExactColumns(connection) &&
@@ -333,18 +334,24 @@ function isSchemaVersion4Valid(
   return hasRequiredSchemaVersion4Invariants(connection, options)
 }
 
-function hasExactTableNames(connection: MigrationConnection): boolean {
-  return arraysEqual(readNonInternalTableNames(connection), schemaVersion4TableNames)
+function hasExactTableNames(
+  connection: MigrationConnection,
+  expectedNames: readonly string[]
+): boolean {
+  return arraysEqual(readNonInternalTableNames(connection), expectedNames)
 }
 
-function hasExactStrictTables(connection: MigrationConnection): boolean {
+function hasExactStrictTables(
+  connection: MigrationConnection,
+  expectedNames: readonly string[]
+): boolean {
   const strictTables = new Map(
     readTableList(connection)
       .filter((row) => row.schema === 'main' && row.type === 'table')
       .map((row) => [row.name, row.strict])
   )
 
-  return schemaVersion4TableNames.every((tableName) => strictTables.get(tableName) === 1)
+  return expectedNames.every((tableName) => strictTables.get(tableName) === 1)
 }
 
 function hasExactNamedIndexes(

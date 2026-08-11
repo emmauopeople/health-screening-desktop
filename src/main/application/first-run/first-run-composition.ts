@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3'
 import {
   createAuditEventRepository,
   createDatabaseTransactionExecutor,
+  createInstallationLocationConfigurationRepository,
   createInstallationRepository,
   createLocalUserRepository,
   createLocationRepository,
@@ -27,6 +28,8 @@ export function createProductionFirstRunBootstrapService({
     installationRepository: createInstallationRepository(connection),
     localUserRepository: createLocalUserRepository(connection),
     locationRepository: createLocationRepository(connection),
+    installationLocationConfigurationRepository:
+      createInstallationLocationConfigurationRepository(connection),
     auditEventRepository: createAuditEventRepository(connection),
     passwordCredentialService: createPasswordCredentialService(),
     transactionExecutor: createDatabaseTransactionExecutor({

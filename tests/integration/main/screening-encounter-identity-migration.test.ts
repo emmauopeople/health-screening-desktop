@@ -69,7 +69,7 @@ const unrelatedUserId = testEntityId(19)
 describe('screening encounter identity migration', () => {
   it('applies schema version 5 on a fresh database with the exact root identity index', async () => {
     await withDatabase((connection) => {
-      migrateToCurrent(connection)
+      migrateToVersion5(connection)
 
       expect(readUserVersion(connection)).toBe(5)
       expect(
@@ -220,7 +220,7 @@ describe('screening encounter identity migration', () => {
       })
       const before = readEncounterDiagnostics(connection)
 
-      migrateToCurrent(connection)
+      migrateToVersion5(connection)
 
       expect(readUserVersion(connection)).toBe(5)
       expect(readEncounterDiagnostics(connection)).toEqual(before)
@@ -442,7 +442,7 @@ async function withVersion4Database(test: (connection: Database.Database) => voi
 
 async function withVersion5Graph(test: (connection: Database.Database) => void): Promise<void> {
   await withDatabase((connection) => {
-    migrateToCurrent(connection)
+    migrateToVersion5(connection)
     insertReferenceGraph(connection)
     insertScreeningSession(connection, { id: sessionOneId, locationId: locationOneId })
     insertScreeningSession(connection, {
@@ -462,6 +462,17 @@ function migrateToVersion4(connection: Database.Database): void {
     logger: createLogger(),
     clock: fixedClock,
     expectedHighestVersion: 4
+  })
+}
+
+function migrateToVersion5(connection: Database.Database): void {
+  runDatabaseMigrations({
+    connection,
+    migrations: databaseMigrations.slice(0, 5),
+    applicationVersion: '1.0.0',
+    logger: createLogger(),
+    clock: fixedClock,
+    expectedHighestVersion: 5
   })
 }
 

@@ -38,12 +38,14 @@ renderer-only password confirmation field:
 
 - Installation: deployment name and time zone.
 - Administrator: username, display name, and temporary password.
-- Initial screening location: name, location type, village, subdivision,
+- Configured screening location: name, location type, village, subdivision,
   region, and directions.
 
-The location label is "Initial screening location." The renderer does not claim
-that a primary location, active location, protocol, login session, dashboard, or
-clinical workflow exists.
+The submitted location fields are setup input only. After successful bootstrap,
+the main process persists the created active location as the installation's
+configured screening location. The renderer does not become the ongoing
+location authority and does not claim that protocol, login session, dashboard,
+or clinical workflow exists.
 
 Optional location text uses blank-to-null conversion. Empty or whitespace-only
 values become `null`; nonblank values are submitted exactly as entered. Required
@@ -94,7 +96,7 @@ single-column on narrow viewports and avoids horizontal scrolling at 320 px.
 ## Deferred Work
 
 HSD-023 now owns the renderer-visible login, required password-change, locked
-session, and authenticated shell foundation. User administration,
-active-location selection, protocol activation, clinical workflows,
+session, and authenticated shell foundation. User administration, admin
+location reconfiguration UI, protocol activation, clinical workflows,
 synchronization, backup, restore, printing, and reporting remain deferred to
 later reviewed tasks.

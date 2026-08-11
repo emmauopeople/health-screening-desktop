@@ -5,8 +5,9 @@ import patientRegistryManagementSql from './sql/0002-patient-registry-management
 import patientDemographicAmendmentHistorySql from './sql/0003-patient-demographic-amendment-history.sql?raw'
 import screeningSessionLifecycleFoundationSql from './sql/0004-screening-session-lifecycle-foundation.sql?raw'
 import screeningEncounterIdentitySql from './sql/0005-screening-encounter-identity.sql?raw'
+import installationLocationConfigurationSql from './sql/0006-installation-location-configuration.sql?raw'
 
-export const targetSchemaVersion = 5
+export const targetSchemaVersion = 6
 
 const initialSchemaMigration = Object.freeze({
   version: 1,
@@ -39,12 +40,19 @@ const screeningEncounterIdentityMigration = Object.freeze({
   sql: screeningEncounterIdentitySql
 } satisfies DatabaseMigration)
 
+const installationLocationConfigurationMigration = Object.freeze({
+  version: 6,
+  name: 'installation-location-configuration',
+  sql: installationLocationConfigurationSql
+} satisfies DatabaseMigration)
+
 export const databaseMigrations = Object.freeze([
   initialSchemaMigration,
   patientRegistryManagementMigration,
   patientDemographicAmendmentHistoryMigration,
   screeningSessionLifecycleFoundationMigration,
-  screeningEncounterIdentityMigration
+  screeningEncounterIdentityMigration,
+  installationLocationConfigurationMigration
 ] as const)
 
 export function resolveDatabaseMigrations(

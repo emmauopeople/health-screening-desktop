@@ -41,6 +41,12 @@ eligible patient in an eligible current open screening session. It coordinates
 patient/session/location eligibility, authorization, audit, and sync-outbox
 writes in one transaction without adding IPC, preload, renderer, measurement,
 completion, amendment, referral, reporting, or sync-transport behavior.
+HSD-029C-P0 adds `application/installation-location`, the main-process
+configured-location resolver and admin-only reconfiguration service. It uses the
+trusted local authentication session, `LOCAL_ADMIN` authorization, repository
+queries for active screening work, transaction-scoped persistence, and audit
+events without adding renderer settings UI, preload exposure, background daily
+session creation, patient encounters, clinical persistence, or sync transport.
 
 `src/main/foundation` owns main-process-only primitives for local data writes,
 including validated UUID v4 entity IDs and UTC timestamps. These providers are
@@ -59,7 +65,9 @@ application must not discover migrations by scanning runtime directories.
 HSD-029A-DB adds schema version 5, which enforces one root screening encounter
 per patient per screening session through
 `ux_screening_encounters_root_session_patient` while preserving future
-amendment rows that reference a root encounter.
+amendment rows that reference a root encounter. HSD-029C-P0 adds schema version
+6, which creates the singleton `installation_location_configuration` table and
+leaves existing installations unassigned until explicit authorized assignment.
 
 `src/main/database/transaction` contains the synchronous write transaction
 executor. Future repositories must use this boundary for `BEGIN IMMEDIATE`,
@@ -85,6 +93,11 @@ read by encounter ID, find the canonical root by patient/session, and insert a
 root `DRAFT` encounter using the schema-version-5 identity constraint as the
 final concurrency safeguard. It does not add generic updates, reporting,
 measurement, amendment, completion, void, IPC, preload, or renderer behavior.
+HSD-029C-P0 adds a typed installation-location configuration repository over
+the singleton configuration table. It reads the current row, inserts the initial
+assignment, and updates the configured location with row-version protection.
+The screening-session and screening-encounter repositories also expose focused
+active-work predicates for open sessions and draft encounters by location.
 
 `src/main/security/password` owns the HSD-010 local password credential
 primitive. It validates exact plaintext password input, serializes strict

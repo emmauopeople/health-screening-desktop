@@ -1,6 +1,7 @@
 import {
   DatabaseTransactionExecutionError,
   InstallationAlreadyExistsError,
+  InstallationLocationConfigurationAlreadyExistsError,
   LocalUserAlreadyExistsError,
   LocationAlreadyExistsError,
   parseAuditActionCode,
@@ -42,6 +43,7 @@ import type {
 const installationInitializedAction = parseAuditActionCode('INSTALLATION_INITIALIZED')
 const localUserCreatedAction = parseAuditActionCode('LOCAL_USER_CREATED')
 const locationCreatedAction = parseAuditActionCode('LOCATION_CREATED')
+const installationLocationAssignedAction = parseAuditActionCode('INSTALLATION_LOCATION_ASSIGNED')
 const installationEntityType = parseAuditEntityType('INSTALLATION')
 const localUserEntityType = parseAuditEntityType('LOCAL_USER')
 const locationEntityType = parseAuditEntityType('LOCATION')
@@ -50,6 +52,7 @@ export function createFirstRunBootstrapService({
   installationRepository,
   localUserRepository,
   locationRepository,
+  installationLocationConfigurationRepository,
   auditEventRepository,
   passwordCredentialService,
   transactionExecutor
@@ -96,6 +99,7 @@ export function createFirstRunBootstrapService({
         const installationAuditId = context.newEntityId()
         const userAuditId = context.newEntityId()
         const locationAuditId = context.newEntityId()
+        const locationAssignmentAuditId = context.newEntityId()
 
         const installation = installationRepository.insert(context.connection, {
           id: installationId,
@@ -125,6 +129,15 @@ export function createFirstRunBootstrapService({
           createdBy: administratorId,
           createdAt: occurredAt
         })
+        const configuration = installationLocationConfigurationRepository.insert(
+          context.connection,
+          {
+            installationId,
+            locationId,
+            configuredAt: occurredAt,
+            configuredBy: administratorId
+          }
+        )
         const auditEvents = createBootstrapAuditEvents({
           installationId,
           administratorId,
@@ -132,8 +145,10 @@ export function createFirstRunBootstrapService({
           installationAuditId,
           userAuditId,
           locationAuditId,
+          locationAssignmentAuditId,
           occurredAt,
           locationType: parsedCommand.initialLocation.locationType,
+          configurationRowVersion: configuration.rowVersion,
           insert: (event) => auditEventRepository.insert(context.connection, event)
         })
 
@@ -175,8 +190,10 @@ interface CreateBootstrapAuditEventsInput {
   readonly installationAuditId: EntityId
   readonly userAuditId: EntityId
   readonly locationAuditId: EntityId
+  readonly locationAssignmentAuditId: EntityId
   readonly occurredAt: UtcTimestamp
   readonly locationType: LocationType
+  readonly configurationRowVersion: number
   readonly insert: (event: CreateAuditEventInput) => AuditEventRecord
 }
 
@@ -245,8 +262,10 @@ function createBootstrapAuditEvents({
   installationAuditId,
   userAuditId,
   locationAuditId,
+  locationAssignmentAuditId,
   occurredAt,
   locationType,
+  configurationRowVersion,
   insert
 }: CreateBootstrapAuditEventsInput): readonly AuditEventRecord[] {
   const installationAudit = insert({
@@ -287,8 +306,22 @@ function createBootstrapAuditEvents({
       location_type: locationType
     })
   })
+  const locationAssignmentAudit = insert({
+    id: locationAssignmentAuditId,
+    installationId,
+    userId: administratorId,
+    action: installationLocationAssignedAction,
+    entityType: installationEntityType,
+    entityId: installationId,
+    occurredAt,
+    metadata: Object.freeze({
+      bootstrap: true,
+      location_id: locationId,
+      row_version: configurationRowVersion
+    })
+  })
 
-  return [installationAudit, userAudit, locationAudit]
+  return [installationAudit, userAudit, locationAudit, locationAssignmentAudit]
 }
 
 function toFirstRunBoundaryError(error: unknown): Error {
@@ -304,6 +337,7 @@ function toFirstRunBoundaryError(error: unknown): Error {
     error instanceof PasswordHashingError ||
     error instanceof PasswordCredentialFormatError ||
     error instanceof LocalUserAlreadyExistsError ||
+    error instanceof InstallationLocationConfigurationAlreadyExistsError ||
     error instanceof LocationAlreadyExistsError
   ) {
     return new FirstRunInitializationError(getFirstRunErrorType(error))
