@@ -116,7 +116,13 @@ describe('screening patient entry workspace', () => {
     expect(text(mounted)).toContain('Search patients')
     expect(text(mounted)).toContain('Female')
     expect(text(mounted)).toContain('36')
-    expect(text(mounted)).toContain('No previous screenings')
+    expect(patientRowCells(mounted, 'Ada Lovelace')).toEqual([
+      'Ada Lovelace',
+      'Female',
+      '36',
+      '—',
+      '—'
+    ])
     expect(text(mounted)).not.toContain('Action')
     expect(text(mounted)).not.toContain('Select')
     expect(text(mounted)).not.toContain('Close session')
@@ -668,6 +674,12 @@ function tableHeaders(mounted: MountedWorkspace): string[] {
   return Array.from(
     mounted.container.querySelectorAll<HTMLTableCellElement>('.screening-patient-table th')
   ).map((header) => header.textContent?.trim() ?? '')
+}
+
+function patientRowCells(mounted: MountedWorkspace, name: string): string[] {
+  return Array.from(rowByName(mounted, name).querySelectorAll<HTMLTableCellElement>('td')).map(
+    (cell) => cell.textContent?.trim() ?? ''
+  )
 }
 
 function tabButtons(mounted: MountedWorkspace): HTMLButtonElement[] {

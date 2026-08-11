@@ -601,7 +601,7 @@ function PatientTable({
                 </td>
                 <td>{formatPatientSex(patient.sex)}</td>
                 <td>{formatPatientAge(patient, operationalDate)}</td>
-                <td>No previous screenings</td>
+                <td aria-label="Screening history unavailable">—</td>
                 <td aria-label="No follow-up status">—</td>
               </tr>
             )
