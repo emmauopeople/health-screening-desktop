@@ -122,8 +122,8 @@ describe('renderer authentication DOM integration', () => {
       {
         name: 'SESSION_LOCKED',
         initialSession: lockedSession(4),
-        expectedClassName: 'foundation-shell setup-shell',
-        visibleText: 'Session locked.',
+        expectedClassName: 'auth-login-root',
+        visibleText: 'Session Locked',
         hasRetry: false
       },
       {
@@ -228,7 +228,7 @@ describe('renderer authentication DOM integration', () => {
 
     await clickButton(mounted, 'Lock')
 
-    expect(text(mounted)).toContain('Session locked.')
+    expect(text(mounted)).toContain('Session Locked')
 
     const resetSpy = vi.spyOn(HTMLFormElement.prototype, 'reset')
 
@@ -254,7 +254,7 @@ describe('renderer authentication DOM integration', () => {
 
     await submitUnlock(mounted, 'WrongPassword1!')
 
-    expect(text(mounted)).toContain('Session locked.')
+    expect(text(mounted)).toContain('Session Locked')
     expect(text(mounted)).toContain('The username or password is incorrect.')
     expect(getInput(mounted, 'unlockPassword').value).toBe('')
 
@@ -341,7 +341,7 @@ describe('renderer authentication DOM integration', () => {
     pendingReconcile.resolve(createIpcSuccess(lockedSession(2)) as AuthGetSessionResult)
     await flushReact()
 
-    expect(text(mounted)).toContain('Session locked.')
+    expect(text(mounted)).toContain('Session Locked')
 
     await mounted.unmount()
   })
@@ -416,7 +416,7 @@ describe('renderer authentication DOM integration', () => {
     await emitSession(harness, lockedSession(4))
     await dispatchWindowEvent('wheel')
 
-    expect(text(mounted)).toContain('Session locked.')
+    expect(text(mounted)).toContain('Session Locked')
     expect(harness.api.auth.recordActivity).toHaveBeenCalledTimes(2)
 
     await mounted.unmount()
@@ -500,7 +500,7 @@ describe('renderer authentication DOM integration', () => {
   it.each([
     {
       session: lockedSession(5),
-      visibleText: 'Session locked.'
+      visibleText: 'Session Locked'
     },
     {
       session: passwordChangeSession(6),
@@ -517,7 +517,11 @@ describe('renderer authentication DOM integration', () => {
       await emitSession(harness, session)
 
       expect(text(mounted)).toContain(visibleText)
-      expect(text(mounted)).toContain(baseUser.displayName)
+      if (session.status === 'LOCKED') {
+        expect(text(mounted)).not.toContain(baseUser.displayName)
+      } else {
+        expect(text(mounted)).toContain(baseUser.displayName)
+      }
 
       pendingLoad.resolve(createAuthenticationFailure('IPC_FORBIDDEN') as AuthGetSessionResult)
       await flushReact()
@@ -629,7 +633,7 @@ describe('renderer authentication DOM integration', () => {
         initialSession: lockedSession(2, baseUser, {
           absoluteExpiresAt: '2026-08-01T00:00:01.000Z' as UtcTimestamp
         }),
-        visibleText: 'Session locked.'
+        visibleText: 'Session Locked'
       },
       {
         initialSession: passwordChangeSession(3, baseUser, {
@@ -755,7 +759,7 @@ describe('renderer authentication DOM integration', () => {
     await clickButton(mounted, 'Lock')
 
     expect(harness.api.auth.getSession).toHaveBeenCalledTimes(2)
-    expect(text(mounted)).toContain('Session locked.')
+    expect(text(mounted)).toContain('Session Locked')
 
     await mounted.unmount()
   })

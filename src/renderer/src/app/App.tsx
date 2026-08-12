@@ -120,7 +120,9 @@ function AuthenticationBoundary({
       ? 'application-root'
       : route.status === 'LOGIN_REQUIRED'
         ? 'auth-login-root'
-        : 'foundation-shell setup-shell'
+        : route.status === 'SESSION_LOCKED'
+          ? 'auth-login-root'
+          : 'foundation-shell setup-shell'
 
   return (
     <div className={rootClassName}>

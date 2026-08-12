@@ -109,7 +109,7 @@ describe('authentication renderer experience', () => {
     assertNoInternalAuthenticationFragments(markup)
   })
 
-  it('renders the locked-session unlock form and lock reason', () => {
+  it('renders the locked-session form with the Login visual content only', () => {
     const markup = renderToStaticMarkup(
       createElement(LockedSessionScreen, {
         api: createApi(),
@@ -118,11 +118,25 @@ describe('authentication renderer experience', () => {
       })
     )
 
-    expect(markup).toContain('Session locked.')
-    expect(markup).toContain('This session locked after inactivity.')
+    expect(markup).toContain('class="auth-login-page"')
+    expect(markup).toContain('auth-login-card')
+    expect(markup).toContain('<h1 id="auth-locked-heading" tabindex="-1">Session Locked</h1>')
+    expect(markup).toContain('By Admin.User')
+    expect(markup).toContain('<legend>Unlock session</legend>')
+    expect(markup).toContain('for="unlockPassword"')
+    expect(markup).toContain('Password ')
+    expect(markup).toContain('class="auth-required-indicator"')
     expect(markup).toContain('name="password"')
+    expect(markup).toContain('type="password"')
+    expect(markup).toContain('required=""')
     expect(markup).toContain('Unlock')
     expect(markup).toContain('Sign out')
+    expect(markup).not.toContain('Admin User')
+    expect(markup).not.toContain('Local administrator')
+    expect(markup).not.toContain('This session locked')
+    expect(markup).not.toContain('session expires')
+    expect(markup).not.toContain('Enter the local account password')
+    expect(markup).not.toContain('12-128 characters')
     assertNoInternalAuthenticationFragments(markup)
   })
 
@@ -196,7 +210,7 @@ describe('authentication renderer experience', () => {
     expect(markup[1]).toContain('Retry')
     expect(markup[2]).toContain('Login')
     expect(markup[3]).toContain('Change required password.')
-    expect(markup[4]).toContain('Session locked.')
+    expect(markup[4]).toContain('Session Locked')
     expect(markup[5]).toContain('Welcome, Admin User')
   })
 
@@ -209,6 +223,7 @@ describe('authentication renderer experience', () => {
       'src/renderer/src/app/authentication/AuthenticationUnavailableScreen.tsx',
       'src/renderer/src/app/authentication/LockedSessionScreen.tsx',
       'src/renderer/src/app/authentication/LoginScreen.tsx',
+      'src/renderer/src/app/authentication/RequiredFieldIndicator.tsx',
       'src/renderer/src/app/authentication/RequiredPasswordChangeScreen.tsx',
       'src/renderer/src/app/authentication/authentication-failure-actions.ts',
       'src/renderer/src/app/authentication/authentication-form-controller.ts',
@@ -279,6 +294,8 @@ describe('authentication renderer experience', () => {
     expect(css).toContain('place-items: center;')
     expect(css).toContain('.auth-login-card')
     expect(css).toContain('border-radius: 16px;')
+    expect(css).toContain('.auth-required-indicator')
+    expect(css).toContain('color: #c53030;')
     expect(css).not.toMatch(/url\(['"]?(?:https?:|data:)/i)
   })
 })

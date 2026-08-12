@@ -69,7 +69,7 @@ describe('renderer authentication experience integration', () => {
     }
     await controller.reconcile()
 
-    expect(render(route, api, controller)).toContain('Session locked.')
+    expect(render(route, api, controller)).toContain('Session Locked')
   })
 })
 
