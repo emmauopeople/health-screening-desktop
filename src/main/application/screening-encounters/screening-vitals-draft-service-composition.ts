@@ -17,10 +17,12 @@ import { createScreeningVitalsDraftService } from './screening-vitals-draft-serv
 import type { ScreeningVitalsDraftService } from './screening-vitals-draft-service-types'
 import type { InstallationLocationService } from '../installation-location'
 import type { LocalAuthenticationSessionService } from '../authentication/session'
+import type { CurrentScreeningSessionService } from '../screening-sessions'
 
 export interface ProductionScreeningVitalsDraftServiceOptions {
   readonly connection: Database.Database
   readonly authenticationSessionService: LocalAuthenticationSessionService
+  readonly currentScreeningSessionService: CurrentScreeningSessionService
   readonly installationLocationService: InstallationLocationService
   readonly logger?: DatabaseTransactionLogger
 }
@@ -28,11 +30,13 @@ export interface ProductionScreeningVitalsDraftServiceOptions {
 export function createProductionScreeningVitalsDraftService({
   connection,
   authenticationSessionService,
+  currentScreeningSessionService,
   installationLocationService,
   logger
 }: ProductionScreeningVitalsDraftServiceOptions): ScreeningVitalsDraftService {
   return createScreeningVitalsDraftService({
     authenticationSessionService,
+    currentScreeningSessionService,
     installationLocationService,
     installationRepository: createInstallationRepository(connection),
     locationRepository: createLocationRepository(connection),

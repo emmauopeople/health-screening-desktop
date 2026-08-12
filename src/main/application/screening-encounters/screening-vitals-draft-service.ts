@@ -109,6 +109,7 @@ type SaveOrCompleteVitalsDraftBaseInput = {
 
 export function createScreeningVitalsDraftService({
   authenticationSessionService,
+  currentScreeningSessionService,
   installationLocationService,
   installationRepository,
   locationRepository,
@@ -181,6 +182,7 @@ export function createScreeningVitalsDraftService({
         outboxOperation: 'SCREENING_VITALS_DRAFT_SAVED',
         outboxSchemaVersion: 'screening-encounter.vitals-draft-saved.v1',
         authenticationSessionService,
+        currentScreeningSessionService,
         installationLocationService,
         installationRepository,
         locationRepository,
@@ -202,6 +204,7 @@ export function createScreeningVitalsDraftService({
         outboxOperation: 'SCREENING_VITALS_STEP_COMPLETED',
         outboxSchemaVersion: 'screening-encounter.vitals-step-completed.v1',
         authenticationSessionService,
+        currentScreeningSessionService,
         installationLocationService,
         installationRepository,
         locationRepository,
@@ -230,6 +233,7 @@ function saveOrCompleteVitalsDraft({
   outboxOperation,
   outboxSchemaVersion,
   authenticationSessionService,
+  currentScreeningSessionService,
   installationLocationService,
   installationRepository,
   locationRepository,
@@ -265,6 +269,21 @@ function saveOrCompleteVitalsDraft({
   }
 
   try {
+    const persistedDraft = screeningVitalsDraftRepository.getByEncounterId(
+      commandResult.command.encounterId
+    )
+    let firstDraftSessionId: EntityId | undefined
+
+    if (persistedDraft === null) {
+      const currentSessionResult = currentScreeningSessionService.ensureCurrentScreeningSession()
+
+      if (currentSessionResult.status !== 'RESOLVED' && currentSessionResult.status !== 'CREATED') {
+        return statusResult(mapCurrentSessionFailure(currentSessionResult.status))
+      }
+
+      firstDraftSessionId = currentSessionResult.session.id
+    }
+
     return transactionExecutor.run((context) => {
       const occurredAt = context.nowUtc()
       const encounterContext = validateEncounterContext({
@@ -303,6 +322,14 @@ function saveOrCompleteVitalsDraft({
 
       if (existing === null && commandResult.command.expectedVersion !== null) {
         return statusResult('VERSION_CONFLICT')
+      }
+
+      if (
+        existing === null &&
+        (firstDraftSessionId === undefined ||
+          encounterContext.context.encounter.screeningSessionId !== firstDraftSessionId)
+      ) {
+        return statusResult('SESSION_NOT_CURRENT')
       }
 
       if (
@@ -911,4 +938,36 @@ function mapAuthenticationFailure(error: unknown): VitalsDraftControlledStatus {
   }
 
   return 'UNAVAILABLE'
+}
+
+function mapCurrentSessionFailure(
+  status:
+    | 'AUTHENTICATION_REQUIRED'
+    | 'FORBIDDEN'
+    | 'LOCATION_NOT_CONFIGURED'
+    | 'LOCATION_NOT_FOUND'
+    | 'LOCATION_INACTIVE'
+    | 'SESSION_CLOSED'
+    | 'SESSION_CONFLICT'
+    | 'NO_ACTIVE_PROTOCOL'
+    | 'UNAVAILABLE'
+): VitalsDraftControlledStatus {
+  switch (status) {
+    case 'AUTHENTICATION_REQUIRED':
+      return 'AUTHENTICATION_REQUIRED'
+    case 'FORBIDDEN':
+      return 'FORBIDDEN'
+    case 'LOCATION_NOT_CONFIGURED':
+      return 'LOCATION_NOT_CONFIGURED'
+    case 'LOCATION_NOT_FOUND':
+      return 'LOCATION_NOT_FOUND'
+    case 'LOCATION_INACTIVE':
+      return 'LOCATION_INACTIVE'
+    case 'SESSION_CLOSED':
+      return 'SESSION_CLOSED'
+    case 'SESSION_CONFLICT':
+    case 'NO_ACTIVE_PROTOCOL':
+    case 'UNAVAILABLE':
+      return 'UNAVAILABLE'
+  }
 }

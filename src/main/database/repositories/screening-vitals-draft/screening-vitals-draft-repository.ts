@@ -388,6 +388,18 @@ function reconcileReadings(
 
   const submittedIds = new Set<string>(readings.map((reading) => reading.id))
 
+  const sequenceChangedIds = new Set(
+    readings.flatMap((reading) => {
+      const existing = existingById.get(reading.id)
+
+      return existing !== undefined && existing.sequenceNumber !== reading.sequenceNumber
+        ? [reading.id]
+        : []
+    })
+  )
+  const hasNewReading = readings.some((reading) => !existingById.has(reading.id))
+  const requiresSequenceReconciliation = sequenceChangedIds.size > 0 || hasNewReading
+
   for (const reading of currentDraft.readings) {
     if (!submittedIds.has(reading.id)) {
       const deleteResult = connection
@@ -403,24 +415,48 @@ function reconcileReadings(
   const temporarySequenceStart = 1_000_000
   const retainedReadings = currentDraft.readings.filter((reading) => submittedIds.has(reading.id))
 
-  retainedReadings.forEach((reading, index) => {
-    moveReadingSequence(connection, draftId, reading.id, temporarySequenceStart + index + 1)
-  })
+  if (requiresSequenceReconciliation) {
+    retainedReadings
+      .filter((reading) => sequenceChangedIds.has(reading.id))
+      .forEach((reading, index) => {
+        moveReadingSequence(connection, draftId, reading.id, temporarySequenceStart + index + 1)
+      })
 
-  let nextTemporarySequence = temporarySequenceStart + retainedReadings.length + 1
+    for (const reading of readings) {
+      if (existingById.has(reading.id)) {
+        continue
+      }
+
+      insertReading(connection, draftId, reading, reading.sequenceNumber, occurredAt)
+    }
+  }
 
   for (const reading of readings) {
-    if (existingById.has(reading.id)) {
+    const existing = existingById.get(reading.id)
+
+    if (existing === undefined) {
       continue
     }
 
-    insertReading(connection, draftId, reading, nextTemporarySequence, occurredAt)
-    nextTemporarySequence += 1
+    if (isPersistedReadingChanged(existing, reading)) {
+      updateReading(connection, draftId, reading, reading.sequenceNumber, occurredAt)
+    }
   }
+}
 
-  for (const reading of readings) {
-    updateReading(connection, draftId, reading, reading.sequenceNumber, occurredAt)
-  }
+function isPersistedReadingChanged(
+  existing: ScreeningVitalsDraftReadingRecord,
+  submitted: ParsedScreeningVitalsDraftReadingInput
+): boolean {
+  return (
+    existing.sequenceNumber !== submitted.sequenceNumber ||
+    existing.systolic !== submitted.systolic ||
+    existing.diastolic !== submitted.diastolic ||
+    existing.pulse !== submitted.pulse ||
+    existing.measurementSite !== submitted.measurementSite ||
+    existing.patientPosition !== submitted.patientPosition ||
+    existing.measurementTime !== submitted.measurementTime
+  )
 }
 
 function moveReadingSequence(

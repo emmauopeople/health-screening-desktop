@@ -10,6 +10,7 @@ import {
   createInstallationLocationService,
   createScreeningVitalsDraftService,
   type ActiveLocalSessionContext,
+  type CurrentScreeningSessionService,
   type LocalAuthenticationSessionService,
   type ScreeningVitalsDraftService
 } from '@main/application'
@@ -25,6 +26,8 @@ import {
   createScreeningEncounterRepository,
   createScreeningSessionRepository,
   createScreeningVitalsDraftRepository,
+  parseLocationName,
+  parseScreeningSessionDate,
   parseUserDisplayName,
   parseUsername,
   type LocalUserRecord,
@@ -43,10 +46,12 @@ const protocolId = '00000000-0000-4000-8000-000000000007'
 const patientId = '93000000-0000-4000-8000-000000000006'
 const secondPatientId = '93000000-0000-4000-8000-000000000007'
 const sessionId = '93000000-0000-4000-8000-000000000008'
+const currentSessionId = '93000000-0000-4000-8000-000000000011'
 const encounterId = '93000000-0000-4000-8000-000000000009'
 const secondEncounterId = '93000000-0000-4000-8000-000000000010'
 const later = '2026-08-06T13:00:00.000Z'
 const newReadingAt = '2026-08-06T14:00:00.000Z'
+const changedReadingAt = '2026-08-06T15:00:00.000Z'
 const nextDeploymentDate = '2026-08-07T12:00:00.000Z'
 
 describe('screening vitals draft service integration', () => {
@@ -63,6 +68,53 @@ describe('screening vitals draft service integration', () => {
       expect(readTableCount(connection, 'audit_log')).toBe(0)
       expect(readTableCount(connection, 'sync_outbox')).toBe(0)
     })
+  })
+
+  it('does not create a first draft for an earlier-session encounter', async () => {
+    await withVitalsService(
+      ({ connection, service, currentScreeningSessionService }) => {
+        seedCoreGraph(connection)
+        connection
+          .prepare('UPDATE screening_sessions SET session_date = ? WHERE id = ?')
+          .run('2026-08-05', sessionId)
+
+        const sessionsBefore = readSessionRows(connection)
+        const encountersBefore = readEncounterRows(connection)
+
+        expect(service.getVitalsDraft({ encounterId: parseEntityId(encounterId) })).toEqual({
+          status: 'LOADED',
+          draft: null
+        })
+
+        expect(
+          service.saveVitalsDraft(
+            createVitalsRequest({
+              readings: [
+                {
+                  id: null,
+                  sequenceNumber: 1,
+                  systolic: 120,
+                  diastolic: 80,
+                  pulse: 70,
+                  measurementSite: 'RIGHT_ARM',
+                  patientPosition: 'SITTING',
+                  measurementTime: '10:12'
+                }
+              ]
+            })
+          )
+        ).toEqual({ status: 'SESSION_NOT_CURRENT' })
+
+        expect(currentScreeningSessionService.ensureCurrentScreeningSession).toHaveBeenCalledOnce()
+        expect(readSessionRows(connection)).toEqual(sessionsBefore)
+        expect(readEncounterRows(connection)).toEqual(encountersBefore)
+        expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(0)
+        expect(readTableCount(connection, 'screening_vitals_draft_readings')).toBe(0)
+        expect(readTableCount(connection, 'audit_log')).toBe(0)
+        expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+      },
+      { timestamps: [nextDeploymentDate], currentSessionId }
+    )
   })
 
   it('restores an editable earlier-session draft without changing historical attribution', async () => {
@@ -113,8 +165,26 @@ describe('screening vitals draft service integration', () => {
             encounter_id: encounterId
           })
         ])
+
+        const continued = service.saveVitalsDraft(
+          createVitalsRequest({
+            expectedVersion: saved.draft.rowVersion,
+            readings: [{ ...completeReading(1), id: saved.draft.readings[0]!.id }],
+            notes: 'Continued after date rollover'
+          })
+        )
+        expect(continued).toMatchObject({
+          status: 'SAVED',
+          draft: {
+            id: saved.draft.id,
+            rowVersion: 2,
+            notes: 'Continued after date rollover'
+          }
+        })
+        expect(readSessionRows(connection)).toEqual(sessionsBeforeRecovery)
+        expect(readEncounterRows(connection)).toEqual(encountersBeforeRecovery)
       },
-      { timestamps: [now, nextDeploymentDate] }
+      { timestamps: [now, nextDeploymentDate, nextDeploymentDate] }
     )
   })
 
@@ -345,8 +415,8 @@ describe('screening vitals draft service integration', () => {
           createVitalsRequest({
             expectedVersion: first.draft.rowVersion,
             readings: [
-              { ...completeReading(1), id: secondReading.id, sequenceNumber: 1 },
-              { ...completeReading(2), id: firstReading.id, sequenceNumber: 2 }
+              { ...completeReading(2), id: secondReading.id, sequenceNumber: 1 },
+              { ...completeReading(1), id: firstReading.id, sequenceNumber: 2 }
             ]
           })
         )
@@ -361,8 +431,16 @@ describe('screening vitals draft service integration', () => {
         ])
         expect(readReadingRows(connection)).toEqual(
           expect.arrayContaining([
-            expect.objectContaining({ id: secondReading.id, created_at: secondReadingCreatedAt }),
-            expect.objectContaining({ id: firstReading.id, created_at: firstReadingCreatedAt })
+            expect.objectContaining({
+              id: secondReading.id,
+              created_at: secondReadingCreatedAt,
+              updated_at: later
+            }),
+            expect.objectContaining({
+              id: firstReading.id,
+              created_at: firstReadingCreatedAt,
+              updated_at: later
+            })
           ])
         )
 
@@ -370,8 +448,8 @@ describe('screening vitals draft service integration', () => {
           createVitalsRequest({
             expectedVersion: reordered.draft.rowVersion,
             readings: [
-              { ...completeReading(1), id: secondReading.id, sequenceNumber: 1 },
-              { ...completeReading(2), id: firstReading.id, sequenceNumber: 2 },
+              { ...completeReading(2), id: secondReading.id, sequenceNumber: 1 },
+              { ...completeReading(1), id: firstReading.id, sequenceNumber: 2 },
               completeReading(3)
             ]
           })
@@ -392,8 +470,16 @@ describe('screening vitals draft service integration', () => {
         )
         expect(readReadingRows(connection)).toEqual(
           expect.arrayContaining([
-            expect.objectContaining({ id: secondReading.id, created_at: secondReadingCreatedAt }),
-            expect.objectContaining({ id: firstReading.id, created_at: firstReadingCreatedAt })
+            expect.objectContaining({
+              id: secondReading.id,
+              created_at: secondReadingCreatedAt,
+              updated_at: later
+            }),
+            expect.objectContaining({
+              id: firstReading.id,
+              created_at: firstReadingCreatedAt,
+              updated_at: later
+            })
           ])
         )
 
@@ -401,8 +487,8 @@ describe('screening vitals draft service integration', () => {
           createVitalsRequest({
             expectedVersion: added.draft.rowVersion,
             readings: [
-              { ...completeReading(1), id: secondReading.id, sequenceNumber: 1 },
-              { ...completeReading(2), id: newReading.id, sequenceNumber: 2 }
+              { ...completeReading(2), id: secondReading.id, sequenceNumber: 1 },
+              { ...completeReading(3), id: newReading.id, sequenceNumber: 2 }
             ]
           })
         )
@@ -420,16 +506,144 @@ describe('screening vitals draft service integration', () => {
           expect.objectContaining({
             id: secondReading.id,
             sequence_number: 1,
-            created_at: secondReadingCreatedAt
+            created_at: secondReadingCreatedAt,
+            updated_at: later
           }),
           expect.objectContaining({
             id: newReading.id,
             sequence_number: 2,
-            created_at: newReadingAt
+            created_at: newReadingAt,
+            updated_at: nextDeploymentDate
           })
         ])
       },
       { timestamps: [now, later, newReadingAt, nextDeploymentDate] }
+    )
+  })
+
+  it('preserves timestamps for unchanged readings and updates only changed readings', async () => {
+    await withVitalsService(
+      ({ connection, service }) => {
+        seedCoreGraph(connection)
+
+        const first = service.saveVitalsDraft(
+          createVitalsRequest({ readings: [completeReading(1), completeReading(2)] })
+        )
+
+        if (first.status !== 'SAVED') {
+          throw new Error('Expected the initial readings to save.')
+        }
+
+        const firstReadingId = first.draft.readings[0]!.id
+        const secondReadingId = first.draft.readings[1]!.id
+        const initialRows = readReadingRows(connection)
+        const initialFirst = initialRows.find((row) => row.id === firstReadingId)
+        const initialSecond = initialRows.find((row) => row.id === secondReadingId)
+
+        const notesOnly = service.saveVitalsDraft(
+          createVitalsRequest({
+            expectedVersion: first.draft.rowVersion,
+            readings: [
+              { ...completeReading(1), id: firstReadingId },
+              { ...completeReading(2), id: secondReadingId }
+            ],
+            notes: 'Notes only'
+          })
+        )
+        expect(notesOnly.status).toBe('SAVED')
+        expect(readReadingRows(connection)).toEqual(initialRows)
+
+        if (notesOnly.status !== 'SAVED') {
+          throw new Error('Expected the notes-only save to succeed.')
+        }
+
+        const weightOnly = service.saveVitalsDraft(
+          createVitalsRequest({
+            expectedVersion: notesOnly.draft.rowVersion,
+            readings: [
+              { ...completeReading(1), id: firstReadingId },
+              { ...completeReading(2), id: secondReadingId }
+            ],
+            notes: 'Notes only',
+            weightKg: 81.25
+          })
+        )
+        expect(weightOnly.status).toBe('SAVED')
+        expect(readReadingRows(connection)).toEqual(initialRows)
+
+        if (weightOnly.status !== 'SAVED') {
+          throw new Error('Expected the weight-only save to succeed.')
+        }
+
+        const waistOnly = service.saveVitalsDraft(
+          createVitalsRequest({
+            expectedVersion: weightOnly.draft.rowVersion,
+            readings: [
+              { ...completeReading(1), id: firstReadingId },
+              { ...completeReading(2), id: secondReadingId }
+            ],
+            notes: 'Notes only',
+            weightKg: 81.25,
+            waistCm: 92.5
+          })
+        )
+        expect(waistOnly.status).toBe('SAVED')
+        expect(readReadingRows(connection)).toEqual(initialRows)
+
+        if (waistOnly.status !== 'SAVED') {
+          throw new Error('Expected the waist-only save to succeed.')
+        }
+
+        const changed = service.saveVitalsDraft(
+          createVitalsRequest({
+            expectedVersion: waistOnly.draft.rowVersion,
+            readings: [
+              { ...completeReading(1), id: firstReadingId, systolic: 145 },
+              { ...completeReading(2), id: secondReadingId }
+            ],
+            notes: 'Notes only',
+            weightKg: 81.25,
+            waistCm: 92.5
+          })
+        )
+        expect(changed.status).toBe('SAVED')
+        expect(readReadingRows(connection)).toEqual([
+          expect.objectContaining({
+            id: firstReadingId,
+            created_at: initialFirst?.created_at,
+            updated_at: changedReadingAt,
+            systolic: 145
+          }),
+          initialSecond
+        ])
+
+        if (changed.status !== 'SAVED') {
+          throw new Error('Expected the changed-reading save to succeed.')
+        }
+
+        const identical = service.saveVitalsDraft(
+          createVitalsRequest({
+            expectedVersion: changed.draft.rowVersion,
+            readings: [
+              { ...completeReading(1), id: firstReadingId, systolic: 145 },
+              { ...completeReading(2), id: secondReadingId }
+            ],
+            notes: 'Notes only',
+            weightKg: 81.25,
+            waistCm: 92.5
+          })
+        )
+        expect(identical.status).toBe('SAVED')
+        expect(readReadingRows(connection)).toEqual([
+          expect.objectContaining({
+            id: firstReadingId,
+            created_at: initialFirst?.created_at,
+            updated_at: changedReadingAt
+          }),
+          initialSecond
+        ])
+      },
+      { timestamps: [now, later, newReadingAt, nextDeploymentDate, changedReadingAt] }
     )
   })
 
@@ -641,6 +855,9 @@ describe('screening vitals draft service integration', () => {
 interface Harness {
   readonly connection: Database.Database
   readonly service: ScreeningVitalsDraftService
+  readonly currentScreeningSessionService: CurrentScreeningSessionService & {
+    readonly ensureCurrentScreeningSession: ReturnType<typeof vi.fn>
+  }
   readonly authenticationSessionService: LocalAuthenticationSessionService & {
     readonly requireAnyRole: ReturnType<typeof vi.fn>
   }
@@ -654,6 +871,7 @@ async function withVitalsService(
     readonly failOutboxInsert?: boolean
     readonly failOutboxOnInsertNumber?: number
     readonly timestamps?: readonly string[]
+    readonly currentSessionId?: string
   } = {}
 ): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), 'hsd030a-vitals-service-'))
@@ -701,8 +919,12 @@ async function withVitalsService(
       auditEventRepository,
       transactionExecutor
     })
+    const currentScreeningSessionService = createCurrentScreeningSessionService(
+      options.currentSessionId ?? sessionId
+    )
     const service = createScreeningVitalsDraftService({
       authenticationSessionService,
+      currentScreeningSessionService,
       installationLocationService,
       installationRepository,
       locationRepository,
@@ -714,12 +936,40 @@ async function withVitalsService(
       transactionExecutor
     })
 
-    test({ connection, service, authenticationSessionService })
+    test({ connection, service, currentScreeningSessionService, authenticationSessionService })
   } finally {
     if (connection.open) {
       connection.close()
     }
     await rm(directory, { recursive: true, force: true })
+  }
+}
+
+function createCurrentScreeningSessionService(
+  currentSessionIdValue: string
+): CurrentScreeningSessionService & {
+  readonly ensureCurrentScreeningSession: ReturnType<typeof vi.fn>
+} {
+  return {
+    ensureCurrentScreeningSession: vi.fn(() => ({
+      status: 'RESOLVED' as const,
+      session: {
+        id: parseEntityId(currentSessionIdValue),
+        locationId: parseEntityId(locationId),
+        protocolVersionId: parseEntityId(protocolId),
+        sessionDate: parseScreeningSessionDate('2026-08-06'),
+        status: 'OPEN' as const,
+        notes: null,
+        openedAt: now as UtcTimestamp,
+        closedAt: null,
+        createdAt: now as UtcTimestamp,
+        rowVersion: 1
+      },
+      location: {
+        id: parseEntityId(locationId),
+        displayName: parseLocationName('Test Site')
+      }
+    }))
   }
 }
 
