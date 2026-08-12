@@ -127,6 +127,7 @@ export function startApplicationLifecycle(): void {
       const screeningVitalsDraftService = createProductionScreeningVitalsDraftService({
         connection: databaseRuntime.getConnection(),
         authenticationSessionService,
+        currentScreeningSessionService,
         installationLocationService,
         logger: console
       })

@@ -58,6 +58,51 @@ const boundaryTimestamp = '2026-08-10T23:30:00.000Z'
 const nextTimestamp = '2026-08-11T12:00:00.000Z'
 
 describe('current screening session service integration', () => {
+  it('finds the current session without mutating session persistence', async () => {
+    await withCurrentSessionService(({ connection, service }) => {
+      seedBaseGraph(connection)
+      insertConfiguration(connection, locationId)
+      insertSession(connection, {
+        id: sessionId,
+        locationId,
+        sessionDate: '2026-08-10'
+      })
+
+      const sessionBefore = readRawSession(connection, sessionId)
+      const result = service.findCurrentScreeningSession()
+
+      expect(result).toMatchObject({
+        status: 'FOUND',
+        session: {
+          id: sessionId,
+          locationId,
+          sessionDate: '2026-08-10',
+          status: 'OPEN'
+        },
+        location: {
+          id: locationId,
+          displayName: 'Site One'
+        }
+      })
+      expect(readRawSession(connection, sessionId)).toEqual(sessionBefore)
+      expect(readTableCount(connection, 'screening_sessions')).toBe(1)
+      expect(readAuditRows(connection)).toHaveLength(0)
+      expect(readOutboxRows(connection)).toHaveLength(0)
+    })
+  })
+
+  it('returns not found without creating a current session', async () => {
+    await withCurrentSessionService(({ connection, service }) => {
+      seedBaseGraph(connection)
+      insertConfiguration(connection, locationId)
+
+      expect(service.findCurrentScreeningSession()).toEqual({ status: 'SESSION_NOT_FOUND' })
+      expect(readTableCount(connection, 'screening_sessions')).toBe(0)
+      expect(readAuditRows(connection)).toHaveLength(0)
+      expect(readOutboxRows(connection)).toHaveLength(0)
+    })
+  })
+
   it('creates today session from trusted configuration, auth, clock, audit, and outbox', async () => {
     await withCurrentSessionService(({ connection, service, authenticationSessionService }) => {
       seedBaseGraph(connection)

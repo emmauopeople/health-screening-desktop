@@ -17,6 +17,7 @@ import {
   type ScreeningSessionOutboxPayload,
   type ScreeningSessionRecord
 } from '@main/database'
+import type { DatabaseTransactionConnection } from '@main/database/transaction'
 import { EntityIdGenerationError, type EntityId } from '@main/foundation/entity-id'
 import { parseUtcTimestamp, UtcClockError, type UtcTimestamp } from '@main/foundation/utc-clock'
 
@@ -32,7 +33,9 @@ import type {
   CurrentScreeningSessionService,
   CurrentScreeningSessionServiceDependencies,
   CurrentScreeningSessionSummary,
-  EnsureCurrentScreeningSessionResult
+  CurrentScreeningSessionTransactionInput,
+  EnsureCurrentScreeningSessionResult,
+  FindCurrentScreeningSessionResult
 } from './current-screening-session-service-types'
 
 const createdAction = parseAuditActionCode('SCREENING_SESSION_CREATED')
@@ -41,6 +44,10 @@ const allowedRoles = Object.freeze(['LOCAL_ADMIN', 'NURSE', 'TRAINED_SCREENER'] 
 
 interface ValidatedActor {
   readonly userId: EntityId
+}
+
+type AuthenticationFailureResult = {
+  readonly status: 'AUTHENTICATION_REQUIRED' | 'FORBIDDEN' | 'UNAVAILABLE'
 }
 
 export function createCurrentScreeningSessionService({
@@ -59,7 +66,7 @@ export function createCurrentScreeningSessionService({
       const actorResult = resolveTrustedActor(authenticationSessionService)
 
       if (actorResult.status !== 'VALID') {
-        return actorResult.result
+        return result(actorResult.result.status)
       }
 
       const configuredLocationResult =
@@ -72,26 +79,20 @@ export function createCurrentScreeningSessionService({
       try {
         return transactionExecutor.run((context) => {
           const occurredAt = context.nowUtc()
-          const installation = readInitializedInstallation(installationRepository)
-          const sessionDate = getDeploymentLocalDate(occurredAt, installation)
-          const location = locationRepository.getByIdForWrite(
-            context.connection,
-            configuredLocationResult.location.id
-          )
+          const authorityResult = readCurrentSessionAuthority({
+            connection: context.connection,
+            occurredAt,
+            configuredLocationId: configuredLocationResult.location.id,
+            installationRepository,
+            locationRepository,
+            screeningSessionRepository
+          })
 
-          if (location === null) {
-            return result('LOCATION_NOT_FOUND')
+          if (authorityResult.status !== 'VALID') {
+            return result(authorityResult.status)
           }
 
-          if (!location.isActive) {
-            return result('LOCATION_INACTIVE')
-          }
-
-          const existing = screeningSessionRepository.findByLocationAndDateForWrite(
-            context.connection,
-            location.id,
-            sessionDate
-          )
+          const { installation, sessionDate, location, session: existing } = authorityResult.context
 
           if (existing !== null) {
             return resolveCanonicalSession(existing, location)
@@ -156,15 +157,155 @@ export function createCurrentScreeningSessionService({
       } catch {
         return result('UNAVAILABLE')
       }
+    },
+
+    findCurrentScreeningSession(): FindCurrentScreeningSessionResult {
+      try {
+        return transactionExecutor.run((context) => {
+          return findCurrentScreeningSessionInTransaction({
+            connection: context.connection,
+            occurredAt: context.nowUtc(),
+            authenticationSessionService,
+            installationLocationService,
+            installationRepository,
+            locationRepository,
+            screeningSessionRepository
+          })
+        })
+      } catch {
+        return findResult('UNAVAILABLE')
+      }
+    },
+
+    findCurrentScreeningSessionInTransaction(
+      input: CurrentScreeningSessionTransactionInput
+    ): FindCurrentScreeningSessionResult {
+      try {
+        return findCurrentScreeningSessionInTransaction({
+          ...input,
+          authenticationSessionService,
+          installationLocationService,
+          installationRepository,
+          locationRepository,
+          screeningSessionRepository
+        })
+      } catch {
+        return findResult('UNAVAILABLE')
+      }
     }
   })
+}
+
+function findCurrentScreeningSessionInTransaction({
+  connection,
+  occurredAt,
+  authenticationSessionService,
+  installationLocationService,
+  installationRepository,
+  locationRepository,
+  screeningSessionRepository
+}: CurrentScreeningSessionTransactionInput & {
+  readonly authenticationSessionService: CurrentScreeningSessionServiceDependencies['authenticationSessionService']
+  readonly installationLocationService: CurrentScreeningSessionServiceDependencies['installationLocationService']
+  readonly installationRepository: CurrentScreeningSessionServiceDependencies['installationRepository']
+  readonly locationRepository: CurrentScreeningSessionServiceDependencies['locationRepository']
+  readonly screeningSessionRepository: CurrentScreeningSessionServiceDependencies['screeningSessionRepository']
+}): FindCurrentScreeningSessionResult {
+  const actorResult = resolveTrustedActor(authenticationSessionService)
+
+  if (actorResult.status !== 'VALID') {
+    return findResult(actorResult.result.status)
+  }
+
+  const configuredLocationResult =
+    installationLocationService.resolveConfiguredInstallationLocation()
+
+  if (configuredLocationResult.status !== 'RESOLVED') {
+    return findResult(configuredLocationResult.status)
+  }
+
+  const authorityResult = readCurrentSessionAuthority({
+    connection,
+    occurredAt,
+    configuredLocationId: configuredLocationResult.location.id,
+    installationRepository,
+    locationRepository,
+    screeningSessionRepository
+  })
+
+  if (authorityResult.status !== 'VALID') {
+    return findResult(authorityResult.status)
+  }
+
+  if (authorityResult.context.session === null) {
+    return findResult('SESSION_NOT_FOUND')
+  }
+
+  if (authorityResult.context.session.status === 'CLOSED') {
+    return findResult('SESSION_CLOSED')
+  }
+
+  return foundSessionResult(authorityResult.context.session, authorityResult.context.location)
+}
+
+type CurrentSessionAuthorityContext = {
+  readonly installation: InstallationRecord
+  readonly sessionDate: ReturnType<typeof parseScreeningSessionDate>
+  readonly location: LocationRecord
+  readonly session: ScreeningSessionRecord | null
+}
+
+function readCurrentSessionAuthority({
+  connection,
+  occurredAt,
+  configuredLocationId,
+  installationRepository,
+  locationRepository,
+  screeningSessionRepository
+}: {
+  readonly connection: DatabaseTransactionConnection
+  readonly occurredAt: UtcTimestamp
+  readonly configuredLocationId: EntityId
+  readonly installationRepository: CurrentScreeningSessionServiceDependencies['installationRepository']
+  readonly locationRepository: CurrentScreeningSessionServiceDependencies['locationRepository']
+  readonly screeningSessionRepository: CurrentScreeningSessionServiceDependencies['screeningSessionRepository']
+}):
+  | { readonly status: 'VALID'; readonly context: CurrentSessionAuthorityContext }
+  | {
+      readonly status: 'LOCATION_NOT_FOUND' | 'LOCATION_INACTIVE'
+    } {
+  const installation = readInitializedInstallation(installationRepository)
+  const sessionDate = getDeploymentLocalDate(occurredAt, installation)
+  const location = locationRepository.getByIdForWrite(connection, configuredLocationId)
+
+  if (location === null) {
+    return { status: 'LOCATION_NOT_FOUND' }
+  }
+
+  if (!location.isActive) {
+    return { status: 'LOCATION_INACTIVE' }
+  }
+
+  return {
+    status: 'VALID',
+    context: {
+      installation,
+      sessionDate,
+      location,
+      session: screeningSessionRepository.findByLocationAndDateForWrite(
+        connection,
+        location.id,
+        sessionDate
+      )
+    }
+  }
 }
 
 function resolveTrustedActor(
   authenticationSessionService: CurrentScreeningSessionServiceDependencies['authenticationSessionService']
 ):
   | { readonly status: 'VALID'; readonly actor: ValidatedActor }
-  | { readonly status: 'INVALID'; readonly result: EnsureCurrentScreeningSessionResult } {
+  | { readonly status: 'INVALID'; readonly result: AuthenticationFailureResult } {
   try {
     const context = authenticationSessionService.requireAnyRole(allowedRoles)
 
@@ -384,6 +525,17 @@ function sessionResult(
   })
 }
 
+function foundSessionResult(
+  session: ScreeningSessionRecord,
+  location: LocationRecord
+): FindCurrentScreeningSessionResult {
+  return Object.freeze({
+    status: 'FOUND' as const,
+    session: toCurrentSessionSummary(session),
+    location: toCurrentSessionLocation(location)
+  })
+}
+
 function toCurrentSessionSummary(session: ScreeningSessionRecord): CurrentScreeningSessionSummary {
   if (session.status !== 'OPEN' || session.closedAt !== null) {
     throw new RepositoryDataIntegrityError()
@@ -416,24 +568,30 @@ function result(
   return Object.freeze({ status }) as EnsureCurrentScreeningSessionResult
 }
 
-function mapAuthenticationFailure(error: unknown): EnsureCurrentScreeningSessionResult {
+function findResult(
+  status: Exclude<FindCurrentScreeningSessionResult['status'], 'FOUND'>
+): FindCurrentScreeningSessionResult {
+  return Object.freeze({ status })
+}
+
+function mapAuthenticationFailure(error: unknown): AuthenticationFailureResult {
   if (
     error instanceof LocalSessionUnauthenticatedError ||
     error instanceof LocalSessionLockedError ||
     error instanceof LocalSessionPasswordChangeRequiredError
   ) {
-    return result('AUTHENTICATION_REQUIRED')
+    return Object.freeze({ status: 'AUTHENTICATION_REQUIRED' })
   }
 
   if (error instanceof LocalSessionAuthorizationError) {
-    return result('FORBIDDEN')
+    return Object.freeze({ status: 'FORBIDDEN' })
   }
 
   if (isLocalSessionError(error)) {
-    return result('UNAVAILABLE')
+    return Object.freeze({ status: 'UNAVAILABLE' })
   }
 
-  return result('UNAVAILABLE')
+  return Object.freeze({ status: 'UNAVAILABLE' })
 }
 
 function isControlledInfrastructureError(error: unknown): boolean {

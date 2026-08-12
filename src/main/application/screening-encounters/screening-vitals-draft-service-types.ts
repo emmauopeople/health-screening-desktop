@@ -16,6 +16,7 @@ import type { UtcTimestamp } from '@main/foundation/utc-clock'
 
 import type { InstallationLocationService } from '../installation-location'
 import type { LocalAuthenticationSessionService } from '../authentication/session'
+import type { CurrentScreeningSessionService } from '../screening-sessions'
 
 export interface GetVitalsDraftRequest {
   readonly encounterId: EntityId
@@ -99,6 +100,7 @@ export interface ScreeningVitalsDraftService {
 
 export interface ScreeningVitalsDraftServiceDependencies {
   readonly authenticationSessionService: LocalAuthenticationSessionService
+  readonly currentScreeningSessionService: CurrentScreeningSessionService
   readonly installationLocationService: InstallationLocationService
   readonly installationRepository: InstallationRepository
   readonly locationRepository: LocationRepository

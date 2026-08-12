@@ -12,8 +12,10 @@ export type {
   CurrentScreeningSessionLocation,
   CurrentScreeningSessionService,
   CurrentScreeningSessionServiceDependencies,
+  CurrentScreeningSessionTransactionInput,
   CurrentScreeningSessionSummary,
-  EnsureCurrentScreeningSessionResult
+  EnsureCurrentScreeningSessionResult,
+  FindCurrentScreeningSessionResult
 } from './current-screening-session-service-types'
 export {
   getScreeningSessionServiceErrorType,
