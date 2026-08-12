@@ -5,6 +5,7 @@ import Database from 'better-sqlite3'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  createCurrentScreeningSessionService,
   LocalSessionAuthorizationError,
   LocalSessionUnauthenticatedError,
   createInstallationLocationService,
@@ -22,8 +23,10 @@ import {
   createInstallationRepository,
   createLocationRepository,
   createProductionDatabaseMigrationRunner,
+  createProtocolVersionRepository,
   createScreeningEncounterOutboxRepository,
   createScreeningEncounterRepository,
+  createScreeningSessionOutboxRepository,
   createScreeningSessionRepository,
   createScreeningVitalsDraftRepository,
   parseLocationName,
@@ -56,7 +59,7 @@ const nextDeploymentDate = '2026-08-07T12:00:00.000Z'
 
 describe('screening vitals draft service integration', () => {
   it('loads no draft for a current editable encounter without creating an empty record', async () => {
-    await withVitalsService(({ connection, service }) => {
+    await withVitalsService(({ connection, service, currentScreeningSessionSpies }) => {
       seedCoreGraph(connection)
 
       expect(service.getVitalsDraft({ encounterId: parseEntityId(encounterId) })).toEqual({
@@ -67,12 +70,14 @@ describe('screening vitals draft service integration', () => {
       expect(readTableCount(connection, 'screening_vitals_draft_readings')).toBe(0)
       expect(readTableCount(connection, 'audit_log')).toBe(0)
       expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+      expect(currentScreeningSessionSpies?.findCurrentScreeningSession).not.toHaveBeenCalled()
+      expect(currentScreeningSessionSpies?.ensureCurrentScreeningSession).not.toHaveBeenCalled()
     })
   })
 
   it('does not create a first draft for an earlier-session encounter', async () => {
     await withVitalsService(
-      ({ connection, service, currentScreeningSessionService }) => {
+      ({ connection, service, currentScreeningSessionSpies }) => {
         seedCoreGraph(connection)
         connection
           .prepare('UPDATE screening_sessions SET session_date = ? WHERE id = ?')
@@ -105,7 +110,8 @@ describe('screening vitals draft service integration', () => {
           )
         ).toEqual({ status: 'SESSION_NOT_CURRENT' })
 
-        expect(currentScreeningSessionService.ensureCurrentScreeningSession).toHaveBeenCalledOnce()
+        expect(currentScreeningSessionSpies?.findCurrentScreeningSession).toHaveBeenCalledOnce()
+        expect(currentScreeningSessionSpies?.ensureCurrentScreeningSession).not.toHaveBeenCalled()
         expect(readSessionRows(connection)).toEqual(sessionsBefore)
         expect(readEncounterRows(connection)).toEqual(encountersBefore)
         expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(0)
@@ -114,6 +120,42 @@ describe('screening vitals draft service integration', () => {
         expect(readTableCount(connection, 'sync_outbox')).toBe(0)
       },
       { timestamps: [nextDeploymentDate], currentSessionId }
+    )
+  })
+
+  it('rejects an earlier first draft without a current session and leaves persistence unchanged', async () => {
+    await withVitalsService(
+      ({ connection, service }) => {
+        seedCoreGraph(connection)
+        connection
+          .prepare('UPDATE screening_sessions SET session_date = ? WHERE id = ?')
+          .run('2026-08-05', sessionId)
+
+        const sessionsBefore = readSessionRows(connection)
+        const encountersBefore = readEncounterRows(connection)
+        const auditBefore = readAuditRows(connection)
+        const outboxBefore = readOutboxRows(connection)
+
+        expect(
+          service.saveVitalsDraft(
+            createVitalsRequest({
+              readings: [completeReading(1)]
+            })
+          )
+        ).toEqual({ status: 'SESSION_NOT_CURRENT' })
+
+        expect(readSessionRows(connection)).toEqual(sessionsBefore)
+        expect(readEncounterRows(connection)).toEqual(encountersBefore)
+        expect(readAuditRows(connection)).toEqual(auditBefore)
+        expect(readOutboxRows(connection)).toEqual(outboxBefore)
+        expect(readTableCount(connection, 'screening_sessions')).toBe(1)
+        expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(0)
+        expect(readTableCount(connection, 'screening_vitals_draft_readings')).toBe(0)
+      },
+      {
+        timestamps: [nextDeploymentDate],
+        useRealCurrentSessionService: true
+      }
     )
   })
 
@@ -132,6 +174,10 @@ describe('screening vitals draft service integration', () => {
         if (saved.status !== 'SAVED') {
           throw new Error('Expected the earlier-session draft to save.')
         }
+
+        connection
+          .prepare('UPDATE screening_sessions SET session_date = ? WHERE id = ?')
+          .run('2026-08-05', sessionId)
 
         const sessionsBeforeRecovery = readSessionRows(connection)
         const encountersBeforeRecovery = readEncounterRows(connection)
@@ -184,7 +230,10 @@ describe('screening vitals draft service integration', () => {
         expect(readSessionRows(connection)).toEqual(sessionsBeforeRecovery)
         expect(readEncounterRows(connection)).toEqual(encountersBeforeRecovery)
       },
-      { timestamps: [now, nextDeploymentDate, nextDeploymentDate] }
+      {
+        timestamps: [now, now, nextDeploymentDate],
+        useRealCurrentSessionService: true
+      }
     )
   })
 
@@ -852,12 +901,16 @@ describe('screening vitals draft service integration', () => {
   })
 })
 
+interface CurrentScreeningSessionSpies {
+  readonly ensureCurrentScreeningSession: ReturnType<typeof vi.fn>
+  readonly findCurrentScreeningSession: ReturnType<typeof vi.fn>
+}
+
 interface Harness {
   readonly connection: Database.Database
   readonly service: ScreeningVitalsDraftService
-  readonly currentScreeningSessionService: CurrentScreeningSessionService & {
-    readonly ensureCurrentScreeningSession: ReturnType<typeof vi.fn>
-  }
+  readonly currentScreeningSessionService: CurrentScreeningSessionService
+  readonly currentScreeningSessionSpies: CurrentScreeningSessionSpies | null
   readonly authenticationSessionService: LocalAuthenticationSessionService & {
     readonly requireAnyRole: ReturnType<typeof vi.fn>
   }
@@ -872,6 +925,7 @@ async function withVitalsService(
     readonly failOutboxOnInsertNumber?: number
     readonly timestamps?: readonly string[]
     readonly currentSessionId?: string
+    readonly useRealCurrentSessionService?: boolean
   } = {}
 ): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), 'hsd030a-vitals-service-'))
@@ -919,9 +973,26 @@ async function withVitalsService(
       auditEventRepository,
       transactionExecutor
     })
-    const currentScreeningSessionService = createCurrentScreeningSessionService(
+    const mockCurrentScreeningSessionService = createMockCurrentScreeningSessionService(
       options.currentSessionId ?? sessionId
     )
+    const currentScreeningSessionSpies = options.useRealCurrentSessionService
+      ? null
+      : mockCurrentScreeningSessionService
+    const currentScreeningSessionService: CurrentScreeningSessionService =
+      options.useRealCurrentSessionService
+        ? createCurrentScreeningSessionService({
+            authenticationSessionService,
+            installationLocationService,
+            installationRepository,
+            locationRepository,
+            protocolVersionRepository: createProtocolVersionRepository(connection),
+            screeningSessionRepository,
+            screeningSessionOutboxRepository: createScreeningSessionOutboxRepository(connection),
+            auditEventRepository,
+            transactionExecutor
+          })
+        : mockCurrentScreeningSessionService
     const service = createScreeningVitalsDraftService({
       authenticationSessionService,
       currentScreeningSessionService,
@@ -936,7 +1007,13 @@ async function withVitalsService(
       transactionExecutor
     })
 
-    test({ connection, service, currentScreeningSessionService, authenticationSessionService })
+    test({
+      connection,
+      service,
+      currentScreeningSessionService,
+      currentScreeningSessionSpies,
+      authenticationSessionService
+    })
   } finally {
     if (connection.open) {
       connection.close()
@@ -945,14 +1022,15 @@ async function withVitalsService(
   }
 }
 
-function createCurrentScreeningSessionService(
+function createMockCurrentScreeningSessionService(
   currentSessionIdValue: string
-): CurrentScreeningSessionService & {
-  readonly ensureCurrentScreeningSession: ReturnType<typeof vi.fn>
-} {
+): CurrentScreeningSessionService & CurrentScreeningSessionSpies {
   return {
-    ensureCurrentScreeningSession: vi.fn(() => ({
-      status: 'RESOLVED' as const,
+    ensureCurrentScreeningSession: vi.fn(() => {
+      throw new Error('Vitals service must not create a current session.')
+    }),
+    findCurrentScreeningSession: vi.fn(() => ({
+      status: 'FOUND' as const,
       session: {
         id: parseEntityId(currentSessionIdValue),
         locationId: parseEntityId(locationId),

@@ -52,8 +52,27 @@ export type EnsureCurrentScreeningSessionResult =
         | 'UNAVAILABLE'
     }
 
+export type FindCurrentScreeningSessionResult =
+  | {
+      readonly status: 'FOUND'
+      readonly session: CurrentScreeningSessionSummary
+      readonly location: CurrentScreeningSessionLocation
+    }
+  | {
+      readonly status:
+        | 'AUTHENTICATION_REQUIRED'
+        | 'FORBIDDEN'
+        | 'LOCATION_NOT_CONFIGURED'
+        | 'LOCATION_NOT_FOUND'
+        | 'LOCATION_INACTIVE'
+        | 'SESSION_NOT_FOUND'
+        | 'SESSION_CLOSED'
+        | 'UNAVAILABLE'
+    }
+
 export interface CurrentScreeningSessionService {
   ensureCurrentScreeningSession(): EnsureCurrentScreeningSessionResult
+  findCurrentScreeningSession(): FindCurrentScreeningSessionResult
 }
 
 export interface CurrentScreeningSessionServiceDependencies {

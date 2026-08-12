@@ -8,6 +8,7 @@ The service exposes:
 
 - `create`
 - `ensureCurrentScreeningSession`
+- `findCurrentScreeningSession`
 - `close`
 - `reopen`
 - `getById`
@@ -80,6 +81,14 @@ The success result is sanitized and contains only:
 - `RESOLVED` or `CREATED`;
 - the `OPEN` session fields needed by the renderer workflow;
 - the configured location display fields needed for the header.
+
+`findCurrentScreeningSession()` uses the same trusted authentication,
+configured-location, installation-timezone, transaction-clock, and
+deployment-local-date authority, but is strictly read-only. It returns
+`FOUND` for an existing canonical open session or `SESSION_NOT_FOUND` when
+today's session does not exist. It never creates, updates, closes, reopens, or
+audits a session; daily-session creation remains exclusively under
+`ensureCurrentScreeningSession()` and the established Screening entry flow.
 
 Notes are not exposed through this boundary. Closed sessions are never reopened
 or replaced by this operation. Existing sessions are not mutated merely because

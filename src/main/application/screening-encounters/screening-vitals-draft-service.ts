@@ -275,9 +275,9 @@ function saveOrCompleteVitalsDraft({
     let firstDraftSessionId: EntityId | undefined
 
     if (persistedDraft === null) {
-      const currentSessionResult = currentScreeningSessionService.ensureCurrentScreeningSession()
+      const currentSessionResult = currentScreeningSessionService.findCurrentScreeningSession()
 
-      if (currentSessionResult.status !== 'RESOLVED' && currentSessionResult.status !== 'CREATED') {
+      if (currentSessionResult.status !== 'FOUND') {
         return statusResult(mapCurrentSessionFailure(currentSessionResult.status))
       }
 
@@ -947,9 +947,8 @@ function mapCurrentSessionFailure(
     | 'LOCATION_NOT_CONFIGURED'
     | 'LOCATION_NOT_FOUND'
     | 'LOCATION_INACTIVE'
+    | 'SESSION_NOT_FOUND'
     | 'SESSION_CLOSED'
-    | 'SESSION_CONFLICT'
-    | 'NO_ACTIVE_PROTOCOL'
     | 'UNAVAILABLE'
 ): VitalsDraftControlledStatus {
   switch (status) {
@@ -963,10 +962,10 @@ function mapCurrentSessionFailure(
       return 'LOCATION_NOT_FOUND'
     case 'LOCATION_INACTIVE':
       return 'LOCATION_INACTIVE'
+    case 'SESSION_NOT_FOUND':
+      return 'SESSION_NOT_CURRENT'
     case 'SESSION_CLOSED':
       return 'SESSION_CLOSED'
-    case 'SESSION_CONFLICT':
-    case 'NO_ACTIVE_PROTOCOL':
     case 'UNAVAILABLE':
       return 'UNAVAILABLE'
   }
