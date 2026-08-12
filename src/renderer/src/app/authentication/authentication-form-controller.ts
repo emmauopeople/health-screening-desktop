@@ -52,7 +52,6 @@ export const authenticationFormCopy = {
   passwordChangeSubmitLabel: 'Change password',
   passwordChangeSubmittingLabel: 'Changing password...',
   lockedHeading: 'Session Locked',
-  lockedStatement: 'By Username',
   unlockSubmitLabel: 'Unlock',
   unlockSubmittingLabel: 'Unlocking...',
   lockLabel: 'Lock',

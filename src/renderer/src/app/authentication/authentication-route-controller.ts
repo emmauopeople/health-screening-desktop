@@ -15,7 +15,6 @@ export const authenticationRouteCopy = {
   passwordChangeStatement:
     'This account must change its temporary password before work can continue.',
   lockedHeading: 'Session Locked',
-  lockedStatement: 'By Username',
   activeHeading: 'Session active.',
   activeStatement: 'The local account is active on this computer.',
   unavailableHeading: 'Authentication is unavailable.',

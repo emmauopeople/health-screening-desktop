@@ -30,6 +30,7 @@ interface LockedSessionScreenProps {
 
 export function LockedSessionScreen({
   api,
+  route,
   controller
 }: LockedSessionScreenProps): React.JSX.Element {
   const [operationState, setOperationState] = useState<AuthenticationOperationState>({
@@ -165,7 +166,7 @@ export function LockedSessionScreen({
         <AuthenticationLayout
           headingId="auth-locked-heading"
           heading={authenticationFormCopy.lockedHeading}
-          statement={authenticationFormCopy.lockedStatement}
+          statement={`By ${route.user.username}`}
           showEyebrow={false}
           className="auth-login-card"
           busy={isSubmitting}
