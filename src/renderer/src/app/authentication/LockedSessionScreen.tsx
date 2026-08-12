@@ -3,7 +3,6 @@ import type { HealthScreeningApi } from '@shared/ipc'
 
 import {
   authenticationFormCopy,
-  authenticationPasswordHelp,
   clearAuthenticationPasswordFields,
   createAuthenticationFormController,
   createUnlockRequest,
@@ -21,7 +20,7 @@ import type { RendererAuthenticationRouteController } from './authentication-rou
 import type { RendererAuthenticationRoute } from './authentication-route-types'
 import { AuthenticationLayout } from './AuthenticationLayout'
 import { mapLoginRejectionMessage } from './authentication-message-mapping'
-import { formatAuthenticationRole } from './authentication-role-labels'
+import { RequiredFieldIndicator } from './RequiredFieldIndicator'
 
 interface LockedSessionScreenProps {
   readonly api: HealthScreeningApi
@@ -31,7 +30,6 @@ interface LockedSessionScreenProps {
 
 export function LockedSessionScreen({
   api,
-  route,
   controller
 }: LockedSessionScreenProps): React.JSX.Element {
   const [operationState, setOperationState] = useState<AuthenticationOperationState>({
@@ -162,98 +160,65 @@ export function LockedSessionScreen({
   }
 
   return (
-    <AuthenticationLayout
-      headingId="auth-locked-heading"
-      heading={authenticationFormCopy.lockedHeading}
-      statement={authenticationFormCopy.lockedStatement}
-      busy={isSubmitting}
-    >
-      <dl className="auth-identity-list" aria-label="Locked local account">
-        <div>
-          <dt>User</dt>
-          <dd>{route.user.displayName}</dd>
-        </div>
-        <div>
-          <dt>Username</dt>
-          <dd>{route.user.username}</dd>
-        </div>
-        <div>
-          <dt>Role</dt>
-          <dd>{formatAuthenticationRole(route.user.role)}</dd>
-        </div>
-      </dl>
-      <p className="auth-deadline">
-        {route.reason === 'IDLE_TIMEOUT'
-          ? 'This session locked after inactivity.'
-          : 'This session was locked manually.'}{' '}
-        Session expires {formatDeadline(route.absoluteExpiresAt)}.
-      </p>
-      <form
-        className="auth-form"
-        aria-busy={isSubmitting}
-        aria-describedby="auth-unlock-guidance"
-        onSubmit={(event) => {
-          void handleSubmit(event)
-        }}
-      >
-        <p id="auth-unlock-guidance" className="auth-helper">
-          Enter the local account password to unlock this session.
-        </p>
-        {operationState.status === 'ERROR' ? (
-          <div ref={alertRef} className="auth-alert" role="alert" tabIndex={-1}>
-            {operationState.message}
-          </div>
-        ) : null}
-        <fieldset className="auth-fieldset" disabled={isSubmitting}>
-          <legend>Unlock session</legend>
-          <div className="auth-field">
-            <label htmlFor="unlockPassword">Password required</label>
-            <input
-              id="unlockPassword"
-              name="password"
-              type="password"
-              required
-              minLength={12}
-              maxLength={128}
-              autoComplete="current-password"
-              aria-describedby="auth-unlock-password-help"
-            />
-            <p id="auth-unlock-password-help" className="auth-helper">
-              {authenticationPasswordHelp}
-            </p>
-          </div>
-        </fieldset>
-        <div className="auth-actions">
-          <button className="button button-primary" type="submit" disabled={isSubmitting}>
-            {isSubmitting
-              ? authenticationFormCopy.unlockSubmittingLabel
-              : authenticationFormCopy.unlockSubmitLabel}
-          </button>
-          <button
-            className="button button-secondary"
-            type="button"
-            onClick={() => {
-              void handleSignOut()
+    <div className="auth-login-page">
+      <div className="auth-login-content">
+        <AuthenticationLayout
+          headingId="auth-locked-heading"
+          heading={authenticationFormCopy.lockedHeading}
+          statement={authenticationFormCopy.lockedStatement}
+          showEyebrow={false}
+          className="auth-login-card"
+          busy={isSubmitting}
+        >
+          <form
+            className="auth-form"
+            aria-busy={isSubmitting}
+            onSubmit={(event) => {
+              void handleSubmit(event)
             }}
-            disabled={isSubmitting}
           >
-            {authenticationFormCopy.signOutLabel}
-          </button>
-        </div>
-      </form>
-    </AuthenticationLayout>
+            {operationState.status === 'ERROR' ? (
+              <div ref={alertRef} className="auth-alert" role="alert" tabIndex={-1}>
+                {operationState.message}
+              </div>
+            ) : null}
+            <fieldset className="auth-fieldset" disabled={isSubmitting}>
+              <legend>Unlock session</legend>
+              <div className="auth-field">
+                <label htmlFor="unlockPassword">
+                  Password <RequiredFieldIndicator />
+                </label>
+                <input
+                  id="unlockPassword"
+                  name="password"
+                  type="password"
+                  required
+                  minLength={12}
+                  maxLength={128}
+                  autoComplete="current-password"
+                />
+              </div>
+            </fieldset>
+            <div className="auth-actions">
+              <button className="button button-primary" type="submit" disabled={isSubmitting}>
+                {isSubmitting
+                  ? authenticationFormCopy.unlockSubmittingLabel
+                  : authenticationFormCopy.unlockSubmitLabel}
+              </button>
+              <button
+                className="button button-secondary"
+                type="button"
+                onClick={() => {
+                  void handleSignOut()
+                }}
+                disabled={isSubmitting}
+              >
+                {authenticationFormCopy.signOutLabel}
+              </button>
+            </div>
+          </form>
+        </AuthenticationLayout>
+      </div>
+    </div>
   )
-}
-
-function formatDeadline(timestamp: string): string {
-  const date = new Date(timestamp)
-
-  if (!Number.isFinite(date.getTime())) {
-    return 'soon'
-  }
-
-  return date.toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  })
 }

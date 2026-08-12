@@ -19,6 +19,7 @@ import {
 import type { RendererAuthenticationRouteController } from './authentication-route-controller'
 import { AuthenticationLayout } from './AuthenticationLayout'
 import { mapLoginRejectionMessage } from './authentication-message-mapping'
+import { RequiredFieldIndicator } from './RequiredFieldIndicator'
 
 const recoveryUnavailableMessage =
   'Username and password recovery is not available in this build. Contact an authorized administrator.'
@@ -215,16 +216,5 @@ export function LoginScreen({ api, controller, onExit }: LoginScreenProps): Reac
         </AuthenticationLayout>
       </div>
     </div>
-  )
-}
-
-function RequiredFieldIndicator(): React.JSX.Element {
-  return (
-    <>
-      <span className="auth-required-indicator" aria-hidden="true">
-        *
-      </span>
-      <span className="visually-hidden"> required</span>
-    </>
   )
 }

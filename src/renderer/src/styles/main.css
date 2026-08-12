@@ -432,6 +432,15 @@ h1 {
   text-align: center;
 }
 
+.auth-login-card .foundation-statement {
+  max-width: none;
+  margin-top: 8px;
+  font-size: 0.96rem;
+  font-weight: 650;
+  line-height: 1.35;
+  text-align: center;
+}
+
 .auth-login-card .auth-form {
   margin-top: 24px;
 }

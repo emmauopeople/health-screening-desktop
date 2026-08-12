@@ -633,7 +633,7 @@ describe('application shell DOM integration', () => {
     {
       code: 'AUTH_LOCKED' as const,
       session: lockedSession(2),
-      expectedText: 'Session locked.'
+      expectedText: 'Session Locked'
     },
     {
       code: 'AUTH_UNAUTHENTICATED' as const,
@@ -673,7 +673,7 @@ describe('application shell DOM integration', () => {
 
     await clickButton(lockedMounted, 'Lock')
 
-    expect(text(lockedMounted)).toContain('Session locked.')
+    expect(text(lockedMounted)).toContain('Session Locked')
     expect(text(lockedMounted)).not.toContain('Protected Patient')
 
     await lockedMounted.unmount()
@@ -711,7 +711,7 @@ describe('application shell DOM integration', () => {
     expect(commandPanel(mounted)?.textContent).toContain('Patient Search')
 
     await emitSession(harness, lockedSession(3))
-    expect(text(mounted)).toContain('Session locked.')
+    expect(text(mounted)).toContain('Session Locked')
 
     await emitSession(harness, activeSession(4))
 
@@ -959,7 +959,7 @@ describe('application shell DOM integration', () => {
     {
       name: 'LOCKED',
       session: lockedSession(2),
-      expectedText: 'Session locked.'
+      expectedText: 'Session Locked'
     },
     {
       name: 'SIGNED_OUT',
