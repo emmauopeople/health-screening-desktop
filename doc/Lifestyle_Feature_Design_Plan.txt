@@ -1,0 +1,562 @@
+   LIFESTYLE FEATURE
+   DESIGN PLAN
+
+      Offline-first community health screening desktop application
+      Authoritative product, UX, data, security, and implementation reference
+
+Version: 1.0 Date: 12 August 2026
+Status: Approved design direction; implementation must be delivered through separately reviewed tasks.
+Core principle
+Show only the information required for the patient's current path. Keep baseline history separate from the weekly encounter
+record.
+
+Health Screening Offline-First Desktop Application  Lifestyle Design Plan | Page 1
+1. Purpose and boundaries
+
+ This document defines the Lifestyle feature that follows Vitals in the screening workflow. It is the reference Luna must read
+ before implementation prompts are executed. The feature collects analyzable alcohol, tobacco/nicotine, physical-activity,
+ work, and other-activity information while remaining fast, respectful, offline capable, and non-diagnostic.
+
+ Objectives
+
+q Collect quantitative weekly data for alcohol, tobacco/nicotine, and physical activity.
+q Collect structured plus descriptive occupation and other-activity context.
+q Minimize visible questions through conditional branching and collapsible cards.
+q Create a stable baseline profile and immutable baseline history without rewriting earlier encounters.
+q Support Save Draft, recovery, and Continue using the application's established security and transactional boundaries.
+q Prepare clean domain data for later reporting and FHIR mapping without implementing either in this feature.
+
+ Out of scope
+
+q Diagnosis of alcohol-use disorder, nicotine dependence, or physical inactivity.
+q Automated clinical recommendations, referrals, printing, reporting, remote sync, or FHIR persistence.
+q Changes to authentication, Patient Search, session creation, encounter creation, or Vitals behavior.
+q Food and over-the-counter medication questionnaires; they are separate later modules.
+
+ Clinical posture
+
+ The module is a screening and data-collection tool. It may calculate transparent totals and validated questionnaire scores
+ when separately approved, but it must not attach stigmatizing labels or substitute for clinical assessment.
+
+Health Screening Offline-First Desktop Application  Lifestyle Design Plan | Page 2
+2. Product model: baseline plus weekly screening
+
+Lifestyle uses two related but distinct records. A baseline describes usual or historical status. A weekly record describes only
+the selected screening period, normally the past seven days.
+
+Dimension         Baseline profile                                    Weekly encounter record
+Purpose           Usual/history status and branching context.         What occurred during this screening period.
+Frequency         Initial completion; update only when circumstances  Created for every Lifestyle screening.
+                  change.
+UI entry          A compact Baseline button opens an inline panel.    The primary questions shown in each card.
+History           Versioned; previous versions remain immutable.      Immutable after encounter finalization under lifecycle policy.
+Relationship      Active version helps select weekly questions.       References the baseline version used when the encounter was
+                                                                      completed.
+Unknowns          Unknown and Prefer not to answer remain explicit.   Blank, zero, unknown, and declined are distinct.
+
+Baseline versioning rule
+
+Updating a baseline creates a new version with an effective timestamp and actor attribution. It must never silently overwrite
+the prior version. Existing weekly records retain their original baseline-version reference. General audit metadata must
+describe the action without copying clinical answers.
+
+Required status values
+
+Domain            Statuses
+Alcohol           CURRENT, FORMER, NEVER, UNKNOWN, DECLINED
+Tobacco/nicotine  CURRENT_DAILY, CURRENT_SOME_DAYS, FORMER, NEVER, UNKNOWN, DECLINED
+Work              EMPLOYED, SELF_EMPLOYED, FARMING, STUDENT, HOMEMAKER_CAREGIVER, UNEMPLOYED, RETIRED,
+                  UNABLE_TO_WORK, OTHER, DECLINED
+
+Health Screening Offline-First Desktop Application                    Lifestyle Design Plan | Page 3
+3. Overall user experience
+
+The Lifestyle workspace presents five cards in order. Only the active card expands. Completed cards collapse automatically
+but remain reopenable until the encounter becomes non-editable.
+
+Order  Card                                         Default compact summary
+1      Alcohol                                      Baseline status + weekly completion/result
+2      Tobacco and nicotine                         Baseline status + weekly completion/result
+3      Physical activity                            Weekly minutes/status
+4      Work and occupation                          Work baseline + weekly variation
+5      Other activity                               Weekly completion/status
+
+Card states                  Indicator              Behavior
+                             Neutral circle         Compact; next required card may open.
+ State                       Blue accent            Expanded and editable.
+  Not started                Green check            Collapsed; summary visible.
+  In progress                Amber alert            Weekly use conflicts with baseline; review required.
+  Complete                   Red marker             Remain open; focus first invalid field.
+  Baseline review required   Lock state             Readable but not editable under encounter lifecycle.
+  Validation error
+  Locked
+
+ Primary controls
+
+q Save Draft persists incomplete valid work and remains in Lifestyle.
+
+q Continue requires every required card to be complete, persists successfully, then opens the next approved module.
+
+q Baseline buttons expand/collapse inline and never navigate away from the encounter.
+
+q Back or card reopening does not discard unsaved edits; explicit discard confirmation is required when applicable.
+
+q Keyboard order follows the visual path, Enter must not accidentally advance multi-step sections, and all controls require
+     visible focus.
+
+ Example compact view
+
+  Alcohol No use this week
+  Tobacco No use this week
+  Physical Activity 150 minutes
+ s Work Activity Not completed
+ s Other Activity Not started
+
+Health Screening Offline-First Desktop Application                                                        Lifestyle Design Plan | Page 4
+4. Alcohol design
+
+Alcohol uses a baseline status to shorten the weekly path. Questions use neutral language and locally appropriate drink
+examples. The data model stores standardized counts separately from display guidance.
+
+Alcohol baseline panel
+
+Field                          Type / options                                 Rule
+Ever consumed alcohol          YES / NO / UNKNOWN / DECLINED                  Required for baseline completion.
+Consumed in past 12 months     YES / NO / UNKNOWN / DECLINED                  Shown when ever use is Yes or Unknown.
+Current status                 CURRENT / FORMER / NEVER / UNKNOWN /           Derived only through approved explicit rules; user can confirm.
+                               DECLINED
+Common beverage types          Beer, wine, spirits, palm wine,                Multi-select; shown when applicable.
+                               traditional/home-brewed, other
+Other beverage description     Short text                                     Required only when Other selected.
+Validated baseline instrument  Deferred configuration                         AUDIT-C may be added only through a separately approved clinical
+                                                                              task.
+
+Weekly branching
+
+Baseline status     First weekly question                                If No                         If Yes
+Current                                                                  Record 0 drinking days;       Open quantitative fields.
+Former / Never      Did you consume alcohol during the past 7            complete.
+Unknown / Declined  days?                                                Preserve baseline; complete.  Open quantitative fields and require baseline
+Missing                                                                                                review.
+                    Did you consume any alcohol during the               Record Unknown/Declined, not  Open quantitative fields; offer baseline review.
+                    past 7 days?                                         zero.
+                                                                         Not applicable.               Baseline must be saved before weekly
+                    Can alcohol use be recorded for the past 7                                         completion.
+                    days?
+
+                    Complete Alcohol Baseline.
+
+Weekly quantitative fields after Yes
+
+Field                                               Type                 Validation
+Drinking days
+Total standardized drinks                           Integer              1-7
+
+Largest number in one day                           Decimal or integer per approved Greater than 0; upper safety limit triggers validation, not diagnosis.
+Days at largest amount                              convention
+Beverage types
+Clarifying note                                     Decimal/integer      Greater than 0 and not greater than total.
+
+                                                    Integer              1 through drinking days.
+
+                                                    Multi-select         At least one if configured required.
+
+                                                    Short optional text  Length-limited; never placed in audit metadata.
+
+Conflict behavior
+
+A Former or Never baseline combined with weekly Yes creates an amber "Review baseline" state. Weekly answers remain
+intact while the baseline panel opens. The baseline must be confirmed or versioned before Continue; Save Draft remains
+allowed. The UI must not automatically reclassify the patient without confirmation.
+
+Health Screening Offline-First Desktop Application                                                                   Lifestyle Design Plan | Page 5
+5. Tobacco and nicotine design
+
+Tobacco includes combustible, smokeless, and nicotine products. A zero-use week does not automatically change a current
+user to former status.
+
+Tobacco baseline panel
+
+Field                           Type / options                                                  Rule
+Ever regularly used
+Current use frequency           YES / NO / UNKNOWN / DECLINED                                   Required.
+Current status
+                                Every day / some days / not at all / unknown / declined         Shown when applicable.
+Products
+                                Current daily / current some days / former / never / unknown /  Confirmed baseline value.
+Former-use stop date            declined
+Other product description
+                                Cigarettes, rolled tobacco, cigar/pipe, smokeless/chewing, snuff, Multi-select.
+                                shisha/hookah, vape/e-cigarette, other
+
+                                Approximate month/year or year                                  Optional; do not invent precision.
+
+                                Short text                                                      Required when Other selected.
+
+Weekly branching
+
+Baseline                   Question                                        No                                    Yes
+Current                                                                    Record zero use for week; keep        Open product rows.
+Former / Never             Did you use any tobacco or nicotine product in  baseline Current.
+Unknown / Declined         the past 7 days?                                Preserve baseline; complete.          Open product rows; require baseline
+                                                                                                                 review.
+                           Did you use any tobacco or nicotine product in  Record explicit response, not zero.   Open product rows; offer baseline
+                           the past 7 days?                                                                      review.
+
+                           Can tobacco/nicotine use be recorded for the
+                           past 7 days?
+
+Product-row fields                                  Rule
+                                                    One controlled product type per row; no duplicates.
+ Field                                              Integer 1-7.
+  Product type                                      Positive numeric value.
+  Days used                                         Sticks/cigarettes, sessions, portions/pinches, pods/cartridges, or Other.
+  Average quantity per use day                      Short text required only for Other.
+  Unit                                              No / Yes / Unknown / Declined; optional by approved scope.
+  Other unit
+  Secondhand smoke exposure
+
+Health Screening Offline-First Desktop Application                                                                             Lifestyle Design Plan | Page 6
+6. Physical activity design
+
+Use "Physical Activity," not only "Exercise," because farming, domestic work, construction, and walking may be the patient's
+primary activity. The weekly record separates domains so totals remain interpretable.
+
+Weekly entry question
+
+During the past 7 days, did you perform physical activity for at least 10 continuous minutes?
+Options: Yes / No / Unable to answer / Prefer not to answer. The 10-minute threshold must remain configurable if the
+approved protocol changes.
+
+ If Yes: select domains
+
+q Work or farming
+q Walking or cycling for transportation
+q Household or caregiving activity
+q Exercise, sport, or recreation
+
+Fields per selected domain/activity row
+
+Field                                               Type                         Rule
+Activity category                                   Controlled value             Must belong to selected domain.
+Description                                         Short optional text          Useful for local activities.
+Intensity                                           Light / moderate / vigorous  Display plain-language examples.
+Days in past 7 days                                 Integer                      1-7.
+Average minutes per active day                      Integer                      Positive, realistic configured maximum.
+Weekly minutes                                      Calculated                   Days x minutes; retain inputs.
+
+Sedentary time
+
+Collect usual sitting or reclining time per day, excluding sleep, using hours and minutes or total minutes. Unknown and
+declined remain distinct. Do not subtract sedentary time from activity totals.
+
+ Calculation policy
+
+q Store raw days, minutes, and intensity, then calculate totals deterministically.
+q Retain moderate and vigorous minutes separately; do not silently convert them unless a documented derived metric is
+
+     added.
+q Prevent double entry by reminding the screener not to repeat an activity already captured in another domain.
+q Calculated totals support display and later analysis; they do not create a diagnosis.
+
+Health Screening Offline-First Desktop Application                                                                        Lifestyle Design Plan | Page 7
+7. Work and other activity
+
+Occupation is baseline data with a very short weekly variance question. Other activity is weekly and captures relevant activity
+not already recorded.
+
+Work baseline                                       Options / type
+                                                    Employed, self-employed, farming, student, homemaker/caregiver, unemployed, retired, unable to work,
+ Field                                              other, declined
+  Employment status                                 Short free text
+                                                    Mostly sitting, standing, walking, moderate labor, heavy labor, varies, unknown
+  Occupation or job title                           Integer 0-7
+  Usual physical demand                             Decimal or hours/minutes
+  Typical workdays per week                         Day, evening, night, rotating, irregular, not applicable
+  Typical hours per workday                         Optional length-limited text
+  Shift pattern
+  Description
+
+Weekly work question
+
+Did you perform your usual work during the past 7 days?
+Yes - usual amount / Yes - less than usual / Yes - more than usual / No / Not applicable / Unknown / Prefer not to answer. If
+the occupation changed, the screener opens Work Baseline and creates a new version.
+
+Other activity
+
+Ask: "Did you perform any other regular physical activity during the past 7 days that was not already recorded?" If Yes,
+capture category, description, days, minutes per day, and intensity. Categories include farming/gardening, household work,
+caregiving, religious/community activity, walking for errands, sport, and Other.
+
+Duplication guard
+
+The application may warn about similar descriptions or identical category/day/minute combinations, but must not delete or
+merge entries automatically. The screener decides whether the activity is a duplicate.
+
+Health Screening Offline-First Desktop Application  Lifestyle Design Plan | Page 8
+8. Data architecture
+
+The exact physical schema must follow the repository's established migration, identifier, timestamp, and repository
+conventions. The following is a logical model, not permission to bypass architecture boundaries.
+
+Entity                    Purpose                                           Key relationships
+Lifestyle baseline        Stable patient-level baseline container.          Patient, installation; one active logical baseline.
+Baseline version          Immutable domain snapshot effective from a        Baseline, actor; alcohol/tobacco/work version data.
+                          timestamp.
+Lifestyle draft           Encounter-owned parent for weekly answers.        Patient, encounter, historical session/location attribution, version.
+Alcohol weekly            Weekly alcohol response and quantitative totals.  One per Lifestyle draft.
+Tobacco weekly            Weekly tobacco summary.                           One per Lifestyle draft.
+Tobacco product row       Stable-ID product quantities.                     Many per tobacco weekly record.
+Physical activity weekly  Top-level response and sedentary time.            One per Lifestyle draft.
+Activity row              Stable-ID activity-domain inputs.                 Many per physical activity weekly record.
+Work weekly               Weekly variance from baseline.                    One per Lifestyle draft.
+Other activity row        Stable-ID uncaptured activities.                  Many per Lifestyle draft.
+
+ Data invariants
+
+q One Lifestyle draft per encounter; patient, encounter, session, location, and installation attribution is authoritative and
+     immutable.
+
+q Renderer never supplies actor, version authority, timestamps, baseline history authority, calculated scores, session,
+     location, or installation.
+
+q Stable child IDs support add/update/remove reconciliation; cross-draft and duplicate IDs are rejected.
+q Blank, zero, No, Unknown, Not applicable, and Prefer not to answer are distinct states.
+q Existing created timestamps are preserved; unchanged child rows must not receive artificial updated timestamps.
+q A completed weekly record stores the baseline-version references used for interpretation.
+
+ Suggested controlled codes
+
+ Use internal enums or controlled codes rather than UI labels for status, response, product, unit, activity domain, intensity,
+ employment status, and shift pattern. Labels may later be localized without changing stored meaning.
+
+Health Screening Offline-First Desktop Application                          Lifestyle Design Plan | Page 9
+9. Validation and workflow rules
+
+Rule area                Save Draft                                           Continue
+                                                                              Rejected with focus on first incomplete required card.
+Incomplete cards         Allowed when entered fields are individually valid.  Required baseline domains must be complete.
+                                                                              Baseline review/confirmation required.
+Missing baseline         Draft can be saved.                                  Every field required by Yes must be complete.
+                                                                              Allowed when logically complete.
+Former/Never + weekly Yes Save answers and amber review state.                Allowed according to field policy.
+                                                                              Persist first; navigate only after commit.
+Quantitative dependency  Partial values allowed if non-contradictory.
+
+No response              Store No and approved zeros.
+
+Unknown/Declined         Store explicit code, never coerce to zero.
+
+Persistence              Transactional save with optimistic concurrency.
+
+ Cross-field validation examples
+
+q Alcohol drinking days cannot be zero when weekly use is Yes.
+q Largest one-day alcohol amount cannot exceed total weekly drinks.
+q Days at largest amount cannot exceed drinking days.
+q A tobacco product row requires product, days, quantity, and unit.
+q Activity days and minutes must be positive when an activity row exists.
+q No weekly use must not coexist with positive quantities.
+q Former/Never conflict is a review requirement, not an automatic clinical conclusion.
+q Text inputs are trimmed, normalized under existing conventions, and length-limited.
+
+ Recovery and lifecycle
+
+ Lifestyle must follow the already approved recovery pattern: an existing editable draft may be restored after logout/login,
+ restart, or date rollover without rewriting historical attribution. First-draft creation must use the current encounter/session
+ authority defined by the established workflow. Closed or non-editable encounters remain blocked.
+
+Health Screening Offline-First Desktop Application                            Lifestyle Design Plan | Page 10
+10. Offline-first behavior and transactions
+
+ All feature behavior must work without network access. The local database is the immediate system of record for the desktop
+ workflow. This design does not add remote sync.
+
+ Save transaction
+
+q Validate authenticated actor, permission, trusted IPC sender, installation, patient, encounter ownership, and lifecycle.
+q Load authoritative current draft, baseline versions, child records, and optimistic version.
+q Validate baseline/weekly branching and normalized inputs.
+q Insert or version approved baseline changes without overwriting earlier versions.
+q Reconcile weekly child rows by stable ID, skipping updates for unchanged rows.
+q Update the parent draft/version under the established clock.
+q Write approved sanitized audit and outbox records.
+q Return success only after commit; any failure rolls back every change.
+
+ Concurrency
+
+ A stale renderer version returns the established sanitized conflict result. No automatic last-write-wins behavior is permitted.
+ Baseline updates and weekly saves that depend on them must be coordinated transactionally or through an explicitly
+ designed version contract.
+
+ Future sync preparation
+
+ Use stable identifiers, version numbers, created/updated timestamps, tombstone or approved deletion semantics, and
+ immutable encounter attribution consistent with the project architecture. Do not create network calls, remote identifiers,
+ merge algorithms, or FHIR resources in this task.
+
+Health Screening Offline-First Desktop Application  Lifestyle Design Plan | Page 11
+11. Security, privacy, and accessibility
+
+ Security boundaries
+
+q All authorization and persistence remain in the main process; renderer access is through narrow validated IPC contracts.
+q Renderer input cannot assert actor, role, patient ownership, installation, location, session, encounter lifecycle, timestamps,
+
+     audit metadata, baseline status history, or calculated authority.
+q Do not log clinical answers, patient identifiers, notes, raw database errors, SQL, or full IPC payloads.
+q Return stable sanitized result codes and user-safe messages.
+q Do not introduce bypass, force, recovery, admin, or override flags.
+
+ Privacy-sensitive interaction
+
+q Use neutral wording and a visible "Prefer not to answer" option where approved.
+q Do not display stigmatizing labels such as alcoholic, addict, or inactive.
+q Keep baseline summaries concise so sensitive detail is not unnecessarily exposed on screen.
+q Do not prefill a new week as if prior behavior occurred again; prior answers may be shown only as clearly labeled
+
+     reference.
+
+ Accessibility
+
+q Every input has a programmatic label; required state is not conveyed by color alone.
+q Expandable panels expose expanded/collapsed state to assistive technology.
+q Validation summaries link to fields; focus moves predictably.
+q Touch/click targets, contrast, zoom, and supported desktop window sizes follow existing UI standards.
+q Quantities include units in labels and errors; examples do not replace labels.
+
+Health Screening Offline-First Desktop Application  Lifestyle Design Plan | Page 12
+12. Testing strategy
+
+ Unit and domain tests
+
+q Every baseline status and weekly Yes/No/Unknown/Declined branch.
+q Alcohol and activity calculations, boundaries, and cross-field contradictions.
+q Tobacco product and activity stable-ID reconciliation, duplicates, removal, reordering, and cross-draft rejection.
+q Baseline version creation, prior-version preservation, and weekly version references.
+q Unchanged-row timestamp preservation and deterministic injected-clock behavior.
+
+ Application and persistence integration
+
+q First draft, update, Save Draft, Continue, optimistic conflict, and rollback.
+q Actor/permission/trusted-sender, patient/encounter/installation ownership, and lifecycle rejection.
+q Existing-draft recovery across logout/login, restart, and deployment-local date rollover.
+q No partial baseline or weekly persistence after a failure.
+q Audit/outbox contains no clinical values and only emits success after commit.
+
+ Renderer and UX tests
+
+q Only the required active fields are visible; irrelevant branches are absent.
+q Baseline button expands/collapses inline; successful save closes and updates summary.
+q Current, former, never, missing, unknown, and declined paths render correctly.
+q Former/Never + weekly Yes preserves weekly answers and requires baseline review.
+q Completed cards collapse, remain reopenable, and show accessible state.
+q Save Draft does not navigate; Continue persists before navigation.
+q Keyboard, focus, error announcement, required indicators, and responsive desktop layout.
+
+ Regression gates
+
+ Run repository formatting, lint, type checking, complete tests, verification, build, migration checks, diff checks, and a safe
+ desktop smoke test. P0-P4, authentication, Patient Search, sessions, encounters, Vitals, audit, outbox, and recovery
+ behavior must remain passing.
+
+Health Screening Offline-First Desktop Application  Lifestyle Design Plan | Page 13
+13. Implementation sequence for Luna prompts
+
+Do not ask Luna to implement the entire feature at once. Each task must begin from an exact reviewed main baseline, create
+one focused branch, read this PDF and repository instructions, run focused and full gates, push, stop, and wait for review
+before merge.
+
+Task               Scope                                                                   Exit condition
+
+L1 - Domain        Confirm repository patterns, field dictionary, enums, branching state   Approved design addendum or no-change confirmation.
+decisions          machine, and migration plan. No implementation if unresolved.
+
+L2 - Persistence   Migrations, repositories, baseline versioning, weekly parent and child  Persistence/security tests pass; no UI.
+foundation         models, constraints.
+
+L3 - Main-process  Authorization, trusted IPC, load/save, concurrency, transaction,        Service and integration tests pass.
+service            audit/outbox.
+
+L4 - Alcohol UI    Progressive card, baseline panel, weekly branching and validation.      Alcohol UX and integration tests pass.
+
+L5 - Tobacco UI    Baseline, weekly product rows, conflict review.                         Tobacco tests pass.
+
+L6 - Activity UI   Physical activity, work baseline/variance, other activities, calculations. Activity tests pass.
+
+L7 - Workflow      Card progress, Save Draft, recovery, Continue to next approved          End-to-end Lifestyle workflow passes.
+integration        module boundary.
+
+L8 - Hardening     Accessibility, responsive layout, failure/recovery, proof searches, final All quality gates and smoke tests pass.
+                   regression.
+
+ Task discipline
+
+q No task may silently broaden into recommendations, Food, OTC, sync, FHIR, reports, or printing.
+q A migration must be additive, reversible according to project policy, and tested against fresh and upgraded databases.
+q After every branch is pushed, perform an independent review before merging.
+q If repository architecture conflicts with this logical plan, Luna must stop and report the exact conflict rather than invent a
+
+     parallel pattern.
+
+Health Screening Offline-First Desktop Application                                                                  Lifestyle Design Plan | Page 14
+14. Acceptance criteria
+
+Area               The feature is acceptable when...
+Simplicity         Only path-relevant questions appear; five-card workflow is clear and fast.
+Baseline           Alcohol, tobacco, and work baselines open inline, close after save, and preserve version history.
+Weekly data        Alcohol, tobacco, and activity values are quantitative and bound to the correct encounter period.
+Status conflict    Former/Never + weekly Yes requires review without discarding weekly answers or auto-reclassifying.
+Correct semantics  Zero, No, blank, Unknown, Not applicable, and Declined remain distinct.
+Navigation         Save Draft stays; Continue requires completion, commits, then advances.
+Recovery           Editable drafts survive logout/login, restart, and date rollover with historical attribution intact.
+Security           Main-process authority, trusted IPC, ownership, lifecycle, sanitization, and privacy rules hold.
+Offline            Full feature works without internet; no remote dependency is introduced.
+Quality            Focused, integration, renderer, regression, migration, build, and visual checks pass.
+
+ Design decisions requiring later explicit approval
+
+q Exact standard-drink conversion guidance for Cameroon and local beverage/container examples.
+q Whether AUDIT-C is included at baseline and how validated scoring is presented.
+q Exact physical-activity duration threshold and any derived guideline comparison.
+q Whether secondhand-smoke exposure is included in the first Lifestyle release.
+q The next module opened by Continue after Lifestyle.
+q FHIR resource mapping, recommendations, referral thresholds, and reporting.
+
+ Approval statement
+
+ This plan defines the intended Lifestyle design. Implementation prompts may refine technical names to match the repository,
+ but may not change the product behavior, authority boundaries, history rules, or scope without explicit approval.
+
+Health Screening Offline-First Desktop Application  Lifestyle Design Plan | Page 15
+15. References
+
+These references support the questionnaire structure. They do not automatically authorize every instrument, threshold, or
+scoring rule for implementation.
+
+Reference                                           Design relevance
+World Health Organization - Alcohol Use
+Disorders Identification Test (AUDIT)               Validated alcohol screening foundation and primary-care guidance.
+WHO - Global Physical Activity Questionnaire        https://www.who.int/publications/i/item/WHO-MSD-MSB-01.6a
+(GPAQ)
+WHO - GPAQ Analysis Guide                           Separates work, transport, and recreation; collects frequency, duration, intensity, and sedentary
+                                                    behavior. https://www.who.int/publications/m/item/global-physical-activity-questionnaire
+NIAAA - Screen and Assess
+                                                    Calculation and data-quality context.
+NIAAA - What Is a Standard Drink?                   https://cdn.who.int/media/docs/default-source/ncds/ncd-surveillance/gpaq-analysis-guide.pdf
+
+CDC/NCHS - Tobacco use definitions                  AUDIT-C-style frequency, typical amount, and high-quantity occasion questions. https://www.niaaa.nih.
+                                                    gov/health-professionals-communities/core-resource-on-alcohol/screen-and-assess-use-quick-effective
+                                                    -methods
+
+                                                    Need to explain standardized drink quantities rather than only containers.
+                                                    https://www.niaaa.nih.gov/alcohols-effects-health/what-standard-drink
+
+                                                    Current every-day/some-days/not-at-all classification context.
+                                                    https://www.cdc.gov/nchs/hus/sources-definitions/tobacco-use.htm
+
+                                                    End of document
+
+Health Screening Offline-First Desktop Application                   Lifestyle Design Plan | Page 16
+
