@@ -32,12 +32,14 @@ historical attribution are never reassigned. Non-draft encounters, amendment
 rows, closed sessions, missing or inactive locations, and absent authentication
 return sanitized controlled outcomes. New encounter creation remains under P1
 and continues to require the authoritative current daily session. First-draft
-Vitals creation uses P1's read-only `findCurrentScreeningSession()` boundary;
-it never calls the create-capable `ensureCurrentScreeningSession()` operation.
-If no persisted current session exists, the first-draft save is rejected
-without creating or modifying a session. Existing persisted drafts may still
-be recovered and edited from an earlier session without requiring a current
-session.
+Vitals creation uses P1's read-only current-session boundary inside the Vitals
+write transaction, with the same transaction connection and authoritative
+timestamp that persist the draft. It never calls the create-capable
+`ensureCurrentScreeningSession()` operation. If no persisted current session
+exists, or the session date changes before the Vitals transaction's timestamp,
+the first-draft save is rejected without creating or modifying a session.
+Existing persisted drafts may still be recovered and edited from an earlier
+session without requiring a current session.
 
 ## Draft Rules
 

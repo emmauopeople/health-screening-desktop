@@ -269,21 +269,6 @@ function saveOrCompleteVitalsDraft({
   }
 
   try {
-    const persistedDraft = screeningVitalsDraftRepository.getByEncounterId(
-      commandResult.command.encounterId
-    )
-    let firstDraftSessionId: EntityId | undefined
-
-    if (persistedDraft === null) {
-      const currentSessionResult = currentScreeningSessionService.findCurrentScreeningSession()
-
-      if (currentSessionResult.status !== 'FOUND') {
-        return statusResult(mapCurrentSessionFailure(currentSessionResult.status))
-      }
-
-      firstDraftSessionId = currentSessionResult.session.id
-    }
-
     return transactionExecutor.run((context) => {
       const occurredAt = context.nowUtc()
       const encounterContext = validateEncounterContext({
@@ -324,12 +309,23 @@ function saveOrCompleteVitalsDraft({
         return statusResult('VERSION_CONFLICT')
       }
 
-      if (
-        existing === null &&
-        (firstDraftSessionId === undefined ||
-          encounterContext.context.encounter.screeningSessionId !== firstDraftSessionId)
-      ) {
-        return statusResult('SESSION_NOT_CURRENT')
+      if (existing === null) {
+        const currentSessionResult =
+          currentScreeningSessionService.findCurrentScreeningSessionInTransaction({
+            connection: context.connection,
+            occurredAt
+          })
+
+        if (
+          currentSessionResult.status !== 'FOUND' ||
+          encounterContext.context.encounter.screeningSessionId !== currentSessionResult.session.id
+        ) {
+          return statusResult(
+            currentSessionResult.status === 'FOUND'
+              ? 'SESSION_NOT_CURRENT'
+              : mapCurrentSessionFailure(currentSessionResult.status)
+          )
+        }
       }
 
       if (

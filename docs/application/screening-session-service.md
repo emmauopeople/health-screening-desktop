@@ -9,6 +9,7 @@ The service exposes:
 - `create`
 - `ensureCurrentScreeningSession`
 - `findCurrentScreeningSession`
+- `findCurrentScreeningSessionInTransaction`
 - `close`
 - `reopen`
 - `getById`
@@ -89,6 +90,14 @@ deployment-local-date authority, but is strictly read-only. It returns
 today's session does not exist. It never creates, updates, closes, reopens, or
 audits a session; daily-session creation remains exclusively under
 `ensureCurrentScreeningSession()` and the established Screening entry flow.
+
+`findCurrentScreeningSessionInTransaction({ connection, occurredAt })` is the
+internal read-only variant used when another application transaction must make
+the current-session decision atomically. It applies the same P1 authority using
+the caller's active transaction connection and authoritative timestamp. It
+does not open a nested transaction and never inserts, updates, closes,
+reopens, or audits a session. The renderer cannot invoke this boundary or
+provide session, date, timezone, location, installation, or actor authority.
 
 Notes are not exposed through this boundary. Closed sessions are never reopened
 or replaced by this operation. Existing sessions are not mutated merely because

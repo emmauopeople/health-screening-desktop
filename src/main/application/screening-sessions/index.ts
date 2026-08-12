@@ -12,6 +12,7 @@ export type {
   CurrentScreeningSessionLocation,
   CurrentScreeningSessionService,
   CurrentScreeningSessionServiceDependencies,
+  CurrentScreeningSessionTransactionInput,
   CurrentScreeningSessionSummary,
   EnsureCurrentScreeningSessionResult,
   FindCurrentScreeningSessionResult

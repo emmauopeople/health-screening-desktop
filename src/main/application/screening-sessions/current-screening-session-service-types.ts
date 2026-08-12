@@ -9,8 +9,12 @@ import type {
   ScreeningSessionRecord,
   ScreeningSessionRepository
 } from '@main/database'
-import type { DatabaseTransactionExecutor } from '@main/database/transaction'
+import type {
+  DatabaseTransactionConnection,
+  DatabaseTransactionExecutor
+} from '@main/database/transaction'
 import type { EntityId } from '@main/foundation/entity-id'
+import type { UtcTimestamp } from '@main/foundation/utc-clock'
 
 import type { LocalAuthenticationSessionService } from '../authentication/session'
 import type { InstallationLocationService } from '../installation-location'
@@ -70,9 +74,17 @@ export type FindCurrentScreeningSessionResult =
         | 'UNAVAILABLE'
     }
 
+export interface CurrentScreeningSessionTransactionInput {
+  readonly connection: DatabaseTransactionConnection
+  readonly occurredAt: UtcTimestamp
+}
+
 export interface CurrentScreeningSessionService {
   ensureCurrentScreeningSession(): EnsureCurrentScreeningSessionResult
   findCurrentScreeningSession(): FindCurrentScreeningSessionResult
+  findCurrentScreeningSessionInTransaction(
+    input: CurrentScreeningSessionTransactionInput
+  ): FindCurrentScreeningSessionResult
 }
 
 export interface CurrentScreeningSessionServiceDependencies {

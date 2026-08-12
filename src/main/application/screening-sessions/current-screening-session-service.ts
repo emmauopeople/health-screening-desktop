@@ -17,9 +17,9 @@ import {
   type ScreeningSessionOutboxPayload,
   type ScreeningSessionRecord
 } from '@main/database'
+import type { DatabaseTransactionConnection } from '@main/database/transaction'
 import { EntityIdGenerationError, type EntityId } from '@main/foundation/entity-id'
 import { parseUtcTimestamp, UtcClockError, type UtcTimestamp } from '@main/foundation/utc-clock'
-import type { DatabaseTransactionConnection } from '@main/database/transaction'
 
 import {
   LocalSessionAuthorizationError,
@@ -33,6 +33,7 @@ import type {
   CurrentScreeningSessionService,
   CurrentScreeningSessionServiceDependencies,
   CurrentScreeningSessionSummary,
+  CurrentScreeningSessionTransactionInput,
   EnsureCurrentScreeningSessionResult,
   FindCurrentScreeningSessionResult
 } from './current-screening-session-service-types'
@@ -159,52 +160,92 @@ export function createCurrentScreeningSessionService({
     },
 
     findCurrentScreeningSession(): FindCurrentScreeningSessionResult {
-      const actorResult = resolveTrustedActor(authenticationSessionService)
-
-      if (actorResult.status !== 'VALID') {
-        return findResult(actorResult.result.status)
-      }
-
-      const configuredLocationResult =
-        installationLocationService.resolveConfiguredInstallationLocation()
-
-      if (configuredLocationResult.status !== 'RESOLVED') {
-        return findResult(configuredLocationResult.status)
-      }
-
       try {
         return transactionExecutor.run((context) => {
-          const authorityResult = readCurrentSessionAuthority({
+          return findCurrentScreeningSessionInTransaction({
             connection: context.connection,
             occurredAt: context.nowUtc(),
-            configuredLocationId: configuredLocationResult.location.id,
+            authenticationSessionService,
+            installationLocationService,
             installationRepository,
             locationRepository,
             screeningSessionRepository
           })
+        })
+      } catch {
+        return findResult('UNAVAILABLE')
+      }
+    },
 
-          if (authorityResult.status !== 'VALID') {
-            return findResult(authorityResult.status)
-          }
-
-          if (authorityResult.context.session === null) {
-            return findResult('SESSION_NOT_FOUND')
-          }
-
-          if (authorityResult.context.session.status === 'CLOSED') {
-            return findResult('SESSION_CLOSED')
-          }
-
-          return foundSessionResult(
-            authorityResult.context.session,
-            authorityResult.context.location
-          )
+    findCurrentScreeningSessionInTransaction(
+      input: CurrentScreeningSessionTransactionInput
+    ): FindCurrentScreeningSessionResult {
+      try {
+        return findCurrentScreeningSessionInTransaction({
+          ...input,
+          authenticationSessionService,
+          installationLocationService,
+          installationRepository,
+          locationRepository,
+          screeningSessionRepository
         })
       } catch {
         return findResult('UNAVAILABLE')
       }
     }
   })
+}
+
+function findCurrentScreeningSessionInTransaction({
+  connection,
+  occurredAt,
+  authenticationSessionService,
+  installationLocationService,
+  installationRepository,
+  locationRepository,
+  screeningSessionRepository
+}: CurrentScreeningSessionTransactionInput & {
+  readonly authenticationSessionService: CurrentScreeningSessionServiceDependencies['authenticationSessionService']
+  readonly installationLocationService: CurrentScreeningSessionServiceDependencies['installationLocationService']
+  readonly installationRepository: CurrentScreeningSessionServiceDependencies['installationRepository']
+  readonly locationRepository: CurrentScreeningSessionServiceDependencies['locationRepository']
+  readonly screeningSessionRepository: CurrentScreeningSessionServiceDependencies['screeningSessionRepository']
+}): FindCurrentScreeningSessionResult {
+  const actorResult = resolveTrustedActor(authenticationSessionService)
+
+  if (actorResult.status !== 'VALID') {
+    return findResult(actorResult.result.status)
+  }
+
+  const configuredLocationResult =
+    installationLocationService.resolveConfiguredInstallationLocation()
+
+  if (configuredLocationResult.status !== 'RESOLVED') {
+    return findResult(configuredLocationResult.status)
+  }
+
+  const authorityResult = readCurrentSessionAuthority({
+    connection,
+    occurredAt,
+    configuredLocationId: configuredLocationResult.location.id,
+    installationRepository,
+    locationRepository,
+    screeningSessionRepository
+  })
+
+  if (authorityResult.status !== 'VALID') {
+    return findResult(authorityResult.status)
+  }
+
+  if (authorityResult.context.session === null) {
+    return findResult('SESSION_NOT_FOUND')
+  }
+
+  if (authorityResult.context.session.status === 'CLOSED') {
+    return findResult('SESSION_CLOSED')
+  }
+
+  return foundSessionResult(authorityResult.context.session, authorityResult.context.location)
 }
 
 type CurrentSessionAuthorityContext = {

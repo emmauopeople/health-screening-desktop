@@ -110,7 +110,10 @@ describe('screening vitals draft service integration', () => {
           )
         ).toEqual({ status: 'SESSION_NOT_CURRENT' })
 
-        expect(currentScreeningSessionSpies?.findCurrentScreeningSession).toHaveBeenCalledOnce()
+        expect(
+          currentScreeningSessionSpies?.findCurrentScreeningSessionInTransaction
+        ).toHaveBeenCalledOnce()
+        expect(currentScreeningSessionSpies?.findCurrentScreeningSession).not.toHaveBeenCalled()
         expect(currentScreeningSessionSpies?.ensureCurrentScreeningSession).not.toHaveBeenCalled()
         expect(readSessionRows(connection)).toEqual(sessionsBefore)
         expect(readEncounterRows(connection)).toEqual(encountersBefore)
@@ -120,6 +123,43 @@ describe('screening vitals draft service integration', () => {
         expect(readTableCount(connection, 'sync_outbox')).toBe(0)
       },
       { timestamps: [nextDeploymentDate], currentSessionId }
+    )
+  })
+
+  it('rejects a first draft when a pre-midnight session lookup becomes stale at transaction time', async () => {
+    await withVitalsService(
+      ({ connection, service, currentScreeningSessionService }) => {
+        seedCoreGraph(connection)
+
+        const sessionsBefore = readSessionRows(connection)
+        const encountersBefore = readEncounterRows(connection)
+        const auditBefore = readAuditRows(connection)
+        const outboxBefore = readOutboxRows(connection)
+
+        expect(currentScreeningSessionService.findCurrentScreeningSession()).toMatchObject({
+          status: 'FOUND',
+          session: { id: parseEntityId(sessionId) }
+        })
+
+        expect(
+          service.saveVitalsDraft(
+            createVitalsRequest({
+              readings: [completeReading(1)]
+            })
+          )
+        ).toEqual({ status: 'SESSION_NOT_CURRENT' })
+
+        expect(readSessionRows(connection)).toEqual(sessionsBefore)
+        expect(readEncounterRows(connection)).toEqual(encountersBefore)
+        expect(readAuditRows(connection)).toEqual(auditBefore)
+        expect(readOutboxRows(connection)).toEqual(outboxBefore)
+        expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(0)
+        expect(readTableCount(connection, 'screening_vitals_draft_readings')).toBe(0)
+      },
+      {
+        timestamps: ['2026-08-06T23:59:59.000Z', '2026-08-07T00:00:01.000Z'],
+        useRealCurrentSessionService: true
+      }
     )
   })
 
@@ -904,6 +944,7 @@ describe('screening vitals draft service integration', () => {
 interface CurrentScreeningSessionSpies {
   readonly ensureCurrentScreeningSession: ReturnType<typeof vi.fn>
   readonly findCurrentScreeningSession: ReturnType<typeof vi.fn>
+  readonly findCurrentScreeningSessionInTransaction: ReturnType<typeof vi.fn>
 }
 
 interface Harness {
@@ -1030,6 +1071,25 @@ function createMockCurrentScreeningSessionService(
       throw new Error('Vitals service must not create a current session.')
     }),
     findCurrentScreeningSession: vi.fn(() => ({
+      status: 'FOUND' as const,
+      session: {
+        id: parseEntityId(currentSessionIdValue),
+        locationId: parseEntityId(locationId),
+        protocolVersionId: parseEntityId(protocolId),
+        sessionDate: parseScreeningSessionDate('2026-08-06'),
+        status: 'OPEN' as const,
+        notes: null,
+        openedAt: now as UtcTimestamp,
+        closedAt: null,
+        createdAt: now as UtcTimestamp,
+        rowVersion: 1
+      },
+      location: {
+        id: parseEntityId(locationId),
+        displayName: parseLocationName('Test Site')
+      }
+    })),
+    findCurrentScreeningSessionInTransaction: vi.fn(() => ({
       status: 'FOUND' as const,
       session: {
         id: parseEntityId(currentSessionIdValue),
