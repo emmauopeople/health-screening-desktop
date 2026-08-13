@@ -14,18 +14,28 @@ import {
   type AuditMetadata,
   type InstallationRecord,
   type LifestyleAlcoholBaselineInput,
+  type LifestyleAlcoholBaselineRecord,
+  type LifestyleAlcoholWeeklyRecord,
+  type LifestyleActivityRow,
   type LifestyleAlcoholWeeklyInput,
   type LifestyleDraftRecord,
   type LifestyleDraftUpdateInput,
   type LifestyleOtherActivityInput,
+  type LifestyleOtherActivityRow,
   type LifestylePhysicalActivityWeeklyInput,
+  type LifestylePhysicalActivityWeeklyRecord,
   type LifestyleRepository,
   type ScreeningEncounterRecord,
   type ScreeningSessionRecord,
   type LifestyleTobaccoBaselineInput,
+  type LifestyleTobaccoBaselineRecord,
+  type LifestyleTobaccoProductRow,
   type LifestyleTobaccoWeeklyInput,
+  type LifestyleTobaccoWeeklyRecord,
+  type LifestyleWorkBaselineRecord,
   type LifestyleWorkBaselineInput,
-  type LifestyleWorkWeeklyInput
+  type LifestyleWorkWeeklyInput,
+  type LifestyleWorkWeeklyRecord
 } from '@main/database'
 import type { DatabaseTransactionConnection } from '@main/database/transaction'
 import { parseEntityId, type EntityId } from '@main/foundation/entity-id'
@@ -43,7 +53,18 @@ import type {
   CompleteLifestyleResult,
   GetLifestyleWorkspaceRequest,
   GetLifestyleWorkspaceResult,
+  LifestyleActivitySummary,
+  LifestyleAlcoholBaselineSummary,
   LifestyleServiceControlledStatus,
+  LifestyleAlcoholWeeklySummary,
+  LifestyleDraftSummary,
+  LifestyleOtherActivitySummary,
+  LifestylePhysicalActivityWeeklySummary,
+  LifestyleTobaccoBaselineSummary,
+  LifestyleTobaccoProductSummary,
+  LifestyleTobaccoWeeklySummary,
+  LifestyleWorkBaselineSummary,
+  LifestyleWorkWeeklySummary,
   LifestyleWorkspaceSummary,
   SaveLifestyleAlcoholBaselineRequest,
   SaveLifestyleDraftRequest,
@@ -77,6 +98,10 @@ const draftRequestKeys = Object.freeze([
   'work',
   'otherActivities'
 ] as const)
+const completionConfirmationKeys = Object.freeze([
+  'alcoholBaselineReviewConfirmedVersionId',
+  'tobaccoBaselineReviewConfirmedVersionId'
+] as const)
 
 type ValidatedActor = Readonly<{ userId: EntityId }>
 type ValidatedContext = Readonly<{
@@ -100,6 +125,11 @@ interface ParsedDraftCommand {
   readonly encounterId: EntityId
   readonly expectedVersion: number | null
   readonly fields: Record<string, unknown>
+}
+
+interface ParsedCompleteCommand extends ParsedDraftCommand {
+  readonly alcoholBaselineReviewConfirmedVersionId: EntityId | null
+  readonly tobaccoBaselineReviewConfirmedVersionId: EntityId | null
 }
 
 type BaselineDomain = 'alcohol' | 'tobacco' | 'work'
@@ -485,7 +515,8 @@ function saveDraft({
         existing?.workBaselineVersionId ?? null,
         actorResult.actor.userId,
         occurredAt,
-        draftId
+        draftId,
+        existing
       )
       if (parsed === null) return statusResult('VALIDATION_FAILED')
 
@@ -555,7 +586,7 @@ function completeDraft({
   const actorResult = resolveTrustedActor(dependencies.authenticationSessionService)
   if (actorResult.status !== 'VALID') return statusResult(actorResult.statusCode)
 
-  const command = parseDraftCommand(request)
+  const command = parseCompleteCommand(request)
   if (command === null) return statusResult('VALIDATION_FAILED')
   const locationResult =
     dependencies.installationLocationService.resolveConfiguredInstallationLocation()
@@ -593,15 +624,25 @@ function completeDraft({
         existing.workBaselineVersionId,
         actorResult.actor.userId,
         occurredAt,
-        existing.id
+        existing.id,
+        existing
       )
       if (parsed === null || !isCompleteLifestyleInput(parsed))
         return statusResult('VALIDATION_FAILED')
+      const baselineReferences = loadCompleteBaselineReferences(
+        existing,
+        dependencies.lifestyleRepository,
+        context.connection
+      )
+      if (baselineReferences === null) return statusResult('VALIDATION_FAILED')
       if (
-        !hasCompleteBaselineReferences(
-          existing,
-          dependencies.lifestyleRepository,
-          context.connection
+        !validateBaselineReviewConfirmations(
+          baselineReferences.alcohol,
+          parsed.alcohol?.weeklyResponse ?? null,
+          command.alcoholBaselineReviewConfirmedVersionId,
+          baselineReferences.tobacco,
+          parsed.tobacco?.weeklyResponse ?? null,
+          command.tobaccoBaselineReviewConfirmedVersionId
         )
       )
         return statusResult('VALIDATION_FAILED')
@@ -629,6 +670,8 @@ function completeDraft({
         operation: 'SCREENING_LIFESTYLE_STEP_COMPLETED',
         schemaVersion: 'screening-encounter.lifestyle-step-completed.v1',
         occurredAt,
+        alcoholBaselineReviewConfirmedVersionId: command.alcoholBaselineReviewConfirmedVersionId,
+        tobaccoBaselineReviewConfirmedVersionId: command.tobaccoBaselineReviewConfirmedVersionId,
         auditId: context.newEntityId(),
         outboxId: context.newEntityId()
       })
@@ -753,38 +796,211 @@ function loadWorkspace(
   )
   return deepFreeze({
     encounterId,
-    draft,
-    activeAlcoholBaseline,
-    activeTobaccoBaseline,
-    activeWorkBaseline,
+    draft: draft === null ? null : mapDraftSummary(draft),
+    activeAlcoholBaseline:
+      activeAlcoholBaseline === null ? null : mapAlcoholBaselineSummary(activeAlcoholBaseline),
+    activeTobaccoBaseline:
+      activeTobaccoBaseline === null ? null : mapTobaccoBaselineSummary(activeTobaccoBaseline),
+    activeWorkBaseline:
+      activeWorkBaseline === null ? null : mapWorkBaselineSummary(activeWorkBaseline),
     referencedAlcoholBaseline:
       draft?.alcoholBaselineVersionId === null || draft?.alcoholBaselineVersionId === undefined
         ? null
-        : repository.findAlcoholBaselineByIdForWrite(
-            connection,
-            draft.alcoholBaselineVersionId,
-            patientId,
-            installationId
+        : mapAlcoholBaselineSummary(
+            repository.findAlcoholBaselineByIdForWrite(
+              connection,
+              draft.alcoholBaselineVersionId,
+              patientId,
+              installationId
+            )
           ),
     referencedTobaccoBaseline:
       draft?.tobaccoBaselineVersionId === null || draft?.tobaccoBaselineVersionId === undefined
         ? null
-        : repository.findTobaccoBaselineByIdForWrite(
-            connection,
-            draft.tobaccoBaselineVersionId,
-            patientId,
-            installationId
+        : mapTobaccoBaselineSummary(
+            repository.findTobaccoBaselineByIdForWrite(
+              connection,
+              draft.tobaccoBaselineVersionId,
+              patientId,
+              installationId
+            )
           ),
     referencedWorkBaseline:
       draft?.workBaselineVersionId === null || draft?.workBaselineVersionId === undefined
         ? null
-        : repository.findWorkBaselineByIdForWrite(
-            connection,
-            draft.workBaselineVersionId,
-            patientId,
-            installationId
+        : mapWorkBaselineSummary(
+            repository.findWorkBaselineByIdForWrite(
+              connection,
+              draft.workBaselineVersionId,
+              patientId,
+              installationId
+            )
           )
   })
+}
+
+function mapDraftSummary(record: LifestyleDraftRecord): LifestyleDraftSummary {
+  return {
+    id: record.id,
+    encounterId: record.encounterId,
+    status: record.status,
+    rowVersion: record.rowVersion,
+    periodStart: record.periodStart,
+    periodEnd: record.periodEnd,
+    alcoholBaselineVersionId: record.alcoholBaselineVersionId,
+    tobaccoBaselineVersionId: record.tobaccoBaselineVersionId,
+    workBaselineVersionId: record.workBaselineVersionId,
+    alcohol: record.alcohol === null ? null : mapAlcoholWeeklySummary(record.alcohol),
+    tobacco: record.tobacco === null ? null : mapTobaccoWeeklySummary(record.tobacco),
+    physicalActivity:
+      record.physicalActivity === null
+        ? null
+        : mapPhysicalActivityWeeklySummary(record.physicalActivity),
+    work: record.work === null ? null : mapWorkWeeklySummary(record.work),
+    otherActivities: record.otherActivities.map(mapOtherActivitySummary),
+    updatedAt: record.updatedAt
+  }
+}
+
+function mapAlcoholWeeklySummary(
+  record: LifestyleAlcoholWeeklyRecord
+): LifestyleAlcoholWeeklySummary {
+  return {
+    id: record.id,
+    weeklyResponse: record.weeklyResponse,
+    drinkingDays: record.drinkingDays,
+    totalStandardizedDrinks: record.totalStandardizedDrinks,
+    largestOneDayAmount: record.largestOneDayAmount,
+    daysAtLargestAmount: record.daysAtLargestAmount,
+    commonBeverageTypes: [...record.commonBeverageTypes],
+    otherBeverageDescription: record.otherBeverageDescription,
+    updatedAt: record.updatedAt
+  }
+}
+
+function mapTobaccoWeeklySummary(
+  record: LifestyleTobaccoWeeklyRecord
+): LifestyleTobaccoWeeklySummary {
+  return {
+    id: record.id,
+    weeklyResponse: record.weeklyResponse,
+    products: record.products.map(mapTobaccoProductSummary),
+    updatedAt: record.updatedAt
+  }
+}
+
+function mapTobaccoProductSummary(
+  record: LifestyleTobaccoProductRow
+): LifestyleTobaccoProductSummary {
+  return {
+    id: record.id,
+    sequenceNumber: record.sequenceNumber,
+    productType: record.productType,
+    daysUsed: record.daysUsed,
+    averageQuantityPerUseDay: record.averageQuantityPerUseDay,
+    unit: record.unit,
+    secondhandSmokeExposure: record.secondhandSmokeExposure,
+    otherProductDescription: record.otherProductDescription,
+    otherUnitDescription: record.otherUnitDescription,
+    updatedAt: record.updatedAt
+  }
+}
+
+function mapPhysicalActivityWeeklySummary(
+  record: LifestylePhysicalActivityWeeklyRecord
+): LifestylePhysicalActivityWeeklySummary {
+  return {
+    id: record.id,
+    weeklyResponse: record.weeklyResponse,
+    sedentaryMinutesPerDay: record.sedentaryMinutesPerDay,
+    activities: record.activities.map(mapActivitySummary),
+    updatedAt: record.updatedAt
+  }
+}
+
+function mapActivitySummary(record: LifestyleActivityRow): LifestyleActivitySummary {
+  return {
+    id: record.id,
+    sequenceNumber: record.sequenceNumber,
+    activityDomain: record.activityDomain,
+    description: record.description,
+    intensity: record.intensity,
+    daysInPastSevenDays: record.daysInPastSevenDays,
+    averageMinutesPerActiveDay: record.averageMinutesPerActiveDay,
+    weeklyMinutes: record.weeklyMinutes,
+    updatedAt: record.updatedAt
+  }
+}
+
+function mapWorkWeeklySummary(record: LifestyleWorkWeeklyRecord): LifestyleWorkWeeklySummary {
+  return { id: record.id, weeklyResponse: record.weeklyResponse, updatedAt: record.updatedAt }
+}
+
+function mapOtherActivitySummary(record: LifestyleOtherActivityRow): LifestyleOtherActivitySummary {
+  return {
+    id: record.id,
+    sequenceNumber: record.sequenceNumber,
+    category: record.category,
+    description: record.description,
+    daysInPastSevenDays: record.daysInPastSevenDays,
+    averageMinutesPerDay: record.averageMinutesPerDay,
+    intensity: record.intensity,
+    updatedAt: record.updatedAt
+  }
+}
+
+function mapAlcoholBaselineSummary(
+  record: LifestyleAlcoholBaselineRecord | null
+): LifestyleAlcoholBaselineSummary | null {
+  return record === null
+    ? null
+    : {
+        id: record.id,
+        version: record.version,
+        status: record.status,
+        everConsumed: record.everConsumed,
+        consumedPast12Months: record.consumedPast12Months,
+        commonBeverageTypes: [...record.commonBeverageTypes],
+        otherBeverageDescription: record.otherBeverageDescription,
+        updatedAt: record.updatedAt
+      }
+}
+
+function mapTobaccoBaselineSummary(
+  record: LifestyleTobaccoBaselineRecord | null
+): LifestyleTobaccoBaselineSummary | null {
+  return record === null
+    ? null
+    : {
+        id: record.id,
+        version: record.version,
+        status: record.status,
+        everRegularlyUsed: record.everRegularlyUsed,
+        formerUseApproximateStopDate: record.formerUseApproximateStopDate,
+        currentUseFrequency: record.currentUseFrequency,
+        productTypes: [...record.productTypes],
+        otherProductDescription: record.otherProductDescription,
+        updatedAt: record.updatedAt
+      }
+}
+
+function mapWorkBaselineSummary(
+  record: LifestyleWorkBaselineRecord | null
+): LifestyleWorkBaselineSummary | null {
+  return record === null
+    ? null
+    : {
+        id: record.id,
+        version: record.version,
+        status: record.status,
+        occupationJobTitle: record.occupationJobTitle,
+        usualPhysicalDemand: record.usualPhysicalDemand,
+        typicalWorkdaysPerWeek: record.typicalWorkdaysPerWeek,
+        typicalHoursPerWorkday: record.typicalHoursPerWorkday,
+        shiftPattern: record.shiftPattern,
+        description: record.description,
+        updatedAt: record.updatedAt
+      }
 }
 
 function savedWorkspaceResult(
@@ -890,7 +1106,9 @@ function insertLifestyleEvents({
   outboxId,
   baselineDomain,
   baselineId,
-  baselineVersion
+  baselineVersion,
+  alcoholBaselineReviewConfirmedVersionId,
+  tobaccoBaselineReviewConfirmedVersionId
 }: {
   readonly dependencies: ServiceDependencies
   readonly connection: DatabaseTransactionConnection
@@ -911,8 +1129,17 @@ function insertLifestyleEvents({
   readonly baselineDomain?: BaselineDomain
   readonly baselineId?: EntityId
   readonly baselineVersion?: number
+  readonly alcoholBaselineReviewConfirmedVersionId?: EntityId | null
+  readonly tobaccoBaselineReviewConfirmedVersionId?: EntityId | null
 }): void {
-  const metadata = createEventMetadata(draft, baselineDomain, baselineId, baselineVersion)
+  const metadata = createEventMetadata(
+    draft,
+    baselineDomain,
+    baselineId,
+    baselineVersion,
+    alcoholBaselineReviewConfirmedVersionId,
+    tobaccoBaselineReviewConfirmedVersionId
+  )
   dependencies.auditEventRepository.insert(connection, {
     id: auditId,
     installationId: installation.id,
@@ -937,16 +1164,18 @@ function createEventMetadata(
   draft: LifestyleDraftRecord,
   baselineDomain?: BaselineDomain,
   baselineId?: EntityId,
-  baselineVersion?: number
+  baselineVersion?: number,
+  alcoholBaselineReviewConfirmedVersionId?: EntityId | null,
+  tobaccoBaselineReviewConfirmedVersionId?: EntityId | null
 ): AuditMetadata {
-  const metadata: Record<string, string | number> = {
+  const metadata: Record<string, string | number | null> = {
     draft_id: draft.id,
     encounter_id: draft.encounterId,
     draft_status: draft.status,
     row_version: draft.rowVersion,
-    alcohol_baseline_reference_id: draft.alcoholBaselineVersionId ?? '',
-    tobacco_baseline_reference_id: draft.tobaccoBaselineVersionId ?? '',
-    work_baseline_reference_id: draft.workBaselineVersionId ?? '',
+    alcohol_baseline_reference_id: draft.alcoholBaselineVersionId,
+    tobacco_baseline_reference_id: draft.tobaccoBaselineVersionId,
+    work_baseline_reference_id: draft.workBaselineVersionId,
     alcohol_record_count: draft.alcohol === null ? 0 : 1,
     tobacco_product_count: draft.tobacco?.products.length ?? 0,
     activity_row_count: draft.physicalActivity?.activities.length ?? 0,
@@ -955,6 +1184,10 @@ function createEventMetadata(
   if (baselineDomain !== undefined) metadata.baseline_domain = baselineDomain
   if (baselineId !== undefined) metadata.baseline_version_id = baselineId
   if (baselineVersion !== undefined) metadata.baseline_version_number = baselineVersion
+  if (alcoholBaselineReviewConfirmedVersionId !== undefined)
+    metadata.alcohol_baseline_review_confirmed_version_id = alcoholBaselineReviewConfirmedVersionId
+  if (tobaccoBaselineReviewConfirmedVersionId !== undefined)
+    metadata.tobacco_baseline_review_confirmed_version_id = tobaccoBaselineReviewConfirmedVersionId
   return Object.freeze(metadata)
 }
 
@@ -968,25 +1201,35 @@ function normalizeDraftUpdate(
   workBaselineVersionId: EntityId | null,
   actorId: EntityId,
   occurredAt: UtcTimestamp,
-  draftId: EntityId
+  draftId: EntityId,
+  existing?: LifestyleDraftRecord | null
 ): LifestyleDraftUpdateInput | null {
   try {
     const alcohol = normalizeAlcohol(
       fields.alcohol,
-      newEntityId
+      newEntityId,
+      existing?.alcohol
     ) as LifestyleAlcoholWeeklyInput | null
     const tobacco = normalizeTobacco(
       fields.tobacco,
-      newEntityId
+      newEntityId,
+      existing?.tobacco
     ) as LifestyleTobaccoWeeklyInput | null
     const physicalActivity = normalizePhysical(
       fields.physicalActivity,
-      newEntityId
+      newEntityId,
+      existing?.physicalActivity
     ) as LifestylePhysicalActivityWeeklyInput | null
-    const work = normalizeWork(fields.work, newEntityId) as LifestyleWorkWeeklyInput | null
+    const work = normalizeWork(
+      fields.work,
+      newEntityId,
+      existing?.work
+    ) as LifestyleWorkWeeklyInput | null
     const otherActivities = normalizeOtherActivities(
       fields.otherActivities,
-      newEntityId
+      newEntityId,
+      existing?.otherActivities,
+      matchesOtherActivity
     ) as readonly LifestyleOtherActivityInput[]
     return parseLifestyleDraftUpdateInput({
       id: draftId,
@@ -1008,7 +1251,11 @@ function normalizeDraftUpdate(
   }
 }
 
-function normalizeAlcohol(value: unknown, newEntityId: () => EntityId): unknown {
+function normalizeAlcohol(
+  value: unknown,
+  newEntityId: () => EntityId,
+  existing?: LifestyleAlcoholWeeklyRecord | null
+): unknown {
   if (value === null) return null
   const data = readDataProperties(value, [
     'id',
@@ -1020,30 +1267,60 @@ function normalizeAlcohol(value: unknown, newEntityId: () => EntityId): unknown 
     'commonBeverageTypes',
     'otherBeverageDescription'
   ])
-  return { ...data, id: normalizeId(data.id, newEntityId) }
+  const candidate = { ...data, id: normalizeId(data.id, newEntityId) }
+  if (
+    data.id === null &&
+    existing !== null &&
+    existing !== undefined &&
+    sameAlcoholFields(existing, candidate)
+  )
+    candidate.id = existing.id
+  return candidate
 }
 
-function normalizeTobacco(value: unknown, newEntityId: () => EntityId): unknown {
+function normalizeTobacco(
+  value: unknown,
+  newEntityId: () => EntityId,
+  existing?: LifestyleTobaccoWeeklyRecord | null
+): unknown {
   if (value === null) return null
   const data = readDataProperties(value, ['id', 'weeklyResponse', 'products'])
-  return {
+  const candidate = {
     ...data,
     id: normalizeId(data.id, newEntityId),
-    products: normalizeRows(data.products, newEntityId, [
-      'id',
-      'sequenceNumber',
-      'productType',
-      'daysUsed',
-      'averageQuantityPerUseDay',
-      'unit',
-      'secondhandSmokeExposure',
-      'otherProductDescription',
-      'otherUnitDescription'
-    ])
+    products: normalizeRows(
+      data.products,
+      newEntityId,
+      [
+        'id',
+        'sequenceNumber',
+        'productType',
+        'daysUsed',
+        'averageQuantityPerUseDay',
+        'unit',
+        'secondhandSmokeExposure',
+        'otherProductDescription',
+        'otherUnitDescription'
+      ],
+      existing?.products,
+      matchesProduct
+    )
   }
+  if (
+    data.id === null &&
+    existing !== null &&
+    existing !== undefined &&
+    sameTobaccoFields(existing, candidate)
+  )
+    candidate.id = existing.id
+  return candidate
 }
 
-function normalizePhysical(value: unknown, newEntityId: () => EntityId): unknown {
+function normalizePhysical(
+  value: unknown,
+  newEntityId: () => EntityId,
+  existing?: LifestylePhysicalActivityWeeklyRecord | null
+): unknown {
   if (value === null) return null
   const data = readDataProperties(value, [
     'id',
@@ -1051,54 +1328,183 @@ function normalizePhysical(value: unknown, newEntityId: () => EntityId): unknown
     'sedentaryMinutesPerDay',
     'activities'
   ])
-  return {
+  const candidate = {
     ...data,
     id: normalizeId(data.id, newEntityId),
-    activities: normalizeRows(data.activities, newEntityId, [
-      'id',
-      'sequenceNumber',
-      'activityDomain',
-      'description',
-      'intensity',
-      'daysInPastSevenDays',
-      'averageMinutesPerActiveDay'
-    ])
+    activities: normalizeRows(
+      data.activities,
+      newEntityId,
+      [
+        'id',
+        'sequenceNumber',
+        'activityDomain',
+        'description',
+        'intensity',
+        'daysInPastSevenDays',
+        'averageMinutesPerActiveDay'
+      ],
+      existing?.activities,
+      matchesActivity
+    )
   }
+  if (
+    data.id === null &&
+    existing !== null &&
+    existing !== undefined &&
+    samePhysicalFields(existing, candidate)
+  )
+    candidate.id = existing.id
+  return candidate
 }
 
-function normalizeWork(value: unknown, newEntityId: () => EntityId): unknown {
+function normalizeWork(
+  value: unknown,
+  newEntityId: () => EntityId,
+  existing?: LifestyleWorkWeeklyRecord | null
+): unknown {
   if (value === null) return null
   const data = readDataProperties(value, ['id', 'weeklyResponse'])
-  return { ...data, id: normalizeId(data.id, newEntityId) }
+  const candidate = { ...data, id: normalizeId(data.id, newEntityId) }
+  if (
+    data.id === null &&
+    existing !== null &&
+    existing !== undefined &&
+    existing.weeklyResponse === data.weeklyResponse
+  )
+    candidate.id = existing.id
+  return candidate
 }
 
-function normalizeOtherActivities(value: unknown, newEntityId: () => EntityId): readonly unknown[] {
-  return normalizeRows(value, newEntityId, [
-    'id',
-    'sequenceNumber',
-    'category',
-    'description',
-    'daysInPastSevenDays',
-    'averageMinutesPerDay',
-    'intensity'
-  ])
+function normalizeOtherActivities(
+  value: unknown,
+  newEntityId: () => EntityId,
+  existing?: readonly LifestyleOtherActivityRow[],
+  matcher: (stored: unknown, candidate: Record<string, unknown>) => boolean = matchesOtherActivity
+): readonly unknown[] {
+  return normalizeRows(
+    value,
+    newEntityId,
+    [
+      'id',
+      'sequenceNumber',
+      'category',
+      'description',
+      'daysInPastSevenDays',
+      'averageMinutesPerDay',
+      'intensity'
+    ],
+    existing,
+    matcher
+  )
 }
 
 function normalizeRows(
   value: unknown,
   newEntityId: () => EntityId,
-  keys: readonly string[]
+  keys: readonly string[],
+  existingRows: readonly { readonly id: EntityId }[] | undefined,
+  matcher: (stored: unknown, candidate: Record<string, unknown>) => boolean
 ): readonly Record<string, unknown>[] {
   if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype)
     throw new RepositoryValidationError()
   return value.map((item) => {
     const data = readDataProperties(item, keys)
-    return { ...data, id: normalizeId(data.id, newEntityId) }
+    let id = normalizeId(data.id, newEntityId)
+    if (data.id === null && existingRows !== undefined) {
+      const candidates = existingRows.filter((row) => matcher(row, data))
+      const candidate = candidates[0]
+      if (candidate !== undefined && candidates.length === 1) id = candidate.id
+    }
+    return { ...data, id }
   })
 }
 
 function normalizeId(value: unknown, newEntityId: () => EntityId): EntityId {
   return value === null ? newEntityId() : parseEntityId(value)
+}
+
+function matchesProduct(stored: unknown, candidate: Record<string, unknown>): boolean {
+  const row = stored as LifestyleTobaccoProductRow
+  return (
+    row.sequenceNumber === candidate.sequenceNumber &&
+    row.productType === candidate.productType &&
+    row.daysUsed === candidate.daysUsed &&
+    row.averageQuantityPerUseDay === candidate.averageQuantityPerUseDay &&
+    row.unit === candidate.unit &&
+    row.secondhandSmokeExposure === candidate.secondhandSmokeExposure &&
+    row.otherProductDescription === candidate.otherProductDescription &&
+    row.otherUnitDescription === candidate.otherUnitDescription
+  )
+}
+
+function matchesActivity(stored: unknown, candidate: Record<string, unknown>): boolean {
+  const row = stored as LifestyleActivityRow
+  return (
+    row.sequenceNumber === candidate.sequenceNumber &&
+    row.activityDomain === candidate.activityDomain &&
+    row.description === candidate.description &&
+    row.intensity === candidate.intensity &&
+    row.daysInPastSevenDays === candidate.daysInPastSevenDays &&
+    row.averageMinutesPerActiveDay === candidate.averageMinutesPerActiveDay
+  )
+}
+
+function matchesOtherActivity(stored: unknown, candidate: Record<string, unknown>): boolean {
+  const row = stored as LifestyleOtherActivityRow
+  return (
+    row.sequenceNumber === candidate.sequenceNumber &&
+    row.category === candidate.category &&
+    row.description === candidate.description &&
+    row.daysInPastSevenDays === candidate.daysInPastSevenDays &&
+    row.averageMinutesPerDay === candidate.averageMinutesPerDay &&
+    row.intensity === candidate.intensity
+  )
+}
+
+function sameAlcoholFields(
+  existing: LifestyleAlcoholWeeklyRecord,
+  candidate: Record<string, unknown>
+): boolean {
+  return (
+    existing.weeklyResponse === candidate.weeklyResponse &&
+    existing.drinkingDays === candidate.drinkingDays &&
+    existing.totalStandardizedDrinks === candidate.totalStandardizedDrinks &&
+    existing.largestOneDayAmount === candidate.largestOneDayAmount &&
+    existing.daysAtLargestAmount === candidate.daysAtLargestAmount &&
+    sameArray(existing.commonBeverageTypes, candidate.commonBeverageTypes as readonly string[]) &&
+    existing.otherBeverageDescription === candidate.otherBeverageDescription
+  )
+}
+
+function sameTobaccoFields(
+  existing: LifestyleTobaccoWeeklyRecord,
+  candidate: Record<string, unknown>
+): boolean {
+  const products = candidate.products as readonly Record<string, unknown>[]
+  return (
+    existing.weeklyResponse === candidate.weeklyResponse &&
+    existing.products.length === products.length &&
+    existing.products.every((row, index) => {
+      const candidateRow = products[index]
+      return candidateRow !== undefined && matchesProduct(row, candidateRow)
+    })
+  )
+}
+
+function samePhysicalFields(
+  existing: LifestylePhysicalActivityWeeklyRecord,
+  candidate: Record<string, unknown>
+): boolean {
+  const activities = candidate.activities as readonly Record<string, unknown>[]
+  return (
+    existing.weeklyResponse === candidate.weeklyResponse &&
+    existing.sedentaryMinutesPerDay === candidate.sedentaryMinutesPerDay &&
+    existing.activities.length === activities.length &&
+    existing.activities.every((row, index) => {
+      const candidateRow = activities[index]
+      return candidateRow !== undefined && matchesActivity(row, candidateRow)
+    })
+  )
 }
 
 function isCompleteLifestyleInput(input: LifestyleDraftUpdateInput): boolean {
@@ -1123,33 +1529,60 @@ function isCompleteLifestyleInput(input: LifestyleDraftUpdateInput): boolean {
   }
 }
 
-function hasCompleteBaselineReferences(
+function loadCompleteBaselineReferences(
   draft: LifestyleDraftRecord,
   repository: LifestyleRepository,
   connection: DatabaseTransactionConnection
+): {
+  readonly alcohol: LifestyleAlcoholBaselineRecord
+  readonly tobacco: LifestyleTobaccoBaselineRecord
+  readonly work: LifestyleWorkBaselineRecord
+} | null {
+  const alcohol =
+    draft.alcoholBaselineVersionId === null
+      ? null
+      : repository.findAlcoholBaselineByIdForWrite(
+          connection,
+          draft.alcoholBaselineVersionId,
+          draft.patientId,
+          draft.installationId
+        )
+  const tobacco =
+    draft.tobaccoBaselineVersionId === null
+      ? null
+      : repository.findTobaccoBaselineByIdForWrite(
+          connection,
+          draft.tobaccoBaselineVersionId,
+          draft.patientId,
+          draft.installationId
+        )
+  const work =
+    draft.workBaselineVersionId === null
+      ? null
+      : repository.findWorkBaselineByIdForWrite(
+          connection,
+          draft.workBaselineVersionId,
+          draft.patientId,
+          draft.installationId
+        )
+  return alcohol !== null && tobacco !== null && work !== null ? { alcohol, tobacco, work } : null
+}
+
+function validateBaselineReviewConfirmations(
+  alcohol: LifestyleAlcoholBaselineRecord,
+  alcoholWeeklyResponse: LifestyleAlcoholWeeklyInput['weeklyResponse'],
+  alcoholConfirmation: EntityId | null,
+  tobacco: LifestyleTobaccoBaselineRecord,
+  tobaccoWeeklyResponse: LifestyleTobaccoWeeklyInput['weeklyResponse'],
+  tobaccoConfirmation: EntityId | null
 ): boolean {
+  const alcoholConflict =
+    (alcohol.status === 'FORMER' || alcohol.status === 'NEVER') && alcoholWeeklyResponse === 'YES'
+  const tobaccoConflict =
+    (tobacco.status === 'FORMER' || tobacco.status === 'NEVER') && tobaccoWeeklyResponse === 'YES'
   return (
-    draft.alcoholBaselineVersionId !== null &&
-    draft.tobaccoBaselineVersionId !== null &&
-    draft.workBaselineVersionId !== null &&
-    repository.findAlcoholBaselineByIdForWrite(
-      connection,
-      draft.alcoholBaselineVersionId,
-      draft.patientId,
-      draft.installationId
-    ) !== null &&
-    repository.findTobaccoBaselineByIdForWrite(
-      connection,
-      draft.tobaccoBaselineVersionId,
-      draft.patientId,
-      draft.installationId
-    ) !== null &&
-    repository.findWorkBaselineByIdForWrite(
-      connection,
-      draft.workBaselineVersionId,
-      draft.patientId,
-      draft.installationId
-    ) !== null
+    (alcoholConflict ? alcoholConfirmation === alcohol.id : alcoholConfirmation === null) &&
+    (tobaccoConflict ? tobaccoConfirmation === tobacco.id : tobaccoConfirmation === null)
   )
 }
 
@@ -1350,10 +1783,38 @@ function parseDraftCommand(request: unknown): ParsedDraftCommand | null {
   }
 }
 
+function parseCompleteCommand(request: unknown): ParsedCompleteCommand | null {
+  try {
+    const data = readDataProperties(request, [
+      ...draftRequestKeys,
+      ...completionConfirmationKeys
+    ] as const)
+    const fields: Record<string, unknown> = {}
+    for (const key of draftRequestKeys) fields[key] = data[key]
+    return {
+      encounterId: parseEntityId(data.encounterId),
+      expectedVersion: parseExpectedVersion(data.expectedVersion),
+      fields,
+      alcoholBaselineReviewConfirmedVersionId: parseOptionalEntityId(
+        data.alcoholBaselineReviewConfirmedVersionId
+      ),
+      tobaccoBaselineReviewConfirmedVersionId: parseOptionalEntityId(
+        data.tobaccoBaselineReviewConfirmedVersionId
+      )
+    }
+  } catch {
+    return null
+  }
+}
+
 function parseExpectedVersion(value: unknown): number | null {
   if (value === null) return null
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) throw new Error()
   return value
+}
+
+function parseOptionalEntityId(value: unknown): EntityId | null {
+  return value === null ? null : parseEntityId(value)
 }
 
 function validateExpectedVersion(

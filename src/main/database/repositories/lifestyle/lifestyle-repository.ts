@@ -4,6 +4,7 @@ import { assertActiveDatabaseTransactionConnection } from '@main/database/transa
 import type { DatabaseTransactionConnection } from '@main/database/transaction'
 import { parseEntityId, type EntityId } from '@main/foundation/entity-id'
 import { parseUtcTimestamp } from '@main/foundation/utc-clock'
+import { readDataProperties } from '../screening-session/screening-session-validation'
 
 import {
   getRepositoryErrorType,
@@ -442,28 +443,35 @@ function updateDraftBaselineReferences(
 ): LifestyleDraftUpdateResult {
   assertActiveDatabaseTransactionConnection(tx)
   try {
-    const current = readDraftById(tx, parseEntityId(input.id))
-    if (!current) return { status: 'NOT_FOUND' }
-    if (current.rowVersion !== input.expectedRowVersion)
-      return { status: 'VERSION_CONFLICT', draft: current }
-
+    const data = readDataProperties(input, [
+      'id',
+      'expectedRowVersion',
+      'alcoholBaselineVersionId',
+      'tobaccoBaselineVersionId',
+      'workBaselineVersionId',
+      'actorId',
+      'occurredAt'
+    ] as const)
     const parsed = {
-      ...input,
-      id: parseEntityId(input.id),
-      expectedRowVersion: input.expectedRowVersion,
+      id: parseEntityId(data.id),
+      expectedRowVersion: parsePositiveVersion(data.expectedRowVersion),
       alcoholBaselineVersionId:
-        input.alcoholBaselineVersionId === null
+        data.alcoholBaselineVersionId === null
           ? null
-          : parseEntityId(input.alcoholBaselineVersionId),
+          : parseEntityId(data.alcoholBaselineVersionId),
       tobaccoBaselineVersionId:
-        input.tobaccoBaselineVersionId === null
+        data.tobaccoBaselineVersionId === null
           ? null
-          : parseEntityId(input.tobaccoBaselineVersionId),
+          : parseEntityId(data.tobaccoBaselineVersionId),
       workBaselineVersionId:
-        input.workBaselineVersionId === null ? null : parseEntityId(input.workBaselineVersionId),
-      actorId: parseEntityId(input.actorId),
-      occurredAt: parseUtcTimestamp(input.occurredAt)
+        data.workBaselineVersionId === null ? null : parseEntityId(data.workBaselineVersionId),
+      actorId: parseEntityId(data.actorId),
+      occurredAt: parseUtcTimestamp(data.occurredAt)
     }
+    const current = readDraftById(tx, parsed.id)
+    if (!current) return { status: 'NOT_FOUND' }
+    if (current.rowVersion !== parsed.expectedRowVersion)
+      return { status: 'VERSION_CONFLICT', draft: current }
     validateReferencedBaselines(
       tx,
       current.patientId,
@@ -472,17 +480,26 @@ function updateDraftBaselineReferences(
       parsed.tobaccoBaselineVersionId,
       parsed.workBaselineVersionId
     )
-    tx.prepare(
-      'UPDATE lifestyle_drafts SET alcohol_baseline_version_id = ?, tobacco_baseline_version_id = ?, work_baseline_version_id = ?, updated_by = ?, updated_at = ?, row_version = row_version + 1 WHERE id = ? AND row_version = ?'
-    ).run(
-      parsed.alcoholBaselineVersionId,
-      parsed.tobaccoBaselineVersionId,
-      parsed.workBaselineVersionId,
-      parsed.actorId,
-      parsed.occurredAt,
-      parsed.id,
-      parsed.expectedRowVersion
+    if (
+      current.alcoholBaselineVersionId === parsed.alcoholBaselineVersionId &&
+      current.tobaccoBaselineVersionId === parsed.tobaccoBaselineVersionId &&
+      current.workBaselineVersionId === parsed.workBaselineVersionId
     )
+      return { status: 'UPDATED', draft: current }
+    const result = tx
+      .prepare(
+        'UPDATE lifestyle_drafts SET alcohol_baseline_version_id = ?, tobacco_baseline_version_id = ?, work_baseline_version_id = ?, updated_by = ?, updated_at = ?, row_version = row_version + 1 WHERE id = ? AND row_version = ?'
+      )
+      .run(
+        parsed.alcoholBaselineVersionId,
+        parsed.tobaccoBaselineVersionId,
+        parsed.workBaselineVersionId,
+        parsed.actorId,
+        parsed.occurredAt,
+        parsed.id,
+        parsed.expectedRowVersion
+      )
+    if (result.changes !== 1) return { status: 'VERSION_CONFLICT', draft: current }
     return {
       status: 'UPDATED',
       draft:
@@ -494,6 +511,12 @@ function updateDraftBaselineReferences(
   } catch (error) {
     throw mapWriteError(error)
   }
+}
+
+function parsePositiveVersion(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1)
+    throw new RepositoryValidationError()
+  return value
 }
 
 function reconcileAlcohol(

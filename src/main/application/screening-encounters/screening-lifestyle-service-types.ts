@@ -69,6 +69,129 @@ export type LifestyleOtherActivityRequest = Omit<LifestyleOtherActivityInput, 'i
   readonly id: EntityId | null
 }
 
+export interface LifestyleAlcoholWeeklySummary {
+  readonly id: EntityId
+  readonly weeklyResponse: LifestyleAlcoholWeeklyInput['weeklyResponse']
+  readonly drinkingDays: number | null
+  readonly totalStandardizedDrinks: number | null
+  readonly largestOneDayAmount: number | null
+  readonly daysAtLargestAmount: number | null
+  readonly commonBeverageTypes: LifestyleAlcoholWeeklyInput['commonBeverageTypes']
+  readonly otherBeverageDescription: string | null
+  readonly updatedAt: UtcTimestamp
+}
+
+export interface LifestyleTobaccoProductSummary {
+  readonly id: EntityId
+  readonly sequenceNumber: number
+  readonly productType: LifestyleTobaccoProductInput['productType']
+  readonly daysUsed: number
+  readonly averageQuantityPerUseDay: number
+  readonly unit: LifestyleTobaccoProductInput['unit']
+  readonly secondhandSmokeExposure: boolean | null
+  readonly otherProductDescription: string | null
+  readonly otherUnitDescription: string | null
+  readonly updatedAt: UtcTimestamp
+}
+
+export interface LifestyleTobaccoWeeklySummary {
+  readonly id: EntityId
+  readonly weeklyResponse: LifestyleTobaccoWeeklyInput['weeklyResponse']
+  readonly products: readonly LifestyleTobaccoProductSummary[]
+  readonly updatedAt: UtcTimestamp
+}
+
+export interface LifestyleActivitySummary {
+  readonly id: EntityId
+  readonly sequenceNumber: number
+  readonly activityDomain: LifestyleActivityInput['activityDomain']
+  readonly description: string | null
+  readonly intensity: LifestyleActivityInput['intensity']
+  readonly daysInPastSevenDays: number
+  readonly averageMinutesPerActiveDay: number
+  readonly weeklyMinutes: number
+  readonly updatedAt: UtcTimestamp
+}
+
+export interface LifestylePhysicalActivityWeeklySummary {
+  readonly id: EntityId
+  readonly weeklyResponse: LifestylePhysicalActivityWeeklyInput['weeklyResponse']
+  readonly sedentaryMinutesPerDay: number | null
+  readonly activities: readonly LifestyleActivitySummary[]
+  readonly updatedAt: UtcTimestamp
+}
+
+export interface LifestyleWorkWeeklySummary {
+  readonly id: EntityId
+  readonly weeklyResponse: LifestyleWorkWeeklyInput['weeklyResponse']
+  readonly updatedAt: UtcTimestamp
+}
+
+export interface LifestyleOtherActivitySummary {
+  readonly id: EntityId
+  readonly sequenceNumber: number
+  readonly category: LifestyleOtherActivityInput['category']
+  readonly description: string
+  readonly daysInPastSevenDays: number
+  readonly averageMinutesPerDay: number
+  readonly intensity: LifestyleOtherActivityInput['intensity']
+  readonly updatedAt: UtcTimestamp
+}
+
+export interface LifestyleDraftSummary {
+  readonly id: EntityId
+  readonly encounterId: EntityId
+  readonly status: LifestyleDraftRecord['status']
+  readonly rowVersion: number
+  readonly periodStart: LifestyleDraftRecord['periodStart']
+  readonly periodEnd: LifestyleDraftRecord['periodEnd']
+  readonly alcoholBaselineVersionId: EntityId | null
+  readonly tobaccoBaselineVersionId: EntityId | null
+  readonly workBaselineVersionId: EntityId | null
+  readonly alcohol: LifestyleAlcoholWeeklySummary | null
+  readonly tobacco: LifestyleTobaccoWeeklySummary | null
+  readonly physicalActivity: LifestylePhysicalActivityWeeklySummary | null
+  readonly work: LifestyleWorkWeeklySummary | null
+  readonly otherActivities: readonly LifestyleOtherActivitySummary[]
+  readonly updatedAt: UtcTimestamp
+}
+
+export interface LifestyleAlcoholBaselineSummary {
+  readonly id: EntityId
+  readonly version: number
+  readonly status: LifestyleAlcoholBaselineRecord['status']
+  readonly everConsumed: LifestyleAlcoholBaselineRecord['everConsumed']
+  readonly consumedPast12Months: LifestyleAlcoholBaselineRecord['consumedPast12Months']
+  readonly commonBeverageTypes: LifestyleAlcoholBaselineRecord['commonBeverageTypes']
+  readonly otherBeverageDescription: string | null
+  readonly updatedAt: UtcTimestamp
+}
+
+export interface LifestyleTobaccoBaselineSummary {
+  readonly id: EntityId
+  readonly version: number
+  readonly status: LifestyleTobaccoBaselineRecord['status']
+  readonly everRegularlyUsed: LifestyleTobaccoBaselineRecord['everRegularlyUsed']
+  readonly formerUseApproximateStopDate: string | null
+  readonly currentUseFrequency: LifestyleTobaccoBaselineRecord['currentUseFrequency']
+  readonly productTypes: LifestyleTobaccoBaselineRecord['productTypes']
+  readonly otherProductDescription: string | null
+  readonly updatedAt: UtcTimestamp
+}
+
+export interface LifestyleWorkBaselineSummary {
+  readonly id: EntityId
+  readonly version: number
+  readonly status: LifestyleWorkBaselineRecord['status']
+  readonly occupationJobTitle: string | null
+  readonly usualPhysicalDemand: LifestyleWorkBaselineRecord['usualPhysicalDemand']
+  readonly typicalWorkdaysPerWeek: number | null
+  readonly typicalHoursPerWorkday: number | null
+  readonly shiftPattern: LifestyleWorkBaselineRecord['shiftPattern']
+  readonly description: string | null
+  readonly updatedAt: UtcTimestamp
+}
+
 export interface GetLifestyleWorkspaceRequest {
   readonly encounterId: EntityId
 }
@@ -101,17 +224,20 @@ export interface SaveLifestyleDraftRequest {
   readonly otherActivities: readonly LifestyleOtherActivityRequest[]
 }
 
-export type CompleteLifestyleRequest = SaveLifestyleDraftRequest
+export interface CompleteLifestyleRequest extends SaveLifestyleDraftRequest {
+  readonly alcoholBaselineReviewConfirmedVersionId: EntityId | null
+  readonly tobaccoBaselineReviewConfirmedVersionId: EntityId | null
+}
 
 export interface LifestyleWorkspaceSummary {
   readonly encounterId: EntityId
-  readonly draft: LifestyleDraftRecord | null
-  readonly activeAlcoholBaseline: LifestyleAlcoholBaselineRecord | null
-  readonly activeTobaccoBaseline: LifestyleTobaccoBaselineRecord | null
-  readonly activeWorkBaseline: LifestyleWorkBaselineRecord | null
-  readonly referencedAlcoholBaseline: LifestyleAlcoholBaselineRecord | null
-  readonly referencedTobaccoBaseline: LifestyleTobaccoBaselineRecord | null
-  readonly referencedWorkBaseline: LifestyleWorkBaselineRecord | null
+  readonly draft: LifestyleDraftSummary | null
+  readonly activeAlcoholBaseline: LifestyleAlcoholBaselineSummary | null
+  readonly activeTobaccoBaseline: LifestyleTobaccoBaselineSummary | null
+  readonly activeWorkBaseline: LifestyleWorkBaselineSummary | null
+  readonly referencedAlcoholBaseline: LifestyleAlcoholBaselineSummary | null
+  readonly referencedTobaccoBaseline: LifestyleTobaccoBaselineSummary | null
+  readonly referencedWorkBaseline: LifestyleWorkBaselineSummary | null
 }
 
 export type LifestyleServiceControlledStatus =

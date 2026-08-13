@@ -50,7 +50,11 @@ their timestamps.
 Completion is separate from draft persistence. It requires exact baseline
 references, all required weekly records, non-null top-level responses, the
 complete Alcohol/Tobacco/Physical Activity validators, and a Work response.
-It sets status to `COMPLETE`; it does not navigate or infer a diagnosis.
+When Former/Never baseline status conflicts with a weekly `YES`, completion
+requires an exact confirmation of the referenced baseline version. The
+confirmation is validated in the transaction and recorded only in successful
+completion audit/outbox metadata; it is not a draft-schema field. It sets
+status to `COMPLETE`; it does not navigate or infer a diagnosis.
 
 ## Weekly period
 
@@ -69,7 +73,14 @@ weekly records.
 Draft row versions and baseline expected versions are checked in the
 caller-owned transaction. Equivalent draft retries are idempotent and do not
 emit another write, audit event, or outbox event. Stale non-equivalent writes
-return `VERSION_CONFLICT`.
+return `VERSION_CONFLICT`. Transport retries may omit generated weekly and
+child IDs only when every supplied mutable field matches exactly one persisted
+row; ambiguous or changed rows are never silently reused.
+
+Service results are immutable application summaries. They contain stable IDs,
+controlled clinical fields, fixed periods, exact baseline references, child
+ordering, calculated weekly minutes, versions, and update timestamps, but not
+database ownership columns, actor fields, or parent foreign keys.
 
 ## Audit and outbox policy
 

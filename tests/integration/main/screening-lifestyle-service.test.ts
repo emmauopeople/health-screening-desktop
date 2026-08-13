@@ -9,6 +9,7 @@ import {
   createScreeningLifestyleService,
   LocalSessionAuthorizationError,
   LocalSessionLockedError,
+  LocalSessionPasswordChangeRequiredError,
   type CurrentScreeningSessionService,
   type LocalAuthenticationSessionService,
   type ScreeningLifestyleService
@@ -99,6 +100,52 @@ describe('screening Lifestyle application service integration', () => {
     )
   })
 
+  it.each(['LOCAL_ADMIN', 'NURSE', 'TRAINED_SCREENER'] as const)(
+    'accepts approved role %s',
+    async (role) => {
+      await withLifestyleService(
+        ({ service }) => {
+          expect(
+            service.getLifestyleWorkspace({ encounterId: parseEntityId(encounterId) })
+          ).toEqual(expect.objectContaining({ status: 'LOADED' }))
+        },
+        { sessionRole: role }
+      )
+    }
+  )
+
+  it('maps password-change-required sessions and unsafe request shapes', async () => {
+    await withLifestyleService(
+      ({ service }) => {
+        expect(service.getLifestyleWorkspace({ encounterId: parseEntityId(encounterId) })).toEqual({
+          status: 'AUTHENTICATION_REQUIRED'
+        })
+      },
+      { authenticationFailure: new LocalSessionPasswordChangeRequiredError() }
+    )
+    await withLifestyleService(({ service }) => {
+      const inherited = Object.create({ extra: true }) as Record<string, unknown>
+      inherited.encounterId = parseEntityId(encounterId)
+      expect(service.getLifestyleWorkspace(inherited as never)).toEqual({
+        status: 'VALIDATION_FAILED'
+      })
+      const accessor = {} as Record<string, unknown>
+      Object.defineProperty(accessor, 'encounterId', {
+        enumerable: true,
+        get: () => parseEntityId(encounterId)
+      })
+      expect(service.getLifestyleWorkspace(accessor as never)).toEqual({
+        status: 'VALIDATION_FAILED'
+      })
+      expect(
+        service.saveLifestyleDraft({
+          ...createDraftRequest(),
+          actorId: parseEntityId(adminId)
+        } as never)
+      ).toEqual({ status: 'VALIDATION_FAILED' })
+    })
+  })
+
   it('creates a first draft only for the current session and fixes the seven-day period', async () => {
     await withLifestyleService(({ connection, service }) => {
       const result = service.saveLifestyleDraft(createDraftRequest())
@@ -117,6 +164,11 @@ describe('screening Lifestyle application service integration', () => {
       expect(result.workspace.draft?.physicalActivity).toBeNull()
       expect(result.workspace.draft?.work).toBeNull()
       expect(readCount(connection, 'lifestyle_drafts')).toBe(1)
+      expect(result.workspace.draft).not.toHaveProperty('patientId')
+      expect(result.workspace.draft).not.toHaveProperty('installationId')
+      expect(result.workspace.draft).not.toHaveProperty('screeningSessionId')
+      expect(result.workspace.draft).not.toHaveProperty('locationId')
+      expect(result.workspace.draft).not.toHaveProperty('createdBy')
     })
   })
 
@@ -308,8 +360,182 @@ describe('screening Lifestyle application service integration', () => {
 
       expect(
         service.completeLifestyle({
-          ...createDraftRequest(),
+          ...createCompleteRequest(),
           expectedVersion: saved.workspace.draft.rowVersion
+        })
+      ).toEqual({ status: 'VALIDATION_FAILED' })
+    })
+  })
+
+  it('requires baseline review confirmation and records only approved completion metadata', async () => {
+    await withLifestyleService(({ service, connection }) => {
+      const alcohol = service.saveAlcoholBaseline({ ...alcoholBaselineRequest(), status: 'FORMER' })
+      if (alcohol.status !== 'SAVED' || alcohol.workspace.draft === null)
+        throw new Error('Expected alcohol baseline')
+      const tobacco = service.saveTobaccoBaseline({
+        ...tobaccoBaselineRequest(),
+        status: 'FORMER',
+        expectedDraftVersion: alcohol.workspace.draft.rowVersion
+      })
+      if (tobacco.status !== 'SAVED' || tobacco.workspace.draft === null)
+        throw new Error('Expected tobacco baseline')
+      const work = service.saveWorkBaseline({
+        ...workBaselineRequest(),
+        expectedDraftVersion: tobacco.workspace.draft.rowVersion
+      })
+      if (work.status !== 'SAVED' || work.workspace.draft === null)
+        throw new Error('Expected work baseline')
+      const draft = service.saveLifestyleDraft(
+        completeWeeklyRequest({ expectedVersion: work.workspace.draft.rowVersion })
+      )
+      if (draft.status !== 'SAVED' || draft.workspace.draft === null)
+        throw new Error('Expected Lifestyle draft')
+
+      expect(
+        service.completeLifestyle({
+          ...completeWeeklyRequest({ expectedVersion: draft.workspace.draft.rowVersion }),
+          alcoholBaselineReviewConfirmedVersionId: null,
+          tobaccoBaselineReviewConfirmedVersionId: null
+        })
+      ).toEqual({ status: 'VALIDATION_FAILED' })
+
+      expect(
+        service.completeLifestyle({
+          ...completeWeeklyRequest({ expectedVersion: draft.workspace.draft.rowVersion }),
+          alcoholBaselineReviewConfirmedVersionId: parseEntityId(adminId),
+          tobaccoBaselineReviewConfirmedVersionId: draft.workspace.draft.tobaccoBaselineVersionId
+        })
+      ).toEqual({ status: 'VALIDATION_FAILED' })
+
+      const newerAlcohol = service.saveAlcoholBaseline({
+        ...alcoholBaselineRequest(),
+        status: 'FORMER',
+        expectedBaselineVersion: 1,
+        expectedDraftVersion: draft.workspace.draft.rowVersion
+      })
+      if (newerAlcohol.status !== 'SAVED' || newerAlcohol.workspace.draft === null)
+        throw new Error('Expected newer alcohol baseline')
+      expect(
+        service.completeLifestyle({
+          ...completeWeeklyRequest({ expectedVersion: newerAlcohol.workspace.draft.rowVersion }),
+          alcoholBaselineReviewConfirmedVersionId: draft.workspace.draft.alcoholBaselineVersionId,
+          tobaccoBaselineReviewConfirmedVersionId:
+            newerAlcohol.workspace.draft.tobaccoBaselineVersionId
+        })
+      ).toEqual({ status: 'VALIDATION_FAILED' })
+
+      const completionRequest = {
+        ...completeWeeklyRequest({ expectedVersion: newerAlcohol.workspace.draft.rowVersion }),
+        alcoholBaselineReviewConfirmedVersionId:
+          newerAlcohol.workspace.draft.alcoholBaselineVersionId,
+        tobaccoBaselineReviewConfirmedVersionId:
+          newerAlcohol.workspace.draft.tobaccoBaselineVersionId
+      }
+      const completed = service.completeLifestyle(completionRequest)
+      expect(completed).toMatchObject({
+        status: 'COMPLETED',
+        workspace: { draft: { status: 'COMPLETE' } }
+      })
+      if (completed.status === 'COMPLETED') {
+        expect(completed.workspace.activeAlcoholBaseline).not.toHaveProperty('patientId')
+        expect(completed.workspace.activeTobaccoBaseline).not.toHaveProperty('installationId')
+        expect(completed.workspace.activeWorkBaseline).not.toHaveProperty('createdBy')
+        expect(completed.workspace.draft?.tobacco?.products[0]).not.toHaveProperty(
+          'tobaccoWeeklyRecordId'
+        )
+      }
+
+      const auditRows = connection
+        .prepare(
+          "SELECT metadata_json FROM audit_log WHERE action = 'SCREENING_LIFESTYLE_STEP_COMPLETED'"
+        )
+        .all() as { metadata_json: string }[]
+      const completionMetadata = JSON.parse(auditRows[0]!.metadata_json) as Record<string, unknown>
+      expect(completionMetadata).toMatchObject({
+        alcohol_baseline_review_confirmed_version_id:
+          newerAlcohol.workspace.draft.alcoholBaselineVersionId,
+        tobacco_baseline_review_confirmed_version_id:
+          newerAlcohol.workspace.draft.tobaccoBaselineVersionId
+      })
+      expect(completionMetadata).not.toHaveProperty('weeklyResponse')
+      expect(completionMetadata).not.toHaveProperty('description')
+      const outboxRow = connection
+        .prepare(
+          "SELECT payload_json FROM sync_outbox WHERE operation = 'SCREENING_LIFESTYLE_STEP_COMPLETED'"
+        )
+        .get() as { payload_json: string }
+      expect(JSON.parse(outboxRow.payload_json)).toEqual(completionMetadata)
+      const counts = [readCount(connection, 'audit_log'), readCount(connection, 'sync_outbox')]
+      const retry = service.completeLifestyle(completionRequest)
+      expect(retry).toMatchObject({
+        status: 'COMPLETED',
+        workspace: { draft: { status: 'COMPLETE' } }
+      })
+      expect([readCount(connection, 'audit_log'), readCount(connection, 'sync_outbox')]).toEqual(
+        counts
+      )
+    })
+  })
+
+  it('retries the original null-ID draft request without creating duplicate rows', async () => {
+    await withLifestyleService(({ service, connection }) => {
+      const request = completeWeeklyRequest()
+      const first = service.saveLifestyleDraft(request)
+      if (first.status !== 'SAVED' || first.workspace.draft === null)
+        throw new Error('Expected first save')
+      const counts = [
+        readCount(connection, 'lifestyle_drafts'),
+        readCount(connection, 'lifestyle_tobacco_weekly_records'),
+        readCount(connection, 'lifestyle_tobacco_product_rows'),
+        readCount(connection, 'lifestyle_activity_rows'),
+        readCount(connection, 'audit_log'),
+        readCount(connection, 'sync_outbox')
+      ]
+      const retry = service.saveLifestyleDraft(request)
+      expect(retry).toMatchObject({
+        status: 'SAVED',
+        workspace: {
+          draft: { id: first.workspace.draft.id, rowVersion: first.workspace.draft.rowVersion }
+        }
+      })
+      expect([
+        readCount(connection, 'lifestyle_drafts'),
+        readCount(connection, 'lifestyle_tobacco_weekly_records'),
+        readCount(connection, 'lifestyle_tobacco_product_rows'),
+        readCount(connection, 'lifestyle_activity_rows'),
+        readCount(connection, 'audit_log'),
+        readCount(connection, 'sync_outbox')
+      ]).toEqual(counts)
+    })
+  })
+
+  it('rejects unnecessary baseline confirmation on a non-conflicting branch', async () => {
+    await withLifestyleService(({ service }) => {
+      const alcohol = service.saveAlcoholBaseline(alcoholBaselineRequest())
+      if (alcohol.status !== 'SAVED' || alcohol.workspace.draft === null)
+        throw new Error('Expected alcohol baseline')
+      const tobacco = service.saveTobaccoBaseline({
+        ...tobaccoBaselineRequest(),
+        expectedDraftVersion: alcohol.workspace.draft.rowVersion
+      })
+      if (tobacco.status !== 'SAVED' || tobacco.workspace.draft === null)
+        throw new Error('Expected tobacco baseline')
+      const work = service.saveWorkBaseline({
+        ...workBaselineRequest(),
+        expectedDraftVersion: tobacco.workspace.draft.rowVersion
+      })
+      if (work.status !== 'SAVED' || work.workspace.draft === null)
+        throw new Error('Expected work baseline')
+      const draft = service.saveLifestyleDraft(
+        completeWeeklyRequest({ expectedVersion: work.workspace.draft.rowVersion })
+      )
+      if (draft.status !== 'SAVED' || draft.workspace.draft === null)
+        throw new Error('Expected Lifestyle draft')
+      expect(
+        service.completeLifestyle({
+          ...completeWeeklyRequest({ expectedVersion: draft.workspace.draft.rowVersion }),
+          alcoholBaselineReviewConfirmedVersionId: draft.workspace.draft.alcoholBaselineVersionId,
+          tobaccoBaselineReviewConfirmedVersionId: null
         })
       ).toEqual({ status: 'VALIDATION_FAILED' })
     })
@@ -544,6 +770,42 @@ function createDraftRequest(
     otherActivities: [],
     ...overrides
   }
+}
+
+function createCompleteRequest(
+  overrides: Partial<Parameters<ScreeningLifestyleService['saveLifestyleDraft']>[0]> = {}
+): Parameters<ScreeningLifestyleService['completeLifestyle']>[0] {
+  return {
+    ...createDraftRequest(overrides),
+    alcoholBaselineReviewConfirmedVersionId: null,
+    tobaccoBaselineReviewConfirmedVersionId: null
+  }
+}
+
+function completeWeeklyRequest(
+  overrides: Partial<Parameters<ScreeningLifestyleService['saveLifestyleDraft']>[0]> = {}
+): Parameters<ScreeningLifestyleService['saveLifestyleDraft']>[0] {
+  return createDraftRequest({
+    alcohol: {
+      id: null,
+      weeklyResponse: 'YES',
+      drinkingDays: 2,
+      totalStandardizedDrinks: 3,
+      largestOneDayAmount: 2,
+      daysAtLargestAmount: 1,
+      commonBeverageTypes: ['BEER'],
+      otherBeverageDescription: null
+    },
+    tobacco: { id: null, weeklyResponse: 'YES', products: [product(null)] },
+    physicalActivity: {
+      id: null,
+      weeklyResponse: 'YES',
+      sedentaryMinutesPerDay: 60,
+      activities: [activity(null)]
+    },
+    work: { id: null, weeklyResponse: 'USUAL' },
+    ...overrides
+  })
 }
 
 function alcoholBaselineRequest(): Parameters<ScreeningLifestyleService['saveAlcoholBaseline']>[0] {

@@ -344,6 +344,42 @@ describe('Lifestyle persistence foundation', () => {
     })
   })
 
+  it('strictly validates baseline-reference updates and skips equivalent writes', async () => {
+    await withLifestyleDatabase(({ executor, repository }) => {
+      const draft = executor.run((context) =>
+        repository.insertDraft(context.connection, createDraftInput())
+      )
+      const noOp = executor.run((context) =>
+        repository.updateDraftBaselineReferences(context.connection, {
+          id: draft.id,
+          expectedRowVersion: draft.rowVersion,
+          alcoholBaselineVersionId: null,
+          tobaccoBaselineVersionId: null,
+          workBaselineVersionId: null,
+          actorId: parseEntityId(ids.user),
+          occurredAt: secondTime
+        })
+      )
+      expect(noOp.status).toBe('UPDATED')
+      if (noOp.status === 'UPDATED') expect(noOp.draft.rowVersion).toBe(draft.rowVersion)
+      expect(() =>
+        executor.run((context) =>
+          repository.updateDraftBaselineReferences(context.connection, {
+            id: draft.id,
+            expectedRowVersion: 0,
+            alcoholBaselineVersionId: null,
+            tobaccoBaselineVersionId: null,
+            workBaselineVersionId: null,
+            actorId: parseEntityId(ids.user),
+            occurredAt: secondTime,
+            extra: true
+          } as never)
+        )
+      ).toThrow(RepositoryValidationError)
+      expect(repository.findDraftByEncounter(parseEntityId(ids.encounter))?.rowVersion).toBe(1)
+    })
+  })
+
   it('enforces Tobacco and Physical Activity weekly branch consistency at the repository boundary', async () => {
     await withLifestyleDatabase(({ executor, repository }) => {
       const draft = executor.run((context) =>
