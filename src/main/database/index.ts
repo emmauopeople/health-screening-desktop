@@ -290,6 +290,7 @@ export {
   type LifestyleAlcoholWeeklyRecord,
   type LifestyleBeverageType,
   type LifestyleDate,
+  type LifestyleDraftBaselineReferenceUpdateInput,
   type LifestyleDraftOwnershipInput,
   type LifestyleDraftRecord,
   type LifestyleDraftStatus,

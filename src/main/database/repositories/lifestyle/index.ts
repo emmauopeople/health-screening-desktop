@@ -23,6 +23,7 @@ export type {
   LifestyleAlcoholWeeklyRecord,
   LifestyleBeverageType,
   LifestyleDate,
+  LifestyleDraftBaselineReferenceUpdateInput,
   LifestyleDraftOwnershipInput,
   LifestyleDraftRecord,
   LifestyleDraftStatus,

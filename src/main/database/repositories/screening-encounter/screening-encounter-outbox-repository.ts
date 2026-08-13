@@ -49,7 +49,21 @@ const approvedOperationSchemas = new Map<
 >([
   ['SCREENING_ENCOUNTER_STARTED', 'screening-encounter.start.v1'],
   ['SCREENING_VITALS_DRAFT_SAVED', 'screening-encounter.vitals-draft-saved.v1'],
-  ['SCREENING_VITALS_STEP_COMPLETED', 'screening-encounter.vitals-step-completed.v1']
+  ['SCREENING_VITALS_STEP_COMPLETED', 'screening-encounter.vitals-step-completed.v1'],
+  [
+    'SCREENING_LIFESTYLE_ALCOHOL_BASELINE_CREATED',
+    'screening-encounter.lifestyle-alcohol-baseline-created.v1'
+  ],
+  [
+    'SCREENING_LIFESTYLE_TOBACCO_BASELINE_CREATED',
+    'screening-encounter.lifestyle-tobacco-baseline-created.v1'
+  ],
+  [
+    'SCREENING_LIFESTYLE_WORK_BASELINE_CREATED',
+    'screening-encounter.lifestyle-work-baseline-created.v1'
+  ],
+  ['SCREENING_LIFESTYLE_DRAFT_SAVED', 'screening-encounter.lifestyle-draft-saved.v1'],
+  ['SCREENING_LIFESTYLE_STEP_COMPLETED', 'screening-encounter.lifestyle-step-completed.v1']
 ])
 const maximumPayloadDepth = 4
 const maximumPayloadNodes = 80

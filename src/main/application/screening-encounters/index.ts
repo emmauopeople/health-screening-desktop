@@ -8,6 +8,11 @@ export {
   createProductionScreeningVitalsDraftService,
   type ProductionScreeningVitalsDraftServiceOptions
 } from './screening-vitals-draft-service-composition'
+export { createScreeningLifestyleService } from './screening-lifestyle-service'
+export {
+  createProductionScreeningLifestyleService,
+  type ProductionScreeningLifestyleServiceOptions
+} from './screening-lifestyle-service-composition'
 export type {
   ScreeningEncounterStartService,
   ScreeningEncounterStartServiceDependencies,
@@ -28,3 +33,28 @@ export type {
   VitalsDraftReadingSummary,
   VitalsDraftSummary
 } from './screening-vitals-draft-service-types'
+export type {
+  CompleteLifestyleRequest,
+  CompleteLifestyleResult,
+  GetLifestyleWorkspaceRequest,
+  GetLifestyleWorkspaceResult,
+  LifestyleAlcoholBaselineRequest,
+  LifestyleAlcoholWeeklyRequest,
+  LifestyleActivityRequest,
+  LifestyleOtherActivityRequest,
+  LifestylePhysicalActivityWeeklyRequest,
+  LifestyleServiceControlledStatus,
+  LifestyleTobaccoBaselineRequest,
+  LifestyleTobaccoProductRequest,
+  LifestyleTobaccoWeeklyRequest,
+  LifestyleWorkBaselineRequest,
+  LifestyleWorkWeeklyRequest,
+  LifestyleWorkspaceSummary,
+  SaveLifestyleAlcoholBaselineRequest,
+  SaveLifestyleDraftRequest,
+  SaveLifestyleResult,
+  SaveLifestyleTobaccoBaselineRequest,
+  SaveLifestyleWorkBaselineRequest,
+  ScreeningLifestyleService,
+  ScreeningLifestyleServiceDependencies
+} from './screening-lifestyle-service-types'

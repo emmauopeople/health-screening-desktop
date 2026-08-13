@@ -3,11 +3,23 @@ import type { EntityId } from '@main/foundation/entity-id'
 import type { UtcTimestamp } from '@main/foundation/utc-clock'
 
 export type ScreeningEncounterOutboxOperation =
-  'SCREENING_ENCOUNTER_STARTED' | 'SCREENING_VITALS_DRAFT_SAVED' | 'SCREENING_VITALS_STEP_COMPLETED'
+  | 'SCREENING_ENCOUNTER_STARTED'
+  | 'SCREENING_VITALS_DRAFT_SAVED'
+  | 'SCREENING_VITALS_STEP_COMPLETED'
+  | 'SCREENING_LIFESTYLE_ALCOHOL_BASELINE_CREATED'
+  | 'SCREENING_LIFESTYLE_TOBACCO_BASELINE_CREATED'
+  | 'SCREENING_LIFESTYLE_WORK_BASELINE_CREATED'
+  | 'SCREENING_LIFESTYLE_DRAFT_SAVED'
+  | 'SCREENING_LIFESTYLE_STEP_COMPLETED'
 export type ScreeningEncounterOutboxPayloadSchemaVersion =
   | 'screening-encounter.start.v1'
   | 'screening-encounter.vitals-draft-saved.v1'
   | 'screening-encounter.vitals-step-completed.v1'
+  | 'screening-encounter.lifestyle-alcohol-baseline-created.v1'
+  | 'screening-encounter.lifestyle-tobacco-baseline-created.v1'
+  | 'screening-encounter.lifestyle-work-baseline-created.v1'
+  | 'screening-encounter.lifestyle-draft-saved.v1'
+  | 'screening-encounter.lifestyle-step-completed.v1'
 
 export type ScreeningEncounterOutboxPayloadScalar = null | boolean | number | string
 export type ScreeningEncounterOutboxPayloadValue =

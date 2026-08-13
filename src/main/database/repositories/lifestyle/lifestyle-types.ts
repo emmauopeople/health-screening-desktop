@@ -306,6 +306,16 @@ export interface LifestyleDraftUpdateInput {
   readonly otherActivities: readonly LifestyleOtherActivityInput[]
 }
 
+export interface LifestyleDraftBaselineReferenceUpdateInput {
+  readonly id: EntityId
+  readonly expectedRowVersion: number
+  readonly alcoholBaselineVersionId: EntityId | null
+  readonly tobaccoBaselineVersionId: EntityId | null
+  readonly workBaselineVersionId: EntityId | null
+  readonly actorId: EntityId
+  readonly occurredAt: UtcTimestamp
+}
+
 export interface LifestyleAlcoholWeeklyInput {
   readonly id: EntityId
   readonly weeklyResponse: LifestyleResponse | null
@@ -381,6 +391,17 @@ export interface LifestyleRepository {
     patientId: EntityId,
     installationId: EntityId
   ): LifestyleAlcoholBaselineRecord | null
+  findActiveAlcoholBaselineForWrite(
+    connection: DatabaseTransactionConnection,
+    patientId: EntityId,
+    installationId: EntityId
+  ): LifestyleAlcoholBaselineRecord | null
+  findAlcoholBaselineByIdForWrite(
+    connection: DatabaseTransactionConnection,
+    id: EntityId,
+    patientId: EntityId,
+    installationId: EntityId
+  ): LifestyleAlcoholBaselineRecord | null
   listAlcoholBaselineHistory(
     patientId: EntityId,
     installationId: EntityId
@@ -393,6 +414,17 @@ export interface LifestyleRepository {
     patientId: EntityId,
     installationId: EntityId
   ): LifestyleTobaccoBaselineRecord | null
+  findActiveTobaccoBaselineForWrite(
+    connection: DatabaseTransactionConnection,
+    patientId: EntityId,
+    installationId: EntityId
+  ): LifestyleTobaccoBaselineRecord | null
+  findTobaccoBaselineByIdForWrite(
+    connection: DatabaseTransactionConnection,
+    id: EntityId,
+    patientId: EntityId,
+    installationId: EntityId
+  ): LifestyleTobaccoBaselineRecord | null
   listTobaccoBaselineHistory(
     patientId: EntityId,
     installationId: EntityId
@@ -402,6 +434,17 @@ export interface LifestyleRepository {
     input: LifestyleTobaccoBaselineInput
   ): LifestyleVersionResult<LifestyleTobaccoBaselineRecord>
   findActiveWorkBaseline(
+    patientId: EntityId,
+    installationId: EntityId
+  ): LifestyleWorkBaselineRecord | null
+  findActiveWorkBaselineForWrite(
+    connection: DatabaseTransactionConnection,
+    patientId: EntityId,
+    installationId: EntityId
+  ): LifestyleWorkBaselineRecord | null
+  findWorkBaselineByIdForWrite(
+    connection: DatabaseTransactionConnection,
+    id: EntityId,
     patientId: EntityId,
     installationId: EntityId
   ): LifestyleWorkBaselineRecord | null
@@ -425,5 +468,9 @@ export interface LifestyleRepository {
   updateDraft(
     connection: DatabaseTransactionConnection,
     input: LifestyleDraftUpdateInput
+  ): LifestyleDraftUpdateResult
+  updateDraftBaselineReferences(
+    connection: DatabaseTransactionConnection,
+    input: LifestyleDraftBaselineReferenceUpdateInput
   ): LifestyleDraftUpdateResult
 }

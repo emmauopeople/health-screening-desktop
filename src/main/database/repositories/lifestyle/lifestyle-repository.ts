@@ -28,6 +28,7 @@ import type {
   LifestyleAlcoholWeeklyInput,
   LifestyleAlcoholWeeklyRecord,
   LifestyleDraftRecord,
+  LifestyleDraftBaselineReferenceUpdateInput,
   LifestyleDraftUpdateInput,
   LifestyleDraftUpdateResult,
   LifestyleRepository,
@@ -75,6 +76,34 @@ export function createLifestyleRepository(connection: Database.Database): Lifest
         parseEntityId(patientId),
         parseEntityId(installationId)
       ) as LifestyleAlcoholBaselineRecord | null,
+    findActiveAlcoholBaselineForWrite: (
+      tx: DatabaseTransactionConnection,
+      patientId: EntityId,
+      installationId: EntityId
+    ) => {
+      assertActiveDatabaseTransactionConnection(tx)
+      return readBaseline(
+        tx,
+        'alcohol',
+        parseEntityId(patientId),
+        parseEntityId(installationId)
+      ) as LifestyleAlcoholBaselineRecord | null
+    },
+    findAlcoholBaselineByIdForWrite: (
+      tx: DatabaseTransactionConnection,
+      id: EntityId,
+      patientId: EntityId,
+      installationId: EntityId
+    ) => {
+      assertActiveDatabaseTransactionConnection(tx)
+      return readBaselineById(
+        tx,
+        'alcohol',
+        parseEntityId(id),
+        parseEntityId(patientId),
+        parseEntityId(installationId)
+      ) as LifestyleAlcoholBaselineRecord | null
+    },
     listAlcoholBaselineHistory: (patientId: EntityId, installationId: EntityId) =>
       readBaselineHistory(
         connection,
@@ -93,6 +122,34 @@ export function createLifestyleRepository(connection: Database.Database): Lifest
         parseEntityId(patientId),
         parseEntityId(installationId)
       ) as LifestyleTobaccoBaselineRecord | null,
+    findActiveTobaccoBaselineForWrite: (
+      tx: DatabaseTransactionConnection,
+      patientId: EntityId,
+      installationId: EntityId
+    ) => {
+      assertActiveDatabaseTransactionConnection(tx)
+      return readBaseline(
+        tx,
+        'tobacco',
+        parseEntityId(patientId),
+        parseEntityId(installationId)
+      ) as LifestyleTobaccoBaselineRecord | null
+    },
+    findTobaccoBaselineByIdForWrite: (
+      tx: DatabaseTransactionConnection,
+      id: EntityId,
+      patientId: EntityId,
+      installationId: EntityId
+    ) => {
+      assertActiveDatabaseTransactionConnection(tx)
+      return readBaselineById(
+        tx,
+        'tobacco',
+        parseEntityId(id),
+        parseEntityId(patientId),
+        parseEntityId(installationId)
+      ) as LifestyleTobaccoBaselineRecord | null
+    },
     listTobaccoBaselineHistory: (patientId: EntityId, installationId: EntityId) =>
       readBaselineHistory(
         connection,
@@ -111,6 +168,34 @@ export function createLifestyleRepository(connection: Database.Database): Lifest
         parseEntityId(patientId),
         parseEntityId(installationId)
       ) as LifestyleWorkBaselineRecord | null,
+    findActiveWorkBaselineForWrite: (
+      tx: DatabaseTransactionConnection,
+      patientId: EntityId,
+      installationId: EntityId
+    ) => {
+      assertActiveDatabaseTransactionConnection(tx)
+      return readBaseline(
+        tx,
+        'work',
+        parseEntityId(patientId),
+        parseEntityId(installationId)
+      ) as LifestyleWorkBaselineRecord | null
+    },
+    findWorkBaselineByIdForWrite: (
+      tx: DatabaseTransactionConnection,
+      id: EntityId,
+      patientId: EntityId,
+      installationId: EntityId
+    ) => {
+      assertActiveDatabaseTransactionConnection(tx)
+      return readBaselineById(
+        tx,
+        'work',
+        parseEntityId(id),
+        parseEntityId(patientId),
+        parseEntityId(installationId)
+      ) as LifestyleWorkBaselineRecord | null
+    },
     listWorkBaselineHistory: (patientId: EntityId, installationId: EntityId) =>
       readBaselineHistory(
         connection,
@@ -131,7 +216,11 @@ export function createLifestyleRepository(connection: Database.Database): Lifest
       input: Parameters<LifestyleRepository['insertDraft']>[1]
     ) => insertDraft(tx, input),
     updateDraft: (tx: DatabaseTransactionConnection, input: LifestyleDraftUpdateInput) =>
-      updateDraft(tx, input)
+      updateDraft(tx, input),
+    updateDraftBaselineReferences: (
+      tx: DatabaseTransactionConnection,
+      input: LifestyleDraftBaselineReferenceUpdateInput
+    ) => updateDraftBaselineReferences(tx, input)
   }
   return Object.freeze(repository)
 }
@@ -333,6 +422,66 @@ function updateDraft(
       parsed.otherActivities,
       parsed.actorId,
       parsed.occurredAt
+    )
+    return {
+      status: 'UPDATED',
+      draft:
+        readDraftById(tx, parsed.id) ??
+        (() => {
+          throw new RepositoryDataIntegrityError()
+        })()
+    }
+  } catch (error) {
+    throw mapWriteError(error)
+  }
+}
+
+function updateDraftBaselineReferences(
+  tx: DatabaseTransactionConnection,
+  input: LifestyleDraftBaselineReferenceUpdateInput
+): LifestyleDraftUpdateResult {
+  assertActiveDatabaseTransactionConnection(tx)
+  try {
+    const current = readDraftById(tx, parseEntityId(input.id))
+    if (!current) return { status: 'NOT_FOUND' }
+    if (current.rowVersion !== input.expectedRowVersion)
+      return { status: 'VERSION_CONFLICT', draft: current }
+
+    const parsed = {
+      ...input,
+      id: parseEntityId(input.id),
+      expectedRowVersion: input.expectedRowVersion,
+      alcoholBaselineVersionId:
+        input.alcoholBaselineVersionId === null
+          ? null
+          : parseEntityId(input.alcoholBaselineVersionId),
+      tobaccoBaselineVersionId:
+        input.tobaccoBaselineVersionId === null
+          ? null
+          : parseEntityId(input.tobaccoBaselineVersionId),
+      workBaselineVersionId:
+        input.workBaselineVersionId === null ? null : parseEntityId(input.workBaselineVersionId),
+      actorId: parseEntityId(input.actorId),
+      occurredAt: parseUtcTimestamp(input.occurredAt)
+    }
+    validateReferencedBaselines(
+      tx,
+      current.patientId,
+      current.installationId,
+      parsed.alcoholBaselineVersionId,
+      parsed.tobaccoBaselineVersionId,
+      parsed.workBaselineVersionId
+    )
+    tx.prepare(
+      'UPDATE lifestyle_drafts SET alcohol_baseline_version_id = ?, tobacco_baseline_version_id = ?, work_baseline_version_id = ?, updated_by = ?, updated_at = ?, row_version = row_version + 1 WHERE id = ? AND row_version = ?'
+    ).run(
+      parsed.alcoholBaselineVersionId,
+      parsed.tobaccoBaselineVersionId,
+      parsed.workBaselineVersionId,
+      parsed.actorId,
+      parsed.occurredAt,
+      parsed.id,
+      parsed.expectedRowVersion
     )
     return {
       status: 'UPDATED',
@@ -1030,6 +1179,21 @@ function readBaseline(
       `SELECT ${baselineColumns[kind]} FROM lifestyle_${kind}_baseline_versions WHERE patient_id = ? AND installation_id = ? ORDER BY version DESC LIMIT 1`
     )
     .get(patientId, installationId) as Record<string, unknown> | undefined
+  return row ? decodeBaseline(kind, row) : null
+}
+
+function readBaselineById(
+  connection: ReadConnection,
+  kind: 'alcohol' | 'tobacco' | 'work',
+  id: string,
+  patientId: string,
+  installationId: string
+): BaselineRecord | null {
+  const row = connection
+    .prepare(
+      `SELECT ${baselineColumns[kind]} FROM lifestyle_${kind}_baseline_versions WHERE id = ? AND patient_id = ? AND installation_id = ?`
+    )
+    .get(id, patientId, installationId) as Record<string, unknown> | undefined
   return row ? decodeBaseline(kind, row) : null
 }
 function readBaselineHistory(
