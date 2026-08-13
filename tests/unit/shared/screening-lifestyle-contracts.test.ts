@@ -2,15 +2,26 @@ import { describe, expect, it } from 'vitest'
 
 import {
   ipcChannels,
+  createIpcSuccess,
+  createScreeningLifestyleIpcFailure,
   screeningLifestyleAlcoholBaselineRequestSchema,
   screeningLifestyleCompleteRequestSchema,
+  screeningLifestyleCompleteResultSchema,
+  screeningLifestyleFailureSchema,
   screeningLifestyleGetWorkspaceRequestSchema,
   screeningLifestyleSaveDraftRequestSchema,
+  screeningLifestyleGetWorkspaceResultSchema,
+  screeningLifestyleSaveAlcoholBaselineResultSchema,
+  screeningLifestyleSaveDraftResultSchema,
+  screeningLifestyleSaveTobaccoBaselineResultSchema,
+  screeningLifestyleSaveWorkBaselineResultSchema,
   screeningLifestyleSaveTobaccoBaselineRequestSchema,
   screeningLifestyleSaveWorkBaselineRequestSchema
 } from '@shared/ipc'
 
-const encounterId = '33333333-3333-4333-8333-333333333333'
+import { lifestyleEncounterId, validLifestyleWorkspace } from './screening-lifestyle-test-fixtures'
+
+const encounterId = lifestyleEncounterId
 
 const draftRequest = {
   encounterId,
@@ -104,5 +115,176 @@ describe('screening Lifestyle IPC contracts', () => {
     const hostile = Object.assign(Object.create({ trusted: true }), draftRequest)
     expect(screeningLifestyleSaveDraftRequestSchema.safeParse(accessor).success).toBe(false)
     expect(screeningLifestyleSaveDraftRequestSchema.safeParse(hostile).success).toBe(false)
+  })
+
+  it('accepts every public success result and every controlled status', () => {
+    const loaded = createIpcSuccess({
+      status: 'LOADED' as const,
+      workspace: validLifestyleWorkspace
+    })
+    const saved = createIpcSuccess({ status: 'SAVED' as const, workspace: validLifestyleWorkspace })
+    const completed = createIpcSuccess({
+      status: 'COMPLETED' as const,
+      workspace: validLifestyleWorkspace
+    })
+
+    expect(screeningLifestyleGetWorkspaceResultSchema.safeParse(loaded).success).toBe(true)
+    expect(screeningLifestyleSaveAlcoholBaselineResultSchema.safeParse(saved).success).toBe(true)
+    expect(screeningLifestyleSaveTobaccoBaselineResultSchema.safeParse(saved).success).toBe(true)
+    expect(screeningLifestyleSaveWorkBaselineResultSchema.safeParse(saved).success).toBe(true)
+    expect(screeningLifestyleSaveDraftResultSchema.safeParse(saved).success).toBe(true)
+    expect(screeningLifestyleCompleteResultSchema.safeParse(completed).success).toBe(true)
+
+    for (const status of [
+      'AUTHENTICATION_REQUIRED',
+      'FORBIDDEN',
+      'VALIDATION_FAILED',
+      'LOCATION_NOT_CONFIGURED',
+      'LOCATION_NOT_FOUND',
+      'LOCATION_INACTIVE',
+      'ENCOUNTER_NOT_FOUND',
+      'ENCOUNTER_NOT_EDITABLE',
+      'SESSION_NOT_FOUND',
+      'SESSION_CLOSED',
+      'SESSION_NOT_CURRENT',
+      'VERSION_CONFLICT',
+      'UNAVAILABLE'
+    ] as const) {
+      expect(
+        screeningLifestyleGetWorkspaceResultSchema.safeParse(createIpcSuccess({ status })).success
+      ).toBe(true)
+    }
+  })
+
+  it('accepts only approved sanitized IPC failures', () => {
+    for (const code of ['IPC_FORBIDDEN', 'IPC_UNAVAILABLE', 'INTERNAL_ERROR'] as const) {
+      const failure = createScreeningLifestyleIpcFailure(code)
+      expect(screeningLifestyleFailureSchema.safeParse(failure).success).toBe(true)
+      expect(JSON.stringify(failure)).not.toMatch(/secret|SELECT|C:\\|clinical/u)
+    }
+    expect(
+      screeningLifestyleFailureSchema.safeParse({
+        ok: false,
+        error: { code: 'INTERNAL_ERROR', message: 'stack C:\\secret\\db.sqlite' }
+      }).success
+    ).toBe(false)
+  })
+
+  it('rejects persistence attribution at every public DTO level', () => {
+    const workspaceResult = (workspace: unknown): boolean =>
+      screeningLifestyleGetWorkspaceResultSchema.safeParse(
+        createIpcSuccess({ status: 'LOADED' as const, workspace })
+      ).success
+    const invalidValues = [
+      { ...validLifestyleWorkspace, patientId: encounterId },
+      {
+        ...validLifestyleWorkspace,
+        draft: { ...validLifestyleWorkspace.draft, patientId: encounterId }
+      },
+      {
+        ...validLifestyleWorkspace,
+        activeAlcoholBaseline: {
+          ...validLifestyleWorkspace.activeAlcoholBaseline,
+          installationId: encounterId
+        }
+      },
+      {
+        ...validLifestyleWorkspace,
+        draft: {
+          ...validLifestyleWorkspace.draft,
+          alcohol: { ...validLifestyleWorkspace.draft?.alcohol, patientId: encounterId }
+        }
+      },
+      {
+        ...validLifestyleWorkspace,
+        draft: {
+          ...validLifestyleWorkspace.draft,
+          tobacco: {
+            ...validLifestyleWorkspace.draft?.tobacco,
+            products: [
+              { ...validLifestyleWorkspace.draft?.tobacco?.products[0], parentId: encounterId }
+            ]
+          }
+        }
+      },
+      {
+        ...validLifestyleWorkspace,
+        draft: {
+          ...validLifestyleWorkspace.draft,
+          physicalActivity: {
+            ...validLifestyleWorkspace.draft?.physicalActivity,
+            activities: [
+              {
+                ...validLifestyleWorkspace.draft?.physicalActivity?.activities[0],
+                screeningSessionId: encounterId
+              }
+            ]
+          }
+        }
+      },
+      {
+        ...validLifestyleWorkspace,
+        draft: {
+          ...validLifestyleWorkspace.draft,
+          work: { ...validLifestyleWorkspace.draft?.work, locationId: encounterId }
+        }
+      },
+      {
+        ...validLifestyleWorkspace,
+        draft: {
+          ...validLifestyleWorkspace.draft,
+          otherActivities: [
+            { ...validLifestyleWorkspace.draft?.otherActivities[0], updatedBy: encounterId }
+          ]
+        }
+      }
+    ]
+
+    for (const invalid of invalidValues) expect(workspaceResult(invalid)).toBe(false)
+  })
+
+  it('rejects malformed nested values and unsafe response objects', () => {
+    const result = createIpcSuccess({
+      status: 'LOADED' as const,
+      workspace: validLifestyleWorkspace
+    })
+    const malformedValues = [
+      { ...validLifestyleWorkspace, encounterId: 'not-an-id' },
+      {
+        ...validLifestyleWorkspace,
+        draft: { ...validLifestyleWorkspace.draft, periodStart: '2026/02/30' }
+      },
+      {
+        ...validLifestyleWorkspace,
+        draft: { ...validLifestyleWorkspace.draft, status: 'COMPLETE_NOW' }
+      },
+      {
+        ...validLifestyleWorkspace,
+        activeAlcoholBaseline: {
+          ...validLifestyleWorkspace.activeAlcoholBaseline,
+          updatedAt: 'not-a-timestamp'
+        }
+      }
+    ]
+    for (const workspace of malformedValues) {
+      expect(
+        screeningLifestyleGetWorkspaceResultSchema.safeParse(
+          createIpcSuccess({ status: 'LOADED' as const, workspace })
+        ).success
+      ).toBe(false)
+    }
+
+    const accessor = { ...result }
+    Object.defineProperty(accessor, 'data', { enumerable: true, get: () => result.data })
+    const customPrototype = Object.setPrototypeOf({ ...result }, { unsafe: true })
+    const cyclic: Record<string, unknown> = { ...result }
+    cyclic.cycle = cyclic
+    const symbolBearing = Object.defineProperty({ ...result }, Symbol('secret'), {
+      enumerable: true,
+      value: true
+    })
+    for (const unsafe of [accessor, customPrototype, cyclic, symbolBearing]) {
+      expect(screeningLifestyleGetWorkspaceResultSchema.safeParse(unsafe).success).toBe(false)
+    }
   })
 })

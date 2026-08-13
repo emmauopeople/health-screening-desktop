@@ -12,6 +12,7 @@ import {
   disposeApplicationIpcHandlers,
   registerApplicationIpcHandlers,
   registerScreeningEncounterIpcHandlers,
+  registerScreeningLifestyleIpcHandlers,
   registerScreeningSessionIpcHandlers,
   type ApplicationIpcHandlerDependencies,
   type ApplicationIpcMain
@@ -257,6 +258,102 @@ describe('application IPC handler registration', () => {
     dispose()
 
     expect([...ipcMain.handlers.keys()]).toEqual(['unrelated:channel'])
+  })
+
+  it('registers exactly six Lifestyle handlers and disposes only its owned channels', () => {
+    const ipcMain = createMockIpcMain()
+    const unrelatedHandler = vi.fn()
+    ipcMain.handlers.set('unrelated:channel', unrelatedHandler)
+
+    const dispose = registerScreeningLifestyleIpcHandlers(
+      ipcMain,
+      createDependencies().screeningLifestyle
+    )
+
+    expect(ipcMain.handle).toHaveBeenCalledTimes(6)
+    expect([...ipcMain.handlers.keys()]).toEqual([
+      'unrelated:channel',
+      ipcChannels.screeningEncounters.lifestyle.getWorkspace,
+      ipcChannels.screeningEncounters.lifestyle.saveAlcoholBaseline,
+      ipcChannels.screeningEncounters.lifestyle.saveTobaccoBaseline,
+      ipcChannels.screeningEncounters.lifestyle.saveWorkBaseline,
+      ipcChannels.screeningEncounters.lifestyle.saveDraft,
+      ipcChannels.screeningEncounters.lifestyle.complete
+    ])
+
+    dispose()
+    dispose()
+    expect([...ipcMain.handlers.keys()]).toEqual(['unrelated:channel'])
+    expect(ipcMain.removeHandler.mock.calls.flat()).toEqual([
+      ipcChannels.screeningEncounters.lifestyle.getWorkspace,
+      ipcChannels.screeningEncounters.lifestyle.saveAlcoholBaseline,
+      ipcChannels.screeningEncounters.lifestyle.saveTobaccoBaseline,
+      ipcChannels.screeningEncounters.lifestyle.saveWorkBaseline,
+      ipcChannels.screeningEncounters.lifestyle.saveDraft,
+      ipcChannels.screeningEncounters.lifestyle.complete
+    ])
+    expect(ipcMain.handlers.get('unrelated:channel')).toBe(unrelatedHandler)
+  })
+
+  it('rejects duplicate focused registration without replacing the original handlers', () => {
+    const ipcMain = createMockIpcMain()
+    const firstDispose = registerScreeningLifestyleIpcHandlers(
+      ipcMain,
+      createDependencies().screeningLifestyle
+    )
+    const originalHandlers = new Map(ipcMain.handlers)
+
+    expect(() =>
+      registerScreeningLifestyleIpcHandlers(ipcMain, createDependencies().screeningLifestyle)
+    ).toThrow(ApplicationIpcRegistrationError)
+    expectHandlerMapsEqual(ipcMain.handlers, originalHandlers)
+
+    firstDispose()
+  })
+
+  it('does not let a stale focused disposer remove a newer registration', () => {
+    const ipcMain = createMockIpcMain()
+    const firstDispose = registerScreeningLifestyleIpcHandlers(
+      ipcMain,
+      createDependencies().screeningLifestyle
+    )
+    firstDispose()
+    const secondDispose = registerScreeningLifestyleIpcHandlers(
+      ipcMain,
+      createDependencies().screeningLifestyle
+    )
+    const newerHandlers = new Map(ipcMain.handlers)
+
+    firstDispose()
+    expectHandlerMapsEqual(ipcMain.handlers, newerHandlers)
+
+    secondDispose()
+  })
+
+  it('rolls back only Lifestyle handlers after a partial focused registration failure', () => {
+    const failingChannel = ipcChannels.screeningEncounters.lifestyle.saveDraft
+    const ipcMain = createMockIpcMain({ throwOnHandleChannel: failingChannel })
+    const unrelatedHandler = vi.fn()
+    ipcMain.handlers.set('unrelated:channel', unrelatedHandler)
+
+    expect(() =>
+      registerScreeningLifestyleIpcHandlers(ipcMain, createDependencies().screeningLifestyle)
+    ).toThrow(ApplicationIpcRegistrationError)
+    expectOnlyUnrelatedHandler(ipcMain, unrelatedHandler)
+    expect(ipcMain.removeHandler.mock.calls.flat()).toEqual([
+      ipcChannels.screeningEncounters.lifestyle.saveWorkBaseline,
+      ipcChannels.screeningEncounters.lifestyle.saveTobaccoBaseline,
+      ipcChannels.screeningEncounters.lifestyle.saveAlcoholBaseline,
+      ipcChannels.screeningEncounters.lifestyle.getWorkspace
+    ])
+
+    ipcMain.setThrowOnHandleChannel(undefined)
+    const dispose = registerScreeningLifestyleIpcHandlers(
+      ipcMain,
+      createDependencies().screeningLifestyle
+    )
+    expect([...ipcMain.handlers.keys()]).toContain(failingChannel)
+    dispose()
   })
 
   it('re-registration removes only application-owned handlers before replacement', () => {

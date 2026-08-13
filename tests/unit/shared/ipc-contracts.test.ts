@@ -126,17 +126,11 @@ describe('shared IPC contracts', () => {
         reconfigureLocation: 'health-screening:installation-settings:reconfigure-location'
       }
     })
-    expect(
-      new Set([
-        ...Object.values(ipcChannels.app),
-        ...Object.values(ipcChannels.firstRun),
-        ...Object.values(ipcChannels.auth),
-        ...Object.values(ipcChannels.patient),
-        ...Object.values(ipcChannels.screeningSessions),
-        ...Object.values(ipcChannels.screeningEncounters),
-        ...Object.values(ipcChannels.installationSettings)
-      ]).size
-    ).toBe(38)
+    const allChannels = flattenChannelStrings(ipcChannels)
+
+    expect(allChannels).toHaveLength(43)
+    expect(new Set(allChannels).size).toBe(allChannels.length)
+    expect(allChannels).toContain(ipcChannels.screeningEncounters.lifestyle.complete)
   })
 
   it('keeps patient requests strict and main-process-authored', () => {
@@ -549,3 +543,10 @@ describe('shared IPC contracts', () => {
     )
   })
 })
+
+function flattenChannelStrings(value: unknown): string[] {
+  if (typeof value === 'string') return [value]
+  if (value === null || typeof value !== 'object') return []
+
+  return Object.values(value).flatMap((child) => flattenChannelStrings(child))
+}
