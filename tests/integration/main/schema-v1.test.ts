@@ -736,14 +736,17 @@ async function withMigratedDatabase(test: (connection: Database.Database) => voi
 
   try {
     configureHsd006Pragmas(connection)
-    createProductionDatabaseMigrationRunner({
+    runDatabaseMigrations({
+      connection,
+      migrations: databaseMigrations.slice(0, 8),
       applicationVersion: '1.0.0',
       logger: {
         info: vi.fn<(message: string) => void>(),
         error: vi.fn<(message: string) => void>()
       },
-      clock: { now: () => '2026-07-29T00:00:00.000Z' }
-    })(connection)
+      clock: { now: () => '2026-07-29T00:00:00.000Z' },
+      expectedHighestVersion: 8
+    })
     test(connection)
   } finally {
     connection.close()

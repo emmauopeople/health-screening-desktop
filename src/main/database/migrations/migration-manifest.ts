@@ -8,8 +8,9 @@ import screeningEncounterIdentitySql from './sql/0005-screening-encounter-identi
 import installationLocationConfigurationSql from './sql/0006-installation-location-configuration.sql?raw'
 import baselineActiveProtocolSql from './sql/0007-baseline-active-protocol.sql?raw'
 import screeningVitalsDraftsSql from './sql/0008-screening-vitals-drafts.sql?raw'
+import lifestyleFoundationSql from './sql/0009-lifestyle-foundation.sql?raw'
 
-export const targetSchemaVersion = 8
+export const targetSchemaVersion = 9
 
 const initialSchemaMigration = Object.freeze({
   version: 1,
@@ -60,6 +61,12 @@ const screeningVitalsDraftsMigration = Object.freeze({
   sql: screeningVitalsDraftsSql
 } satisfies DatabaseMigration)
 
+const lifestyleFoundationMigration = Object.freeze({
+  version: 9,
+  name: 'lifestyle-foundation',
+  sql: lifestyleFoundationSql
+} satisfies DatabaseMigration)
+
 export const databaseMigrations = Object.freeze([
   initialSchemaMigration,
   patientRegistryManagementMigration,
@@ -68,7 +75,8 @@ export const databaseMigrations = Object.freeze([
   screeningEncounterIdentityMigration,
   installationLocationConfigurationMigration,
   baselineActiveProtocolMigration,
-  screeningVitalsDraftsMigration
+  screeningVitalsDraftsMigration,
+  lifestyleFoundationMigration
 ] as const)
 
 export function resolveDatabaseMigrations(
