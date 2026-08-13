@@ -379,6 +379,28 @@ describe('screening Lifestyle application service integration', () => {
     })
   })
 
+  it('rejects an inconsistent Alcohol weekly total before the application transaction writes', async () => {
+    await withLifestyleService(({ connection, service }) => {
+      const result = service.saveLifestyleDraft(
+        createDraftRequest({
+          alcohol: {
+            id: null,
+            weeklyResponse: 'YES',
+            drinkingDays: 4,
+            totalStandardizedDrinks: 3,
+            largestOneDayAmount: 3,
+            daysAtLargestAmount: 2,
+            commonBeverageTypes: ['BEER'],
+            otherBeverageDescription: null
+          }
+        })
+      )
+      expect(result).toEqual({ status: 'VALIDATION_FAILED' })
+      expect(readCount(connection, 'lifestyle_drafts')).toBe(0)
+      expect(readCount(connection, 'lifestyle_alcohol_weekly_records')).toBe(0)
+    })
+  })
+
   it('requires baseline review confirmation and records only approved completion metadata', async () => {
     await withLifestyleService(({ service, connection }) => {
       const alcohol = service.saveAlcoholBaseline({ ...alcoholBaselineRequest(), status: 'FORMER' })

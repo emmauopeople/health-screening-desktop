@@ -2100,6 +2100,311 @@ h1 {
   font-weight: 760;
 }
 
+.lifestyle-step {
+  gap: 18px;
+}
+
+.lifestyle-period {
+  margin: 6px 0 0;
+  color: var(--shell-secondary-text);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.lifestyle-card-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.lifestyle-card {
+  overflow: hidden;
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.lifestyle-card-header {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 0;
+  padding: 14px 16px 8px;
+  color: var(--shell-navy);
+  background: #ffffff;
+  text-align: left;
+  font: inherit;
+}
+
+.lifestyle-card-header > span:first-child,
+.lifestyle-card-header-static > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lifestyle-card-header:focus-visible {
+  outline: 3px solid rgba(15, 118, 110, 0.32);
+  outline-offset: -3px;
+}
+
+.lifestyle-card-header:disabled {
+  cursor: default;
+}
+
+.lifestyle-card-header-static {
+  cursor: default;
+}
+
+.lifestyle-card-kicker {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  color: #ffffff;
+  background: var(--shell-teal);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.lifestyle-card-disabled .lifestyle-card-kicker {
+  color: #475467;
+  background: #e5e7eb;
+}
+
+.lifestyle-card-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--shell-secondary-text);
+  font-size: 0.82rem;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.lifestyle-status-mark {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+}
+
+.lifestyle-card-status-complete .lifestyle-status-mark {
+  color: var(--shell-success);
+  background: var(--shell-success);
+}
+
+.lifestyle-card-status-baseline_review .lifestyle-status-mark {
+  color: #a15c00;
+  background: #f0a400;
+}
+
+.lifestyle-card-status-validation_error .lifestyle-status-mark {
+  color: #b42318;
+  background: #b42318;
+}
+
+.lifestyle-card-summary,
+.lifestyle-card-muted {
+  margin: 0;
+  padding: 0 16px 14px 54px;
+  color: var(--shell-secondary-text);
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.lifestyle-card-muted {
+  padding-left: 16px;
+}
+
+.lifestyle-card-content {
+  display: grid;
+  gap: 14px;
+  padding: 0 16px 16px;
+}
+
+.lifestyle-inline-button {
+  justify-self: start;
+}
+
+.lifestyle-inline-panel,
+.lifestyle-weekly-panel {
+  display: grid;
+  gap: 14px;
+  border-top: 1px solid #d8e3ee;
+  padding-top: 14px;
+}
+
+.lifestyle-inline-panel h4,
+.lifestyle-weekly-panel h4 {
+  margin: 0;
+  color: var(--shell-navy);
+  font-size: 0.95rem;
+}
+
+.lifestyle-inline-panel fieldset,
+.lifestyle-weekly-panel fieldset {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.lifestyle-inline-panel legend,
+.lifestyle-weekly-panel legend {
+  margin-bottom: 4px;
+  color: #344054;
+  font-size: 0.86rem;
+  font-weight: 760;
+}
+
+.lifestyle-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  gap: 8px 12px;
+}
+
+.lifestyle-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  color: #344054;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.lifestyle-choice input {
+  accent-color: var(--shell-teal);
+}
+
+.lifestyle-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.lifestyle-field {
+  display: grid;
+  gap: 6px;
+  color: #344054;
+  font-size: 0.84rem;
+  font-weight: 760;
+}
+
+.lifestyle-field input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--shell-text);
+  background: #ffffff;
+  font: inherit;
+}
+
+.lifestyle-field input[aria-invalid='true'] {
+  border-color: #b42318;
+  box-shadow: 0 0 0 2px rgba(180, 35, 24, 0.16);
+}
+
+.lifestyle-field-error {
+  color: #912018;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.lifestyle-drink-guidance {
+  align-self: end;
+}
+
+.lifestyle-disclosure-button {
+  min-height: 34px;
+  border: 0;
+  padding: 0;
+  color: var(--shell-primary);
+  background: transparent;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 760;
+  text-align: left;
+  text-decoration: underline;
+}
+
+.lifestyle-disclosure {
+  margin-top: 8px;
+  border-left: 3px solid var(--shell-teal);
+  padding: 8px 10px;
+  color: #344054;
+  background: #f8fbfd;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.lifestyle-disclosure p {
+  margin: 0;
+}
+
+.lifestyle-disclosure ul {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+
+.lifestyle-inline-actions,
+.lifestyle-action-group,
+.lifestyle-conflict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.lifestyle-inline-actions {
+  justify-content: flex-end;
+}
+
+.lifestyle-validation,
+.lifestyle-review-notice,
+.lifestyle-conflict,
+.lifestyle-step-status,
+.lifestyle-inline-status {
+  border: 1px solid #c8d3df;
+  border-radius: 6px;
+  padding: 9px 10px;
+  color: #344054;
+  background: #f8fbfd;
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.lifestyle-validation {
+  border-color: #f1b5b0;
+  color: #912018;
+  background: #fff4f2;
+}
+
+.lifestyle-validation ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.lifestyle-review-notice {
+  border-color: #d7b35f;
+  color: #694a00;
+  background: #fff8df;
+}
+
+.lifestyle-conflict {
+  justify-content: space-between;
+  border-color: #f1b5b0;
+  color: #912018;
+  background: #fff4f2;
+}
+
 .screening-vitals-entry {
   display: grid;
   gap: 12px;
@@ -3171,8 +3476,16 @@ h1 {
 
   .screening-stepper,
   .screening-vitals-fields,
-  .screening-context-metrics {
+  .screening-context-metrics,
+  .lifestyle-form-grid,
+  .lifestyle-choice-grid {
     grid-template-columns: 1fr;
+  }
+
+  .lifestyle-card-header,
+  .lifestyle-card-header-static {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .screening-current-encounter-header span {

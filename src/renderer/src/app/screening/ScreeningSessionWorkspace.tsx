@@ -26,10 +26,21 @@ import type {
   ScreeningVitalsGetDraftSuccessData,
   ScreeningVitalsSaveDraftSuccessData,
   ScreeningSessionEnsureCurrentSuccessData,
-  ScreeningSessionErrorCode
+  ScreeningSessionErrorCode,
+  ScreeningLifestyleWorkspace
 } from '@shared/ipc'
 
 import type { WorkspaceNavigationGuard } from '../shell/application-shell-types'
+import { LifestyleStep } from './lifestyle/LifestyleStep'
+import {
+  createAlcoholBaselineRequest,
+  createAlcoholSaveDraftRequest,
+  createInitialLifestyleDraftState,
+  createLifestyleDraftStateFromWorkspace,
+  validateAlcoholBaseline,
+  validateAlcoholWeeklyDraft,
+  type LifestyleDraftState
+} from './lifestyle/lifestyle-workspace-model'
 import {
   screeningPatientSearchPageSize,
   screeningPatientTabLimit,
@@ -82,6 +93,7 @@ export interface PatientScreeningTab {
   readonly patient: PublicPatientSummary
   readonly encounter: PublicScreeningEncounterStartSummary
   readonly vitalsDraft: VitalsDraft
+  readonly lifestyleDraft: LifestyleDraftState
 }
 
 type WorkspaceMessage = {
@@ -165,6 +177,10 @@ export function ScreeningSessionWorkspace({
   const patientSearchRequestRef = useRef(0)
   const vitalsLoadRequestRef = useRef<Map<string, number>>(new Map())
   const vitalsSaveRequestRef = useRef<Map<string, number>>(new Map())
+  const lifestyleLoadRequestRef = useRef<Map<string, number>>(new Map())
+  const lifestyleSaveRequestRef = useRef<Map<string, number>>(new Map())
+  const lifestyleActiveEncounterRef = useRef<string | null>(null)
+  const lifestyleContextEpochRef = useRef(0)
   const workspaceEpochRef = useRef(0)
   const pendingPatientIdsRef = useRef<Set<string>>(new Set())
   const messageRef = useRef<HTMLDivElement | null>(null)
@@ -197,6 +213,10 @@ export function ScreeningSessionWorkspace({
     patientSearchRequestRef.current += 1
     vitalsLoadRequestRef.current.clear()
     vitalsSaveRequestRef.current.clear()
+    lifestyleLoadRequestRef.current.clear()
+    lifestyleSaveRequestRef.current.clear()
+    lifestyleActiveEncounterRef.current = null
+    lifestyleContextEpochRef.current += 1
     pendingPatientIdsRef.current.clear()
     setPatientSearchState(initialPatientSearchState)
     setPendingPatientIds(new Set())
@@ -368,12 +388,18 @@ export function ScreeningSessionWorkspace({
     const pendingPatientIds = pendingPatientIdsRef.current
     const vitalsLoadRequests = vitalsLoadRequestRef.current
     const vitalsSaveRequests = vitalsSaveRequestRef.current
+    const lifestyleLoadRequests = lifestyleLoadRequestRef.current
+    const lifestyleSaveRequests = lifestyleSaveRequestRef.current
 
     return () => {
       workspaceEpochRef.current += 1
       patientSearchRequestRef.current += 1
       vitalsLoadRequests.clear()
       vitalsSaveRequests.clear()
+      lifestyleLoadRequests.clear()
+      lifestyleSaveRequests.clear()
+      lifestyleActiveEncounterRef.current = null
+      lifestyleContextEpochRef.current += 1
       pendingPatientIds.clear()
     }
   }, [])
@@ -460,7 +486,15 @@ export function ScreeningSessionWorkspace({
               return currentTabs
             }
 
-            return [...currentTabs, { patient, encounter, vitalsDraft: createInitialVitalsDraft() }]
+            return [
+              ...currentTabs,
+              {
+                patient,
+                encounter,
+                vitalsDraft: createInitialVitalsDraft(),
+                lifestyleDraft: createInitialLifestyleDraftState()
+              }
+            ]
           })
           onActivePatientIdChange(patient.id)
           selectWorkspaceTab('NEW_SCREENING')
@@ -520,6 +554,19 @@ export function ScreeningSessionWorkspace({
       onOpenTabsChange((currentTabs) =>
         currentTabs.map((tab) =>
           tab.patient.id === patientId ? { ...tab, vitalsDraft: update(tab.vitalsDraft) } : tab
+        )
+      )
+    },
+    [onOpenTabsChange]
+  )
+
+  const updateLifestyleDraft = useCallback(
+    (patientId: string, update: (draft: LifestyleDraftState) => LifestyleDraftState): void => {
+      onOpenTabsChange((currentTabs) =>
+        currentTabs.map((tab) =>
+          tab.patient.id === patientId
+            ? { ...tab, lifestyleDraft: update(tab.lifestyleDraft) }
+            : tab
         )
       )
     },
@@ -686,6 +733,245 @@ export function ScreeningSessionWorkspace({
     [api, focusMessage, mountedRef, updateVitalsDraft]
   )
 
+  const loadLifestyleWorkspace = useCallback(
+    async (patientId: string, encounterId: string): Promise<void> => {
+      const contextEpoch = lifestyleContextEpochRef.current
+      const requestId = (lifestyleLoadRequestRef.current.get(encounterId) ?? 0) + 1
+      lifestyleLoadRequestRef.current.set(encounterId, requestId)
+      updateLifestyleDraft(patientId, (draft) => ({
+        ...draft,
+        loadStatus: 'LOADING',
+        saveStatus: 'IDLE',
+        statusMessage: null,
+        validationErrors: []
+      }))
+
+      try {
+        const result = await api.screeningEncounters.lifestyle.getWorkspace({ encounterId })
+
+        if (
+          !mountedRef.current ||
+          lifestyleLoadRequestRef.current.get(encounterId) !== requestId ||
+          lifestyleActiveEncounterRef.current !== encounterId ||
+          lifestyleContextEpochRef.current !== contextEpoch
+        ) {
+          return
+        }
+
+        if (!result.ok) {
+          updateLifestyleDraft(patientId, (draft) => ({
+            ...draft,
+            loadStatus: 'ERROR',
+            saveStatus: 'ERROR',
+            statusMessage: getLifestyleFailureMessage(result.error.code)
+          }))
+          return
+        }
+
+        if (result.data.status === 'LOADED' && hasLifestyleWorkspace(result.data)) {
+          const workspace = result.data.workspace
+          updateLifestyleDraft(patientId, () => createLifestyleDraftStateFromWorkspace(workspace))
+          return
+        }
+
+        updateLifestyleDraft(patientId, (draft) => ({
+          ...draft,
+          loadStatus: 'ERROR',
+          saveStatus: 'ERROR',
+          statusMessage: getLifestyleStatusMessage(result.data.status)
+        }))
+      } catch {
+        if (
+          mountedRef.current &&
+          lifestyleLoadRequestRef.current.get(encounterId) === requestId &&
+          lifestyleActiveEncounterRef.current === encounterId &&
+          lifestyleContextEpochRef.current === contextEpoch
+        ) {
+          updateLifestyleDraft(patientId, (draft) => ({
+            ...draft,
+            loadStatus: 'ERROR',
+            saveStatus: 'ERROR',
+            statusMessage: 'Lifestyle could not be loaded. Try again.'
+          }))
+        }
+      }
+    },
+    [api, mountedRef, updateLifestyleDraft]
+  )
+
+  const saveLifestyleBaseline = useCallback(
+    async (patientId: string, encounterId: string, draft: LifestyleDraftState): Promise<void> => {
+      if (draft.loadStatus !== 'READY' || draft.saveStatus === 'SAVING') return
+      const contextEpoch = lifestyleContextEpochRef.current
+
+      const validationErrors = validateAlcoholBaseline(draft.baselineForm)
+      const request = createAlcoholBaselineRequest(encounterId, draft)
+      if (validationErrors.length > 0 || request === null) {
+        updateLifestyleDraft(patientId, (current) => ({
+          ...current,
+          saveStatus: 'ERROR',
+          statusMessage: 'Baseline could not be saved. Check the highlighted fields.',
+          validationErrors:
+            validationErrors.length > 0
+              ? validationErrors
+              : [{ fieldId: 'everConsumed', message: 'Select an answer.' }]
+        }))
+        focusMessage()
+        return
+      }
+
+      const requestId = (lifestyleSaveRequestRef.current.get(encounterId) ?? 0) + 1
+      lifestyleSaveRequestRef.current.set(encounterId, requestId)
+      updateLifestyleDraft(patientId, (current) => ({
+        ...current,
+        saveStatus: 'SAVING',
+        statusMessage: 'Saving baseline...',
+        validationErrors: []
+      }))
+
+      try {
+        const result = await api.screeningEncounters.lifestyle.saveAlcoholBaseline(request)
+        if (
+          !mountedRef.current ||
+          lifestyleSaveRequestRef.current.get(encounterId) !== requestId ||
+          lifestyleActiveEncounterRef.current !== encounterId ||
+          lifestyleContextEpochRef.current !== contextEpoch
+        )
+          return
+
+        if (!result.ok) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: getLifestyleFailureMessage(result.error.code)
+          }))
+          return
+        }
+
+        if (result.data.status !== 'SAVED' || !hasLifestyleWorkspace(result.data)) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: getLifestyleStatusMessage(result.data.status)
+          }))
+          return
+        }
+
+        const workspace = result.data.workspace
+        updateLifestyleDraft(patientId, (current) => {
+          const next = createLifestyleDraftStateFromWorkspace(workspace, {
+            saveStatus: 'SAVED',
+            statusMessage: 'Baseline saved'
+          })
+          return {
+            ...next,
+            alcohol: current.alcohol,
+            validationErrors: validateAlcoholWeeklyDraft(current.alcohol),
+            dirty: current.dirty,
+            baselineOpen: false
+          }
+        })
+      } catch {
+        if (
+          mountedRef.current &&
+          lifestyleSaveRequestRef.current.get(encounterId) === requestId &&
+          lifestyleActiveEncounterRef.current === encounterId &&
+          lifestyleContextEpochRef.current === contextEpoch
+        ) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Baseline could not be saved. Try again.'
+          }))
+        }
+      }
+    },
+    [api, focusMessage, mountedRef, updateLifestyleDraft]
+  )
+
+  const saveLifestyleDraft = useCallback(
+    async (patientId: string, encounterId: string, draft: LifestyleDraftState): Promise<void> => {
+      if (draft.loadStatus !== 'READY' || draft.saveStatus === 'SAVING') return
+      const contextEpoch = lifestyleContextEpochRef.current
+
+      const validationErrors = validateAlcoholWeeklyDraft(draft.alcohol)
+      if (validationErrors.length > 0) {
+        updateLifestyleDraft(patientId, (current) => ({
+          ...current,
+          saveStatus: 'ERROR',
+          statusMessage: 'Draft could not be saved. Check the highlighted fields.',
+          validationErrors
+        }))
+        focusMessage()
+        return
+      }
+
+      const request = createAlcoholSaveDraftRequest(encounterId, draft)
+      const requestId = (lifestyleSaveRequestRef.current.get(encounterId) ?? 0) + 1
+      lifestyleSaveRequestRef.current.set(encounterId, requestId)
+      updateLifestyleDraft(patientId, (current) => ({
+        ...current,
+        saveStatus: 'SAVING',
+        statusMessage: 'Saving draft...',
+        validationErrors: []
+      }))
+
+      try {
+        const result = await api.screeningEncounters.lifestyle.saveDraft(request)
+        if (
+          !mountedRef.current ||
+          lifestyleSaveRequestRef.current.get(encounterId) !== requestId ||
+          lifestyleActiveEncounterRef.current !== encounterId ||
+          lifestyleContextEpochRef.current !== contextEpoch
+        )
+          return
+
+        if (!result.ok) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage:
+              result.error.code === 'IPC_UNAVAILABLE'
+                ? 'Draft could not be saved. Try again.'
+                : getLifestyleFailureMessage(result.error.code)
+          }))
+          return
+        }
+
+        if (result.data.status !== 'SAVED' || !hasLifestyleWorkspace(result.data)) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: getLifestyleStatusMessage(result.data.status)
+          }))
+          return
+        }
+
+        const workspace = result.data.workspace
+        updateLifestyleDraft(patientId, () =>
+          createLifestyleDraftStateFromWorkspace(workspace, {
+            saveStatus: 'SAVED',
+            statusMessage: 'Draft saved'
+          })
+        )
+      } catch {
+        if (
+          mountedRef.current &&
+          lifestyleSaveRequestRef.current.get(encounterId) === requestId &&
+          lifestyleActiveEncounterRef.current === encounterId &&
+          lifestyleContextEpochRef.current === contextEpoch
+        ) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Draft could not be saved. Try again.'
+          }))
+        }
+      }
+    },
+    [api, focusMessage, mountedRef, updateLifestyleDraft]
+  )
+
   const retrySession = useCallback((): void => {
     void loadCurrentSession()
   }, [loadCurrentSession])
@@ -693,6 +979,7 @@ export function ScreeningSessionWorkspace({
   const activeWorkspaceTab = getWorkspaceTabForCommand(commandId)
   const activeTab =
     openTabs.find((tab) => tab.patient.id === activePatientId) ?? openTabs[0] ?? null
+  const activeEncounterId = activeTab?.encounter.id ?? null
   const hasReadySession = sessionState.status === 'READY'
   const workspaceHeading = activeWorkspaceTab === 'PATIENTS' ? 'Patients' : 'New Screening'
 
@@ -707,6 +994,25 @@ export function ScreeningSessionWorkspace({
 
     void loadVitalsDraft(activeTab.patient.id, activeTab.encounter.id)
   }, [activeTab, activeWorkspaceTab, loadVitalsDraft])
+
+  useEffect(() => {
+    const encounterId = activeWorkspaceTab === 'NEW_SCREENING' ? activeEncounterId : null
+    lifestyleContextEpochRef.current += 1
+    lifestyleActiveEncounterRef.current = encounterId
+  }, [activeEncounterId, activeWorkspaceTab])
+
+  useEffect(() => {
+    if (
+      activeWorkspaceTab !== 'NEW_SCREENING' ||
+      activeTab === null ||
+      activeTab.vitalsDraft.activeStep !== 'LIFESTYLE' ||
+      activeTab.lifestyleDraft.loadStatus !== 'NOT_LOADED'
+    ) {
+      return
+    }
+
+    void loadLifestyleWorkspace(activeTab.patient.id, activeTab.encounter.id)
+  }, [activeTab, activeWorkspaceTab, loadLifestyleWorkspace])
 
   return (
     <section className="screening-workspace" aria-labelledby={headingId}>
@@ -779,6 +1085,10 @@ export function ScreeningSessionWorkspace({
               onOpenPatients={() => selectWorkspaceTab('PATIENTS')}
               onSaveVitalsDraft={saveVitalsDraft}
               onUpdateVitalsDraft={updateVitalsDraft}
+              onLoadLifestyleWorkspace={loadLifestyleWorkspace}
+              onSaveLifestyleBaseline={saveLifestyleBaseline}
+              onSaveLifestyleDraft={saveLifestyleDraft}
+              onUpdateLifestyleDraft={updateLifestyleDraft}
             />
           )}
         </>
@@ -1008,7 +1318,11 @@ function NewScreeningWorkspace({
   onCloseTab,
   onOpenPatients,
   onSaveVitalsDraft,
-  onUpdateVitalsDraft
+  onUpdateVitalsDraft,
+  onLoadLifestyleWorkspace,
+  onSaveLifestyleBaseline,
+  onSaveLifestyleDraft,
+  onUpdateLifestyleDraft
 }: {
   readonly activeTab: PatientScreeningTab | null
   readonly location: PublicScreeningSessionWorkspaceLocation
@@ -1024,6 +1338,13 @@ function NewScreeningWorkspace({
     mode: 'SAVE_DRAFT' | 'COMPLETE_STEP'
   ): void
   onUpdateVitalsDraft(patientId: string, update: (draft: VitalsDraft) => VitalsDraft): void
+  onLoadLifestyleWorkspace(patientId: string, encounterId: string): void
+  onSaveLifestyleBaseline(patientId: string, encounterId: string, draft: LifestyleDraftState): void
+  onSaveLifestyleDraft(patientId: string, encounterId: string, draft: LifestyleDraftState): void
+  onUpdateLifestyleDraft(
+    patientId: string,
+    update: (draft: LifestyleDraftState) => LifestyleDraftState
+  ): void
 }): React.JSX.Element {
   return (
     <section className="screening-new-screening-workspace" aria-label="New Screening workspace">
@@ -1058,6 +1379,26 @@ function NewScreeningWorkspace({
               )
             }
             onUpdateVitalsDraft={(update) => onUpdateVitalsDraft(activeTab.patient.id, update)}
+            onLoadLifestyleWorkspace={() =>
+              onLoadLifestyleWorkspace(activeTab.patient.id, activeTab.encounter.id)
+            }
+            onSaveLifestyleBaseline={() =>
+              onSaveLifestyleBaseline(
+                activeTab.patient.id,
+                activeTab.encounter.id,
+                activeTab.lifestyleDraft
+              )
+            }
+            onSaveLifestyleDraft={() =>
+              onSaveLifestyleDraft(
+                activeTab.patient.id,
+                activeTab.encounter.id,
+                activeTab.lifestyleDraft
+              )
+            }
+            onUpdateLifestyleDraft={(update) =>
+              onUpdateLifestyleDraft(activeTab.patient.id, update)
+            }
           />
         </div>
       )}
@@ -1187,13 +1528,21 @@ function CurrentEncounterPanel({
   session,
   tab,
   onSaveVitalsDraft,
-  onUpdateVitalsDraft
+  onUpdateVitalsDraft,
+  onLoadLifestyleWorkspace,
+  onSaveLifestyleBaseline,
+  onSaveLifestyleDraft,
+  onUpdateLifestyleDraft
 }: {
   readonly location: PublicScreeningSessionWorkspaceLocation
   readonly session: PublicCurrentScreeningSession
   readonly tab: PatientScreeningTab
   onSaveVitalsDraft(mode: 'SAVE_DRAFT' | 'COMPLETE_STEP'): void
   onUpdateVitalsDraft(update: (draft: VitalsDraft) => VitalsDraft): void
+  onLoadLifestyleWorkspace(): void
+  onSaveLifestyleBaseline(): void
+  onSaveLifestyleDraft(): void
+  onUpdateLifestyleDraft(update: (draft: LifestyleDraftState) => LifestyleDraftState): void
 }): React.JSX.Element {
   const displayName = formatPatientName(tab.patient)
   const activeStepIndex = getActiveStepIndex(tab.vitalsDraft.activeStep)
@@ -1232,10 +1581,27 @@ function CurrentEncounterPanel({
         />
       ) : (
         <LifestyleStep
+          encounterId={tab.encounter.id}
           encounterStatus={tab.encounter.status}
+          state={tab.lifestyleDraft}
           onBackToVitals={() => {
             onUpdateVitalsDraft((draft) => ({ ...draft, activeStep: 'VITALS' }))
           }}
+          onRetryLoad={onLoadLifestyleWorkspace}
+          onReload={() => {
+            onUpdateLifestyleDraft((draft) => ({
+              ...createInitialLifestyleDraftState(),
+              loadStatus: 'NOT_LOADED',
+              workspace: draft.workspace,
+              baselineForm: draft.baselineForm,
+              alcohol: draft.alcohol,
+              dirty: draft.dirty
+            }))
+            onLoadLifestyleWorkspace()
+          }}
+          onUpdate={onUpdateLifestyleDraft}
+          onSaveBaseline={onSaveLifestyleBaseline}
+          onSaveDraft={onSaveLifestyleDraft}
         />
       )}
     </section>
@@ -1598,36 +1964,6 @@ function VitalsStep({
           onClick={onContinue}
         >
           {draft.saveStatus === 'SAVING' ? 'Saving vitals...' : 'Continue to Lifestyle'}
-        </button>
-      </div>
-    </section>
-  )
-}
-
-function LifestyleStep({
-  encounterStatus,
-  onBackToVitals
-}: {
-  readonly encounterStatus: PublicScreeningEncounterStartSummary['status']
-  onBackToVitals(): void
-}): React.JSX.Element {
-  return (
-    <section className="screening-current-step" aria-labelledby="screening-lifestyle-step-title">
-      <div className="screening-current-step-header">
-        <h3 id="screening-lifestyle-step-title">Lifestyle</h3>
-        <span>{formatEncounterStatus(encounterStatus)}</span>
-      </div>
-
-      <div className="screening-empty-state screening-compact-empty">
-        Lifestyle collection is not available in this build.
-      </div>
-
-      <div className="screening-encounter-actions">
-        <button className="button button-secondary" type="button" onClick={onBackToVitals}>
-          Previous
-        </button>
-        <button className="button button-primary" type="button" disabled>
-          Continue to food
         </button>
       </div>
     </section>
@@ -2175,6 +2511,53 @@ function getVitalsStatusMessage(
     case 'UNAVAILABLE':
       return 'Draft could not be saved. Try again.'
   }
+}
+
+function getLifestyleFailureMessage(
+  code: 'IPC_FORBIDDEN' | 'IPC_UNAVAILABLE' | 'INTERNAL_ERROR'
+): string {
+  switch (code) {
+    case 'IPC_FORBIDDEN':
+      return 'This window is not allowed to open Lifestyle.'
+    case 'IPC_UNAVAILABLE':
+    case 'INTERNAL_ERROR':
+      return 'Lifestyle is unavailable.'
+  }
+}
+
+function getLifestyleStatusMessage(status: string): string {
+  switch (status) {
+    case 'AUTHENTICATION_REQUIRED':
+      return 'Sign in is required.'
+    case 'FORBIDDEN':
+      return 'The active session is not authorized for Lifestyle.'
+    case 'VALIDATION_FAILED':
+      return 'Lifestyle data could not be saved. Check the highlighted fields.'
+    case 'LOCATION_NOT_CONFIGURED':
+    case 'LOCATION_NOT_FOUND':
+    case 'LOCATION_INACTIVE':
+      return 'The screening location is unavailable.'
+    case 'ENCOUNTER_NOT_FOUND':
+    case 'ENCOUNTER_NOT_EDITABLE':
+      return 'This screening encounter is unavailable.'
+    case 'SESSION_NOT_FOUND':
+    case 'SESSION_CLOSED':
+    case 'SESSION_NOT_CURRENT':
+      return 'The screening session is unavailable.'
+    case 'VERSION_CONFLICT':
+      return 'Draft changed elsewhere. Reload and try again.'
+    case 'UNAVAILABLE':
+      return 'Lifestyle is unavailable.'
+    default:
+      return 'Lifestyle could not be loaded. Try again.'
+  }
+}
+
+function hasLifestyleWorkspace(data: {
+  readonly status: string
+  readonly workspace?: ScreeningLifestyleWorkspace
+}): data is { readonly status: string; readonly workspace: ScreeningLifestyleWorkspace } {
+  return data.workspace !== undefined
 }
 
 function isVitalsDraftLoadedData(

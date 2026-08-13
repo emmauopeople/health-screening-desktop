@@ -17,6 +17,7 @@ import {
   type PublicPatientSummary,
   type PublicScreeningEncounterStartSummary,
   type PublicScreeningVitalsDraft,
+  type ScreeningLifestyleWorkspace,
   type ScreeningSessionErrorCode
 } from '@shared/ipc'
 import {
@@ -40,6 +41,20 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
       >
       completeStep: ReturnType<
         typeof vi.fn<HealthScreeningApi['screeningEncounters']['vitals']['completeStep']>
+      >
+    }
+    lifestyle: {
+      getWorkspace: ReturnType<
+        typeof vi.fn<HealthScreeningApi['screeningEncounters']['lifestyle']['getWorkspace']>
+      >
+      saveAlcoholBaseline: ReturnType<
+        typeof vi.fn<HealthScreeningApi['screeningEncounters']['lifestyle']['saveAlcoholBaseline']>
+      >
+      saveDraft: ReturnType<
+        typeof vi.fn<HealthScreeningApi['screeningEncounters']['lifestyle']['saveDraft']>
+      >
+      complete: ReturnType<
+        typeof vi.fn<HealthScreeningApi['screeningEncounters']['lifestyle']['complete']>
       >
     }
   } & HealthScreeningApi['screeningEncounters']
@@ -78,6 +93,7 @@ const locationId = '77777777-7777-4777-8777-777777777777'
 const sessionId = '99999999-9999-4999-8999-999999999999'
 const protocolVersionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const encounterId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+const secondEncounterId = 'abababab-abab-4bab-8bab-abababababab'
 const patientId = '11111111-1111-4111-8111-111111111111'
 const secondPatientId = '22222222-2222-4222-8222-222222222222'
 const thirdPatientId = '33333333-3333-4333-8333-333333333333'
@@ -372,7 +388,353 @@ describe('screening patient entry workspace', () => {
       expectedVersion: 1
     })
     expect(text(mounted)).toContain('Lifestyle')
-    expect(text(mounted)).toContain('Lifestyle collection is not available in this build.')
+    expect(text(mounted)).toContain('Tobacco and nicotine')
+    expect(text(mounted)).toContain('Not started')
+    expect(text(mounted)).not.toContain('Continue to food')
+
+    await mounted.unmount()
+  })
+
+  it('loads the Lifestyle shell with only Alcohol enabled', async () => {
+    const api = createApi()
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+
+    expect(api.screeningEncounters.lifestyle.getWorkspace).toHaveBeenCalledWith({ encounterId })
+    expect(mounted.container.querySelectorAll('.lifestyle-card')).toHaveLength(5)
+    expect(text(mounted)).toContain('Alcohol')
+    expect(text(mounted)).toContain('Tobacco and nicotine')
+    expect(text(mounted)).toContain('Physical activity')
+    expect(text(mounted)).toContain('Work and occupation')
+    expect(text(mounted)).toContain('Other activity')
+    expect(text(mounted)).toContain('Baseline required.')
+    expect(text(mounted)).not.toContain('Continue to food')
+    expect(buttonByText(mounted, 'Continue').disabled).toBe(true)
+
+    await mounted.unmount()
+  })
+
+  it('restores persisted Alcohol baseline and weekly values after entering Lifestyle', async () => {
+    const api = createApi()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: publicLifestyleWorkspaceWithAlcohol() })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+
+    expect(
+      inputByLabel(mounted, 'On how many of the past 7 days did you drink alcohol?').value
+    ).toBe('2')
+    expect(
+      inputByLabel(mounted, 'How many drinks did you have in total during the past 7 days?').value
+    ).toBe('3')
+    expect(
+      inputByLabel(mounted, 'What was the highest number of drinks you had on any one day?').value
+    ).toBe('2')
+    expect(inputByLabel(mounted, 'On how many days did you have that highest number?').value).toBe(
+      '1'
+    )
+    expect(selectorsByName(mounted, 'alcohol-weekly-response')).toHaveLength(5)
+    expect(text(mounted)).toContain('Weekly alcohol')
+
+    await mounted.unmount()
+  })
+
+  it('uses patient-facing weekly labels and an accessible closed drink guidance disclosure', async () => {
+    const api = createApi()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: publicLifestyleWorkspaceWithAlcohol() })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+
+    expect(text(mounted)).toContain('On how many of the past 7 days did you drink alcohol?')
+    expect(text(mounted)).toContain('How many drinks did you have in total during the past 7 days?')
+    expect(text(mounted)).toContain('What was the highest number of drinks you had on any one day?')
+    expect(text(mounted)).toContain('On how many days did you have that highest number?')
+    expect(text(mounted)).toContain('What types of alcoholic drinks did you have?')
+    expect(text(mounted)).not.toContain('Drinking days')
+    expect(text(mounted)).not.toContain('Total standard drinks')
+    expect(text(mounted)).not.toContain('Largest number in one day')
+    expect(text(mounted)).not.toContain('Days at largest amount')
+
+    const guidance = buttonByText(mounted, 'What counts as one drink?')
+    expect(guidance.getAttribute('aria-expanded')).toBe('false')
+    expect(mounted.container.querySelector('#alcohol-drink-guidance')).toBeNull()
+
+    await clickButton(mounted, 'What counts as one drink?')
+    expect(guidance.getAttribute('aria-expanded')).toBe('true')
+    expect(text(mounted)).toContain(
+      'For this screening, one drink contains about 10 grams of pure alcohol.'
+    )
+    expect(text(mounted)).toContain('250 mL regular beer at 5%')
+    expect(text(mounted)).toContain('100 mL wine at 12%')
+    expect(text(mounted)).toContain('30 mL spirits at 40%')
+    expect(text(mounted)).toContain('Larger or stronger servings may count as more than one drink.')
+
+    guidance.focus()
+    expect(document.activeElement).toBe(guidance)
+    await act(async () => {
+      guidance.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await flushPromises()
+    })
+    await flushReact()
+    expect(guidance.getAttribute('aria-expanded')).toBe('false')
+
+    await mounted.unmount()
+  })
+
+  it('blocks an inconsistent weekly quantity combination and focuses the total field', async () => {
+    const api = createApi()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: publicLifestyleWorkspaceWithAlcohol() })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await changeInput(
+      inputByLabel(mounted, 'On how many of the past 7 days did you drink alcohol?'),
+      '4'
+    )
+    await changeInput(
+      inputByLabel(mounted, 'How many drinks did you have in total during the past 7 days?'),
+      '3'
+    )
+    await changeInput(
+      inputByLabel(mounted, 'What was the highest number of drinks you had on any one day?'),
+      '3'
+    )
+    await changeInput(
+      inputByLabel(mounted, 'On how many days did you have that highest number?'),
+      '2'
+    )
+
+    await clickButton(mounted, 'Save draft')
+
+    expect(api.screeningEncounters.lifestyle.saveDraft).not.toHaveBeenCalled()
+    expect(text(mounted)).toContain(
+      'The total number of drinks is too low for the highest amount and number of days entered.'
+    )
+    const total = inputByLabel(
+      mounted,
+      'How many drinks did you have in total during the past 7 days?'
+    )
+    expect(total.getAttribute('aria-invalid')).toBe('true')
+    expect(total.getAttribute('aria-describedby')).toBe('alcohol-total-drinks-error')
+    expect(document.activeElement).toBe(total)
+
+    await mounted.unmount()
+  })
+
+  it('saves the baseline with the mapped status and authoritative versions', async () => {
+    const api = createApi()
+    const workspace = publicLifestyleWorkspaceWithAlcohol({ baselineStatus: 'FORMER' })
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace })
+    )
+    api.screeningEncounters.lifestyle.saveAlcoholBaseline.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'SAVED', workspace })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Alcohol Baseline')
+    await clickButton(mounted, 'Save baseline')
+
+    expect(api.screeningEncounters.lifestyle.saveAlcoholBaseline).toHaveBeenCalledWith({
+      encounterId,
+      expectedBaselineVersion: 2,
+      expectedDraftVersion: 4,
+      status: 'FORMER',
+      everConsumed: 'YES',
+      consumedPast12Months: 'NO',
+      commonBeverageTypes: ['BEER'],
+      otherBeverageDescription: null
+    })
+    expect(text(mounted)).toContain('Baseline saved')
+
+    await mounted.unmount()
+  })
+
+  it('shows conditional baseline questions and saves the approved Alcohol codes', async () => {
+    const api = createApi()
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+    await fillCompleteVitalsReading(mounted, 1)
+    await clickButton(mounted, 'Continue to Lifestyle')
+    await clickButton(mounted, 'Alcohol Baseline')
+
+    expect(selectorsByName(mounted, 'alcohol-past-year')).toHaveLength(0)
+    await changeRadio(mounted, 'alcohol-ever-consumed', 'YES')
+    expect(selectorsByName(mounted, 'alcohol-past-year')).toHaveLength(4)
+    await changeRadio(mounted, 'alcohol-past-year', 'YES')
+    expect(text(mounted)).toContain('Common beverage types')
+    await clickCheckbox(mounted, 'OTHER')
+    expect(inputByLabel(mounted, 'Other beverage').value).toBe('')
+    await changeInput(inputByLabel(mounted, 'Other beverage'), 'Local beverage')
+    await clickButton(mounted, 'Save baseline')
+
+    expect(api.screeningEncounters.lifestyle.saveAlcoholBaseline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        encounterId,
+        status: 'CURRENT',
+        everConsumed: 'YES',
+        consumedPast12Months: 'YES',
+        commonBeverageTypes: ['OTHER'],
+        otherBeverageDescription: 'Local beverage'
+      })
+    )
+
+    await mounted.unmount()
+  })
+
+  it('clears hidden quantitative values when weekly response changes from Yes to No', async () => {
+    const api = createApi()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: publicLifestyleWorkspaceWithAlcohol() })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await changeRadio(mounted, 'alcohol-weekly-response', 'NO')
+    expect(mounted.container.querySelector('#alcohol-drinking-days')).toBeNull()
+
+    await clickButton(mounted, 'Save draft')
+    expect(api.screeningEncounters.lifestyle.saveDraft.mock.calls[0]?.[0]).toMatchObject({
+      encounterId,
+      expectedVersion: 4,
+      alcohol: {
+        id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        weeklyResponse: 'NO',
+        drinkingDays: null,
+        totalStandardizedDrinks: null,
+        largestOneDayAmount: null,
+        daysAtLargestAmount: null,
+        commonBeverageTypes: [],
+        otherBeverageDescription: null
+      }
+    })
+
+    await mounted.unmount()
+  })
+
+  it('preserves unseen Lifestyle sections when saving Alcohol', async () => {
+    const api = createApi()
+    const workspace = publicLifestyleWorkspaceWithAlcohol({ includeOtherSections: true })
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace })
+    )
+    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'SAVED', workspace })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Save draft')
+
+    const request = api.screeningEncounters.lifestyle.saveDraft.mock.calls[0]?.[0]
+    expect(request?.tobacco).toEqual(expect.objectContaining({ weeklyResponse: 'YES' }))
+    expect(request?.physicalActivity).toEqual(expect.objectContaining({ weeklyResponse: 'YES' }))
+    expect(request?.work).toEqual(expect.objectContaining({ weeklyResponse: 'USUAL' }))
+    expect(request?.otherActivities).toHaveLength(1)
+    expect(request?.tobacco?.products[0]).not.toHaveProperty('updatedAt')
+    expect(request?.physicalActivity?.activities[0]).not.toHaveProperty('weeklyMinutes')
+
+    await mounted.unmount()
+  })
+
+  it('shows a controlled Lifestyle load failure and supports explicit retry', async () => {
+    const api = createApi()
+    api.screeningEncounters.lifestyle.getWorkspace
+      .mockResolvedValueOnce(createIpcSuccess({ status: 'UNAVAILABLE' }))
+      .mockResolvedValueOnce(
+        createIpcSuccess({ status: 'LOADED', workspace: publicLifestyleWorkspace() })
+      )
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+    await fillCompleteVitalsReading(mounted, 1)
+    await clickButton(mounted, 'Continue to Lifestyle')
+    expect(text(mounted)).toContain('Lifestyle is unavailable.')
+
+    await clickButton(mounted, 'Retry')
+    expect(api.screeningEncounters.lifestyle.getWorkspace).toHaveBeenCalledTimes(2)
+    expect(text(mounted)).toContain('Tobacco and nicotine')
+
+    await mounted.unmount()
+  })
+
+  it('keeps weekly values when the Alcohol Baseline panel is cancelled', async () => {
+    const api = createApi()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: publicLifestyleWorkspaceWithAlcohol() })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    const before = inputByLabel(
+      mounted,
+      'On how many of the past 7 days did you drink alcohol?'
+    ).value
+    await clickButton(mounted, 'Alcohol Baseline')
+    await clickButton(mounted, 'Cancel')
+
+    expect(
+      inputByLabel(mounted, 'On how many of the past 7 days did you drink alcohol?').value
+    ).toBe(before)
+    expect(text(mounted)).toContain('Weekly alcohol')
+
+    await mounted.unmount()
+  })
+
+  it('shows Review baseline for Former plus weekly Yes without discarding answers', async () => {
+    const api = createApi()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'LOADED',
+        workspace: publicLifestyleWorkspaceWithAlcohol({ baselineStatus: 'FORMER' })
+      })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+
+    expect(text(mounted)).toContain('Baseline review required')
+    expect(text(mounted)).toContain('Review baseline')
+    expect(
+      inputByLabel(mounted, 'On how many of the past 7 days did you drink alcohol?').value
+    ).toBe('2')
+    expect(api.screeningEncounters.lifestyle.complete).not.toHaveBeenCalled()
+
+    await mounted.unmount()
+  })
+
+  it('preserves local Alcohol edits after a draft version conflict', async () => {
+    const api = createApi()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: publicLifestyleWorkspaceWithAlcohol() })
+    )
+    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'VERSION_CONFLICT' })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await changeInput(
+      inputByLabel(mounted, 'On how many of the past 7 days did you drink alcohol?'),
+      '4'
+    )
+    await clickButton(mounted, 'Save draft')
+
+    expect(text(mounted)).toContain('Draft changed elsewhere. Reload and try again.')
+    expect(
+      inputByLabel(mounted, 'On how many of the past 7 days did you drink alcohol?').value
+    ).toBe('4')
+    expect(buttonByText(mounted, 'Reload')).not.toBeNull()
 
     await mounted.unmount()
   })
@@ -491,7 +853,8 @@ describe('screening patient entry workspace', () => {
       waistCm: null,
       notes: null
     })
-    expect(text(mounted)).toContain('Lifestyle collection is not available in this build.')
+    expect(text(mounted)).toContain('Tobacco and nicotine')
+    expect(text(mounted)).not.toContain('Continue to food')
 
     await mounted.unmount()
   })
@@ -611,6 +974,89 @@ describe('screening patient entry workspace', () => {
     await clickButton(mounted, 'Close Ada Lovelace')
 
     expect(text(mounted)).toContain('Select a patient from the Patients tab to begin screening.')
+
+    await mounted.unmount()
+  })
+
+  it('keeps Alcohol state isolated between patient encounter tabs', async () => {
+    const api = createApi({
+      patients: [
+        patientSummary({ id: patientId, displayName: 'Ada Lovelace' }),
+        patientSummary({ id: secondPatientId, displayName: 'Grace Hopper' })
+      ]
+    })
+    api.screeningEncounters.start.mockImplementation((request) =>
+      Promise.resolve(
+        createIpcSuccess({
+          status: 'STARTED',
+          encounter: encounterSummary({
+            id: request.patientId === secondPatientId ? secondEncounterId : encounterId,
+            patientId: request.patientId
+          })
+        })
+      )
+    )
+    api.screeningEncounters.lifestyle.getWorkspace.mockImplementation(({ encounterId: id }) =>
+      Promise.resolve(
+        createIpcSuccess({
+          status: 'LOADED',
+          workspace: publicLifestyleWorkspaceWithAlcohol({
+            drinkingDays: id === encounterId ? 2 : 5,
+            encounterIdOverride: id
+          })
+        })
+      )
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    expect(
+      inputByLabel(mounted, 'On how many of the past 7 days did you drink alcohol?').value
+    ).toBe('2')
+    await clickButton(mounted, 'Search / open patient')
+    await clickRow(mounted, 'Grace Hopper')
+    await fillCompleteVitalsReading(mounted, 1)
+    await clickButton(mounted, 'Continue to Lifestyle')
+    await flushReact()
+    expect(
+      inputByLabel(mounted, 'On how many of the past 7 days did you drink alcohol?').value
+    ).toBe('5')
+
+    await clickButton(mounted, 'Ada Lovelace')
+    expect(
+      inputByLabel(mounted, 'On how many of the past 7 days did you drink alcohol?').value
+    ).toBe('2')
+    await clickButton(mounted, 'Grace Hopper')
+    expect(
+      inputByLabel(mounted, 'On how many of the past 7 days did you drink alcohol?').value
+    ).toBe('5')
+
+    await mounted.unmount()
+  })
+
+  it('drops a Lifestyle response that resolves after leaving and re-entering the tab', async () => {
+    const workspaceResult =
+      createDeferred<
+        Awaited<ReturnType<HealthScreeningApi['screeningEncounters']['lifestyle']['getWorkspace']>>
+      >()
+    const api = createApi()
+    api.screeningEncounters.lifestyle.getWorkspace.mockReturnValueOnce(workspaceResult.promise)
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+    await fillCompleteVitalsReading(mounted, 1)
+    await clickButton(mounted, 'Continue to Lifestyle')
+    expect(text(mounted)).toContain('Loading Lifestyle.')
+
+    await mounted.setCommandId('SCREENING_TODAYS_SESSION')
+    await mounted.setCommandId('SCREENING_NEW_SCREENING')
+    workspaceResult.resolve(
+      createIpcSuccess({ status: 'LOADED', workspace: publicLifestyleWorkspaceWithAlcohol() })
+    )
+    await flushReact()
+
+    expect(text(mounted)).toContain('Loading Lifestyle.')
+    expect(mounted.container.querySelector('#alcohol-drinking-days')).toBeNull()
 
     await mounted.unmount()
   })
@@ -1157,6 +1603,28 @@ function createApi({
             })
           )
         )
+      },
+      lifestyle: {
+        getWorkspace: vi.fn(() =>
+          Promise.resolve(
+            createIpcSuccess({ status: 'LOADED', workspace: publicLifestyleWorkspace() })
+          )
+        ),
+        saveAlcoholBaseline: vi.fn(() =>
+          Promise.resolve(
+            createIpcSuccess({ status: 'SAVED', workspace: publicLifestyleWorkspace() })
+          )
+        ),
+        saveDraft: vi.fn(() =>
+          Promise.resolve(
+            createIpcSuccess({ status: 'SAVED', workspace: publicLifestyleWorkspace() })
+          )
+        ),
+        complete: vi.fn(() =>
+          Promise.resolve(
+            createIpcSuccess({ status: 'COMPLETED', workspace: publicLifestyleWorkspace() })
+          )
+        )
       }
     },
     screeningSessions: {
@@ -1252,6 +1720,141 @@ function publicVitalsReadingId(index: number): string {
   )
 }
 
+function publicLifestyleWorkspace(): ScreeningLifestyleWorkspace {
+  return {
+    encounterId,
+    draft: null,
+    activeAlcoholBaseline: null,
+    activeTobaccoBaseline: null,
+    activeWorkBaseline: null,
+    referencedAlcoholBaseline: null,
+    referencedTobaccoBaseline: null,
+    referencedWorkBaseline: null
+  }
+}
+
+function publicLifestyleWorkspaceWithAlcohol({
+  baselineStatus = 'CURRENT',
+  includeOtherSections = false,
+  drinkingDays = 2,
+  encounterIdOverride = encounterId
+}: {
+  readonly baselineStatus?: 'CURRENT' | 'FORMER' | 'NEVER'
+  readonly includeOtherSections?: boolean
+  readonly drinkingDays?: number
+  readonly encounterIdOverride?: string
+} = {}): ScreeningLifestyleWorkspace {
+  const baseline = {
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    version: 2,
+    status: baselineStatus,
+    everConsumed: baselineStatus === 'NEVER' ? ('NO' as const) : ('YES' as const),
+    consumedPast12Months: baselineStatus === 'CURRENT' ? ('YES' as const) : ('NO' as const),
+    commonBeverageTypes: ['BEER' as const],
+    otherBeverageDescription: null,
+    updatedAt: baseTimestamp
+  }
+  const base = publicLifestyleWorkspace()
+  return {
+    ...base,
+    encounterId: encounterIdOverride,
+    draft: {
+      id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      encounterId: encounterIdOverride,
+      status: 'IN_PROGRESS',
+      rowVersion: 4,
+      periodStart: '2026-07-31',
+      periodEnd: operationalDate,
+      alcoholBaselineVersionId: baseline.id,
+      tobaccoBaselineVersionId: includeOtherSections
+        ? 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+        : null,
+      workBaselineVersionId: includeOtherSections ? 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' : null,
+      alcohol: {
+        id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        weeklyResponse: 'YES',
+        drinkingDays,
+        totalStandardizedDrinks: 3,
+        largestOneDayAmount: 2,
+        daysAtLargestAmount: 1,
+        commonBeverageTypes: ['BEER'],
+        otherBeverageDescription: null,
+        updatedAt: baseTimestamp
+      },
+      tobacco: includeOtherSections
+        ? {
+            id: '12121212-1212-4121-8121-121212121212',
+            weeklyResponse: 'YES',
+            products: [
+              {
+                id: '16161616-1616-4161-8161-161616161616',
+                sequenceNumber: 1,
+                productType: 'CIGARETTE',
+                daysUsed: 2,
+                averageQuantityPerUseDay: 3,
+                unit: 'STICKS_CIGARETTES',
+                secondhandSmokeExposure: null,
+                otherProductDescription: null,
+                otherUnitDescription: null,
+                updatedAt: baseTimestamp
+              }
+            ],
+            updatedAt: baseTimestamp
+          }
+        : null,
+      physicalActivity: includeOtherSections
+        ? {
+            id: '13131313-1313-4131-8131-131313131313',
+            weeklyResponse: 'YES',
+            sedentaryMinutesPerDay: 30,
+            activities: [
+              {
+                id: '17171717-1717-4171-8171-171717171717',
+                sequenceNumber: 1,
+                activityDomain: 'EXERCISE',
+                description: null,
+                intensity: 'LIGHT',
+                daysInPastSevenDays: 2,
+                averageMinutesPerActiveDay: 30,
+                weeklyMinutes: 60,
+                updatedAt: baseTimestamp
+              }
+            ],
+            updatedAt: baseTimestamp
+          }
+        : null,
+      work: includeOtherSections
+        ? {
+            id: '14141414-1414-4141-8141-141414141414',
+            weeklyResponse: 'USUAL',
+            updatedAt: baseTimestamp
+          }
+        : null,
+      otherActivities: includeOtherSections
+        ? [
+            {
+              id: '15151515-1515-4151-8151-151515151515',
+              sequenceNumber: 1,
+              category: 'SPORT',
+              description: 'Walking',
+              daysInPastSevenDays: 2,
+              averageMinutesPerDay: 30,
+              intensity: 'LIGHT',
+              updatedAt: baseTimestamp
+            }
+          ]
+        : [],
+      updatedAt: baseTimestamp
+    },
+    activeAlcoholBaseline: baseline,
+    referencedAlcoholBaseline: baseline,
+    activeTobaccoBaseline: null,
+    activeWorkBaseline: null,
+    referencedTobaccoBaseline: null,
+    referencedWorkBaseline: null
+  }
+}
+
 function patientSummary(overrides: Partial<PublicPatientSummary> = {}): PublicPatientSummary {
   return {
     id: patientId,
@@ -1309,6 +1912,13 @@ async function clickRow(
   }
 }
 
+async function openLifestyle(mounted: MountedWorkspace): Promise<void> {
+  await clickRow(mounted, 'Ada Lovelace')
+  await fillCompleteVitalsReading(mounted, 1)
+  await clickButton(mounted, 'Continue to Lifestyle')
+  await flushReact()
+}
+
 async function pressRow(mounted: MountedWorkspace, name: string, key: string): Promise<void> {
   await act(async () => {
     rowByName(mounted, name).dispatchEvent(
@@ -1357,6 +1967,36 @@ async function changeSelect(select: HTMLSelectElement, value: string): Promise<v
     await flushPromises()
   })
   await flushReact()
+}
+
+async function changeRadio(mounted: MountedWorkspace, name: string, value: string): Promise<void> {
+  const radio = mounted.container.querySelector<HTMLInputElement>(
+    `input[type="radio"][name="${name}"][value="${value}"]`
+  )
+  if (radio === null) throw new Error(`Expected radio ${name}=${value}.`)
+  await act(async () => {
+    radio.click()
+    await flushPromises()
+  })
+  await flushReact()
+}
+
+async function clickCheckbox(mounted: MountedWorkspace, value: string): Promise<void> {
+  const checkbox = mounted.container.querySelector<HTMLInputElement>(
+    `input[type="checkbox"][value="${value}"]`
+  )
+  if (checkbox === null) throw new Error(`Expected checkbox ${value}.`)
+  await act(async () => {
+    checkbox.click()
+    await flushPromises()
+  })
+  await flushReact()
+}
+
+function selectorsByName(mounted: MountedWorkspace, name: string): HTMLInputElement[] {
+  return Array.from(
+    mounted.container.querySelectorAll<HTMLInputElement>(`input[type="radio"][name="${name}"]`)
+  )
 }
 
 async function fillCompleteVitalsReading(

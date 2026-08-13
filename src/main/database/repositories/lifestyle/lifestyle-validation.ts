@@ -452,6 +452,19 @@ function parseAlcoholWeekly(value: unknown): LifestyleAlcoholWeeklyInput {
   if (largest !== null && total !== null && largest > total) throw new RepositoryValidationError()
   if (largestDays !== null && drinkingDays !== null && largestDays > drinkingDays)
     throw new RepositoryValidationError()
+  if (total !== null && largest !== null && largestDays !== null) {
+    const highestAmountSubtotal = largest * largestDays
+    const sameNumberOfDaysRequiresExactTotal =
+      drinkingDays !== null && drinkingDays === largestDays && total !== highestAmountSubtotal
+    const additionalDaysRequireAdditionalDrinks =
+      drinkingDays !== null && drinkingDays > largestDays && total <= highestAmountSubtotal
+    if (
+      total < highestAmountSubtotal ||
+      sameNumberOfDaysRequiresExactTotal ||
+      additionalDaysRequireAdditionalDrinks
+    )
+      throw new RepositoryValidationError()
+  }
   return {
     id: parseEntityId(data.id),
     weeklyResponse,

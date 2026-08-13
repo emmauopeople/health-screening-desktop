@@ -208,6 +208,66 @@ describe('Lifestyle persistence validation', () => {
     expect(() =>
       parseLifestyleDraftUpdateInput({
         ...base,
+        alcohol: {
+          ...alcohol,
+          drinkingDays: 4,
+          totalStandardizedDrinks: 3,
+          largestOneDayAmount: 3,
+          daysAtLargestAmount: 2
+        }
+      })
+    ).toThrow()
+    expect(() =>
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        alcohol: {
+          ...alcohol,
+          drinkingDays: 2,
+          totalStandardizedDrinks: 5,
+          largestOneDayAmount: 2,
+          daysAtLargestAmount: 2
+        }
+      })
+    ).toThrow()
+    expect(
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        alcohol: {
+          ...alcohol,
+          drinkingDays: 2,
+          totalStandardizedDrinks: 4,
+          largestOneDayAmount: 2,
+          daysAtLargestAmount: 2
+        }
+      }).alcohol?.totalStandardizedDrinks
+    ).toBe(4)
+    expect(() =>
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        alcohol: {
+          ...alcohol,
+          drinkingDays: 3,
+          totalStandardizedDrinks: 4,
+          largestOneDayAmount: 2,
+          daysAtLargestAmount: 2
+        }
+      })
+    ).toThrow()
+    expect(
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        alcohol: {
+          ...alcohol,
+          drinkingDays: 3,
+          totalStandardizedDrinks: 5,
+          largestOneDayAmount: 2,
+          daysAtLargestAmount: 2
+        }
+      }).alcohol?.totalStandardizedDrinks
+    ).toBe(5)
+    expect(() =>
+      parseLifestyleDraftUpdateInput({
+        ...base,
         alcohol: { ...alcohol, commonBeverageTypes: ['BEER'], otherBeverageDescription: 'hidden' }
       })
     ).toThrow()
