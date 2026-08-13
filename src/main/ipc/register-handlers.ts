@@ -12,12 +12,15 @@ import type { PatientIpcHandlerDependencies } from '@main/ipc/handlers/patient-h
 import { createPatientIpcHandlers } from '@main/ipc/handlers/patient-handlers'
 import type { ScreeningEncounterIpcHandlerDependencies } from '@main/ipc/handlers/screening-encounter-handlers'
 import { createScreeningEncounterIpcHandlers } from '@main/ipc/handlers/screening-encounter-handlers'
+import type { ScreeningLifestyleIpcHandlerDependencies } from '@main/ipc/handlers/screening-lifestyle-handlers'
+import { createScreeningLifestyleIpcHandlers } from '@main/ipc/handlers/screening-lifestyle-handlers'
 import type { ScreeningSessionIpcHandlerDependencies } from '@main/ipc/handlers/screening-session-handlers'
 import { createScreeningSessionIpcHandlers } from '@main/ipc/handlers/screening-session-handlers'
 import {
   ipcChannels,
   type InstallationSettingsIpcChannel,
   type ScreeningEncounterIpcChannel,
+  type ScreeningLifestyleIpcChannel,
   type ScreeningSessionIpcChannel
 } from '@shared/ipc'
 
@@ -32,6 +35,9 @@ interface ScreeningSessionRegistrationOwnership {
   readonly id: symbol
 }
 interface ScreeningEncounterRegistrationOwnership {
+  readonly id: symbol
+}
+interface ScreeningLifestyleRegistrationOwnership {
   readonly id: symbol
 }
 
@@ -76,6 +82,18 @@ const activeScreeningEncounterRegistrations = new WeakMap<
   ApplicationIpcMain,
   ScreeningEncounterRegistrationOwnership
 >()
+const screeningLifestyleIpcChannels: readonly ScreeningLifestyleIpcChannel[] = Object.freeze([
+  ipcChannels.screeningEncounters.lifestyle.getWorkspace,
+  ipcChannels.screeningEncounters.lifestyle.saveAlcoholBaseline,
+  ipcChannels.screeningEncounters.lifestyle.saveTobaccoBaseline,
+  ipcChannels.screeningEncounters.lifestyle.saveWorkBaseline,
+  ipcChannels.screeningEncounters.lifestyle.saveDraft,
+  ipcChannels.screeningEncounters.lifestyle.complete
+])
+const activeScreeningLifestyleRegistrations = new WeakMap<
+  ApplicationIpcMain,
+  ScreeningLifestyleRegistrationOwnership
+>()
 
 export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependencies {
   readonly firstRun: FirstRunIpcHandlerDependencies
@@ -83,6 +101,7 @@ export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependen
   readonly patient: PatientIpcHandlerDependencies
   readonly screeningSessions: ScreeningSessionIpcHandlerDependencies
   readonly screeningEncounters: ScreeningEncounterIpcHandlerDependencies
+  readonly screeningLifestyle: ScreeningLifestyleIpcHandlerDependencies
   readonly installationSettings: InstallationSettingsIpcHandlerDependencies
 }
 
@@ -95,6 +114,7 @@ export function registerApplicationIpcHandlers(
   const installedChannels: string[] = []
   let disposeScreeningSessionHandlers: ApplicationIpcDisposer | undefined
   let disposeScreeningEncounterHandlers: ApplicationIpcDisposer | undefined
+  let disposeScreeningLifestyleHandlers: ApplicationIpcDisposer | undefined
 
   try {
     const appHandlers = createAppIpcHandlers(dependencies)
@@ -161,7 +181,12 @@ export function registerApplicationIpcHandlers(
       applicationIpcMain,
       dependencies.screeningEncounters
     )
+    disposeScreeningLifestyleHandlers = registerScreeningLifestyleIpcHandlers(
+      applicationIpcMain,
+      dependencies.screeningLifestyle
+    )
   } catch {
+    disposeScreeningLifestyleHandlers?.()
     disposeScreeningEncounterHandlers?.()
     disposeScreeningSessionHandlers?.()
 
@@ -272,6 +297,44 @@ export function registerScreeningEncounterIpcHandlers(
   return () => disposeScreeningEncounterRegistration(applicationIpcMain, ownership)
 }
 
+export function registerScreeningLifestyleIpcHandlers(
+  applicationIpcMain: ApplicationIpcMain,
+  dependencies: ScreeningLifestyleIpcHandlerDependencies
+): ApplicationIpcDisposer {
+  if (activeScreeningLifestyleRegistrations.has(applicationIpcMain)) {
+    throw new ApplicationIpcRegistrationError()
+  }
+
+  const ownership: ScreeningLifestyleRegistrationOwnership = Object.freeze({
+    id: Symbol('screening-lifestyle-ipc-registration')
+  })
+  const handlers = createScreeningLifestyleIpcHandlers(dependencies)
+  const registrations: ReadonlyArray<
+    readonly [ScreeningLifestyleIpcChannel, ApplicationIpcListener]
+  > = [
+    [ipcChannels.screeningEncounters.lifestyle.getWorkspace, handlers.getWorkspace],
+    [ipcChannels.screeningEncounters.lifestyle.saveAlcoholBaseline, handlers.saveAlcoholBaseline],
+    [ipcChannels.screeningEncounters.lifestyle.saveTobaccoBaseline, handlers.saveTobaccoBaseline],
+    [ipcChannels.screeningEncounters.lifestyle.saveWorkBaseline, handlers.saveWorkBaseline],
+    [ipcChannels.screeningEncounters.lifestyle.saveDraft, handlers.saveDraft],
+    [ipcChannels.screeningEncounters.lifestyle.complete, handlers.complete]
+  ]
+  const installedChannels: ScreeningLifestyleIpcChannel[] = []
+
+  try {
+    for (const [channel, listener] of registrations) {
+      applicationIpcMain.handle(channel, listener)
+      installedChannels.push(channel)
+    }
+  } catch {
+    for (const channel of installedChannels.reverse()) applicationIpcMain.removeHandler(channel)
+    throw new ApplicationIpcRegistrationError()
+  }
+
+  activeScreeningLifestyleRegistrations.set(applicationIpcMain, ownership)
+  return () => disposeScreeningLifestyleRegistration(applicationIpcMain, ownership)
+}
+
 export function disposeApplicationIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
   disposeApplicationOwnedIpcHandlers(applicationIpcMain)
   activeApplicationRegistrations.delete(applicationIpcMain)
@@ -328,6 +391,20 @@ function disposeApplicationOwnedIpcHandlers(applicationIpcMain: ApplicationIpcMa
   }
   disposeScreeningSessionIpcHandlers(applicationIpcMain)
   disposeScreeningEncounterIpcHandlers(applicationIpcMain)
+  disposeScreeningLifestyleIpcHandlers(applicationIpcMain)
+}
+
+export function disposeScreeningLifestyleIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
+  for (const channel of screeningLifestyleIpcChannels) applicationIpcMain.removeHandler(channel)
+  activeScreeningLifestyleRegistrations.delete(applicationIpcMain)
+}
+
+function disposeScreeningLifestyleRegistration(
+  applicationIpcMain: ApplicationIpcMain,
+  ownership: ScreeningLifestyleRegistrationOwnership
+): void {
+  if (activeScreeningLifestyleRegistrations.get(applicationIpcMain) !== ownership) return
+  disposeScreeningLifestyleIpcHandlers(applicationIpcMain)
 }
 
 export function disposeScreeningSessionIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {

@@ -5,6 +5,7 @@ export {
   type FirstRunIpcChannel,
   type PatientIpcChannel,
   type ScreeningEncounterIpcChannel,
+  type ScreeningLifestyleIpcChannel,
   type InstallationSettingsIpcChannel,
   type ScreeningSessionIpcChannel
 } from './channels'
@@ -267,6 +268,40 @@ export {
   type ScreeningVitalsSaveDraftResult,
   type ScreeningVitalsSaveDraftSuccessData
 } from './screening-encounter-contracts'
+export {
+  createScreeningLifestyleIpcFailure,
+  screeningLifestyleAlcoholBaselineRequestSchema,
+  screeningLifestyleCompleteRequestSchema,
+  screeningLifestyleCompleteResultSchema,
+  screeningLifestyleFailureSchema,
+  screeningLifestyleGetWorkspaceRequestSchema,
+  screeningLifestyleGetWorkspaceResultSchema,
+  screeningLifestyleSaveAlcoholBaselineResultSchema,
+  screeningLifestyleSaveDraftRequestSchema,
+  screeningLifestyleSaveDraftResultSchema,
+  screeningLifestyleSaveTobaccoBaselineRequestSchema,
+  screeningLifestyleSaveTobaccoBaselineResultSchema,
+  screeningLifestyleSaveWorkBaselineRequestSchema,
+  screeningLifestyleSaveWorkBaselineResultSchema,
+  screeningLifestyleUuidSchema,
+  type ScreeningLifestyleApi,
+  type ScreeningLifestyleCompleteRequest,
+  type ScreeningLifestyleCompleteResult,
+  type ScreeningLifestyleControlledStatus,
+  type ScreeningLifestyleGetWorkspaceRequest,
+  type ScreeningLifestyleGetWorkspaceResult,
+  type ScreeningLifestyleIpcErrorCode,
+  type ScreeningLifestyleIpcFailure,
+  type ScreeningLifestyleWorkspace,
+  type ScreeningLifestyleSaveAlcoholBaselineRequest,
+  type ScreeningLifestyleSaveAlcoholBaselineResult,
+  type ScreeningLifestyleSaveDraftRequest,
+  type ScreeningLifestyleSaveDraftResult,
+  type ScreeningLifestyleSaveTobaccoBaselineRequest,
+  type ScreeningLifestyleSaveTobaccoBaselineResult,
+  type ScreeningLifestyleSaveWorkBaselineRequest,
+  type ScreeningLifestyleSaveWorkBaselineResult
+} from './screening-lifestyle-contracts'
 export {
   createInstallationSettingsFailure,
   installationSettingsAssignInitialLocationRequestSchema,

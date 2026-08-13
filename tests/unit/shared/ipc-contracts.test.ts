@@ -107,7 +107,17 @@ describe('shared IPC contracts', () => {
         start: 'health-screening:screening-encounters:start',
         getVitalsDraft: 'health-screening:screening-encounters:vitals:get-draft',
         saveVitalsDraft: 'health-screening:screening-encounters:vitals:save-draft',
-        completeVitalsStep: 'health-screening:screening-encounters:vitals:complete-step'
+        completeVitalsStep: 'health-screening:screening-encounters:vitals:complete-step',
+        lifestyle: {
+          getWorkspace: 'health-screening:screening-encounters:lifestyle:get-workspace',
+          saveAlcoholBaseline:
+            'health-screening:screening-encounters:lifestyle:save-alcohol-baseline',
+          saveTobaccoBaseline:
+            'health-screening:screening-encounters:lifestyle:save-tobacco-baseline',
+          saveWorkBaseline: 'health-screening:screening-encounters:lifestyle:save-work-baseline',
+          saveDraft: 'health-screening:screening-encounters:lifestyle:save-draft',
+          complete: 'health-screening:screening-encounters:lifestyle:complete'
+        }
       },
       installationSettings: {
         getConfiguredLocation: 'health-screening:installation-settings:get-configured-location',
@@ -126,7 +136,7 @@ describe('shared IPC contracts', () => {
         ...Object.values(ipcChannels.screeningEncounters),
         ...Object.values(ipcChannels.installationSettings)
       ]).size
-    ).toBe(37)
+    ).toBe(38)
   })
 
   it('keeps patient requests strict and main-process-authored', () => {

@@ -28,6 +28,7 @@ import type {
   PatientRegistryService,
   ScreeningEncounterStartService,
   ScreeningVitalsDraftService,
+  ScreeningLifestyleService,
   ScreeningSessionService,
   ScreeningSessionWorkspaceContextService
 } from '@main/application'
@@ -84,7 +85,13 @@ const applicationOwnedHandlerChannels = Object.freeze([
   ipcChannels.screeningEncounters.start,
   ipcChannels.screeningEncounters.getVitalsDraft,
   ipcChannels.screeningEncounters.saveVitalsDraft,
-  ipcChannels.screeningEncounters.completeVitalsStep
+  ipcChannels.screeningEncounters.completeVitalsStep,
+  ipcChannels.screeningEncounters.lifestyle.getWorkspace,
+  ipcChannels.screeningEncounters.lifestyle.saveAlcoholBaseline,
+  ipcChannels.screeningEncounters.lifestyle.saveTobaccoBaseline,
+  ipcChannels.screeningEncounters.lifestyle.saveWorkBaseline,
+  ipcChannels.screeningEncounters.lifestyle.saveDraft,
+  ipcChannels.screeningEncounters.lifestyle.complete
 ])
 
 describe('application IPC handlers', () => {
@@ -200,7 +207,7 @@ describe('application IPC handler registration', () => {
 
     const dispose = registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(36)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(42)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
@@ -227,6 +234,12 @@ describe('application IPC handler registration', () => {
       'health-screening:patient:mark-not-duplicate',
       'health-screening:patient:record-acknowledgment',
       'health-screening:patient:search',
+      'health-screening:screening-encounters:lifestyle:complete',
+      'health-screening:screening-encounters:lifestyle:get-workspace',
+      'health-screening:screening-encounters:lifestyle:save-alcohol-baseline',
+      'health-screening:screening-encounters:lifestyle:save-draft',
+      'health-screening:screening-encounters:lifestyle:save-tobacco-baseline',
+      'health-screening:screening-encounters:lifestyle:save-work-baseline',
       'health-screening:screening-encounters:start',
       'health-screening:screening-encounters:vitals:complete-step',
       'health-screening:screening-encounters:vitals:get-draft',
@@ -253,7 +266,7 @@ describe('application IPC handler registration', () => {
     registerApplicationIpcHandlers(ipcMain, createDependencies())
     registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(72)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(84)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getHealth)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
@@ -284,6 +297,12 @@ describe('application IPC handler registration', () => {
       'health-screening:patient:mark-not-duplicate',
       'health-screening:patient:record-acknowledgment',
       'health-screening:patient:search',
+      'health-screening:screening-encounters:lifestyle:complete',
+      'health-screening:screening-encounters:lifestyle:get-workspace',
+      'health-screening:screening-encounters:lifestyle:save-alcohol-baseline',
+      'health-screening:screening-encounters:lifestyle:save-draft',
+      'health-screening:screening-encounters:lifestyle:save-tobacco-baseline',
+      'health-screening:screening-encounters:lifestyle:save-work-baseline',
       'health-screening:screening-encounters:start',
       'health-screening:screening-encounters:vitals:complete-step',
       'health-screening:screening-encounters:vitals:get-draft',
@@ -816,6 +835,11 @@ function createDependencies(): ApplicationIpcHandlerDependencies {
       screeningVitalsDraftService: createScreeningVitalsDraftService(),
       logger: createLogger()
     },
+    screeningLifestyle: {
+      navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
+      screeningLifestyleService: createScreeningLifestyleService(),
+      logger: createLogger()
+    },
     installationSettings: {
       navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
       authenticationSessionService: createAuthenticationSessionService(),
@@ -908,6 +932,17 @@ function createScreeningVitalsDraftService(): ScreeningVitalsDraftService {
     saveVitalsDraft: vi.fn(() => ({ status: 'UNAVAILABLE' })),
     completeVitalsStep: vi.fn(() => ({ status: 'UNAVAILABLE' }))
   } as unknown as ScreeningVitalsDraftService
+}
+
+function createScreeningLifestyleService(): ScreeningLifestyleService {
+  return {
+    getLifestyleWorkspace: vi.fn(() => ({ status: 'UNAVAILABLE' as const })),
+    saveAlcoholBaseline: vi.fn(() => ({ status: 'UNAVAILABLE' as const })),
+    saveTobaccoBaseline: vi.fn(() => ({ status: 'UNAVAILABLE' as const })),
+    saveWorkBaseline: vi.fn(() => ({ status: 'UNAVAILABLE' as const })),
+    saveLifestyleDraft: vi.fn(() => ({ status: 'UNAVAILABLE' as const })),
+    completeLifestyle: vi.fn(() => ({ status: 'UNAVAILABLE' as const }))
+  }
 }
 
 function createInstallationLocationService(): InstallationLocationService {

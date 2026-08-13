@@ -584,6 +584,18 @@ function createApi({
         getDraft: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
         saveDraft: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
         completeStep: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+      },
+      lifestyle: {
+        getWorkspace: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+        saveAlcoholBaseline: vi.fn(async () =>
+          createIpcSuccess({ status: 'UNAVAILABLE' as const })
+        ),
+        saveTobaccoBaseline: vi.fn(async () =>
+          createIpcSuccess({ status: 'UNAVAILABLE' as const })
+        ),
+        saveWorkBaseline: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+        saveDraft: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+        complete: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const }))
       }
     },
     installationSettings: {
