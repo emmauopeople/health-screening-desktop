@@ -3,11 +3,18 @@ import { describe, expect, it } from 'vitest'
 import {
   calculateLifestyleWeeklyMinutes,
   parseCompleteLifestyleAlcoholWeeklyInput,
+  parseCompleteLifestylePhysicalActivityWeeklyInput,
+  parseCompleteLifestyleTobaccoWeeklyInput,
   parseLifestyleAlcoholBaselineInput,
   parseLifestyleDraftOwnershipInput,
   parseLifestyleDraftUpdateInput
 } from '@main/database'
-import type { LifestyleDate } from '@main/database'
+import type {
+  LifestyleActivityInput,
+  LifestyleDate,
+  LifestyleDraftUpdateInput,
+  LifestyleTobaccoProductInput
+} from '@main/database'
 import { parseEntityId } from '@main/foundation/entity-id'
 import { parseUtcTimestamp } from '@main/foundation/utc-clock'
 
@@ -261,4 +268,229 @@ describe('Lifestyle persistence validation', () => {
       }).weeklyResponse
     ).toBe('YES')
   })
+
+  it('enforces Tobacco weekly draft and completion branch consistency', () => {
+    const base = draftUpdateBase()
+    const product = tobaccoProduct()
+    expect(
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        tobacco: { id, weeklyResponse: 'YES', products: [] }
+      }).tobacco?.products
+    ).toEqual([])
+    expect(
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        tobacco: { id, weeklyResponse: 'YES', products: [product] }
+      }).tobacco?.products
+    ).toHaveLength(1)
+    expect(
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        tobacco: {
+          id,
+          weeklyResponse: 'YES',
+          products: [product, { ...product, id: alternateId, sequenceNumber: 2 }]
+        }
+      }).tobacco?.products
+    ).toHaveLength(2)
+    expect(
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        tobacco: { id, weeklyResponse: 'NO', products: [] }
+      }).tobacco?.products
+    ).toEqual([])
+    for (const weeklyResponse of [
+      'NO',
+      'UNKNOWN',
+      'DECLINED',
+      'NOT_APPLICABLE',
+      'PREFER_NOT_TO_ANSWER',
+      null
+    ] as const)
+      expect(() =>
+        parseLifestyleDraftUpdateInput({
+          ...base,
+          tobacco: { id, weeklyResponse, products: [product] }
+        })
+      ).toThrow()
+
+    expect(() =>
+      parseCompleteLifestyleTobaccoWeeklyInput({ id, weeklyResponse: null, products: [] })
+    ).toThrow()
+    expect(() =>
+      parseCompleteLifestyleTobaccoWeeklyInput({ id, weeklyResponse: 'YES', products: [] })
+    ).toThrow()
+    expect(
+      parseCompleteLifestyleTobaccoWeeklyInput({ id, weeklyResponse: 'YES', products: [product] })
+        .weeklyResponse
+    ).toBe('YES')
+    expect(
+      parseCompleteLifestyleTobaccoWeeklyInput({ id, weeklyResponse: 'NO', products: [] })
+        .weeklyResponse
+    ).toBe('NO')
+    expect(() =>
+      parseCompleteLifestyleTobaccoWeeklyInput({
+        id,
+        weeklyResponse: 'DECLINED',
+        products: [product]
+      })
+    ).toThrow()
+  })
+
+  it('enforces Physical Activity weekly draft and completion branch consistency', () => {
+    const base = draftUpdateBase()
+    const activity = physicalActivity()
+    expect(
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        physicalActivity: {
+          id,
+          weeklyResponse: 'YES',
+          sedentaryMinutesPerDay: null,
+          activities: []
+        }
+      }).physicalActivity?.activities
+    ).toEqual([])
+    expect(
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        physicalActivity: {
+          id,
+          weeklyResponse: 'YES',
+          sedentaryMinutesPerDay: null,
+          activities: [activity]
+        }
+      }).physicalActivity?.activities
+    ).toHaveLength(1)
+    expect(
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        physicalActivity: {
+          id,
+          weeklyResponse: 'YES',
+          sedentaryMinutesPerDay: null,
+          activities: [activity, { ...activity, id: alternateId, sequenceNumber: 2 }]
+        }
+      }).physicalActivity?.activities
+    ).toHaveLength(2)
+    expect(
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        physicalActivity: {
+          id,
+          weeklyResponse: 'NO',
+          sedentaryMinutesPerDay: 120,
+          activities: []
+        }
+      }).physicalActivity?.sedentaryMinutesPerDay
+    ).toBe(120)
+    for (const weeklyResponse of [
+      'NO',
+      'UNKNOWN',
+      'DECLINED',
+      'NOT_APPLICABLE',
+      'UNABLE_TO_ANSWER',
+      'PREFER_NOT_TO_ANSWER',
+      null
+    ] as const)
+      expect(() =>
+        parseLifestyleDraftUpdateInput({
+          ...base,
+          physicalActivity: {
+            id,
+            weeklyResponse,
+            sedentaryMinutesPerDay: null,
+            activities: [activity]
+          }
+        })
+      ).toThrow()
+
+    expect(() =>
+      parseCompleteLifestylePhysicalActivityWeeklyInput({
+        id,
+        weeklyResponse: null,
+        sedentaryMinutesPerDay: null,
+        activities: []
+      })
+    ).toThrow()
+    expect(() =>
+      parseCompleteLifestylePhysicalActivityWeeklyInput({
+        id,
+        weeklyResponse: 'YES',
+        sedentaryMinutesPerDay: null,
+        activities: []
+      })
+    ).toThrow()
+    expect(
+      parseCompleteLifestylePhysicalActivityWeeklyInput({
+        id,
+        weeklyResponse: 'YES',
+        sedentaryMinutesPerDay: null,
+        activities: [activity]
+      }).weeklyResponse
+    ).toBe('YES')
+    expect(
+      parseCompleteLifestylePhysicalActivityWeeklyInput({
+        id,
+        weeklyResponse: 'NO',
+        sedentaryMinutesPerDay: null,
+        activities: []
+      }).weeklyResponse
+    ).toBe('NO')
+    expect(() =>
+      parseCompleteLifestylePhysicalActivityWeeklyInput({
+        id,
+        weeklyResponse: 'DECLINED',
+        sedentaryMinutesPerDay: null,
+        activities: [activity]
+      })
+    ).toThrow()
+  })
 })
+
+const alternateId = parseEntityId('22222222-2222-4222-8222-222222222222')
+
+function draftUpdateBase(): LifestyleDraftUpdateInput {
+  return {
+    id,
+    expectedRowVersion: 1,
+    status: 'DRAFT',
+    alcoholBaselineVersionId: null,
+    tobaccoBaselineVersionId: null,
+    workBaselineVersionId: null,
+    actorId: id,
+    occurredAt: timestamp,
+    alcohol: null,
+    tobacco: null,
+    physicalActivity: null,
+    work: null,
+    otherActivities: []
+  } as const
+}
+
+function tobaccoProduct(): LifestyleTobaccoProductInput {
+  return {
+    id,
+    sequenceNumber: 1,
+    productType: 'VAPE',
+    daysUsed: 2,
+    averageQuantityPerUseDay: 1,
+    unit: 'SESSIONS',
+    secondhandSmokeExposure: null,
+    otherProductDescription: null,
+    otherUnitDescription: null
+  } as const
+}
+
+function physicalActivity(): LifestyleActivityInput {
+  return {
+    id,
+    sequenceNumber: 1,
+    activityDomain: 'EXERCISE',
+    description: null,
+    intensity: 'MODERATE',
+    daysInPastSevenDays: 3,
+    averageMinutesPerActiveDay: 20
+  } as const
+}

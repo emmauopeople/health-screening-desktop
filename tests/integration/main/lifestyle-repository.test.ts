@@ -156,7 +156,7 @@ describe('Lifestyle persistence foundation', () => {
           },
           tobacco: {
             id: parseEntityId(ids.tobacco),
-            weeklyResponse: 'NO',
+            weeklyResponse: 'YES',
             products: [
               {
                 id: parseEntityId(ids.product),
@@ -211,7 +211,7 @@ describe('Lifestyle persistence foundation', () => {
           alcohol: null,
           tobacco: {
             id: parseEntityId(ids.tobacco),
-            weeklyResponse: 'NO',
+            weeklyResponse: 'YES',
             products: [
               {
                 id: parseEntityId(ids.product),
@@ -250,7 +250,7 @@ describe('Lifestyle persistence foundation', () => {
           alcohol: null,
           tobacco: {
             id: parseEntityId(ids.tobacco),
-            weeklyResponse: 'NO',
+            weeklyResponse: 'YES',
             products: [
               {
                 id: parseEntityId(ids.product),
@@ -341,6 +341,98 @@ describe('Lifestyle persistence foundation', () => {
         )
       ).toThrow(RepositoryValidationError)
       expect(repository.findDraftByEncounter(parseEntityId(ids.encounter))?.rowVersion).toBe(1)
+    })
+  })
+
+  it('enforces Tobacco and Physical Activity weekly branch consistency at the repository boundary', async () => {
+    await withLifestyleDatabase(({ executor, repository }) => {
+      const draft = executor.run((context) =>
+        repository.insertDraft(context.connection, createDraftInput())
+      )
+      const yesDraft = executor.run((context) =>
+        repository.updateDraft(context.connection, {
+          ...emptyDraftUpdate(draft.id, draft.rowVersion, secondTime),
+          tobacco: {
+            id: parseEntityId(ids.tobacco),
+            weeklyResponse: 'YES',
+            products: []
+          },
+          physicalActivity: {
+            id: parseEntityId(ids.physical),
+            weeklyResponse: 'YES',
+            sedentaryMinutesPerDay: null,
+            activities: []
+          }
+        })
+      )
+      expect(yesDraft.status).toBe('UPDATED')
+      if (yesDraft.status !== 'UPDATED') return
+      expect(yesDraft.draft.tobacco?.products).toEqual([])
+      expect(yesDraft.draft.physicalActivity?.activities).toEqual([])
+
+      const noRowsDraft = executor.run((context) =>
+        repository.updateDraft(context.connection, {
+          ...emptyDraftUpdate(yesDraft.draft.id, yesDraft.draft.rowVersion, thirdTime),
+          tobacco: {
+            id: parseEntityId(ids.tobacco),
+            weeklyResponse: 'NO',
+            products: []
+          },
+          physicalActivity: {
+            id: parseEntityId(ids.physical),
+            weeklyResponse: 'NO',
+            sedentaryMinutesPerDay: 120,
+            activities: []
+          }
+        })
+      )
+      expect(noRowsDraft.status).toBe('UPDATED')
+      if (noRowsDraft.status !== 'UPDATED') return
+      expect(noRowsDraft.draft.physicalActivity?.sedentaryMinutesPerDay).toBe(120)
+
+      for (const weeklyResponse of [
+        'NO',
+        'UNKNOWN',
+        'DECLINED',
+        'NOT_APPLICABLE',
+        'PREFER_NOT_TO_ANSWER',
+        null
+      ] as const)
+        expect(() =>
+          executor.run((context) =>
+            repository.updateDraft(context.connection, {
+              ...emptyDraftUpdate(noRowsDraft.draft.id, noRowsDraft.draft.rowVersion, fourthTime),
+              tobacco: {
+                id: parseEntityId(ids.tobacco),
+                weeklyResponse,
+                products: [tobaccoProduct(ids.product, 1, 2)]
+              }
+            })
+          )
+        ).toThrow(RepositoryValidationError)
+
+      for (const weeklyResponse of [
+        'NO',
+        'UNKNOWN',
+        'DECLINED',
+        'NOT_APPLICABLE',
+        'UNABLE_TO_ANSWER',
+        'PREFER_NOT_TO_ANSWER',
+        null
+      ] as const)
+        expect(() =>
+          executor.run((context) =>
+            repository.updateDraft(context.connection, {
+              ...emptyDraftUpdate(noRowsDraft.draft.id, noRowsDraft.draft.rowVersion, fourthTime),
+              physicalActivity: {
+                id: parseEntityId(ids.physical),
+                weeklyResponse,
+                sedentaryMinutesPerDay: null,
+                activities: [activity(ids.activity, 1, 3)]
+              }
+            })
+          )
+        ).toThrow(RepositoryValidationError)
     })
   })
 

@@ -141,6 +141,19 @@ const workResponseCodes = new Set<LifestyleWorkWeeklyResponse>([
   'DECLINED',
   'PREFER_NOT_TO_ANSWER'
 ])
+type LifestylePhysicalActivityResponse = Exclude<
+  LifestylePhysicalActivityWeeklyInput['weeklyResponse'],
+  null
+>
+const physicalActivityResponseCodes = new Set<LifestylePhysicalActivityResponse>([
+  'YES',
+  'NO',
+  'UNKNOWN',
+  'DECLINED',
+  'NOT_APPLICABLE',
+  'UNABLE_TO_ANSWER',
+  'PREFER_NOT_TO_ANSWER'
+])
 const otherCategoryCodes = new Set<LifestyleOtherActivityCategory>([
   'FARMING_GARDENING',
   'HOUSEHOLD',
@@ -472,11 +485,24 @@ export function parseCompleteLifestyleAlcoholWeeklyInput(
 
 function parseTobaccoWeekly(value: unknown): LifestyleTobaccoWeeklyInput {
   const data = readDataProperties(value, ['id', 'weeklyResponse', 'products'] as const)
+  const weeklyResponse = parseNullableCode(data.weeklyResponse, responseCodes)
+  const products = parseUniqueList(data.products, parseTobaccoProduct)
+  if (weeklyResponse !== 'YES' && products.length > 0) throw new RepositoryValidationError()
   return {
     id: parseEntityId(data.id),
-    weeklyResponse: parseNullableCode(data.weeklyResponse, responseCodes),
-    products: parseUniqueList(data.products, parseTobaccoProduct)
+    weeklyResponse,
+    products
   }
+}
+
+export function parseCompleteLifestyleTobaccoWeeklyInput(
+  input: LifestyleTobaccoWeeklyInput
+): LifestyleTobaccoWeeklyInput {
+  const parsed = parseTobaccoWeekly(input)
+  if (parsed.weeklyResponse === null) throw new RepositoryValidationError()
+  if (parsed.weeklyResponse === 'YES' && parsed.products.length === 0)
+    throw new RepositoryValidationError()
+  return parsed
 }
 
 function parseTobaccoProduct(value: unknown): LifestyleTobaccoProductInput {
@@ -513,23 +539,25 @@ function parsePhysicalWeekly(value: unknown): LifestylePhysicalActivityWeeklyInp
     'sedentaryMinutesPerDay',
     'activities'
   ] as const)
+  const weeklyResponse = parseNullableCode(data.weeklyResponse, physicalActivityResponseCodes)
+  const activities = parseUniqueList(data.activities, parseActivity)
+  if (weeklyResponse !== 'YES' && activities.length > 0) throw new RepositoryValidationError()
   return {
     id: parseEntityId(data.id),
-    weeklyResponse: parseNullableCode(
-      data.weeklyResponse,
-      new Set([
-        'YES',
-        'NO',
-        'UNKNOWN',
-        'DECLINED',
-        'NOT_APPLICABLE',
-        'UNABLE_TO_ANSWER',
-        'PREFER_NOT_TO_ANSWER'
-      ])
-    ),
+    weeklyResponse,
     sedentaryMinutesPerDay: parseNullableInteger(data.sedentaryMinutesPerDay, 0, 1439),
-    activities: parseUniqueList(data.activities, parseActivity)
+    activities
   }
+}
+
+export function parseCompleteLifestylePhysicalActivityWeeklyInput(
+  input: LifestylePhysicalActivityWeeklyInput
+): LifestylePhysicalActivityWeeklyInput {
+  const parsed = parsePhysicalWeekly(input)
+  if (parsed.weeklyResponse === null) throw new RepositoryValidationError()
+  if (parsed.weeklyResponse === 'YES' && parsed.activities.length === 0)
+    throw new RepositoryValidationError()
+  return parsed
 }
 
 function parseActivity(value: unknown): LifestyleActivityInput {

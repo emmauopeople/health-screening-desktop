@@ -251,6 +251,8 @@ export {
   createLifestyleRepository,
   calculateLifestyleWeeklyMinutes,
   parseCompleteLifestyleAlcoholWeeklyInput,
+  parseCompleteLifestylePhysicalActivityWeeklyInput,
+  parseCompleteLifestyleTobaccoWeeklyInput,
   parseLifestyleAlcoholBaselineInput,
   parseLifestyleDraftOwnershipInput,
   parseLifestyleDraftUpdateInput,
