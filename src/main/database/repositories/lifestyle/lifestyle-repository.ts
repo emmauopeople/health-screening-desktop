@@ -488,9 +488,10 @@ function updateDraftBaselineReferences(
       return { status: 'UPDATED', draft: current }
     const result = tx
       .prepare(
-        'UPDATE lifestyle_drafts SET alcohol_baseline_version_id = ?, tobacco_baseline_version_id = ?, work_baseline_version_id = ?, updated_by = ?, updated_at = ?, row_version = row_version + 1 WHERE id = ? AND row_version = ?'
+        'UPDATE lifestyle_drafts SET status = ?, alcohol_baseline_version_id = ?, tobacco_baseline_version_id = ?, work_baseline_version_id = ?, updated_by = ?, updated_at = ?, row_version = row_version + 1 WHERE id = ? AND row_version = ?'
       )
       .run(
+        current.status === 'COMPLETE' ? 'IN_PROGRESS' : current.status,
         parsed.alcoholBaselineVersionId,
         parsed.tobaccoBaselineVersionId,
         parsed.workBaselineVersionId,

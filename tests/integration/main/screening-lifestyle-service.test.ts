@@ -232,7 +232,19 @@ describe('screening Lifestyle application service integration', () => {
         expect(service.saveAlcoholBaseline(alcoholBaselineRequest())).toEqual({
           status: 'UNAVAILABLE'
         })
+        expect(
+          service.saveTobaccoBaseline({ ...tobaccoBaselineRequest(), expectedDraftVersion: null })
+        ).toEqual({
+          status: 'UNAVAILABLE'
+        })
+        expect(
+          service.saveWorkBaseline({ ...workBaselineRequest(), expectedDraftVersion: null })
+        ).toEqual({
+          status: 'UNAVAILABLE'
+        })
         expect(readCount(connection, 'lifestyle_alcohol_baseline_versions')).toBe(0)
+        expect(readCount(connection, 'lifestyle_tobacco_baseline_versions')).toBe(0)
+        expect(readCount(connection, 'lifestyle_work_baseline_versions')).toBe(0)
         expect(readCount(connection, 'lifestyle_drafts')).toBe(0)
         expect(readCount(connection, 'audit_log')).toBe(0)
         expect(readCount(connection, 'sync_outbox')).toBe(0)
@@ -437,6 +449,19 @@ describe('screening Lifestyle application service integration', () => {
         workspace: { draft: { status: 'COMPLETE' } }
       })
       if (completed.status === 'COMPLETED') {
+        expect(Object.isFrozen(completed.workspace)).toBe(true)
+        expect(Object.isFrozen(completed.workspace.draft)).toBe(true)
+        expect(Object.isFrozen(completed.workspace.draft?.alcohol)).toBe(true)
+        expect(Object.isFrozen(completed.workspace.draft?.tobacco)).toBe(true)
+        expect(Object.isFrozen(completed.workspace.draft?.tobacco?.products[0])).toBe(true)
+        expect(Object.isFrozen(completed.workspace.draft?.physicalActivity)).toBe(true)
+        expect(Object.isFrozen(completed.workspace.draft?.physicalActivity?.activities[0])).toBe(
+          true
+        )
+        expect(Object.isFrozen(completed.workspace.draft?.work)).toBe(true)
+        expect(Object.isFrozen(completed.workspace.activeAlcoholBaseline)).toBe(true)
+        expect(Object.isFrozen(completed.workspace.activeTobaccoBaseline)).toBe(true)
+        expect(Object.isFrozen(completed.workspace.activeWorkBaseline)).toBe(true)
         expect(completed.workspace.activeAlcoholBaseline).not.toHaveProperty('patientId')
         expect(completed.workspace.activeTobaccoBaseline).not.toHaveProperty('installationId')
         expect(completed.workspace.activeWorkBaseline).not.toHaveProperty('createdBy')
@@ -451,6 +476,23 @@ describe('screening Lifestyle application service integration', () => {
         )
         .all() as { metadata_json: string }[]
       const completionMetadata = JSON.parse(auditRows[0]!.metadata_json) as Record<string, unknown>
+      expect(Object.keys(completionMetadata).sort()).toEqual(
+        [
+          'activity_row_count',
+          'alcohol_baseline_reference_id',
+          'alcohol_baseline_review_confirmed_version_id',
+          'alcohol_record_count',
+          'draft_id',
+          'draft_status',
+          'encounter_id',
+          'other_activity_row_count',
+          'row_version',
+          'tobacco_baseline_reference_id',
+          'tobacco_baseline_review_confirmed_version_id',
+          'tobacco_product_count',
+          'work_baseline_reference_id'
+        ].sort()
+      )
       expect(completionMetadata).toMatchObject({
         alcohol_baseline_review_confirmed_version_id:
           newerAlcohol.workspace.draft.alcoholBaselineVersionId,
@@ -474,6 +516,224 @@ describe('screening Lifestyle application service integration', () => {
       expect([readCount(connection, 'audit_log'), readCount(connection, 'sync_outbox')]).toEqual(
         counts
       )
+    })
+  })
+
+  it('requires confirmation for NEVER Alcohol and Tobacco baselines', async () => {
+    await withLifestyleService(({ service }) => {
+      const alcohol = service.saveAlcoholBaseline({ ...alcoholBaselineRequest(), status: 'NEVER' })
+      if (alcohol.status !== 'SAVED' || alcohol.workspace.draft === null)
+        throw new Error('Expected alcohol baseline')
+      const tobacco = service.saveTobaccoBaseline({
+        ...tobaccoBaselineRequest(),
+        status: 'NEVER',
+        expectedDraftVersion: alcohol.workspace.draft.rowVersion
+      })
+      if (tobacco.status !== 'SAVED' || tobacco.workspace.draft === null)
+        throw new Error('Expected tobacco baseline')
+      const work = service.saveWorkBaseline({
+        ...workBaselineRequest(),
+        expectedDraftVersion: tobacco.workspace.draft.rowVersion
+      })
+      if (work.status !== 'SAVED' || work.workspace.draft === null)
+        throw new Error('Expected work baseline')
+      const draft = service.saveLifestyleDraft(
+        completeWeeklyRequest({ expectedVersion: work.workspace.draft.rowVersion })
+      )
+      if (draft.status !== 'SAVED' || draft.workspace.draft === null)
+        throw new Error('Expected Lifestyle draft')
+      expect(
+        service.completeLifestyle({
+          ...completeWeeklyRequest({ expectedVersion: draft.workspace.draft.rowVersion }),
+          alcoholBaselineReviewConfirmedVersionId: null,
+          tobaccoBaselineReviewConfirmedVersionId: null
+        })
+      ).toEqual({ status: 'VALIDATION_FAILED' })
+    })
+  })
+
+  it.each(['NO', 'UNKNOWN', 'DECLINED'] as const)(
+    'completes the explicit %s weekly branches',
+    async (response) => {
+      await withLifestyleService(({ service }) => {
+        const alcohol = service.saveAlcoholBaseline(alcoholBaselineRequest())
+        if (alcohol.status !== 'SAVED' || alcohol.workspace.draft === null)
+          throw new Error('Expected alcohol baseline')
+        const tobacco = service.saveTobaccoBaseline({
+          ...tobaccoBaselineRequest(),
+          expectedDraftVersion: alcohol.workspace.draft.rowVersion
+        })
+        if (tobacco.status !== 'SAVED' || tobacco.workspace.draft === null)
+          throw new Error('Expected tobacco baseline')
+        const work = service.saveWorkBaseline({
+          ...workBaselineRequest(),
+          expectedDraftVersion: tobacco.workspace.draft.rowVersion
+        })
+        if (work.status !== 'SAVED' || work.workspace.draft === null)
+          throw new Error('Expected work baseline')
+        const weekly = completeWeeklyRequest({
+          alcohol: {
+            id: null,
+            weeklyResponse: response,
+            drinkingDays: null,
+            totalStandardizedDrinks: null,
+            largestOneDayAmount: null,
+            daysAtLargestAmount: null,
+            commonBeverageTypes: [],
+            otherBeverageDescription: null
+          },
+          tobacco: { id: null, weeklyResponse: response, products: [] },
+          physicalActivity: {
+            id: null,
+            weeklyResponse: response,
+            sedentaryMinutesPerDay: null,
+            activities: []
+          },
+          work: { id: null, weeklyResponse: 'NO_WORK' },
+          expectedVersion: work.workspace.draft.rowVersion
+        })
+        const draft = service.saveLifestyleDraft(weekly)
+        if (draft.status !== 'SAVED' || draft.workspace.draft === null)
+          throw new Error('Expected Lifestyle draft')
+        expect(
+          service.completeLifestyle({
+            ...weekly,
+            expectedVersion: draft.workspace.draft.rowVersion,
+            alcoholBaselineReviewConfirmedVersionId: null,
+            tobaccoBaselineReviewConfirmedVersionId: null
+          })
+        ).toMatchObject({ status: 'COMPLETED' })
+      })
+    }
+  )
+
+  it('reopens a completed draft when a baseline reference changes', async () => {
+    await withLifestyleService(({ service }) => {
+      const alcohol = service.saveAlcoholBaseline(alcoholBaselineRequest())
+      if (alcohol.status !== 'SAVED' || alcohol.workspace.draft === null)
+        throw new Error('Expected alcohol baseline')
+      const tobacco = service.saveTobaccoBaseline({
+        ...tobaccoBaselineRequest(),
+        expectedDraftVersion: alcohol.workspace.draft.rowVersion
+      })
+      if (tobacco.status !== 'SAVED' || tobacco.workspace.draft === null)
+        throw new Error('Expected tobacco baseline')
+      const work = service.saveWorkBaseline({
+        ...workBaselineRequest(),
+        expectedDraftVersion: tobacco.workspace.draft.rowVersion
+      })
+      if (work.status !== 'SAVED' || work.workspace.draft === null)
+        throw new Error('Expected work baseline')
+      const draft = service.saveLifestyleDraft(
+        completeWeeklyRequest({ expectedVersion: work.workspace.draft.rowVersion })
+      )
+      if (draft.status !== 'SAVED' || draft.workspace.draft === null)
+        throw new Error('Expected Lifestyle draft')
+      const completed = service.completeLifestyle({
+        ...completeWeeklyRequest({ expectedVersion: draft.workspace.draft.rowVersion }),
+        alcoholBaselineReviewConfirmedVersionId: null,
+        tobaccoBaselineReviewConfirmedVersionId: null
+      })
+      if (completed.status !== 'COMPLETED' || completed.workspace.draft === null)
+        throw new Error('Expected completed Lifestyle draft')
+
+      const reopened = service.saveAlcoholBaseline({
+        ...alcoholBaselineRequest(),
+        status: 'FORMER',
+        expectedBaselineVersion: 1,
+        expectedDraftVersion: completed.workspace.draft.rowVersion
+      })
+      expect(reopened).toMatchObject({
+        status: 'SAVED',
+        workspace: { draft: { status: 'IN_PROGRESS' } }
+      })
+      if (reopened.status !== 'SAVED' || reopened.workspace.draft === null) return
+      expect(reopened.workspace.draft.alcoholBaselineVersionId).not.toBe(
+        completed.workspace.draft.alcoholBaselineVersionId
+      )
+      expect(
+        service.completeLifestyle({
+          ...completeWeeklyRequest({ expectedVersion: reopened.workspace.draft.rowVersion }),
+          alcoholBaselineReviewConfirmedVersionId: null,
+          tobaccoBaselineReviewConfirmedVersionId: reopened.workspace.draft.tobaccoBaselineVersionId
+        })
+      ).toEqual({ status: 'VALIDATION_FAILED' })
+    })
+  })
+
+  it('rolls back completion changes across every Lifestyle table after an outbox failure', async () => {
+    await withLifestyleService(({ connection, service, outboxFailure }) => {
+      const alcohol = service.saveAlcoholBaseline(alcoholBaselineRequest())
+      if (alcohol.status !== 'SAVED' || alcohol.workspace.draft === null)
+        throw new Error('Expected alcohol baseline')
+      const tobacco = service.saveTobaccoBaseline({
+        ...tobaccoBaselineRequest(),
+        expectedDraftVersion: alcohol.workspace.draft.rowVersion
+      })
+      if (tobacco.status !== 'SAVED' || tobacco.workspace.draft === null)
+        throw new Error('Expected tobacco baseline')
+      const work = service.saveWorkBaseline({
+        ...workBaselineRequest(),
+        expectedDraftVersion: tobacco.workspace.draft.rowVersion
+      })
+      if (work.status !== 'SAVED' || work.workspace.draft === null)
+        throw new Error('Expected work baseline')
+      const draft = service.saveLifestyleDraft(
+        completeWeeklyRequest({
+          expectedVersion: work.workspace.draft.rowVersion,
+          otherActivities: [otherActivity(null)]
+        })
+      )
+      if (draft.status !== 'SAVED' || draft.workspace.draft === null)
+        throw new Error('Expected Lifestyle draft')
+
+      const tables = [
+        'lifestyle_alcohol_baseline_versions',
+        'lifestyle_tobacco_baseline_versions',
+        'lifestyle_work_baseline_versions',
+        'lifestyle_drafts',
+        'lifestyle_alcohol_weekly_records',
+        'lifestyle_tobacco_weekly_records',
+        'lifestyle_tobacco_product_rows',
+        'lifestyle_physical_activity_weekly_records',
+        'lifestyle_activity_rows',
+        'lifestyle_work_weekly_records',
+        'lifestyle_other_activity_rows',
+        'audit_log',
+        'sync_outbox'
+      ] as const
+      const before = new Map(tables.map((table) => [table, snapshotTable(connection, table)]))
+      const originalVersion = draft.workspace.draft.rowVersion
+      outboxFailure.enabled = true
+
+      const failed = service.completeLifestyle({
+        ...completeWeeklyRequest({
+          expectedVersion: originalVersion,
+          alcohol: {
+            ...completeWeeklyRequest().alcohol!,
+            totalStandardizedDrinks: 4
+          },
+          tobacco: {
+            ...completeWeeklyRequest().tobacco!,
+            products: [{ ...product(null), averageQuantityPerUseDay: 2 }]
+          },
+          physicalActivity: {
+            ...completeWeeklyRequest().physicalActivity!,
+            activities: [{ ...activity(null), averageMinutesPerActiveDay: 31 }]
+          },
+          work: { id: null, weeklyResponse: 'LESS_THAN_USUAL' },
+          otherActivities: [otherActivity(null)]
+        }),
+        alcoholBaselineReviewConfirmedVersionId: null,
+        tobaccoBaselineReviewConfirmedVersionId: null
+      })
+      expect(failed).toEqual({ status: 'UNAVAILABLE' })
+
+      for (const table of tables)
+        expect(snapshotTable(connection, table)).toEqual(before.get(table))
+      expect(
+        service.getLifestyleWorkspace({ encounterId: parseEntityId(encounterId) })
+      ).toMatchObject({ workspace: { draft: { rowVersion: originalVersion } } })
     })
   })
 
@@ -599,6 +859,7 @@ interface Harness {
   readonly service: ScreeningLifestyleService
   readonly currentSessionCalls: { count: number }
   readonly ensureCurrentSessionCalls: { count: number }
+  readonly outboxFailure: { enabled: boolean }
 }
 
 async function withLifestyleService(
@@ -636,7 +897,8 @@ async function withLifestyleService(
     const sessionRepository = createScreeningSessionRepository(connection)
     const encounterRepository = createScreeningEncounterRepository(connection)
     const auditRepository = createAuditEventRepository(connection)
-    const outbox = createOutboxRepository(connection, options.failOutbox === true)
+    const outboxFailure = { enabled: options.failOutbox === true }
+    const outbox = createOutboxRepository(connection, outboxFailure)
     const installationLocationService = createInstallationLocationService({
       authenticationSessionService,
       installationRepository,
@@ -666,7 +928,7 @@ async function withLifestyleService(
       auditEventRepository: auditRepository,
       transactionExecutor: executor
     })
-    test({ connection, service, currentSessionCalls, ensureCurrentSessionCalls })
+    test({ connection, service, currentSessionCalls, ensureCurrentSessionCalls, outboxFailure })
   } finally {
     if (connection.open) connection.close()
     await rm(directory, { recursive: true, force: true })
@@ -884,6 +1146,20 @@ function activity(
   }
 }
 
+function otherActivity(
+  id: string | null
+): Parameters<ScreeningLifestyleService['saveLifestyleDraft']>[0]['otherActivities'][number] {
+  return {
+    id: id === null ? null : parseEntityId(id),
+    sequenceNumber: 1,
+    category: 'OTHER' as const,
+    description: 'Community activity',
+    daysInPastSevenDays: 1,
+    averageMinutesPerDay: 20,
+    intensity: 'LIGHT' as const
+  }
+}
+
 function seedCoreGraph(connection: Database.Database): void {
   connection
     .prepare(
@@ -949,16 +1225,20 @@ function seedCoreGraph(connection: Database.Database): void {
 
 function createOutboxRepository(
   connection: Database.Database,
-  fail: boolean
+  failure: { enabled: boolean }
 ): ScreeningEncounterOutboxRepository {
   const repository = createScreeningEncounterOutboxRepository(connection)
-  if (!fail) return repository
   return {
     ...repository,
-    insert: vi.fn(() => {
-      throw new Error('controlled outbox failure')
+    insert: vi.fn((...args: Parameters<ScreeningEncounterOutboxRepository['insert']>) => {
+      if (failure.enabled) throw new Error('controlled outbox failure')
+      return repository.insert(...args)
     })
   } as unknown as ScreeningEncounterOutboxRepository
+}
+
+function snapshotTable(connection: Database.Database, table: string): readonly unknown[] {
+  return connection.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all() as readonly unknown[]
 }
 
 function createQueuedIdGenerator(): () => string {
