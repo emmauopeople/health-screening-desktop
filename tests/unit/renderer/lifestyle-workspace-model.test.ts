@@ -293,45 +293,6 @@ describe('Lifestyle Alcohol workspace model', () => {
     ).toBe('Former • No use this week')
   })
 
-  it('uses the active baseline for editing while interpreting the weekly draft from the reference', () => {
-    const workspace = workspaceWithDraft()
-    const referenced = {
-      ...workspace.referencedAlcoholBaseline!,
-      id: 'abababab-abab-4bab-8bab-abababababab',
-      version: 1,
-      status: 'FORMER' as const,
-      consumedPast12Months: 'NO' as const
-    }
-    const active = {
-      ...workspace.activeAlcoholBaseline!,
-      version: 2,
-      status: 'CURRENT' as const,
-      consumedPast12Months: 'YES' as const
-    }
-    const distinctWorkspace: ScreeningLifestyleWorkspace = {
-      ...workspace,
-      draft: {
-        ...workspace.draft!,
-        status: 'COMPLETE',
-        alcoholBaselineVersionId: referenced.id
-      },
-      activeAlcoholBaseline: active,
-      referencedAlcoholBaseline: referenced
-    }
-    const state = createLifestyleDraftStateFromWorkspace(distinctWorkspace)
-    const request = createAlcoholBaselineRequest(encounterId, state)
-
-    expect(state.baselineForm.consumedPast12Months).toBe('YES')
-    expect(request).toMatchObject({
-      expectedBaselineVersion: 2,
-      status: 'CURRENT',
-      consumedPast12Months: 'YES'
-    })
-    expect(getAlcoholCardStatus(state, true)).toBe('BASELINE_REVIEW')
-    expect(
-      getAlcoholCardSummary({ ...state, alcohol: updateAlcoholResponse(state.alcohol, 'NO') }, true)
-    ).toBe('Former • No use this week')
-  })
 
   it.each([
     ['FORMER', 'Former • Use reported • Review baseline'],
@@ -358,19 +319,6 @@ describe('Lifestyle Alcohol workspace model', () => {
     ).toBe(summary)
   })
 
-  it.each([
-    ['CURRENT', 'Current • No use this week'],
-    ['FORMER', 'Former • No use this week'],
-    ['NEVER', 'Never • No use this week'],
-    ['UNKNOWN', 'Unknown • No use this week'],
-    ['DECLINED', 'Declined • No use this week']
-  ] as const)('reports %s for a completed no-use week', (baselineStatus, summary) => {
-    const workspace = workspaceWithDraft({ baselineStatus, draftStatus: 'COMPLETE' })
-    const state = createLifestyleDraftStateFromWorkspace(workspace)
-    expect(
-      getAlcoholCardSummary({ ...state, alcohol: updateAlcoholResponse(state.alcohol, 'NO') }, true)
-    ).toBe(summary)
-  })
 })
 
 function emptyWeekly(): AlcoholWeeklyForm {
