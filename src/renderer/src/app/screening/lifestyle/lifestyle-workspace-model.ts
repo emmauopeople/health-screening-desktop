@@ -3,6 +3,7 @@ import type {
   ScreeningLifestyleSaveDraftRequest,
   ScreeningLifestyleWorkspace
 } from '@shared/ipc'
+import { compareLifestyleDecimalQuantities } from '@shared/lifestyle-alcohol-quantity'
 
 export type AlcoholEverResponse = 'YES' | 'NO' | 'UNKNOWN' | 'DECLINED' | ''
 export type AlcoholWeeklyResponse =
@@ -89,7 +90,7 @@ export function createLifestyleDraftStateFromWorkspace(
   workspace: ScreeningLifestyleWorkspace,
   options: Partial<Pick<LifestyleDraftState, 'saveStatus' | 'statusMessage'>> = {}
 ): LifestyleDraftState {
-  const baseline = workspace.referencedAlcoholBaseline ?? workspace.activeAlcoholBaseline
+  const baseline = getAlcoholBaselineForEditableForm(workspace)
   return {
     loadStatus: 'READY',
     saveStatus: options.saveStatus ?? 'IDLE',
@@ -160,25 +161,25 @@ export function mapAlcoholBaselineStatus(form: AlcoholBaselineForm): {
 export function validateAlcoholBaseline(form: AlcoholBaselineForm): readonly AlcoholFieldError[] {
   const errors: AlcoholFieldError[] = []
   if (form.everConsumed === '')
-    errors.push({ fieldId: 'everConsumed', message: 'Select an answer.' })
+    errors.push({ fieldId: 'baselineEverConsumed', message: 'Select an answer.' })
   if (
     (form.everConsumed === 'YES' || form.everConsumed === 'UNKNOWN') &&
     form.consumedPast12Months === ''
   ) {
-    errors.push({ fieldId: 'consumedPast12Months', message: 'Select an answer.' })
+    errors.push({ fieldId: 'baselineConsumedPast12Months', message: 'Select an answer.' })
   }
   if (
     (form.everConsumed === 'NO' || form.everConsumed === 'DECLINED') &&
     form.consumedPast12Months !== ''
   ) {
     errors.push({
-      fieldId: 'consumedPast12Months',
+      fieldId: 'baselineConsumedPast12Months',
       message: 'This answer is not applicable to the selected response.'
     })
   }
   if (!form.commonBeverageTypes.includes('OTHER') && form.otherBeverageDescription.trim() !== '') {
     errors.push({
-      fieldId: 'otherBeverageDescription',
+      fieldId: 'baselineOtherBeverageDescription',
       message: 'Select Other before entering a description.'
     })
   }
@@ -187,18 +188,21 @@ export function validateAlcoholBaseline(form: AlcoholBaselineForm): readonly Alc
     (form.commonBeverageTypes.length > 0 || form.otherBeverageDescription.trim() !== '')
   ) {
     errors.push({
-      fieldId: 'commonBeverageTypes',
+      fieldId: 'baselineCommonBeverageTypes',
       message: 'Beverage types are not applicable to this response.'
     })
   }
   if (form.commonBeverageTypes.includes('OTHER') && form.otherBeverageDescription.trim() === '') {
     errors.push({
-      fieldId: 'otherBeverageDescription',
+      fieldId: 'baselineOtherBeverageDescription',
       message: 'Enter an Other beverage description.'
     })
   }
   if (form.commonBeverageTypes.includes('OTHER') && form.otherBeverageDescription.length > 500) {
-    errors.push({ fieldId: 'otherBeverageDescription', message: 'Use 500 characters or fewer.' })
+    errors.push({
+      fieldId: 'baselineOtherBeverageDescription',
+      message: 'Use 500 characters or fewer.'
+    })
   }
   return errors
 }
@@ -263,11 +267,12 @@ export function validateAlcoholWeeklyDraft(form: AlcoholWeeklyForm): readonly Al
   }
   if (total !== null && largest !== null && daysAtLargest !== null) {
     const highestAmountSubtotal = largest * daysAtLargest
-    const totalIsTooLow = total < highestAmountSubtotal
+    const subtotalComparison = compareLifestyleDecimalQuantities(total, highestAmountSubtotal)
+    const totalIsTooLow = subtotalComparison < 0
     const sameNumberOfDaysRequiresExactTotal =
-      drinkingDays !== null && drinkingDays === daysAtLargest && total !== highestAmountSubtotal
+      drinkingDays !== null && drinkingDays === daysAtLargest && subtotalComparison !== 0
     const additionalDaysRequireAdditionalDrinks =
-      drinkingDays !== null && drinkingDays > daysAtLargest && total <= highestAmountSubtotal
+      drinkingDays !== null && drinkingDays > daysAtLargest && subtotalComparison <= 0
     if (
       totalIsTooLow ||
       sameNumberOfDaysRequiresExactTotal ||
@@ -282,12 +287,15 @@ export function validateAlcoholWeeklyDraft(form: AlcoholWeeklyForm): readonly Al
   }
   if (!form.commonBeverageTypes.includes('OTHER') && form.otherBeverageDescription.trim() !== '') {
     errors.push({
-      fieldId: 'otherBeverageDescription',
+      fieldId: 'weeklyOtherBeverageDescription',
       message: 'Select Other before entering a description.'
     })
   }
   if (form.otherBeverageDescription.length > 500) {
-    errors.push({ fieldId: 'otherBeverageDescription', message: 'Use 500 characters or fewer.' })
+    errors.push({
+      fieldId: 'weeklyOtherBeverageDescription',
+      message: 'Use 500 characters or fewer.'
+    })
   }
   return errors
 }
@@ -319,9 +327,7 @@ export function getAlcoholCardStatus(
   if (state.workspace.draft === null && state.workspace.activeAlcoholBaseline === null) {
     return 'NOT_STARTED'
   }
-  const baseline = state.workspace.draft?.alcoholBaselineVersionId
-    ? state.workspace.referencedAlcoholBaseline
-    : state.workspace.activeAlcoholBaseline
+  const baseline = getAlcoholBaselineForInterpretation(state.workspace)
   const response = state.alcohol.weeklyResponse
   if (
     baseline !== null &&
@@ -343,7 +349,7 @@ export function getAlcoholCardSummary(state: LifestyleDraftState, editable: bool
   if (status === 'LOCKED') return 'Locked'
   if (status === 'BASELINE_REVIEW') {
     const baseline =
-      state.workspace?.referencedAlcoholBaseline ?? state.workspace?.activeAlcoholBaseline
+      state.workspace === null ? null : getAlcoholBaselineForInterpretation(state.workspace)
     const baselineLabel =
       baseline?.status === 'FORMER'
         ? 'Former'
@@ -359,11 +365,46 @@ export function getAlcoholCardSummary(state: LifestyleDraftState, editable: bool
     return `${baselineLabel} • Use reported • Review baseline`
   }
   if (status === 'COMPLETE') {
-    return state.alcohol.weeklyResponse === 'NO' ? 'Current • No use this week' : 'Alcohol complete'
+    if (state.alcohol.weeklyResponse === 'NO') {
+      const baseline =
+        state.workspace === null ? null : getAlcoholBaselineForInterpretation(state.workspace)
+      return `${formatAlcoholBaselineStatus(baseline)} • No use this week`
+    }
+    return 'Alcohol complete'
   }
   if (status === 'IN_PROGRESS') return 'Alcohol draft in progress'
   if (state.workspace?.activeAlcoholBaseline === null) return 'Baseline required'
   return 'Not started'
+}
+
+export function getAlcoholBaselineForEditableForm(
+  workspace: ScreeningLifestyleWorkspace
+): ScreeningLifestyleWorkspace['activeAlcoholBaseline'] {
+  return workspace.activeAlcoholBaseline ?? workspace.referencedAlcoholBaseline
+}
+
+export function getAlcoholBaselineForInterpretation(
+  workspace: ScreeningLifestyleWorkspace
+): ScreeningLifestyleWorkspace['activeAlcoholBaseline'] {
+  return workspace.draft?.alcoholBaselineVersionId
+    ? (workspace.referencedAlcoholBaseline ?? workspace.activeAlcoholBaseline)
+    : workspace.activeAlcoholBaseline
+}
+
+function formatAlcoholBaselineStatus(
+  baseline: ScreeningLifestyleWorkspace['activeAlcoholBaseline']
+): string {
+  return baseline?.status === 'FORMER'
+    ? 'Former'
+    : baseline?.status === 'NEVER'
+      ? 'Never'
+      : baseline?.status === 'CURRENT'
+        ? 'Current'
+        : baseline?.status === 'UNKNOWN'
+          ? 'Unknown'
+          : baseline?.status === 'DECLINED'
+            ? 'Declined'
+            : 'Unknown'
 }
 
 export function createAlcoholBaselineRequest(

@@ -814,7 +814,7 @@ export function ScreeningSessionWorkspace({
           validationErrors:
             validationErrors.length > 0
               ? validationErrors
-              : [{ fieldId: 'everConsumed', message: 'Select an answer.' }]
+              : [{ fieldId: 'baselineEverConsumed', message: 'Select an answer.' }]
         }))
         focusMessage()
         return

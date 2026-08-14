@@ -401,6 +401,45 @@ describe('screening Lifestyle application service integration', () => {
     })
   })
 
+  it('accepts valid decimal Alcohol quantities and rejects invalid decimal consistency without persistence', async () => {
+    await withLifestyleService(({ service }) => {
+      const valid = service.saveLifestyleDraft(
+        createDraftRequest({
+          alcohol: {
+            id: null,
+            weeklyResponse: 'YES',
+            drinkingDays: 3,
+            totalStandardizedDrinks: 0.3,
+            largestOneDayAmount: 0.1,
+            daysAtLargestAmount: 3,
+            commonBeverageTypes: ['BEER'],
+            otherBeverageDescription: null
+          }
+        })
+      )
+      expect(valid.status).toBe('SAVED')
+    })
+
+    await withLifestyleService(({ connection, service }) => {
+      const invalid = service.saveLifestyleDraft(
+        createDraftRequest({
+          alcohol: {
+            id: null,
+            weeklyResponse: 'YES',
+            drinkingDays: 3,
+            totalStandardizedDrinks: 0.29,
+            largestOneDayAmount: 0.1,
+            daysAtLargestAmount: 3,
+            commonBeverageTypes: ['BEER'],
+            otherBeverageDescription: null
+          }
+        })
+      )
+      expect(invalid).toEqual({ status: 'VALIDATION_FAILED' })
+      expect(readCount(connection, 'lifestyle_drafts')).toBe(0)
+    })
+  })
+
   it('requires baseline review confirmation and records only approved completion metadata', async () => {
     await withLifestyleService(({ service, connection }) => {
       const alcohol = service.saveAlcoholBaseline({ ...alcoholBaselineRequest(), status: 'FORMER' })

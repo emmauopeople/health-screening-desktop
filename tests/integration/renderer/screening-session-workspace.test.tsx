@@ -592,6 +592,90 @@ describe('screening patient entry workspace', () => {
     await mounted.unmount()
   })
 
+  it('associates an empty baseline error with and focuses the first baseline radio', async () => {
+    const api = createApi()
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Alcohol Baseline')
+    await clickButton(mounted, 'Save baseline')
+
+    const firstRadio = mounted.container.querySelector<HTMLInputElement>(
+      '#alcohol-baseline-ever-YES'
+    )
+    const group = mounted.container.querySelector<HTMLElement>('#alcohol-baseline-ever-consumed')
+    expect(firstRadio).not.toBeNull()
+    expect(group?.getAttribute('aria-invalid')).toBe('true')
+    expect(group?.getAttribute('aria-describedby')).toBe('lifestyle-error-baselineEverConsumed')
+    expect(document.activeElement).toBe(firstRadio)
+
+    await mounted.unmount()
+  })
+
+  it('targets baseline and weekly Other errors independently', async () => {
+    const baselineApi = createApi()
+    const baselineMounted = await mountWorkspace({ api: baselineApi })
+
+    await openLifestyle(baselineMounted)
+    await clickButton(baselineMounted, 'Alcohol Baseline')
+    await changeRadio(baselineMounted, 'alcohol-ever-consumed', 'YES')
+    await changeRadio(baselineMounted, 'alcohol-past-year', 'YES')
+    await clickCheckbox(baselineMounted, 'OTHER')
+    await clickButton(baselineMounted, 'Save baseline')
+
+    const baselineOther =
+      baselineMounted.container.querySelector<HTMLInputElement>('#alcohol-baseline-other')
+    expect(baselineOther?.getAttribute('aria-invalid')).toBe('true')
+    expect(document.activeElement).toBe(baselineOther)
+    expect(baselineMounted.container.querySelector('#alcohol-weekly-other')).toBeNull()
+    await baselineMounted.unmount()
+
+    const weeklyApi = createApi()
+    weeklyApi.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: publicLifestyleWorkspaceWithAlcohol() })
+    )
+    const weeklyMounted = await mountWorkspace({ api: weeklyApi })
+    await openLifestyle(weeklyMounted)
+    await clickCheckbox(weeklyMounted, 'OTHER')
+
+    const weeklyOther =
+      weeklyMounted.container.querySelector<HTMLInputElement>('#alcohol-weekly-other')
+    await changeInput(weeklyOther!, 'x'.repeat(501))
+    await clickButton(weeklyMounted, 'Save draft')
+    expect(weeklyOther?.getAttribute('aria-invalid')).toBe('true')
+    expect(weeklyOther?.getAttribute('aria-describedby')).toBe('alcohol-weekly-other-error')
+    expect(weeklyMounted.container.querySelector('#alcohol-baseline-other')).toBeNull()
+    expect(document.activeElement).toBe(weeklyOther)
+
+    await weeklyMounted.unmount()
+  })
+
+  it.each([
+    ['CURRENT', 'Current • No use this week'],
+    ['FORMER', 'Former • No use this week'],
+    ['NEVER', 'Never • No use this week'],
+    ['UNKNOWN', 'Unknown • No use this week'],
+    ['DECLINED', 'Declined • No use this week']
+  ] as const)('renders the exact %s no-use summary', async (baselineStatus, summary) => {
+    const api = createApi()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'LOADED',
+        workspace: publicLifestyleWorkspaceWithAlcohol({
+          baselineStatus,
+          weeklyResponse: 'NO',
+          draftStatus: 'COMPLETE'
+        })
+      })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    expect(text(mounted)).toContain(summary)
+
+    await mounted.unmount()
+  })
+
   it('clears hidden quantitative values when weekly response changes from Yes to No', async () => {
     const api = createApi()
     api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
@@ -1737,11 +1821,15 @@ function publicLifestyleWorkspaceWithAlcohol({
   baselineStatus = 'CURRENT',
   includeOtherSections = false,
   drinkingDays = 2,
+  weeklyResponse = 'YES',
+  draftStatus = 'IN_PROGRESS',
   encounterIdOverride = encounterId
 }: {
-  readonly baselineStatus?: 'CURRENT' | 'FORMER' | 'NEVER'
+  readonly baselineStatus?: 'CURRENT' | 'FORMER' | 'NEVER' | 'UNKNOWN' | 'DECLINED'
   readonly includeOtherSections?: boolean
   readonly drinkingDays?: number
+  readonly weeklyResponse?: 'YES' | 'NO'
+  readonly draftStatus?: 'IN_PROGRESS' | 'COMPLETE'
   readonly encounterIdOverride?: string
 } = {}): ScreeningLifestyleWorkspace {
   const baseline = {
@@ -1761,7 +1849,7 @@ function publicLifestyleWorkspaceWithAlcohol({
     draft: {
       id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
       encounterId: encounterIdOverride,
-      status: 'IN_PROGRESS',
+      status: draftStatus,
       rowVersion: 4,
       periodStart: '2026-07-31',
       periodEnd: operationalDate,
@@ -1772,12 +1860,12 @@ function publicLifestyleWorkspaceWithAlcohol({
       workBaselineVersionId: includeOtherSections ? 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' : null,
       alcohol: {
         id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
-        weeklyResponse: 'YES',
-        drinkingDays,
-        totalStandardizedDrinks: 3,
-        largestOneDayAmount: 2,
-        daysAtLargestAmount: 1,
-        commonBeverageTypes: ['BEER'],
+        weeklyResponse,
+        drinkingDays: weeklyResponse === 'YES' ? drinkingDays : null,
+        totalStandardizedDrinks: weeklyResponse === 'YES' ? 3 : null,
+        largestOneDayAmount: weeklyResponse === 'YES' ? 2 : null,
+        daysAtLargestAmount: weeklyResponse === 'YES' ? 1 : null,
+        commonBeverageTypes: weeklyResponse === 'YES' ? ['BEER'] : [],
         otherBeverageDescription: null,
         updatedAt: baseTimestamp
       },

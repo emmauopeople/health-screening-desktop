@@ -1,6 +1,7 @@
 import { DatabaseTransactionStateError } from '@main/database/transaction'
 import { parseEntityId } from '@main/foundation/entity-id'
 import { parseUtcTimestamp } from '@main/foundation/utc-clock'
+import { compareLifestyleDecimalQuantities } from '@shared/lifestyle-alcohol-quantity'
 
 import { getRepositoryErrorType, RepositoryValidationError } from '../repository-errors'
 import { readDataProperties } from '../screening-encounter'
@@ -454,12 +455,13 @@ function parseAlcoholWeekly(value: unknown): LifestyleAlcoholWeeklyInput {
     throw new RepositoryValidationError()
   if (total !== null && largest !== null && largestDays !== null) {
     const highestAmountSubtotal = largest * largestDays
+    const subtotalComparison = compareLifestyleDecimalQuantities(total, highestAmountSubtotal)
     const sameNumberOfDaysRequiresExactTotal =
-      drinkingDays !== null && drinkingDays === largestDays && total !== highestAmountSubtotal
+      drinkingDays !== null && drinkingDays === largestDays && subtotalComparison !== 0
     const additionalDaysRequireAdditionalDrinks =
-      drinkingDays !== null && drinkingDays > largestDays && total <= highestAmountSubtotal
+      drinkingDays !== null && drinkingDays > largestDays && subtotalComparison <= 0
     if (
-      total < highestAmountSubtotal ||
+      subtotalComparison < 0 ||
       sameNumberOfDaysRequiresExactTotal ||
       additionalDaysRequireAdditionalDrinks
     )

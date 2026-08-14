@@ -79,6 +79,27 @@ describe('Lifestyle Alcohol workspace model', () => {
     expect(isAlcoholComplete(form)).toBe(false)
   })
 
+  it('accepts decimal quantities that are equal within floating-point tolerance', () => {
+    expect(
+      validateAlcoholWeeklyDraft({
+        ...completeWeekly(),
+        drinkingDays: '3',
+        totalStandardizedDrinks: '0.3',
+        largestOneDayAmount: '0.1',
+        daysAtLargestAmount: '3'
+      })
+    ).toEqual([])
+    expect(
+      validateAlcoholWeeklyDraft({
+        ...completeWeekly(),
+        drinkingDays: '3',
+        totalStandardizedDrinks: '0.29',
+        largestOneDayAmount: '0.1',
+        daysAtLargestAmount: '3'
+      }).map((error) => error.fieldId)
+    ).toContain('totalStandardizedDrinks')
+  })
+
   it('accepts a valid seven-day quantity combination', () => {
     expect(
       validateAlcoholWeeklyDraft({
@@ -191,7 +212,7 @@ describe('Lifestyle Alcohol workspace model', () => {
       otherBeverageDescription: ''
     }
     expect(validateAlcoholBaseline(baseline).map((error) => error.fieldId)).toContain(
-      'otherBeverageDescription'
+      'baselineOtherBeverageDescription'
     )
     const weekly = { ...completeWeekly(), commonBeverageTypes: ['OTHER'] as const }
     expect(isAlcoholComplete(weekly)).toBe(false)
@@ -232,15 +253,123 @@ describe('Lifestyle Alcohol workspace model', () => {
     })
   })
 
+  it('uses the active baseline for editing while interpreting the weekly draft from the reference', () => {
+    const workspace = workspaceWithDraft()
+    const referenced = {
+      ...workspace.referencedAlcoholBaseline!,
+      id: 'abababab-abab-4bab-8bab-abababababab',
+      version: 1,
+      status: 'FORMER' as const,
+      consumedPast12Months: 'NO' as const
+    }
+    const active = {
+      ...workspace.activeAlcoholBaseline!,
+      version: 2,
+      status: 'CURRENT' as const,
+      consumedPast12Months: 'YES' as const
+    }
+    const distinctWorkspace: ScreeningLifestyleWorkspace = {
+      ...workspace,
+      draft: {
+        ...workspace.draft!,
+        status: 'COMPLETE',
+        alcoholBaselineVersionId: referenced.id
+      },
+      activeAlcoholBaseline: active,
+      referencedAlcoholBaseline: referenced
+    }
+    const state = createLifestyleDraftStateFromWorkspace(distinctWorkspace)
+    const request = createAlcoholBaselineRequest(encounterId, state)
+
+    expect(state.baselineForm.consumedPast12Months).toBe('YES')
+    expect(request).toMatchObject({
+      expectedBaselineVersion: 2,
+      status: 'CURRENT',
+      consumedPast12Months: 'YES'
+    })
+    expect(getAlcoholCardStatus(state, true)).toBe('BASELINE_REVIEW')
+    expect(
+      getAlcoholCardSummary({ ...state, alcohol: updateAlcoholResponse(state.alcohol, 'NO') }, true)
+    ).toBe('Former • No use this week')
+  })
+
+  it('uses the active baseline for editing while interpreting the weekly draft from the reference', () => {
+    const workspace = workspaceWithDraft()
+    const referenced = {
+      ...workspace.referencedAlcoholBaseline!,
+      id: 'abababab-abab-4bab-8bab-abababababab',
+      version: 1,
+      status: 'FORMER' as const,
+      consumedPast12Months: 'NO' as const
+    }
+    const active = {
+      ...workspace.activeAlcoholBaseline!,
+      version: 2,
+      status: 'CURRENT' as const,
+      consumedPast12Months: 'YES' as const
+    }
+    const distinctWorkspace: ScreeningLifestyleWorkspace = {
+      ...workspace,
+      draft: {
+        ...workspace.draft!,
+        status: 'COMPLETE',
+        alcoholBaselineVersionId: referenced.id
+      },
+      activeAlcoholBaseline: active,
+      referencedAlcoholBaseline: referenced
+    }
+    const state = createLifestyleDraftStateFromWorkspace(distinctWorkspace)
+    const request = createAlcoholBaselineRequest(encounterId, state)
+
+    expect(state.baselineForm.consumedPast12Months).toBe('YES')
+    expect(request).toMatchObject({
+      expectedBaselineVersion: 2,
+      status: 'CURRENT',
+      consumedPast12Months: 'YES'
+    })
+    expect(getAlcoholCardStatus(state, true)).toBe('BASELINE_REVIEW')
+    expect(
+      getAlcoholCardSummary({ ...state, alcohol: updateAlcoholResponse(state.alcohol, 'NO') }, true)
+    ).toBe('Former • No use this week')
+  })
+
   it.each([
     ['FORMER', 'Former • Use reported • Review baseline'],
     ['NEVER', 'Never • Use reported • Review baseline']
   ] as const)('reports the exact %s baseline in the review summary', (baselineStatus, summary) => {
-    const workspace = workspaceWithDraft({ baselineStatus })
+    const workspace = workspaceWithDraft({ baselineStatus, draftStatus: 'COMPLETE' })
     const state = createLifestyleDraftStateFromWorkspace(workspace)
     expect(getAlcoholCardStatus(state, true)).toBe('BASELINE_REVIEW')
     expect(getAlcoholCardStatus(state, false)).toBe('LOCKED')
     expect(getAlcoholCardSummary(state, true)).toBe(summary)
+  })
+
+  it.each([
+    ['CURRENT', 'Current • No use this week'],
+    ['FORMER', 'Former • No use this week'],
+    ['NEVER', 'Never • No use this week'],
+    ['UNKNOWN', 'Unknown • No use this week'],
+    ['DECLINED', 'Declined • No use this week']
+  ] as const)('reports %s for a completed no-use week', (baselineStatus, summary) => {
+    const workspace = workspaceWithDraft({ baselineStatus, draftStatus: 'COMPLETE' })
+    const state = createLifestyleDraftStateFromWorkspace(workspace)
+    expect(
+      getAlcoholCardSummary({ ...state, alcohol: updateAlcoholResponse(state.alcohol, 'NO') }, true)
+    ).toBe(summary)
+  })
+
+  it.each([
+    ['CURRENT', 'Current • No use this week'],
+    ['FORMER', 'Former • No use this week'],
+    ['NEVER', 'Never • No use this week'],
+    ['UNKNOWN', 'Unknown • No use this week'],
+    ['DECLINED', 'Declined • No use this week']
+  ] as const)('reports %s for a completed no-use week', (baselineStatus, summary) => {
+    const workspace = workspaceWithDraft({ baselineStatus, draftStatus: 'COMPLETE' })
+    const state = createLifestyleDraftStateFromWorkspace(workspace)
+    expect(
+      getAlcoholCardSummary({ ...state, alcohol: updateAlcoholResponse(state.alcohol, 'NO') }, true)
+    ).toBe(summary)
   })
 })
 
@@ -279,14 +408,18 @@ function stateFor(
 }
 
 function workspaceWithDraft({
-  baselineStatus = 'CURRENT'
-}: { baselineStatus?: 'CURRENT' | 'FORMER' | 'NEVER' } = {}): ScreeningLifestyleWorkspace {
+  baselineStatus = 'CURRENT',
+  draftStatus = 'IN_PROGRESS'
+}: {
+  baselineStatus?: 'CURRENT' | 'FORMER' | 'NEVER' | 'UNKNOWN' | 'DECLINED'
+  draftStatus?: 'IN_PROGRESS' | 'COMPLETE'
+} = {}): ScreeningLifestyleWorkspace {
   return {
     encounterId,
     draft: {
       id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
       encounterId,
-      status: 'IN_PROGRESS',
+      status: draftStatus,
       rowVersion: 4,
       periodStart: '2026-07-31',
       periodEnd: '2026-08-06',

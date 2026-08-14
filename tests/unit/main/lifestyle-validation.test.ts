@@ -329,6 +329,47 @@ describe('Lifestyle persistence validation', () => {
     ).toBe('YES')
   })
 
+  it('compares Alcohol decimal subtotals safely without changing submitted values', () => {
+    const base = draftUpdateBase()
+    const valid = {
+      id,
+      weeklyResponse: 'YES' as const,
+      drinkingDays: 3,
+      totalStandardizedDrinks: 0.3,
+      largestOneDayAmount: 0.1,
+      daysAtLargestAmount: 3,
+      commonBeverageTypes: ['BEER'] as const,
+      otherBeverageDescription: null
+    }
+    expect(parseLifestyleDraftUpdateInput({ ...base, alcohol: valid }).alcohol).toMatchObject(valid)
+    expect(() =>
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        alcohol: { ...valid, totalStandardizedDrinks: 0.29 }
+      })
+    ).toThrow()
+    expect(() =>
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        alcohol: {
+          ...valid,
+          drinkingDays: 4,
+          totalStandardizedDrinks: 0.3
+        }
+      })
+    ).toThrow()
+    expect(
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        alcohol: {
+          ...valid,
+          drinkingDays: 4,
+          totalStandardizedDrinks: 0.31
+        }
+      }).alcohol?.totalStandardizedDrinks
+    ).toBe(0.31)
+  })
+
   it('enforces Tobacco weekly draft and completion branch consistency', () => {
     const base = draftUpdateBase()
     const product = tobaccoProduct()

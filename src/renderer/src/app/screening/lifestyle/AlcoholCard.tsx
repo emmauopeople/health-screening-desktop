@@ -7,6 +7,7 @@ import {
   alcoholWeeklyOptions,
   getAlcoholCardStatus,
   getAlcoholCardSummary,
+  getAlcoholBaselineForInterpretation,
   type AlcoholBaselineForm,
   type AlcoholFieldError,
   type AlcoholWeeklyForm,
@@ -38,7 +39,7 @@ export function AlcoholCard({
   const status = getAlcoholCardStatus(state, editable)
   const summary = getAlcoholCardSummary(state, editable)
   const baseline =
-    state.workspace?.referencedAlcoholBaseline ?? state.workspace?.activeAlcoholBaseline
+    state.workspace === null ? null : getAlcoholBaselineForInterpretation(state.workspace)
   const hasBaseline = baseline !== null && baseline !== undefined
   const baselineErrors = (fieldId: string): AlcoholFieldError | undefined =>
     state.validationErrors.find((error) => error.fieldId === fieldId)
@@ -91,11 +92,20 @@ export function AlcoholCard({
               aria-labelledby="lifestyle-alcohol-baseline-title"
             >
               <h4 id="lifestyle-alcohol-baseline-title">Alcohol Baseline</h4>
-              <fieldset>
+              <fieldset
+                id="alcohol-baseline-ever-consumed"
+                aria-invalid={baselineErrors('baselineEverConsumed') !== undefined}
+                aria-describedby={
+                  baselineErrors('baselineEverConsumed') === undefined
+                    ? undefined
+                    : errorElementId('baselineEverConsumed')
+                }
+              >
                 <legend>Ever consumed alcohol?</legend>
                 {(['YES', 'NO', 'UNKNOWN', 'DECLINED'] as const).map((value) => (
                   <label className="lifestyle-choice" key={value}>
                     <input
+                      id={`alcohol-baseline-ever-${value}`}
                       type="radio"
                       name="alcohol-ever-consumed"
                       value={value}
@@ -123,11 +133,20 @@ export function AlcoholCard({
 
               {state.baselineForm.everConsumed === 'YES' ||
               state.baselineForm.everConsumed === 'UNKNOWN' ? (
-                <fieldset>
+                <fieldset
+                  id="alcohol-baseline-past-year"
+                  aria-invalid={baselineErrors('baselineConsumedPast12Months') !== undefined}
+                  aria-describedby={
+                    baselineErrors('baselineConsumedPast12Months') === undefined
+                      ? undefined
+                      : errorElementId('baselineConsumedPast12Months')
+                  }
+                >
                   <legend>Consumed alcohol in the past 12 months?</legend>
                   {(['YES', 'NO', 'UNKNOWN', 'DECLINED'] as const).map((value) => (
                     <label className="lifestyle-choice" key={value}>
                       <input
+                        id={`alcohol-baseline-past-year-${value}`}
                         type="radio"
                         name="alcohol-past-year"
                         value={value}
@@ -144,12 +163,22 @@ export function AlcoholCard({
               ) : null}
 
               {isBeverageSectionApplicable(state.baselineForm) ? (
-                <fieldset>
+                <fieldset
+                  id="alcohol-baseline-beverage-types"
+                  tabIndex={-1}
+                  aria-invalid={baselineErrors('baselineCommonBeverageTypes') !== undefined}
+                  aria-describedby={
+                    baselineErrors('baselineCommonBeverageTypes') === undefined
+                      ? undefined
+                      : errorElementId('baselineCommonBeverageTypes')
+                  }
+                >
                   <legend>Common beverage types</legend>
                   <div className="lifestyle-choice-grid">
                     {alcoholBeverageOptions.map((option) => (
                       <label className="lifestyle-choice" key={option.value}>
                         <input
+                          id={`alcohol-baseline-beverage-${option.value}`}
                           type="checkbox"
                           value={option.value}
                           checked={state.baselineForm.commonBeverageTypes.includes(option.value)}
@@ -175,7 +204,7 @@ export function AlcoholCard({
                   id="alcohol-baseline-other"
                   label="Other beverage"
                   value={state.baselineForm.otherBeverageDescription}
-                  error={baselineErrors('otherBeverageDescription')}
+                  error={baselineErrors('baselineOtherBeverageDescription')}
                   disabled={controlsDisabled}
                   onChange={(value) => {
                     onUpdateBaseline((form) => ({ ...form, otherBeverageDescription: value }))
@@ -183,10 +212,16 @@ export function AlcoholCard({
                 />
               ) : null}
 
-              {baselineErrors('everConsumed') || baselineErrors('consumedPast12Months') ? (
+              {baselineErrors('baselineEverConsumed') ||
+              baselineErrors('baselineConsumedPast12Months') ||
+              baselineErrors('baselineCommonBeverageTypes') ? (
                 <ValidationList
                   errors={state.validationErrors}
-                  ids={['everConsumed', 'consumedPast12Months']}
+                  ids={[
+                    'baselineEverConsumed',
+                    'baselineConsumedPast12Months',
+                    'baselineCommonBeverageTypes'
+                  ]}
                 />
               ) : null}
               <div className="lifestyle-inline-actions">
@@ -357,7 +392,7 @@ export function AlcoholCard({
                       id="alcohol-weekly-other"
                       label="Other beverage"
                       value={state.alcohol.otherBeverageDescription}
-                      error={weeklyErrors('otherBeverageDescription')}
+                      error={weeklyErrors('weeklyOtherBeverageDescription')}
                       disabled={controlsDisabled}
                       onChange={(value) =>
                         onUpdateAlcohol((form) => ({ ...form, otherBeverageDescription: value }))
@@ -437,6 +472,10 @@ function Field({
   )
 }
 
+function errorElementId(fieldId: string): string {
+  return `lifestyle-error-${fieldId}`
+}
+
 function ValidationList({
   errors,
   ids
@@ -450,7 +489,9 @@ function ValidationList({
     <div className="lifestyle-validation" role="alert" aria-live="assertive">
       <ul>
         {visible.map((error) => (
-          <li key={`${error.fieldId}:${error.message}`}>{error.message}</li>
+          <li id={errorElementId(error.fieldId)} key={`${error.fieldId}:${error.message}`}>
+            {error.message}
+          </li>
         ))}
       </ul>
     </div>

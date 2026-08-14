@@ -43,11 +43,15 @@ export function LifestyleStep({
     if (firstError === undefined) return
     const focusId =
       {
+        baselineEverConsumed: 'alcohol-baseline-ever-YES',
+        baselineConsumedPast12Months: 'alcohol-baseline-past-year-YES',
+        baselineOtherBeverageDescription: 'alcohol-baseline-other',
+        baselineCommonBeverageTypes: 'alcohol-baseline-beverage-BEER',
         drinkingDays: 'alcohol-drinking-days',
         totalStandardizedDrinks: 'alcohol-total-drinks',
         largestOneDayAmount: 'alcohol-largest-day',
         daysAtLargestAmount: 'alcohol-days-largest',
-        otherBeverageDescription: 'alcohol-weekly-other'
+        weeklyOtherBeverageDescription: 'alcohol-weekly-other'
       }[firstError.fieldId] ?? firstError.fieldId
     document.getElementById(focusId)?.focus()
   }, [state.validationErrors])
