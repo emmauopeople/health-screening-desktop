@@ -2,6 +2,7 @@ import type { PublicScreeningEncounterStartSummary } from '@shared/ipc'
 import { useEffect } from 'react'
 
 import { AlcoholCard } from './AlcoholCard'
+import { TobaccoCard } from './TobaccoCard'
 import {
   getAlcoholCardStatus,
   validateAlcoholBaseline,
@@ -9,6 +10,12 @@ import {
   type AlcoholBaselineForm,
   type AlcoholWeeklyForm,
   type LifestyleDraftState
+} from './lifestyle-workspace-model'
+import {
+  validateTobaccoBaseline,
+  validateTobaccoWeeklyDraft,
+  type TobaccoBaselineForm,
+  type TobaccoWeeklyForm
 } from './lifestyle-workspace-model'
 
 export interface LifestyleStepProps {
@@ -20,6 +27,7 @@ export interface LifestyleStepProps {
   onReload(): void
   onUpdate(update: (state: LifestyleDraftState) => LifestyleDraftState): void
   onSaveBaseline(): void
+  onSaveTobaccoBaseline(): void
   onSaveDraft(): void
 }
 
@@ -31,6 +39,7 @@ export function LifestyleStep({
   onReload,
   onUpdate,
   onSaveBaseline,
+  onSaveTobaccoBaseline,
   onSaveDraft
 }: LifestyleStepProps): React.JSX.Element {
   const editable = encounterStatus === 'DRAFT'
@@ -108,11 +117,38 @@ export function LifestyleStep({
                 onUpdate((current) => ({ ...current, baselineOpen: !current.baselineOpen }))
               }}
               onToggleExpanded={() => {
-                onUpdate((current) => ({ ...current, alcoholExpanded: !current.alcoholExpanded }))
+                onUpdate((current) => ({
+                  ...current,
+                  alcoholExpanded: !current.alcoholExpanded,
+                  tobaccoExpanded: false
+                }))
               }}
               onSaveBaseline={onSaveBaseline}
             />
-            <DisabledLifestyleCard number="2" title="Tobacco and nicotine" />
+            <TobaccoCard
+              state={state}
+              encounterStatus={encounterStatus}
+              onUpdateBaseline={(update) =>
+                onUpdate((current) => updateTobaccoBaselineForm(current, update))
+              }
+              onUpdateTobacco={(update) =>
+                onUpdate((current) => updateTobaccoForm(current, update))
+              }
+              onToggleBaseline={() =>
+                onUpdate((current) => ({
+                  ...current,
+                  tobaccoBaselineOpen: !current.tobaccoBaselineOpen
+                }))
+              }
+              onToggleExpanded={() =>
+                onUpdate((current) => ({
+                  ...current,
+                  tobaccoExpanded: !current.tobaccoExpanded,
+                  alcoholExpanded: false
+                }))
+              }
+              onSaveBaseline={onSaveTobaccoBaseline}
+            />
             <DisabledLifestyleCard number="3" title="Physical activity" />
             <DisabledLifestyleCard number="4" title="Work and occupation" />
             <DisabledLifestyleCard number="5" title="Other activity" />
@@ -211,6 +247,36 @@ function updateAlcoholForm(
     saveStatus: 'IDLE',
     statusMessage: null,
     validationErrors: validateAlcoholWeeklyDraft(alcohol)
+  }
+}
+
+function updateTobaccoBaselineForm(
+  state: LifestyleDraftState,
+  update: (form: TobaccoBaselineForm) => TobaccoBaselineForm
+): LifestyleDraftState {
+  const tobaccoBaselineForm = update(state.tobaccoBaselineForm)
+  return {
+    ...state,
+    tobaccoBaselineForm,
+    dirty: true,
+    saveStatus: 'IDLE',
+    statusMessage: null,
+    tobaccoValidationErrors: validateTobaccoBaseline(tobaccoBaselineForm)
+  }
+}
+
+function updateTobaccoForm(
+  state: LifestyleDraftState,
+  update: (form: TobaccoWeeklyForm) => TobaccoWeeklyForm
+): LifestyleDraftState {
+  const tobacco = update(state.tobacco)
+  return {
+    ...state,
+    tobacco,
+    dirty: true,
+    saveStatus: 'IDLE',
+    statusMessage: null,
+    tobaccoValidationErrors: validateTobaccoWeeklyDraft(tobacco)
   }
 }
 

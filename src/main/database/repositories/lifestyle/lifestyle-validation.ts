@@ -503,6 +503,9 @@ function parseTobaccoWeekly(value: unknown): LifestyleTobaccoWeeklyInput {
   const weeklyResponse = parseNullableCode(data.weeklyResponse, responseCodes)
   const products = parseUniqueList(data.products, parseTobaccoProduct)
   if (weeklyResponse !== 'YES' && products.length > 0) throw new RepositoryValidationError()
+  if (new Set(products.map((product) => product.productType)).size !== products.length) {
+    throw new RepositoryValidationError()
+  }
   return {
     id: parseEntityId(data.id),
     weeklyResponse,

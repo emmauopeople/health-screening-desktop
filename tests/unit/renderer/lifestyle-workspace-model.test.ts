@@ -15,6 +15,17 @@ import {
   type AlcoholBaselineForm,
   type AlcoholWeeklyForm
 } from '../../../src/renderer/src/app/screening/lifestyle/lifestyle-workspace-model'
+import {
+  getTobaccoBaselineForEditableForm,
+  getTobaccoBaselineForInterpretation,
+  getTobaccoCardSummary,
+  mapTobaccoBaselineStatus,
+  updateTobaccoResponse,
+  validateTobaccoBaseline,
+  validateTobaccoWeeklyDraft,
+  type TobaccoBaselineForm,
+  type TobaccoWeeklyForm
+} from '../../../src/renderer/src/app/screening/lifestyle/tobacco-workspace-model'
 
 const encounterId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const alcoholBaselineId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -243,6 +254,15 @@ describe('Lifestyle Alcohol workspace model', () => {
     expect(request.alcohol).toMatchObject({ id: alcoholId, weeklyResponse: 'YES' })
   })
 
+  it('does not manufacture an unseen Tobacco weekly record', () => {
+    const workspace = workspaceWithDraft()
+    const state = createLifestyleDraftStateFromWorkspace({
+      ...workspace,
+      draft: { ...workspace.draft!, tobacco: null }
+    })
+    expect(createAlcoholSaveDraftRequest(encounterId, state).tobacco).toBeNull()
+  })
+
   it('uses the active baseline and draft versions for a baseline save', () => {
     const state = createLifestyleDraftStateFromWorkspace(workspaceWithDraft())
     const request = createAlcoholBaselineRequest(encounterId, state)
@@ -293,7 +313,6 @@ describe('Lifestyle Alcohol workspace model', () => {
     ).toBe('Former • No use this week')
   })
 
-
   it.each([
     ['FORMER', 'Former • Use reported • Review baseline'],
     ['NEVER', 'Never • Use reported • Review baseline']
@@ -318,7 +337,150 @@ describe('Lifestyle Alcohol workspace model', () => {
       getAlcoholCardSummary({ ...state, alcohol: updateAlcoholResponse(state.alcohol, 'NO') }, true)
     ).toBe(summary)
   })
+})
 
+describe('Lifestyle Tobacco workspace model', () => {
+  it.each([
+    ['NO', '', 'NEVER', 'NOT_AT_ALL'],
+    ['DECLINED', '', 'DECLINED', 'DECLINED'],
+    ['YES', 'EVERY_DAY', 'CURRENT_DAILY', 'EVERY_DAY'],
+    ['YES', 'SOME_DAYS', 'CURRENT_SOME_DAYS', 'SOME_DAYS'],
+    ['YES', 'NOT_AT_ALL', 'FORMER', 'NOT_AT_ALL'],
+    ['UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN'],
+    ['UNKNOWN', 'DECLINED', 'DECLINED', 'DECLINED']
+  ] as const)('maps %s/%s to %s', (everRegularlyUsed, currentUseFrequency, status, frequency) => {
+    expect(
+      mapTobaccoBaselineStatus({
+        everRegularlyUsed,
+        currentUseFrequency,
+        formerUseApproximateStopDate: '',
+        productTypes: [],
+        otherProductDescription: ''
+      })
+    ).toEqual({ status, currentUseFrequency: frequency })
+  })
+
+  it('uses the active baseline for editing and the exact referenced baseline for interpretation', () => {
+    const workspace = workspaceWithDraft()
+    const referenced = {
+      id: 'abababab-abab-4bab-8bab-abababababab',
+      version: 1,
+      status: 'FORMER' as const,
+      everRegularlyUsed: 'YES' as const,
+      formerUseApproximateStopDate: '2024' as const,
+      currentUseFrequency: 'NOT_AT_ALL' as const,
+      productTypes: ['CIGARETTE' as const],
+      otherProductDescription: null,
+      updatedAt: timestamp
+    }
+    const active = {
+      ...referenced,
+      id: tobaccoBaselineId,
+      version: 2,
+      status: 'CURRENT_DAILY' as const,
+      currentUseFrequency: 'EVERY_DAY' as const,
+      formerUseApproximateStopDate: null
+    }
+    const distinct = {
+      ...workspace,
+      draft: { ...workspace.draft!, tobaccoBaselineVersionId: referenced.id },
+      activeTobaccoBaseline: active,
+      referencedTobaccoBaseline: referenced
+    }
+    expect(getTobaccoBaselineForEditableForm(distinct)).toBe(active)
+    expect(getTobaccoBaselineForInterpretation(distinct)).toBe(referenced)
+    expect(
+      getTobaccoCardSummary(
+        {
+          ...createLifestyleDraftStateFromWorkspace(distinct),
+          tobacco: { id: null, weeklyResponse: 'YES', products: [] }
+        },
+        true
+      )
+    ).toContain('Former')
+  })
+
+  it('clears hidden products when leaving Yes and preserves stable row fields', () => {
+    const form: TobaccoWeeklyForm = {
+      id: '12121212-1212-4121-8121-121212121212',
+      weeklyResponse: 'YES',
+      products: [
+        {
+          clientKey: 'existing',
+          id: '13131313-1313-4131-8131-131313131313',
+          sequenceNumber: 1,
+          productType: 'VAPE',
+          daysUsed: '2',
+          averageQuantityPerUseDay: '1',
+          unit: 'SESSIONS',
+          secondhandSmokeExposure: true,
+          otherProductDescription: '',
+          otherUnitDescription: ''
+        }
+      ]
+    }
+    expect(updateTobaccoResponse(form, 'NO')).toEqual({
+      ...form,
+      weeklyResponse: 'NO',
+      products: []
+    })
+    expect(validateTobaccoWeeklyDraft({ ...form, products: [] })).toEqual([])
+  })
+
+  it('validates approximate stop dates and baseline Other descriptions', () => {
+    const base: TobaccoBaselineForm = {
+      everRegularlyUsed: 'YES',
+      currentUseFrequency: 'NOT_AT_ALL',
+      formerUseApproximateStopDate: '2024-13',
+      productTypes: ['OTHER'],
+      otherProductDescription: ''
+    }
+    expect(validateTobaccoBaseline(base).map((error) => error.fieldId)).toEqual(
+      expect.arrayContaining(['tobacco-baseline-stop-date', 'tobacco-baseline-other-product'])
+    )
+    expect(
+      validateTobaccoBaseline({
+        ...base,
+        formerUseApproximateStopDate: '2024-02',
+        otherProductDescription: 'Smokeless product'
+      })
+    ).toEqual([])
+    expect(
+      validateTobaccoBaseline({
+        ...base,
+        formerUseApproximateStopDate: '2024-02',
+        productTypes: ['VAPE'],
+        otherProductDescription: 'hidden'
+      }).map((error) => error.fieldId)
+    ).toContain('tobacco-baseline-other-product')
+  })
+
+  it('rejects duplicate product types and invalid rows while allowing incomplete Yes', () => {
+    expect(validateTobaccoWeeklyDraft({ id: null, weeklyResponse: 'YES', products: [] })).toEqual(
+      []
+    )
+    const product = {
+      clientKey: 'one',
+      id: null,
+      sequenceNumber: 1,
+      productType: 'VAPE' as const,
+      daysUsed: '2',
+      averageQuantityPerUseDay: '1',
+      unit: 'SESSIONS' as const,
+      secondhandSmokeExposure: null,
+      otherProductDescription: '',
+      otherUnitDescription: ''
+    }
+    const errors = validateTobaccoWeeklyDraft({
+      id: null,
+      weeklyResponse: 'YES',
+      products: [product, { ...product, clientKey: 'two', sequenceNumber: 2 }]
+    })
+    expect(errors.map((error) => error.fieldId)).toContain('tobacco-product-one-type')
+    expect(
+      validateTobaccoWeeklyDraft({ id: null, weeklyResponse: 'NO', products: [product] })
+    ).toEqual([{ fieldId: 'tobacco-weekly-response', message: 'Clear the hidden product rows.' }])
+  })
 })
 
 function emptyWeekly(): AlcoholWeeklyForm {

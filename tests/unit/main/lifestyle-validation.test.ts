@@ -391,10 +391,23 @@ describe('Lifestyle persistence validation', () => {
         tobacco: {
           id,
           weeklyResponse: 'YES',
-          products: [product, { ...product, id: alternateId, sequenceNumber: 2 }]
+          products: [
+            product,
+            { ...product, id: alternateId, sequenceNumber: 2, productType: 'CIGARETTE' }
+          ]
         }
       }).tobacco?.products
     ).toHaveLength(2)
+    expect(() =>
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        tobacco: {
+          id,
+          weeklyResponse: 'YES',
+          products: [product, { ...product, id: alternateId, sequenceNumber: 2 }]
+        }
+      })
+    ).toThrow()
     expect(
       parseLifestyleDraftUpdateInput({
         ...base,

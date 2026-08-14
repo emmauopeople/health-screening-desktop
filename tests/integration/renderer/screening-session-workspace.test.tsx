@@ -50,6 +50,9 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
       saveAlcoholBaseline: ReturnType<
         typeof vi.fn<HealthScreeningApi['screeningEncounters']['lifestyle']['saveAlcoholBaseline']>
       >
+      saveTobaccoBaseline: ReturnType<
+        typeof vi.fn<HealthScreeningApi['screeningEncounters']['lifestyle']['saveTobaccoBaseline']>
+      >
       saveDraft: ReturnType<
         typeof vi.fn<HealthScreeningApi['screeningEncounters']['lifestyle']['saveDraft']>
       >
@@ -412,6 +415,47 @@ describe('screening patient entry workspace', () => {
     expect(text(mounted)).not.toContain('Continue to food')
     expect(buttonByText(mounted, 'Continue').disabled).toBe(true)
 
+    await mounted.unmount()
+  })
+
+  it('restores and saves the Tobacco baseline and weekly product rows', async () => {
+    const api = createApi()
+    const workspace = publicLifestyleWorkspaceWithTobacco()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace })
+    )
+    api.screeningEncounters.lifestyle.saveTobaccoBaseline.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'SAVED', workspace })
+    )
+    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'SAVED', workspace })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Tobacco and nicotine')
+    expect(text(mounted)).toContain(
+      'Did you use any tobacco or nicotine product during the past 7 days?'
+    )
+    expect(inputByLabel(mounted, 'Days used during the past 7 days').value).toBe('2')
+    await clickButton(mounted, 'Tobacco Baseline')
+    await clickButton(mounted, 'Save baseline')
+    expect(api.screeningEncounters.lifestyle.saveTobaccoBaseline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedBaselineVersion: 2,
+        expectedDraftVersion: 4,
+        status: 'CURRENT_DAILY'
+      })
+    )
+    expect(text(mounted)).toContain('Tobacco baseline saved')
+
+    await clickButton(mounted, 'Save draft')
+    expect(api.screeningEncounters.lifestyle.saveDraft.mock.calls[0]?.[0].tobacco).toEqual(
+      expect.objectContaining({
+        weeklyResponse: 'YES',
+        products: [expect.objectContaining({ id: '16161616-1616-4161-8161-161616161616' })]
+      })
+    )
     await mounted.unmount()
   })
 
@@ -1699,6 +1743,11 @@ function createApi({
             createIpcSuccess({ status: 'SAVED', workspace: publicLifestyleWorkspace() })
           )
         ),
+        saveTobaccoBaseline: vi.fn(() =>
+          Promise.resolve(
+            createIpcSuccess({ status: 'SAVED', workspace: publicLifestyleWorkspace() })
+          )
+        ),
         saveDraft: vi.fn(() =>
           Promise.resolve(
             createIpcSuccess({ status: 'SAVED', workspace: publicLifestyleWorkspace() })
@@ -1943,6 +1992,49 @@ function publicLifestyleWorkspaceWithAlcohol({
   }
 }
 
+function publicLifestyleWorkspaceWithTobacco(): ScreeningLifestyleWorkspace {
+  const workspace = publicLifestyleWorkspaceWithAlcohol({ includeOtherSections: true })
+  const baseline = {
+    id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    version: 2,
+    status: 'CURRENT_DAILY' as const,
+    everRegularlyUsed: 'YES' as const,
+    formerUseApproximateStopDate: null,
+    currentUseFrequency: 'EVERY_DAY' as const,
+    productTypes: ['CIGARETTE' as const],
+    otherProductDescription: null,
+    updatedAt: baseTimestamp
+  }
+  return {
+    ...workspace,
+    draft: {
+      ...workspace.draft!,
+      tobaccoBaselineVersionId: baseline.id,
+      tobacco: {
+        id: '12121212-1212-4121-8121-121212121212',
+        weeklyResponse: 'YES',
+        products: [
+          {
+            id: '16161616-1616-4161-8161-161616161616',
+            sequenceNumber: 1,
+            productType: 'CIGARETTE',
+            daysUsed: 2,
+            averageQuantityPerUseDay: 3,
+            unit: 'STICKS_CIGARETTES',
+            secondhandSmokeExposure: null,
+            otherProductDescription: null,
+            otherUnitDescription: null,
+            updatedAt: baseTimestamp
+          }
+        ],
+        updatedAt: baseTimestamp
+      }
+    },
+    activeTobaccoBaseline: baseline,
+    referencedTobaccoBaseline: baseline
+  }
+}
+
 function patientSummary(overrides: Partial<PublicPatientSummary> = {}): PublicPatientSummary {
   return {
     id: patientId,
@@ -2114,7 +2206,9 @@ function rowByName(mounted: MountedWorkspace, name: string): HTMLTableRowElement
 function buttonByText(mounted: MountedWorkspace, label: string): HTMLButtonElement {
   const button = Array.from(mounted.container.querySelectorAll<HTMLButtonElement>('button')).find(
     (candidate) =>
-      candidate.textContent?.trim() === label || candidate.getAttribute('aria-label') === label
+      candidate.textContent?.trim() === label ||
+      candidate.getAttribute('aria-label') === label ||
+      candidate.textContent?.includes(label)
   )
 
   if (button === undefined) {

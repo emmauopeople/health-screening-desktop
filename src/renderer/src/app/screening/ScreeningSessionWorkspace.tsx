@@ -39,6 +39,9 @@ import {
   createLifestyleDraftStateFromWorkspace,
   validateAlcoholBaseline,
   validateAlcoholWeeklyDraft,
+  createTobaccoBaselineRequest as createTobaccoBaselineRequestFromForm,
+  validateTobaccoBaseline,
+  validateTobaccoWeeklyDraft,
   type LifestyleDraftState
 } from './lifestyle/lifestyle-workspace-model'
 import {
@@ -867,6 +870,9 @@ export function ScreeningSessionWorkspace({
             ...next,
             alcohol: current.alcohol,
             validationErrors: validateAlcoholWeeklyDraft(current.alcohol),
+            tobacco: current.tobacco,
+            tobaccoBaselineForm: current.tobaccoBaselineForm,
+            tobaccoValidationErrors: current.tobaccoValidationErrors,
             dirty: current.dirty,
             baselineOpen: false
           }
@@ -889,18 +895,108 @@ export function ScreeningSessionWorkspace({
     [api, focusMessage, mountedRef, updateLifestyleDraft]
   )
 
+  const saveLifestyleTobaccoBaseline = useCallback(
+    async (patientId: string, encounterId: string, draft: LifestyleDraftState): Promise<void> => {
+      if (draft.loadStatus !== 'READY' || draft.saveStatus === 'SAVING') return
+      const contextEpoch = lifestyleContextEpochRef.current
+      const validationErrors = validateTobaccoBaseline(draft.tobaccoBaselineForm)
+      const request = createTobaccoBaselineRequestFromForm(
+        encounterId,
+        draft.workspace,
+        draft.tobaccoBaselineForm
+      )
+      if (validationErrors.length > 0 || request === null) {
+        updateLifestyleDraft(patientId, (current) => ({
+          ...current,
+          saveStatus: 'ERROR',
+          statusMessage: 'Tobacco baseline could not be saved. Check the highlighted fields.',
+          tobaccoValidationErrors:
+            validationErrors.length > 0
+              ? validationErrors
+              : [{ fieldId: 'tobacco-baseline-ever-used', message: 'Select an answer.' }]
+        }))
+        focusMessage()
+        return
+      }
+      const requestId = (lifestyleSaveRequestRef.current.get(encounterId) ?? 0) + 1
+      lifestyleSaveRequestRef.current.set(encounterId, requestId)
+      updateLifestyleDraft(patientId, (current) => ({
+        ...current,
+        saveStatus: 'SAVING',
+        statusMessage: 'Saving Tobacco baseline...',
+        tobaccoValidationErrors: []
+      }))
+      try {
+        const result = await api.screeningEncounters.lifestyle.saveTobaccoBaseline(request)
+        if (
+          !mountedRef.current ||
+          lifestyleSaveRequestRef.current.get(encounterId) !== requestId ||
+          lifestyleActiveEncounterRef.current !== encounterId ||
+          lifestyleContextEpochRef.current !== contextEpoch
+        )
+          return
+        if (!result.ok) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: getLifestyleFailureMessage(result.error.code)
+          }))
+          return
+        }
+        if (result.data.status !== 'SAVED' || !hasLifestyleWorkspace(result.data)) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: getLifestyleStatusMessage(result.data.status)
+          }))
+          return
+        }
+        const workspace = result.data.workspace
+        updateLifestyleDraft(patientId, (current) => ({
+          ...createLifestyleDraftStateFromWorkspace(workspace, {
+            saveStatus: 'SAVED',
+            statusMessage: 'Tobacco baseline saved'
+          }),
+          alcohol: current.alcohol,
+          validationErrors: validateAlcoholWeeklyDraft(current.alcohol),
+          tobacco: current.tobacco,
+          tobaccoValidationErrors: validateTobaccoWeeklyDraft(current.tobacco),
+          dirty: current.dirty,
+          tobaccoBaselineOpen: false,
+          tobaccoExpanded: true
+        }))
+      } catch {
+        if (
+          mountedRef.current &&
+          lifestyleSaveRequestRef.current.get(encounterId) === requestId &&
+          lifestyleActiveEncounterRef.current === encounterId &&
+          lifestyleContextEpochRef.current === contextEpoch
+        ) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Tobacco baseline could not be saved. Try again.'
+          }))
+        }
+      }
+    },
+    [api, focusMessage, mountedRef, updateLifestyleDraft]
+  )
+
   const saveLifestyleDraft = useCallback(
     async (patientId: string, encounterId: string, draft: LifestyleDraftState): Promise<void> => {
       if (draft.loadStatus !== 'READY' || draft.saveStatus === 'SAVING') return
       const contextEpoch = lifestyleContextEpochRef.current
 
       const validationErrors = validateAlcoholWeeklyDraft(draft.alcohol)
-      if (validationErrors.length > 0) {
+      const tobaccoValidationErrors = validateTobaccoWeeklyDraft(draft.tobacco)
+      if (validationErrors.length > 0 || tobaccoValidationErrors.length > 0) {
         updateLifestyleDraft(patientId, (current) => ({
           ...current,
           saveStatus: 'ERROR',
           statusMessage: 'Draft could not be saved. Check the highlighted fields.',
-          validationErrors
+          validationErrors,
+          tobaccoValidationErrors
         }))
         focusMessage()
         return
@@ -1087,6 +1183,7 @@ export function ScreeningSessionWorkspace({
               onUpdateVitalsDraft={updateVitalsDraft}
               onLoadLifestyleWorkspace={loadLifestyleWorkspace}
               onSaveLifestyleBaseline={saveLifestyleBaseline}
+              onSaveLifestyleTobaccoBaseline={saveLifestyleTobaccoBaseline}
               onSaveLifestyleDraft={saveLifestyleDraft}
               onUpdateLifestyleDraft={updateLifestyleDraft}
             />
@@ -1321,6 +1418,7 @@ function NewScreeningWorkspace({
   onUpdateVitalsDraft,
   onLoadLifestyleWorkspace,
   onSaveLifestyleBaseline,
+  onSaveLifestyleTobaccoBaseline,
   onSaveLifestyleDraft,
   onUpdateLifestyleDraft
 }: {
@@ -1340,6 +1438,11 @@ function NewScreeningWorkspace({
   onUpdateVitalsDraft(patientId: string, update: (draft: VitalsDraft) => VitalsDraft): void
   onLoadLifestyleWorkspace(patientId: string, encounterId: string): void
   onSaveLifestyleBaseline(patientId: string, encounterId: string, draft: LifestyleDraftState): void
+  onSaveLifestyleTobaccoBaseline(
+    patientId: string,
+    encounterId: string,
+    draft: LifestyleDraftState
+  ): void
   onSaveLifestyleDraft(patientId: string, encounterId: string, draft: LifestyleDraftState): void
   onUpdateLifestyleDraft(
     patientId: string,
@@ -1384,6 +1487,13 @@ function NewScreeningWorkspace({
             }
             onSaveLifestyleBaseline={() =>
               onSaveLifestyleBaseline(
+                activeTab.patient.id,
+                activeTab.encounter.id,
+                activeTab.lifestyleDraft
+              )
+            }
+            onSaveLifestyleTobaccoBaseline={() =>
+              onSaveLifestyleTobaccoBaseline(
                 activeTab.patient.id,
                 activeTab.encounter.id,
                 activeTab.lifestyleDraft
@@ -1531,6 +1641,7 @@ function CurrentEncounterPanel({
   onUpdateVitalsDraft,
   onLoadLifestyleWorkspace,
   onSaveLifestyleBaseline,
+  onSaveLifestyleTobaccoBaseline,
   onSaveLifestyleDraft,
   onUpdateLifestyleDraft
 }: {
@@ -1541,6 +1652,7 @@ function CurrentEncounterPanel({
   onUpdateVitalsDraft(update: (draft: VitalsDraft) => VitalsDraft): void
   onLoadLifestyleWorkspace(): void
   onSaveLifestyleBaseline(): void
+  onSaveLifestyleTobaccoBaseline(): void
   onSaveLifestyleDraft(): void
   onUpdateLifestyleDraft(update: (draft: LifestyleDraftState) => LifestyleDraftState): void
 }): React.JSX.Element {
@@ -1595,12 +1707,16 @@ function CurrentEncounterPanel({
               workspace: draft.workspace,
               baselineForm: draft.baselineForm,
               alcohol: draft.alcohol,
+              tobaccoBaselineForm: draft.tobaccoBaselineForm,
+              tobacco: draft.tobacco,
+              tobaccoValidationErrors: draft.tobaccoValidationErrors,
               dirty: draft.dirty
             }))
             onLoadLifestyleWorkspace()
           }}
           onUpdate={onUpdateLifestyleDraft}
           onSaveBaseline={onSaveLifestyleBaseline}
+          onSaveTobaccoBaseline={onSaveLifestyleTobaccoBaseline}
           onSaveDraft={onSaveLifestyleDraft}
         />
       )}

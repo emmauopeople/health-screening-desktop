@@ -5,6 +5,44 @@ import type {
 } from '@shared/ipc'
 import { compareLifestyleDecimalQuantities } from '@shared/lifestyle-alcohol-quantity'
 
+import {
+  createInitialTobaccoBaselineForm,
+  createInitialTobaccoWeeklyForm,
+  getTobaccoBaselineForEditableForm,
+  tobaccoBaselineToForm,
+  tobaccoToRequest,
+  tobaccoWeeklyToForm,
+  type TobaccoBaselineForm,
+  type TobaccoFieldError,
+  type TobaccoWeeklyForm
+} from './tobacco-workspace-model'
+
+export {
+  createInitialTobaccoBaselineForm,
+  createInitialTobaccoWeeklyForm,
+  createEmptyTobaccoProductForm,
+  createTobaccoBaselineRequest,
+  getTobaccoBaselineForEditableForm,
+  getTobaccoBaselineForInterpretation,
+  getTobaccoCardStatus,
+  getTobaccoCardSummary,
+  mapTobaccoBaselineStatus,
+  tobaccoBaselineToForm,
+  tobaccoToRequest,
+  tobaccoWeeklyToForm,
+  validateTobaccoBaseline,
+  validateTobaccoWeeklyDraft,
+  tobaccoFrequencyOptions,
+  tobaccoProductOptions,
+  tobaccoUnitOptions,
+  tobaccoWeeklyOptions,
+  type TobaccoBaselineForm,
+  type TobaccoCardStatus,
+  type TobaccoFieldError,
+  type TobaccoProductForm,
+  type TobaccoWeeklyForm
+} from './tobacco-workspace-model'
+
 export type AlcoholEverResponse = 'YES' | 'NO' | 'UNKNOWN' | 'DECLINED' | ''
 export type AlcoholWeeklyResponse =
   'YES' | 'NO' | 'UNKNOWN' | 'DECLINED' | 'PREFER_NOT_TO_ANSWER' | ''
@@ -45,6 +83,11 @@ export interface LifestyleDraftState {
   readonly baselineForm: AlcoholBaselineForm
   readonly alcohol: AlcoholWeeklyForm
   readonly validationErrors: readonly AlcoholFieldError[]
+  readonly tobaccoExpanded: boolean
+  readonly tobaccoBaselineOpen: boolean
+  readonly tobaccoBaselineForm: TobaccoBaselineForm
+  readonly tobacco: TobaccoWeeklyForm
+  readonly tobaccoValidationErrors: readonly TobaccoFieldError[]
   readonly dirty: boolean
 }
 
@@ -82,6 +125,11 @@ export function createInitialLifestyleDraftState(): LifestyleDraftState {
     baselineForm: emptyAlcoholBaselineForm(),
     alcohol: emptyAlcoholWeeklyForm(),
     validationErrors: [],
+    tobaccoExpanded: false,
+    tobaccoBaselineOpen: false,
+    tobaccoBaselineForm: createInitialTobaccoBaselineForm(),
+    tobacco: createInitialTobaccoWeeklyForm(),
+    tobaccoValidationErrors: [],
     dirty: false
   }
 }
@@ -91,6 +139,7 @@ export function createLifestyleDraftStateFromWorkspace(
   options: Partial<Pick<LifestyleDraftState, 'saveStatus' | 'statusMessage'>> = {}
 ): LifestyleDraftState {
   const baseline = getAlcoholBaselineForEditableForm(workspace)
+  const tobaccoBaseline = getTobaccoBaselineForEditableForm(workspace)
   return {
     loadStatus: 'READY',
     saveStatus: options.saveStatus ?? 'IDLE',
@@ -103,6 +152,15 @@ export function createLifestyleDraftStateFromWorkspace(
       ? alcoholWeeklyToForm(workspace.draft.alcohol)
       : emptyAlcoholWeeklyForm(),
     validationErrors: [],
+    tobaccoExpanded: false,
+    tobaccoBaselineOpen: false,
+    tobaccoBaselineForm: tobaccoBaseline
+      ? tobaccoBaselineToForm(tobaccoBaseline)
+      : createInitialTobaccoBaselineForm(),
+    tobacco: workspace.draft?.tobacco
+      ? tobaccoWeeklyToForm(workspace.draft.tobacco)
+      : createInitialTobaccoWeeklyForm(),
+    tobaccoValidationErrors: [],
     dirty: false
   }
 }
@@ -436,13 +494,7 @@ export function createAlcoholSaveDraftRequest(
     encounterId,
     expectedVersion: draft?.rowVersion ?? null,
     alcohol: alcoholToRequest(state.alcohol),
-    tobacco: draft?.tobacco
-      ? {
-          id: draft.tobacco.id,
-          weeklyResponse: draft.tobacco.weeklyResponse,
-          products: draft.tobacco.products.map((product) => stripUpdatedAt(product))
-        }
-      : null,
+    tobacco: shouldPersistTobacco(state) ? tobaccoToRequest(state.tobacco) : null,
     physicalActivity: draft?.physicalActivity
       ? {
           id: draft.physicalActivity.id,
@@ -460,6 +512,14 @@ export function createAlcoholSaveDraftRequest(
 
 function stripUpdatedAt<T extends object>(value: T): Omit<T, 'updatedAt'> {
   return stripFields(value, ['updatedAt']) as Omit<T, 'updatedAt'>
+}
+
+function shouldPersistTobacco(state: LifestyleDraftState): boolean {
+  return (
+    (state.workspace?.draft?.tobacco !== null && state.workspace?.draft?.tobacco !== undefined) ||
+    state.tobacco.weeklyResponse !== '' ||
+    state.tobacco.products.length > 0
+  )
 }
 
 function stripFields<T extends object, K extends string>(
