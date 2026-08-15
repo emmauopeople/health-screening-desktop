@@ -2,6 +2,7 @@ export { createLifestyleRepository } from './lifestyle-repository'
 export {
   calculateLifestyleWeeklyMinutes,
   parseCompleteLifestyleAlcoholWeeklyInput,
+  parseCompleteLifestyleOtherActivityInput,
   parseCompleteLifestylePhysicalActivityWeeklyInput,
   parseCompleteLifestyleTobaccoWeeklyInput,
   parseLifestyleAlcoholBaselineInput,
@@ -33,8 +34,10 @@ export type {
   LifestyleOtherActivityCategory,
   LifestyleOtherActivityInput,
   LifestyleOtherActivityRow,
+  LifestyleOtherActivityWeeklyResponse,
   LifestylePhysicalActivityWeeklyInput,
   LifestylePhysicalActivityWeeklyRecord,
+  LifestyleSedentaryTimeResponse,
   LifestylePhysicalDemand,
   LifestyleResponse,
   LifestyleShiftPattern,

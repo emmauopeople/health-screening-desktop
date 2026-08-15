@@ -116,6 +116,20 @@ const physicalActivityResponseSchema = z.enum([
   'UNABLE_TO_ANSWER',
   'PREFER_NOT_TO_ANSWER'
 ])
+const sedentaryTimeResponseSchema = z.enum([
+  'RECORDED',
+  'UNKNOWN',
+  'UNABLE_TO_ANSWER',
+  'DECLINED',
+  'PREFER_NOT_TO_ANSWER'
+])
+const otherActivityResponseSchema = z.enum([
+  'YES',
+  'NO',
+  'UNKNOWN',
+  'DECLINED',
+  'PREFER_NOT_TO_ANSWER'
+])
 const otherActivityCategorySchema = z.enum([
   'FARMING_GARDENING',
   'HOUSEHOLD',
@@ -206,6 +220,7 @@ const activityRequestSchema = exactObject({
 const physicalActivityWeeklyRequestSchema = exactObject({
   id: idOrNullSchema,
   weeklyResponse: physicalActivityResponseSchema.nullable(),
+  sedentaryTimeResponse: sedentaryTimeResponseSchema.nullable(),
   sedentaryMinutesPerDay: z.number().int().min(0).max(1439).safe().nullable(),
   activities: z.array(activityRequestSchema).max(20)
 })
@@ -230,6 +245,7 @@ export const screeningLifestyleSaveDraftRequestSchema = exactObject({
   tobacco: tobaccoWeeklyRequestSchema.nullable(),
   physicalActivity: physicalActivityWeeklyRequestSchema.nullable(),
   work: workWeeklyRequestSchema.nullable(),
+  otherActivityResponse: otherActivityResponseSchema.nullable(),
   otherActivities: z.array(otherActivityRequestSchema).max(50)
 })
 export const screeningLifestyleCompleteRequestSchema = exactObject({
@@ -239,6 +255,7 @@ export const screeningLifestyleCompleteRequestSchema = exactObject({
   tobacco: tobaccoWeeklyRequestSchema.nullable(),
   physicalActivity: physicalActivityWeeklyRequestSchema.nullable(),
   work: workWeeklyRequestSchema.nullable(),
+  otherActivityResponse: otherActivityResponseSchema.nullable(),
   otherActivities: z.array(otherActivityRequestSchema).max(50),
   alcoholBaselineReviewConfirmedVersionId: idOrNullSchema,
   tobaccoBaselineReviewConfirmedVersionId: idOrNullSchema
@@ -299,6 +316,7 @@ const publicPhysicalActivityWeeklySchema = z
   .object({
     id: screeningLifestyleUuidSchema,
     weeklyResponse: physicalActivityResponseSchema.nullable(),
+    sedentaryTimeResponse: sedentaryTimeResponseSchema.nullable(),
     sedentaryMinutesPerDay: z.number().int().min(0).max(1439).safe().nullable(),
     activities: z.array(publicActivitySchema),
     updatedAt: screeningLifestyleUtcTimestampSchema
@@ -373,6 +391,7 @@ const publicDraftSchema = z
     alcoholBaselineVersionId: idOrNullSchema,
     tobaccoBaselineVersionId: idOrNullSchema,
     workBaselineVersionId: idOrNullSchema,
+    otherActivityResponse: otherActivityResponseSchema.nullable(),
     alcohol: publicAlcoholWeeklySchema.nullable(),
     tobacco: publicTobaccoWeeklySchema.nullable(),
     physicalActivity: publicPhysicalActivityWeeklySchema.nullable(),

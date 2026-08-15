@@ -15,6 +15,7 @@ const draftRequest = {
   tobacco: null,
   physicalActivity: null,
   work: null,
+  otherActivityResponse: null,
   otherActivities: []
 }
 const requests = {

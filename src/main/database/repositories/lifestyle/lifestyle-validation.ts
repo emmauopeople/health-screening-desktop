@@ -22,6 +22,8 @@ import type {
   LifestyleOtherActivityCategory,
   LifestyleOtherActivityInput,
   LifestylePhysicalActivityWeeklyInput,
+  LifestyleSedentaryTimeResponse,
+  LifestyleOtherActivityWeeklyResponse,
   LifestylePhysicalDemand,
   LifestyleResponse,
   LifestyleShiftPattern,
@@ -153,6 +155,20 @@ const physicalActivityResponseCodes = new Set<LifestylePhysicalActivityResponse>
   'DECLINED',
   'NOT_APPLICABLE',
   'UNABLE_TO_ANSWER',
+  'PREFER_NOT_TO_ANSWER'
+])
+const sedentaryTimeResponseCodes = new Set<LifestyleSedentaryTimeResponse>([
+  'RECORDED',
+  'UNKNOWN',
+  'UNABLE_TO_ANSWER',
+  'DECLINED',
+  'PREFER_NOT_TO_ANSWER'
+])
+const otherActivityResponseCodes = new Set<LifestyleOtherActivityWeeklyResponse>([
+  'YES',
+  'NO',
+  'UNKNOWN',
+  'DECLINED',
   'PREFER_NOT_TO_ANSWER'
 ])
 const otherCategoryCodes = new Set<LifestyleOtherActivityCategory>([
@@ -360,6 +376,7 @@ function parseLifestyleDraftUpdateInputInternal(
       'alcoholBaselineVersionId',
       'tobaccoBaselineVersionId',
       'workBaselineVersionId',
+      'otherActivityResponse',
       'actorId',
       'occurredAt',
       'alcohol',
@@ -368,6 +385,19 @@ function parseLifestyleDraftUpdateInputInternal(
       'work',
       'otherActivities'
     ] as const)
+    const otherActivityResponse = parseNullableCode(
+      data.otherActivityResponse,
+      otherActivityResponseCodes
+    )
+    const otherActivities = parseOtherActivities(data.otherActivities)
+    if (otherActivityResponse === null && otherActivities.length > 0)
+      throw new RepositoryValidationError()
+    if (
+      otherActivityResponse !== null &&
+      otherActivityResponse !== 'YES' &&
+      otherActivities.length > 0
+    )
+      throw new RepositoryValidationError()
     return Object.freeze({
       id: parseEntityId(data.id),
       expectedRowVersion: parseVersion(data.expectedRowVersion),
@@ -375,6 +405,7 @@ function parseLifestyleDraftUpdateInputInternal(
       alcoholBaselineVersionId: parseNullableEntityId(data.alcoholBaselineVersionId),
       tobaccoBaselineVersionId: parseNullableEntityId(data.tobaccoBaselineVersionId),
       workBaselineVersionId: parseNullableEntityId(data.workBaselineVersionId),
+      otherActivityResponse,
       actorId: parseEntityId(data.actorId),
       occurredAt: parseUtcTimestamp(data.occurredAt),
       alcohol: data.alcohol === null ? null : parseAlcoholWeekly(data.alcohol),
@@ -382,7 +413,7 @@ function parseLifestyleDraftUpdateInputInternal(
       physicalActivity:
         data.physicalActivity === null ? null : parsePhysicalWeekly(data.physicalActivity),
       work: data.work === null ? null : parseWorkWeekly(data.work),
-      otherActivities: parseOtherActivities(data.otherActivities)
+      otherActivities
     })
   } catch (error) {
     throw toValidationError(error)
@@ -554,16 +585,28 @@ function parsePhysicalWeekly(value: unknown): LifestylePhysicalActivityWeeklyInp
   const data = readDataProperties(value, [
     'id',
     'weeklyResponse',
+    'sedentaryTimeResponse',
     'sedentaryMinutesPerDay',
     'activities'
   ] as const)
   const weeklyResponse = parseNullableCode(data.weeklyResponse, physicalActivityResponseCodes)
+  const sedentaryTimeResponse = parseNullableCode(
+    data.sedentaryTimeResponse,
+    sedentaryTimeResponseCodes
+  )
+  const sedentaryMinutesPerDay = parseNullableInteger(data.sedentaryMinutesPerDay, 0, 1439)
+  if (
+    sedentaryMinutesPerDay !== null &&
+    (sedentaryTimeResponse === null || sedentaryTimeResponse !== 'RECORDED')
+  )
+    throw new RepositoryValidationError()
   const activities = parseUniqueList(data.activities, parseActivity)
   if (weeklyResponse !== 'YES' && activities.length > 0) throw new RepositoryValidationError()
   return {
     id: parseEntityId(data.id),
     weeklyResponse,
-    sedentaryMinutesPerDay: parseNullableInteger(data.sedentaryMinutesPerDay, 0, 1439),
+    sedentaryTimeResponse,
+    sedentaryMinutesPerDay,
     activities
   }
 }
@@ -575,7 +618,27 @@ export function parseCompleteLifestylePhysicalActivityWeeklyInput(
   if (parsed.weeklyResponse === null) throw new RepositoryValidationError()
   if (parsed.weeklyResponse === 'YES' && parsed.activities.length === 0)
     throw new RepositoryValidationError()
+  if (parsed.sedentaryTimeResponse === null) throw new RepositoryValidationError()
+  if (
+    parsed.sedentaryTimeResponse === 'RECORDED'
+      ? parsed.sedentaryMinutesPerDay === null
+      : parsed.sedentaryMinutesPerDay !== null
+  )
+    throw new RepositoryValidationError()
   return parsed
+}
+
+export function parseCompleteLifestyleOtherActivityInput(
+  response: LifestyleOtherActivityWeeklyResponse | null,
+  rows: readonly LifestyleOtherActivityInput[]
+): {
+  readonly response: LifestyleOtherActivityWeeklyResponse
+  readonly rows: readonly LifestyleOtherActivityInput[]
+} {
+  const parsedResponse = parseCode(response, otherActivityResponseCodes)
+  if (parsedResponse === 'YES' && rows.length === 0) throw new RepositoryValidationError()
+  if (parsedResponse !== 'YES' && rows.length > 0) throw new RepositoryValidationError()
+  return Object.freeze({ response: parsedResponse, rows })
 }
 
 function parseActivity(value: unknown): LifestyleActivityInput {

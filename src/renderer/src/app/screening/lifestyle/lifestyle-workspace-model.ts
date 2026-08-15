@@ -500,6 +500,7 @@ export function createAlcoholSaveDraftRequest(
       ? {
           id: draft.physicalActivity.id,
           weeklyResponse: draft.physicalActivity.weeklyResponse,
+          sedentaryTimeResponse: draft.physicalActivity.sedentaryTimeResponse,
           sedentaryMinutesPerDay: draft.physicalActivity.sedentaryMinutesPerDay,
           activities: draft.physicalActivity.activities.map((activity) =>
             stripFields(activity, ['weeklyMinutes', 'updatedAt'])
@@ -507,6 +508,7 @@ export function createAlcoholSaveDraftRequest(
         }
       : null,
     work: draft?.work ? { id: draft.work.id, weeklyResponse: draft.work.weeklyResponse } : null,
+    otherActivityResponse: draft?.otherActivityResponse ?? null,
     otherActivities: draft?.otherActivities.map((activity) => stripUpdatedAt(activity)) ?? []
   }
 }

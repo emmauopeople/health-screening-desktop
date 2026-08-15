@@ -344,6 +344,7 @@ describe('screening Lifestyle application service integration', () => {
           physicalActivity: {
             id: null,
             weeklyResponse: 'YES',
+            sedentaryTimeResponse: null,
             sedentaryMinutesPerDay: null,
             activities: []
           }
@@ -363,6 +364,7 @@ describe('screening Lifestyle application service integration', () => {
           physicalActivity: {
             id: null,
             weeklyResponse: 'NO',
+            sedentaryTimeResponse: 'RECORDED',
             sedentaryMinutesPerDay: 60,
             activities: [activity(null)]
           }
@@ -647,6 +649,7 @@ describe('screening Lifestyle application service integration', () => {
           physicalActivity: {
             id: null,
             weeklyResponse: response,
+            sedentaryTimeResponse: 'UNKNOWN',
             sedentaryMinutesPerDay: null,
             activities: []
           },
@@ -742,6 +745,7 @@ describe('screening Lifestyle application service integration', () => {
       const draft = service.saveLifestyleDraft(
         completeWeeklyRequest({
           expectedVersion: work.workspace.draft.rowVersion,
+          otherActivityResponse: 'YES',
           otherActivities: [otherActivity(null)]
         })
       )
@@ -783,6 +787,7 @@ describe('screening Lifestyle application service integration', () => {
             activities: [{ ...activity(null), averageMinutesPerActiveDay: 31 }]
           },
           work: { id: null, weeklyResponse: 'LESS_THAN_USUAL' },
+          otherActivityResponse: 'YES',
           otherActivities: [otherActivity(null)]
         }),
         alcoholBaselineReviewConfirmedVersionId: null,
@@ -1090,6 +1095,7 @@ function createDraftRequest(
     tobacco: null,
     physicalActivity: null,
     work: null,
+    otherActivityResponse: null,
     otherActivities: [],
     ...overrides
   }
@@ -1123,10 +1129,12 @@ function completeWeeklyRequest(
     physicalActivity: {
       id: null,
       weeklyResponse: 'YES',
+      sedentaryTimeResponse: 'RECORDED',
       sedentaryMinutesPerDay: 60,
       activities: [activity(null)]
     },
     work: { id: null, weeklyResponse: 'USUAL' },
+    otherActivityResponse: 'NO',
     ...overrides
   })
 }

@@ -55,6 +55,10 @@ export type LifestyleWorkWeeklyResponse =
   | 'PREFER_NOT_TO_ANSWER'
 export type LifestyleOtherActivityCategory =
   'FARMING_GARDENING' | 'HOUSEHOLD' | 'CAREGIVING' | 'COMMUNITY' | 'COMMUTE' | 'SPORT' | 'OTHER'
+export type LifestyleSedentaryTimeResponse =
+  'RECORDED' | 'UNKNOWN' | 'UNABLE_TO_ANSWER' | 'DECLINED' | 'PREFER_NOT_TO_ANSWER'
+export type LifestyleOtherActivityWeeklyResponse =
+  'YES' | 'NO' | 'UNKNOWN' | 'DECLINED' | 'PREFER_NOT_TO_ANSWER'
 
 export type LifestyleDraftStatus = 'DRAFT' | 'IN_PROGRESS' | 'COMPLETE'
 export type LifestyleDate = string & { readonly __brand: 'LifestyleDate' }
@@ -219,6 +223,7 @@ export interface LifestylePhysicalActivityWeeklyRecord {
   readonly id: EntityId
   readonly lifestyleDraftId: EntityId
   readonly weeklyResponse: LifestyleResponse | 'UNABLE_TO_ANSWER' | null
+  readonly sedentaryTimeResponse: LifestyleSedentaryTimeResponse | null
   readonly sedentaryMinutesPerDay: number | null
   readonly createdBy: EntityId
   readonly createdAt: UtcTimestamp
@@ -265,6 +270,7 @@ export interface LifestyleDraftRecord {
   readonly alcoholBaselineVersionId: EntityId | null
   readonly tobaccoBaselineVersionId: EntityId | null
   readonly workBaselineVersionId: EntityId | null
+  readonly otherActivityResponse: LifestyleOtherActivityWeeklyResponse | null
   readonly createdBy: EntityId
   readonly createdAt: UtcTimestamp
   readonly updatedBy: EntityId
@@ -297,6 +303,7 @@ export interface LifestyleDraftUpdateInput {
   readonly alcoholBaselineVersionId: EntityId | null
   readonly tobaccoBaselineVersionId: EntityId | null
   readonly workBaselineVersionId: EntityId | null
+  readonly otherActivityResponse: LifestyleOtherActivityWeeklyResponse | null
   readonly actorId: EntityId
   readonly occurredAt: UtcTimestamp
   readonly alcohol: LifestyleAlcoholWeeklyInput | null
@@ -358,6 +365,7 @@ export interface LifestyleActivityInput {
 export interface LifestylePhysicalActivityWeeklyInput {
   readonly id: EntityId
   readonly weeklyResponse: LifestyleResponse | 'UNABLE_TO_ANSWER' | null
+  readonly sedentaryTimeResponse: LifestyleSedentaryTimeResponse | null
   readonly sedentaryMinutesPerDay: number | null
   readonly activities: readonly LifestyleActivityInput[]
 }

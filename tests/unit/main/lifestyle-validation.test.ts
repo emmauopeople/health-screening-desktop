@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   calculateLifestyleWeeklyMinutes,
   parseCompleteLifestyleAlcoholWeeklyInput,
+  parseCompleteLifestyleOtherActivityInput,
   parseCompleteLifestylePhysicalActivityWeeklyInput,
   parseCompleteLifestyleTobaccoWeeklyInput,
   parseLifestyleAlcoholBaselineInput,
@@ -105,6 +106,7 @@ describe('Lifestyle persistence validation', () => {
       alcoholBaselineVersionId: null,
       tobaccoBaselineVersionId: null,
       workBaselineVersionId: null,
+      otherActivityResponse: null,
       actorId: id,
       occurredAt: timestamp,
       tobacco: null,
@@ -461,6 +463,7 @@ describe('Lifestyle persistence validation', () => {
         physicalActivity: {
           id,
           weeklyResponse: 'YES',
+          sedentaryTimeResponse: null,
           sedentaryMinutesPerDay: null,
           activities: []
         }
@@ -472,6 +475,7 @@ describe('Lifestyle persistence validation', () => {
         physicalActivity: {
           id,
           weeklyResponse: 'YES',
+          sedentaryTimeResponse: null,
           sedentaryMinutesPerDay: null,
           activities: [activity]
         }
@@ -483,6 +487,7 @@ describe('Lifestyle persistence validation', () => {
         physicalActivity: {
           id,
           weeklyResponse: 'YES',
+          sedentaryTimeResponse: null,
           sedentaryMinutesPerDay: null,
           activities: [activity, { ...activity, id: alternateId, sequenceNumber: 2 }]
         }
@@ -494,6 +499,7 @@ describe('Lifestyle persistence validation', () => {
         physicalActivity: {
           id,
           weeklyResponse: 'NO',
+          sedentaryTimeResponse: 'RECORDED',
           sedentaryMinutesPerDay: 120,
           activities: []
         }
@@ -514,6 +520,7 @@ describe('Lifestyle persistence validation', () => {
           physicalActivity: {
             id,
             weeklyResponse,
+            sedentaryTimeResponse: null,
             sedentaryMinutesPerDay: null,
             activities: [activity]
           }
@@ -524,6 +531,7 @@ describe('Lifestyle persistence validation', () => {
       parseCompleteLifestylePhysicalActivityWeeklyInput({
         id,
         weeklyResponse: null,
+        sedentaryTimeResponse: null,
         sedentaryMinutesPerDay: null,
         activities: []
       })
@@ -532,6 +540,7 @@ describe('Lifestyle persistence validation', () => {
       parseCompleteLifestylePhysicalActivityWeeklyInput({
         id,
         weeklyResponse: 'YES',
+        sedentaryTimeResponse: null,
         sedentaryMinutesPerDay: null,
         activities: []
       })
@@ -540,7 +549,8 @@ describe('Lifestyle persistence validation', () => {
       parseCompleteLifestylePhysicalActivityWeeklyInput({
         id,
         weeklyResponse: 'YES',
-        sedentaryMinutesPerDay: null,
+        sedentaryTimeResponse: 'RECORDED',
+        sedentaryMinutesPerDay: 60,
         activities: [activity]
       }).weeklyResponse
     ).toBe('YES')
@@ -548,6 +558,7 @@ describe('Lifestyle persistence validation', () => {
       parseCompleteLifestylePhysicalActivityWeeklyInput({
         id,
         weeklyResponse: 'NO',
+        sedentaryTimeResponse: 'UNKNOWN',
         sedentaryMinutesPerDay: null,
         activities: []
       }).weeklyResponse
@@ -556,10 +567,113 @@ describe('Lifestyle persistence validation', () => {
       parseCompleteLifestylePhysicalActivityWeeklyInput({
         id,
         weeklyResponse: 'DECLINED',
+        sedentaryTimeResponse: null,
         sedentaryMinutesPerDay: null,
         activities: [activity]
       })
     ).toThrow()
+  })
+
+  it('preserves explicit sedentary-time response semantics', () => {
+    const base = draftUpdateBase()
+    for (const response of [
+      'UNKNOWN',
+      'UNABLE_TO_ANSWER',
+      'DECLINED',
+      'PREFER_NOT_TO_ANSWER'
+    ] as const) {
+      expect(
+        parseLifestyleDraftUpdateInput({
+          ...base,
+          physicalActivity: {
+            id,
+            weeklyResponse: 'NO',
+            sedentaryTimeResponse: response,
+            sedentaryMinutesPerDay: null,
+            activities: []
+          }
+        }).physicalActivity?.sedentaryTimeResponse
+      ).toBe(response)
+    }
+    expect(
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        physicalActivity: {
+          id,
+          weeklyResponse: 'NO',
+          sedentaryTimeResponse: 'RECORDED',
+          sedentaryMinutesPerDay: 0,
+          activities: []
+        }
+      }).physicalActivity?.sedentaryMinutesPerDay
+    ).toBe(0)
+    expect(() =>
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        physicalActivity: {
+          id,
+          weeklyResponse: 'NO',
+          sedentaryTimeResponse: 'UNKNOWN',
+          sedentaryMinutesPerDay: 1,
+          activities: []
+        }
+      })
+    ).toThrow()
+    expect(() =>
+      parseCompleteLifestylePhysicalActivityWeeklyInput({
+        id,
+        weeklyResponse: 'NO',
+        sedentaryTimeResponse: 'UNKNOWN',
+        sedentaryMinutesPerDay: null,
+        activities: []
+      })
+    ).not.toThrow()
+    expect(() =>
+      parseCompleteLifestylePhysicalActivityWeeklyInput({
+        id,
+        weeklyResponse: 'NO',
+        sedentaryTimeResponse: 'RECORDED',
+        sedentaryMinutesPerDay: null,
+        activities: []
+      })
+    ).toThrow()
+  })
+
+  it('preserves explicit Other Activity response semantics', () => {
+    const base = draftUpdateBase()
+    expect(
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        otherActivityResponse: null,
+        otherActivities: []
+      }).otherActivityResponse
+    ).toBeNull()
+    expect(
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        otherActivityResponse: 'YES',
+        otherActivities: []
+      }).otherActivityResponse
+    ).toBe('YES')
+    expect(() =>
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        otherActivityResponse: null,
+        otherActivities: [
+          {
+            id,
+            sequenceNumber: 1,
+            category: 'SPORT',
+            description: 'Sport',
+            daysInPastSevenDays: 1,
+            averageMinutesPerDay: 30,
+            intensity: 'LIGHT'
+          }
+        ]
+      })
+    ).toThrow()
+    expect(() => parseCompleteLifestyleOtherActivityInput('YES', [])).toThrow()
+    expect(() => parseCompleteLifestyleOtherActivityInput('NO', [])).not.toThrow()
   })
 })
 
@@ -573,6 +687,7 @@ function draftUpdateBase(): LifestyleDraftUpdateInput {
     alcoholBaselineVersionId: null,
     tobaccoBaselineVersionId: null,
     workBaselineVersionId: null,
+    otherActivityResponse: null,
     actorId: id,
     occurredAt: timestamp,
     alcohol: null,

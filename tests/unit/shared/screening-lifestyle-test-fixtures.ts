@@ -16,6 +16,7 @@ export const validLifestyleWorkspace: ScreeningLifestyleWorkspace = {
     alcoholBaselineVersionId: lifestyleSecondId,
     tobaccoBaselineVersionId: lifestyleEncounterId,
     workBaselineVersionId: lifestyleSecondId,
+    otherActivityResponse: 'YES',
     alcohol: {
       id: lifestyleEncounterId,
       weeklyResponse: 'YES',
@@ -49,6 +50,7 @@ export const validLifestyleWorkspace: ScreeningLifestyleWorkspace = {
     physicalActivity: {
       id: lifestyleEncounterId,
       weeklyResponse: 'YES',
+      sedentaryTimeResponse: 'RECORDED',
       sedentaryMinutesPerDay: 120,
       activities: [
         {

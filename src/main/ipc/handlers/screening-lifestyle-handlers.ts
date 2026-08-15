@@ -285,6 +285,7 @@ function toPublicDraft(draft: LifestyleDraftSummary): LifestyleDraftSummary {
     alcoholBaselineVersionId: draft.alcoholBaselineVersionId,
     tobaccoBaselineVersionId: draft.tobaccoBaselineVersionId,
     workBaselineVersionId: draft.workBaselineVersionId,
+    otherActivityResponse: draft.otherActivityResponse,
     alcohol:
       draft.alcohol === null
         ? null

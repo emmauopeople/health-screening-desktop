@@ -242,6 +242,7 @@ describe('Lifestyle Alcohol workspace model', () => {
     expect(request.physicalActivity).toEqual({
       id: workspace.draft?.physicalActivity?.id,
       weeklyResponse: workspace.draft?.physicalActivity?.weeklyResponse,
+      sedentaryTimeResponse: workspace.draft?.physicalActivity?.sedentaryTimeResponse,
       sedentaryMinutesPerDay: workspace.draft?.physicalActivity?.sedentaryMinutesPerDay,
       activities: []
     })
@@ -591,6 +592,7 @@ function workspaceWithDraft({
       alcoholBaselineVersionId: alcoholBaselineId,
       tobaccoBaselineVersionId: tobaccoBaselineId,
       workBaselineVersionId: workBaselineId,
+      otherActivityResponse: null,
       alcohol: {
         id: alcoholId,
         weeklyResponse: 'YES',
@@ -611,6 +613,7 @@ function workspaceWithDraft({
       physicalActivity: {
         id: '13131313-1313-4131-8131-131313131313',
         weeklyResponse: 'YES',
+        sedentaryTimeResponse: 'RECORDED',
         sedentaryMinutesPerDay: 30,
         activities: [],
         updatedAt: timestamp

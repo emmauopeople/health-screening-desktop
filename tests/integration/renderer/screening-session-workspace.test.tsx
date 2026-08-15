@@ -2084,6 +2084,7 @@ function publicLifestyleWorkspaceWithAlcohol({
         ? 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
         : null,
       workBaselineVersionId: includeOtherSections ? 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' : null,
+      otherActivityResponse: includeOtherSections ? 'YES' : null,
       alcohol: {
         id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
         weeklyResponse,
@@ -2120,6 +2121,7 @@ function publicLifestyleWorkspaceWithAlcohol({
         ? {
             id: '13131313-1313-4131-8131-131313131313',
             weeklyResponse: 'YES',
+            sedentaryTimeResponse: 'RECORDED',
             sedentaryMinutesPerDay: 30,
             activities: [
               {

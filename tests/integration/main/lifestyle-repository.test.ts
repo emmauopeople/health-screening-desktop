@@ -174,6 +174,7 @@ describe('Lifestyle persistence foundation', () => {
           physicalActivity: {
             id: parseEntityId(ids.physical),
             weeklyResponse: 'YES',
+            sedentaryTimeResponse: 'RECORDED',
             sedentaryMinutesPerDay: 60,
             activities: [
               {
@@ -188,11 +189,14 @@ describe('Lifestyle persistence foundation', () => {
             ]
           },
           work: { id: parseEntityId(ids.work), weeklyResponse: 'USUAL' },
+          otherActivityResponse: null,
           otherActivities: []
         })
       )
       expect(firstUpdate.status).toBe('UPDATED')
       if (firstUpdate.status !== 'UPDATED') return
+      expect(firstUpdate.draft.physicalActivity?.sedentaryTimeResponse).toBe('RECORDED')
+      expect(firstUpdate.draft.otherActivityResponse).toBeNull()
       const productCreatedAt = firstUpdate.draft.tobacco?.products[0]?.createdAt
       const productUpdatedAt = firstUpdate.draft.tobacco?.products[0]?.updatedAt
       const activityMinutes = firstUpdate.draft.physicalActivity?.activities[0]?.weeklyMinutes
@@ -228,6 +232,7 @@ describe('Lifestyle persistence foundation', () => {
           },
           physicalActivity: null,
           work: null,
+          otherActivityResponse: null,
           otherActivities: []
         })
       )
@@ -267,6 +272,7 @@ describe('Lifestyle persistence foundation', () => {
           },
           physicalActivity: null,
           work: null,
+          otherActivityResponse: null,
           otherActivities: []
         })
       )
@@ -336,6 +342,7 @@ describe('Lifestyle persistence foundation', () => {
             },
             physicalActivity: null,
             work: null,
+            otherActivityResponse: null,
             otherActivities: []
           })
         )
@@ -396,6 +403,7 @@ describe('Lifestyle persistence foundation', () => {
           physicalActivity: {
             id: parseEntityId(ids.physical),
             weeklyResponse: 'YES',
+            sedentaryTimeResponse: null,
             sedentaryMinutesPerDay: null,
             activities: []
           }
@@ -417,6 +425,7 @@ describe('Lifestyle persistence foundation', () => {
           physicalActivity: {
             id: parseEntityId(ids.physical),
             weeklyResponse: 'NO',
+            sedentaryTimeResponse: 'RECORDED',
             sedentaryMinutesPerDay: 120,
             activities: []
           }
@@ -463,12 +472,48 @@ describe('Lifestyle persistence foundation', () => {
               physicalActivity: {
                 id: parseEntityId(ids.physical),
                 weeklyResponse,
+                sedentaryTimeResponse: null,
                 sedentaryMinutesPerDay: null,
                 activities: [activity(ids.activity, 1, 3)]
               }
             })
           )
         ).toThrow(RepositoryValidationError)
+    })
+  })
+
+  it('enforces activity response codes at the database boundary', async () => {
+    await withLifestyleDatabase(({ connection, executor, repository }) => {
+      const draft = executor.run((context) =>
+        repository.insertDraft(context.connection, createDraftInput())
+      )
+      expect(() =>
+        connection
+          .prepare(
+            'INSERT INTO lifestyle_physical_activity_weekly_records (id, lifestyle_draft_id, weekly_response, sedentary_time_response, sedentary_minutes_per_day, created_by, created_at, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+          )
+          .run(
+            ids.physical,
+            draft.id,
+            'NO',
+            'INVALID',
+            null,
+            ids.user,
+            firstTime,
+            ids.user,
+            firstTime
+          )
+      ).toThrow()
+      expect(() =>
+        connection
+          .prepare('UPDATE lifestyle_drafts SET other_activity_response = ? WHERE id = ?')
+          .run('INVALID', draft.id)
+      ).toThrow()
+      expect(
+        connection
+          .prepare('SELECT other_activity_response FROM lifestyle_drafts WHERE id = ?')
+          .get(draft.id)
+      ).toEqual({ other_activity_response: null })
     })
   })
 
@@ -629,6 +674,7 @@ describe('Lifestyle persistence foundation', () => {
       )
       expect(firstUpdate.status).toBe('UPDATED')
       if (firstUpdate.status !== 'UPDATED') return
+      expect(firstUpdate.draft.otherActivityResponse).toBe('YES')
       const originalA = firstUpdate.draft.otherActivities[0]
       const originalB = firstUpdate.draft.otherActivities[1]
 
@@ -1139,10 +1185,12 @@ describe('Lifestyle persistence foundation', () => {
             physicalActivity: {
               id: parseEntityId(ids.physical),
               weeklyResponse: 'YES',
+              sedentaryTimeResponse: 'RECORDED',
               sedentaryMinutesPerDay: 60,
               activities: [activity(ids.activity, 1, 3)]
             },
             work: { id: parseEntityId(ids.work), weeklyResponse: 'USUAL' },
+            otherActivityResponse: 'YES',
             otherActivities: [otherActivity(ids.otherActivityForeign, 1, 'SPORT', 'Cross draft')]
           })
         })
@@ -1198,6 +1246,7 @@ function emptyDraftUpdate(
     tobacco: null,
     physicalActivity: null,
     work: null,
+    otherActivityResponse: 'YES',
     otherActivities: []
   }
 }

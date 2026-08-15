@@ -353,7 +353,7 @@ function insertDraft(
     const parsed = parseLifestyleDraftOwnershipInput(input)
     validateDraftEncounterOwnership(tx, parsed)
     tx.prepare(
-      `INSERT INTO lifestyle_drafts (id, encounter_id, status, patient_id, screening_session_id, location_id, installation_id, period_start, period_end, alcohol_baseline_version_id, tobacco_baseline_version_id, work_baseline_version_id, created_by, created_at, updated_by, updated_at, row_version) VALUES (?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, 1)`
+      `INSERT INTO lifestyle_drafts (id, encounter_id, status, patient_id, screening_session_id, location_id, installation_id, period_start, period_end, alcohol_baseline_version_id, tobacco_baseline_version_id, work_baseline_version_id, other_activity_response, created_by, created_at, updated_by, updated_at, row_version) VALUES (?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?, ?, ?, 1)`
     ).run(
       parsed.id,
       parsed.encounterId,
@@ -399,12 +399,13 @@ function updateDraft(
       parsed.workBaselineVersionId
     )
     tx.prepare(
-      `UPDATE lifestyle_drafts SET status = ?, alcohol_baseline_version_id = ?, tobacco_baseline_version_id = ?, work_baseline_version_id = ?, updated_by = ?, updated_at = ?, row_version = row_version + 1 WHERE id = ? AND row_version = ?`
+      `UPDATE lifestyle_drafts SET status = ?, alcohol_baseline_version_id = ?, tobacco_baseline_version_id = ?, work_baseline_version_id = ?, other_activity_response = ?, updated_by = ?, updated_at = ?, row_version = row_version + 1 WHERE id = ? AND row_version = ?`
     ).run(
       parsed.status,
       parsed.alcoholBaselineVersionId,
       parsed.tobaccoBaselineVersionId,
       parsed.workBaselineVersionId,
+      parsed.otherActivityResponse,
       parsed.actorId,
       parsed.occurredAt,
       parsed.id,
@@ -619,6 +620,7 @@ function reconcilePhysical(
   input: {
     id: EntityId
     weeklyResponse: string | null
+    sedentaryTimeResponse: string | null
     sedentaryMinutesPerDay: number | null
     activities: readonly LifestyleActivityInput[]
   },
@@ -627,16 +629,17 @@ function reconcilePhysical(
 ): void {
   const existing = tx
     .prepare(
-      'SELECT id, weekly_response, sedentary_minutes_per_day FROM lifestyle_physical_activity_weekly_records WHERE lifestyle_draft_id = ?'
+      'SELECT id, weekly_response, sedentary_time_response, sedentary_minutes_per_day FROM lifestyle_physical_activity_weekly_records WHERE lifestyle_draft_id = ?'
     )
     .get(draftId) as Record<string, unknown> | undefined
   if (!existing)
     tx.prepare(
-      'INSERT INTO lifestyle_physical_activity_weekly_records (id, lifestyle_draft_id, weekly_response, sedentary_minutes_per_day, created_by, created_at, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO lifestyle_physical_activity_weekly_records (id, lifestyle_draft_id, weekly_response, sedentary_time_response, sedentary_minutes_per_day, created_by, created_at, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(
       input.id,
       draftId,
       input.weeklyResponse,
+      input.sedentaryTimeResponse,
       input.sedentaryMinutesPerDay,
       actorId,
       at,
@@ -647,11 +650,19 @@ function reconcilePhysical(
     if (String(existing.id) !== input.id) throw new RepositoryValidationError()
     if (
       existing.weekly_response !== input.weeklyResponse ||
+      existing.sedentary_time_response !== input.sedentaryTimeResponse ||
       existing.sedentary_minutes_per_day !== input.sedentaryMinutesPerDay
     )
       tx.prepare(
-        'UPDATE lifestyle_physical_activity_weekly_records SET weekly_response = ?, sedentary_minutes_per_day = ?, updated_by = ?, updated_at = ? WHERE id = ?'
-      ).run(input.weeklyResponse, input.sedentaryMinutesPerDay, actorId, at, input.id)
+        'UPDATE lifestyle_physical_activity_weekly_records SET weekly_response = ?, sedentary_time_response = ?, sedentary_minutes_per_day = ?, updated_by = ?, updated_at = ? WHERE id = ?'
+      ).run(
+        input.weeklyResponse,
+        input.sedentaryTimeResponse,
+        input.sedentaryMinutesPerDay,
+        actorId,
+        at,
+        input.id
+      )
   }
   reconcileRows(
     tx,
@@ -1020,6 +1031,8 @@ function readAggregate(
           : parseEntityId(row.tobacco_baseline_version_id),
       workBaselineVersionId:
         row.work_baseline_version_id === null ? null : parseEntityId(row.work_baseline_version_id),
+      otherActivityResponse:
+        row.other_activity_response as LifestyleDraftRecord['otherActivityResponse'],
       createdBy: parseEntityId(row.created_by),
       createdAt: parseUtcTimestamp(row.created_at),
       updatedBy: parseEntityId(row.updated_by),
@@ -1114,6 +1127,8 @@ function readPhysical(
       | 'UNABLE_TO_ANSWER'
       | 'PREFER_NOT_TO_ANSWER'
       | null,
+    sedentaryTimeResponse: row.sedentary_time_response as
+      'RECORDED' | 'UNKNOWN' | 'UNABLE_TO_ANSWER' | 'DECLINED' | 'PREFER_NOT_TO_ANSWER' | null,
     sedentaryMinutesPerDay: nullableNumber(row.sedentary_minutes_per_day),
     createdBy: parseEntityId(row.created_by),
     createdAt: parseUtcTimestamp(row.created_at),

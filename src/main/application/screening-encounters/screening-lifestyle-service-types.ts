@@ -15,7 +15,9 @@ import type {
   LifestyleWorkBaselineRecord,
   LifestyleWorkWeeklyInput,
   LifestyleOtherActivityInput,
+  LifestyleOtherActivityWeeklyResponse,
   LifestylePhysicalActivityWeeklyInput,
+  LifestyleSedentaryTimeResponse,
   LocationRepository,
   ScreeningEncounterOutboxRepository,
   ScreeningEncounterRepository,
@@ -116,6 +118,7 @@ export interface LifestyleActivitySummary {
 export interface LifestylePhysicalActivityWeeklySummary {
   readonly id: EntityId
   readonly weeklyResponse: LifestylePhysicalActivityWeeklyInput['weeklyResponse']
+  readonly sedentaryTimeResponse: LifestyleSedentaryTimeResponse | null
   readonly sedentaryMinutesPerDay: number | null
   readonly activities: readonly LifestyleActivitySummary[]
   readonly updatedAt: UtcTimestamp
@@ -148,6 +151,7 @@ export interface LifestyleDraftSummary {
   readonly alcoholBaselineVersionId: EntityId | null
   readonly tobaccoBaselineVersionId: EntityId | null
   readonly workBaselineVersionId: EntityId | null
+  readonly otherActivityResponse: LifestyleOtherActivityWeeklyResponse | null
   readonly alcohol: LifestyleAlcoholWeeklySummary | null
   readonly tobacco: LifestyleTobaccoWeeklySummary | null
   readonly physicalActivity: LifestylePhysicalActivityWeeklySummary | null
@@ -221,6 +225,7 @@ export interface SaveLifestyleDraftRequest {
   readonly tobacco: LifestyleTobaccoWeeklyRequest | null
   readonly physicalActivity: LifestylePhysicalActivityWeeklyRequest | null
   readonly work: LifestyleWorkWeeklyRequest | null
+  readonly otherActivityResponse: LifestyleOtherActivityWeeklyResponse | null
   readonly otherActivities: readonly LifestyleOtherActivityRequest[]
 }
 

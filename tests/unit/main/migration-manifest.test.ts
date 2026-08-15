@@ -43,9 +43,10 @@ describe('migration manifest', () => {
       { version: 6, name: 'installation-location-configuration', checksumLength: 64 },
       { version: 7, name: 'baseline-active-protocol', checksumLength: 64 },
       { version: 8, name: 'screening-vitals-drafts', checksumLength: 64 },
-      { version: 9, name: 'lifestyle-foundation', checksumLength: 64 }
+      { version: 9, name: 'lifestyle-foundation', checksumLength: 64 },
+      { version: 10, name: 'lifestyle-activity-response-semantics', checksumLength: 64 }
     ])
-    expect(targetSchemaVersion).toBe(9)
+    expect(targetSchemaVersion).toBe(10)
     expect(resolved[0]?.checksum).toBe(
       '36bb5114185c0a691c8ba8dc1fdfc749a6f5a7069cbcb5efb88a6b55dd6e5fed'
     )

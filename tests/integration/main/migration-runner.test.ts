@@ -27,7 +27,7 @@ const fixedClock = {
 }
 
 describe('migration runner integration', () => {
-  it('upgrades a fresh HSD-006 database to schema version 9 and is idempotent', async () => {
+  it('upgrades a fresh HSD-006 database to schema version 10 and is idempotent', async () => {
     await withDatabase((connection) => {
       const logger = createLogger()
       const migrate = createProductionDatabaseMigrationRunner({
@@ -42,10 +42,10 @@ describe('migration runner integration', () => {
 
       expect(firstSummary).toEqual({
         previousVersion: 0,
-        currentVersion: 9,
-        appliedVersions: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+        currentVersion: 10,
+        appliedVersions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
       })
-      expect(readUserVersion(connection)).toBe(9)
+      expect(readUserVersion(connection)).toBe(10)
       expect(readBaselineProtocolRows(connection)).toEqual([
         {
           id: '00000000-0000-4000-8000-000000000007',
@@ -67,18 +67,18 @@ describe('migration runner integration', () => {
       const secondSummary = migrate(connection)
 
       expect(secondSummary).toEqual({
-        previousVersion: 9,
-        currentVersion: 9,
+        previousVersion: 10,
+        currentVersion: 10,
         appliedVersions: []
       })
-      expect(readLedgerRows(connection)).toHaveLength(9)
+      expect(readLedgerRows(connection)).toHaveLength(10)
       expect(logger.info.mock.calls.flat()).toContain(
-        'Database migrations current; schemaVersion=9'
+        'Database migrations current; schemaVersion=10'
       )
     })
   })
 
-  it('upgrades an existing schema version 3 database to schema version 9', async () => {
+  it('upgrades an existing schema version 3 database to schema version 10', async () => {
     await withDatabase((connection) => {
       runDatabaseMigrations({
         connection,
@@ -100,13 +100,83 @@ describe('migration runner integration', () => {
 
       expect(summary).toEqual({
         previousVersion: 3,
-        currentVersion: 9,
-        appliedVersions: [4, 5, 6, 7, 8, 9]
+        currentVersion: 10,
+        appliedVersions: [4, 5, 6, 7, 8, 9, 10]
       })
-      expect(readUserVersion(connection)).toBe(9)
+      expect(readUserVersion(connection)).toBe(10)
       expect(readLedgerRows(connection).map((row) => row.version)).toEqual([
-        1, 2, 3, 4, 5, 6, 7, 8, 9
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10
       ])
+    })
+  })
+
+  it('backfills activity response semantics without rewriting existing activity rows', async () => {
+    await withDatabase((connection) => {
+      runDatabaseMigrations({
+        connection,
+        migrations: databaseMigrations.slice(0, 9),
+        applicationVersion: '1.0.0',
+        logger: createLogger(),
+        clock: fixedClock,
+        expectedHighestVersion: 9
+      })
+      seedActivityMigrationGraph(connection)
+
+      connection.pragma('foreign_keys = OFF')
+      connection.exec(
+        "INSERT INTO lifestyle_drafts (id, encounter_id, status, patient_id, screening_session_id, location_id, installation_id, period_start, period_end, alcohol_baseline_version_id, tobacco_baseline_version_id, work_baseline_version_id, created_by, created_at, updated_by, updated_at, row_version) VALUES ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'DRAFT', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'ffffffff-ffff-4fff-8fff-ffffffffffff', '2026-07-23', '2026-07-29', NULL, NULL, NULL, '11111111-1111-4111-8111-111111111111', '2026-07-29T12:00:00.000Z', '11111111-1111-4111-8111-111111111111', '2026-07-29T12:00:00.000Z', 1)"
+      )
+      connection.exec(
+        "INSERT INTO lifestyle_physical_activity_weekly_records (id, lifestyle_draft_id, weekly_response, sedentary_minutes_per_day, created_by, created_at, updated_by, updated_at) VALUES ('12121212-1212-4121-8121-121212121212', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'YES', 30, '11111111-1111-4111-8111-111111111111', '2026-07-29T12:00:00.000Z', '11111111-1111-4111-8111-111111111111', '2026-07-29T12:00:00.000Z')"
+      )
+      connection.exec(
+        "INSERT INTO lifestyle_physical_activity_weekly_records (id, lifestyle_draft_id, weekly_response, sedentary_minutes_per_day, created_by, created_at, updated_by, updated_at) VALUES ('13131313-1313-4131-8131-131313131313', 'abababab-abab-4bab-8bab-abababababab', NULL, NULL, '11111111-1111-4111-8111-111111111111', '2026-07-29T12:00:00.000Z', '11111111-1111-4111-8111-111111111111', '2026-07-29T12:00:00.000Z')"
+      )
+      connection.exec(
+        "INSERT INTO lifestyle_drafts (id, encounter_id, status, patient_id, screening_session_id, location_id, installation_id, period_start, period_end, alcohol_baseline_version_id, tobacco_baseline_version_id, work_baseline_version_id, created_by, created_at, updated_by, updated_at, row_version) VALUES ('abababab-abab-4bab-8bab-abababababab', 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd', 'DRAFT', '99999999-9999-4999-8999-999999999999', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'ffffffff-ffff-4fff-8fff-ffffffffffff', '2026-07-23', '2026-07-29', NULL, NULL, NULL, '11111111-1111-4111-8111-111111111111', '2026-07-29T12:00:00.000Z', '11111111-1111-4111-8111-111111111111', '2026-07-29T12:00:00.000Z', 1)"
+      )
+      connection.exec(
+        "INSERT INTO lifestyle_other_activity_rows (id, lifestyle_draft_id, sequence_number, category, description, days_in_past_seven_days, average_minutes_per_day, intensity, created_by, created_at, updated_by, updated_at) VALUES ('14141414-1414-4141-8141-141414141414', 'abababab-abab-4bab-8bab-abababababab', 1, 'SPORT', 'Existing row', 1, 30, 'LIGHT', '11111111-1111-4111-8111-111111111111', '2026-07-29T12:00:00.000Z', '11111111-1111-4111-8111-111111111111', '2026-07-29T12:00:00.000Z')"
+      )
+      connection.pragma('foreign_keys = ON')
+
+      const beforeOther = connection.prepare('SELECT * FROM lifestyle_other_activity_rows').all()
+      const migrate = createProductionDatabaseMigrationRunner({
+        applicationVersion: '1.0.0',
+        logger: createLogger(),
+        clock: fixedClock
+      })
+      expect(migrate(connection).appliedVersions).toEqual([10])
+      expect(
+        connection
+          .prepare(
+            'SELECT sedentary_time_response FROM lifestyle_physical_activity_weekly_records WHERE id = ?'
+          )
+          .get('12121212-1212-4121-8121-121212121212')
+      ).toEqual({ sedentary_time_response: 'RECORDED' })
+      expect(
+        connection
+          .prepare(
+            'SELECT sedentary_time_response FROM lifestyle_physical_activity_weekly_records WHERE id = ?'
+          )
+          .get('13131313-1313-4131-8131-131313131313')
+      ).toEqual({ sedentary_time_response: null })
+      expect(
+        connection
+          .prepare('SELECT other_activity_response FROM lifestyle_drafts WHERE id = ?')
+          .get('abababab-abab-4bab-8bab-abababababab')
+      ).toEqual({ other_activity_response: 'YES' })
+      expect(
+        connection
+          .prepare('SELECT other_activity_response FROM lifestyle_drafts WHERE id = ?')
+          .get('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+      ).toEqual({ other_activity_response: null })
+      expect(connection.prepare('SELECT * FROM lifestyle_other_activity_rows').all()).toEqual(
+        beforeOther
+      )
+      expect(connection.pragma('foreign_key_check')).toEqual([])
+      expect(connection.pragma('integrity_check')).toEqual([{ integrity_check: 'ok' }])
+      expect(migrate(connection).appliedVersions).toEqual([])
     })
   })
 
@@ -132,10 +202,10 @@ describe('migration runner integration', () => {
 
       expect(summary).toEqual({
         previousVersion: 6,
-        currentVersion: 9,
-        appliedVersions: [7, 8, 9]
+        currentVersion: 10,
+        appliedVersions: [7, 8, 9, 10]
       })
-      expect(readUserVersion(connection)).toBe(9)
+      expect(readUserVersion(connection)).toBe(10)
       expect(readBaselineProtocolRows(connection)).toEqual([
         {
           id: '00000000-0000-4000-8000-000000000007',
@@ -192,8 +262,8 @@ describe('migration runner integration', () => {
 
       expect(summary).toEqual({
         previousVersion: 6,
-        currentVersion: 9,
-        appliedVersions: [7, 8, 9]
+        currentVersion: 10,
+        appliedVersions: [7, 8, 9, 10]
       })
       expect(readProtocolRows(connection)).toEqual(protocolRowsBefore)
     })
@@ -219,8 +289,8 @@ describe('migration runner integration', () => {
       const secondSummary = secondRunner(connection)
 
       expect(secondSummary).toEqual({
-        previousVersion: 9,
-        currentVersion: 9,
+        previousVersion: 10,
+        currentVersion: 10,
         appliedVersions: []
       })
       expect(readLedgerRows(connection)).toEqual(originalLedger)
@@ -517,7 +587,7 @@ describe('migration runner integration', () => {
       connection.exec('DROP TABLE app_settings')
 
       expect(() => migrate(connection)).toThrow(MigrationCompatibilityError)
-      expect(readUserVersion(connection)).toBe(9)
+      expect(readUserVersion(connection)).toBe(10)
       expect(readLedgerRows(connection)).toEqual(originalLedger)
     })
   })
@@ -535,7 +605,7 @@ describe('migration runner integration', () => {
       connection.exec('DROP INDEX ix_locations_name_normalized')
 
       expect(() => migrate(connection)).toThrow(MigrationCompatibilityError)
-      expect(readUserVersion(connection)).toBe(9)
+      expect(readUserVersion(connection)).toBe(10)
       expect(readLedgerRows(connection)).toEqual(originalLedger)
     })
   })
@@ -597,7 +667,7 @@ describe('migration runner integration', () => {
             application_version
           ) VALUES (?, ?, ?, ?, ?)`
         )
-        .run(10, 'extra', 'a'.repeat(64), fixedClock.now(), '1.0.0')
+        .run(11, 'extra', 'a'.repeat(64), fixedClock.now(), '1.0.0')
 
       expectProductionMigrationCompatibilityFailure(connection)
     })
@@ -626,6 +696,117 @@ function configureHsd006Pragmas(connection: Database.Database): void {
   connection.pragma('trusted_schema = OFF')
 }
 
+function seedActivityMigrationGraph(connection: Database.Database): void {
+  const at = fixedClock.now()
+  connection
+    .prepare(
+      'INSERT INTO installation (singleton_id, id, deployment_name, timezone, created_at, updated_at) VALUES (1, ?, ?, ?, ?, ?)'
+    )
+    .run('ffffffff-ffff-4fff-8fff-ffffffffffff', 'test', 'UTC', at, at)
+  connection
+    .prepare(
+      'INSERT INTO users (id, username, username_normalized, display_name, password_hash, password_salt, role, is_active, must_change_password, failed_login_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, 0, ?, ?)'
+    )
+    .run(
+      '11111111-1111-4111-8111-111111111111',
+      'tester',
+      'tester',
+      'Test User',
+      'hash',
+      'salt',
+      'TRAINED_SCREENER',
+      at,
+      at
+    )
+  connection
+    .prepare(
+      'INSERT INTO locations (id, name, name_normalized, location_type, is_active, created_by, created_at, updated_by, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)'
+    )
+    .run(
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      'Test Location',
+      'test location',
+      'CLINIC',
+      '11111111-1111-4111-8111-111111111111',
+      at,
+      '11111111-1111-4111-8111-111111111111',
+      at
+    )
+  const protocolId = (
+    connection
+      .prepare("SELECT id FROM protocol_versions WHERE status = 'ACTIVE' LIMIT 1")
+      .get() as { id: string }
+  ).id
+  connection
+    .prepare(
+      'INSERT INTO patients (id, patient_code, display_name, name_normalized, status, created_by, created_at, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    )
+    .run(
+      'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      'TEST-1',
+      'Test Patient',
+      'test patient',
+      'ACTIVE',
+      '11111111-1111-4111-8111-111111111111',
+      at,
+      '11111111-1111-4111-8111-111111111111',
+      at
+    )
+  connection
+    .prepare(
+      'INSERT INTO patients (id, patient_code, display_name, name_normalized, status, created_by, created_at, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    )
+    .run(
+      '99999999-9999-4999-8999-999999999999',
+      'TEST-2',
+      'Other Patient',
+      'other patient',
+      'ACTIVE',
+      '11111111-1111-4111-8111-111111111111',
+      at,
+      '11111111-1111-4111-8111-111111111111',
+      at
+    )
+  connection
+    .prepare(
+      'INSERT INTO screening_sessions (id, location_id, protocol_version_id, session_date, status, opened_by, opened_at, created_by, created_at, updated_by, updated_at, row_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)'
+    )
+    .run(
+      'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      protocolId,
+      '2026-07-29',
+      'OPEN',
+      '11111111-1111-4111-8111-111111111111',
+      at,
+      '11111111-1111-4111-8111-111111111111',
+      at,
+      '11111111-1111-4111-8111-111111111111',
+      at
+    )
+  for (const [encounterId, patientId] of [
+    ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'],
+    ['cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd', '99999999-9999-4999-8999-999999999999']
+  ])
+    connection
+      .prepare(
+        'INSERT INTO screening_encounters (id, patient_id, screening_session_id, location_id, protocol_version_id, status, started_at, source_type, recorded_by, record_version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)'
+      )
+      .run(
+        encounterId,
+        patientId,
+        'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        protocolId,
+        'DRAFT',
+        at,
+        'LOCAL',
+        '11111111-1111-4111-8111-111111111111',
+        at,
+        at
+      )
+}
+
 function expectProductionMigrationCompatibilityFailure(connection: Database.Database): void {
   expect(() =>
     runDatabaseMigrations({
@@ -634,7 +815,7 @@ function expectProductionMigrationCompatibilityFailure(connection: Database.Data
       applicationVersion: '1.0.0',
       logger: createLogger(),
       clock: fixedClock,
-      expectedHighestVersion: 9
+      expectedHighestVersion: 10
     })
   ).toThrow(MigrationCompatibilityError)
 }

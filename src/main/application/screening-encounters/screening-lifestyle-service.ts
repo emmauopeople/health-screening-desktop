@@ -3,6 +3,7 @@ import {
   parseAuditEntityType,
   parseCompleteLifestyleAlcoholWeeklyInput,
   parseCompleteLifestylePhysicalActivityWeeklyInput,
+  parseCompleteLifestyleOtherActivityInput,
   parseCompleteLifestyleTobaccoWeeklyInput,
   parseLifestyleAlcoholBaselineInput,
   parseLifestyleDraftUpdateInput,
@@ -96,6 +97,7 @@ const draftRequestKeys = Object.freeze([
   'tobacco',
   'physicalActivity',
   'work',
+  'otherActivityResponse',
   'otherActivities'
 ] as const)
 const completionConfirmationKeys = Object.freeze([
@@ -850,6 +852,7 @@ function mapDraftSummary(record: LifestyleDraftRecord): LifestyleDraftSummary {
     alcoholBaselineVersionId: record.alcoholBaselineVersionId,
     tobaccoBaselineVersionId: record.tobaccoBaselineVersionId,
     workBaselineVersionId: record.workBaselineVersionId,
+    otherActivityResponse: record.otherActivityResponse,
     alcohol: record.alcohol === null ? null : mapAlcoholWeeklySummary(record.alcohol),
     tobacco: record.tobacco === null ? null : mapTobaccoWeeklySummary(record.tobacco),
     physicalActivity:
@@ -912,6 +915,7 @@ function mapPhysicalActivityWeeklySummary(
   return {
     id: record.id,
     weeklyResponse: record.weeklyResponse,
+    sedentaryTimeResponse: record.sedentaryTimeResponse,
     sedentaryMinutesPerDay: record.sedentaryMinutesPerDay,
     activities: record.activities.map(mapActivitySummary),
     updatedAt: record.updatedAt
@@ -1238,6 +1242,8 @@ function normalizeDraftUpdate(
       alcoholBaselineVersionId,
       tobaccoBaselineVersionId,
       workBaselineVersionId,
+      otherActivityResponse:
+        fields.otherActivityResponse as LifestyleDraftUpdateInput['otherActivityResponse'],
       actorId,
       occurredAt,
       alcohol,
@@ -1325,6 +1331,7 @@ function normalizePhysical(
   const data = readDataProperties(value, [
     'id',
     'weeklyResponse',
+    'sedentaryTimeResponse',
     'sedentaryMinutesPerDay',
     'activities'
   ])
@@ -1498,6 +1505,7 @@ function samePhysicalFields(
   const activities = candidate.activities as readonly Record<string, unknown>[]
   return (
     existing.weeklyResponse === candidate.weeklyResponse &&
+    existing.sedentaryTimeResponse === candidate.sedentaryTimeResponse &&
     existing.sedentaryMinutesPerDay === candidate.sedentaryMinutesPerDay &&
     existing.activities.length === activities.length &&
     existing.activities.every((row, index) => {
@@ -1516,13 +1524,15 @@ function isCompleteLifestyleInput(input: LifestyleDraftUpdateInput): boolean {
     input.alcohol.weeklyResponse === null ||
     input.tobacco.weeklyResponse === null ||
     input.physicalActivity.weeklyResponse === null ||
-    input.work.weeklyResponse === null
+    input.work.weeklyResponse === null ||
+    input.otherActivityResponse === null
   )
     return false
   try {
     parseCompleteLifestyleAlcoholWeeklyInput(input.alcohol)
     parseCompleteLifestyleTobaccoWeeklyInput(input.tobacco)
     parseCompleteLifestylePhysicalActivityWeeklyInput(input.physicalActivity)
+    parseCompleteLifestyleOtherActivityInput(input.otherActivityResponse, input.otherActivities)
     return true
   } catch {
     return false
@@ -1596,6 +1606,7 @@ function isDraftEquivalent(
     existing.alcoholBaselineVersionId === input.alcoholBaselineVersionId &&
     existing.tobaccoBaselineVersionId === input.tobaccoBaselineVersionId &&
     existing.workBaselineVersionId === input.workBaselineVersionId &&
+    existing.otherActivityResponse === input.otherActivityResponse &&
     sameAlcohol(existing.alcohol, input.alcohol) &&
     sameTobacco(existing.tobacco, input.tobacco) &&
     samePhysical(existing.physicalActivity, input.physicalActivity) &&
@@ -1660,6 +1671,7 @@ function samePhysical(
   return (
     existing.id === next.id &&
     existing.weeklyResponse === next.weeklyResponse &&
+    existing.sedentaryTimeResponse === next.sedentaryTimeResponse &&
     existing.sedentaryMinutesPerDay === next.sedentaryMinutesPerDay &&
     existing.activities.length === next.activities.length &&
     existing.activities.every((row, index) => {
