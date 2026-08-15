@@ -5,6 +5,8 @@ import {
   type MigrationConnection
 } from './migration-types'
 import {
+  hasSchemaVersion9RequiredForeignKeys,
+  hasSchemaVersion9RequiredTableSql,
   schemaVersion9NamedIndexes,
   schemaVersion9TableContracts,
   schemaVersion9TableNames,
@@ -73,7 +75,9 @@ function isSchemaVersion10Valid(connection: MigrationConnection): boolean {
       schemaVersion10TableContracts.every((tableContract) =>
         columnsMatch(readColumns(connection, tableContract.name), tableContract.columns)
       ) &&
-      hasResponseChecks(connection)
+      hasSchemaVersion9RequiredForeignKeys(connection) &&
+      hasSchemaVersion9RequiredTableSql(connection) &&
+      hasExactResponseChecks(connection)
     )
   } catch {
     return false
@@ -160,16 +164,33 @@ function columnsMatch(actual: readonly unknown[], expected: readonly unknown[]):
   return JSON.stringify(actual) === JSON.stringify(expected)
 }
 
-function hasResponseChecks(connection: MigrationConnection): boolean {
+function hasExactResponseChecks(connection: MigrationConnection): boolean {
   const draftSql = readCreateTableSql(connection, 'lifestyle_drafts')
   const physicalSql = readCreateTableSql(connection, 'lifestyle_physical_activity_weekly_records')
+  const normalizedDraftSql = normalizeSchemaSql(draftSql)
+  const normalizedPhysicalSql = normalizeSchemaSql(physicalSql)
+
   return (
-    draftSql.includes('other_activity_response') &&
-    draftSql.includes("'PREFER_NOT_TO_ANSWER'") &&
-    physicalSql.includes('sedentary_time_response') &&
-    physicalSql.includes("'RECORDED'") &&
-    physicalSql.includes("'UNABLE_TO_ANSWER'")
+    normalizedDraftSql.includes(
+      normalizeSchemaSql(
+        "other_activity_response TEXT NULL CHECK (other_activity_response IN ('YES', 'NO', 'UNKNOWN', 'DECLINED', 'PREFER_NOT_TO_ANSWER'))"
+      )
+    ) &&
+    normalizedPhysicalSql.includes(
+      normalizeSchemaSql(
+        "sedentary_time_response TEXT NULL CHECK (sedentary_time_response IN ('RECORDED', 'UNKNOWN', 'UNABLE_TO_ANSWER', 'DECLINED', 'PREFER_NOT_TO_ANSWER'))"
+      )
+    )
   )
+}
+
+function normalizeSchemaSql(sql: string): string {
+  return sql
+    .replace(/\s+/g, ' ')
+    .replace(/\(\s+/g, '(')
+    .replace(/\s+\)/g, ')')
+    .replace(/;\s*$/, '')
+    .trim()
 }
 
 function readCreateTableSql(connection: MigrationConnection, tableName: string): string {

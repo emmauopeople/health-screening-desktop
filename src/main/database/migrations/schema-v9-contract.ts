@@ -311,6 +311,14 @@ const requiredTableSqlSnippets = Object.freeze([
   'CONSTRAINT ux_lifestyle_tobacco_product_rows_sequence UNIQUE (tobacco_weekly_record_id, sequence_number)'
 ])
 
+export function hasSchemaVersion9RequiredForeignKeys(connection: MigrationConnection): boolean {
+  return hasRequiredForeignKeys(connection)
+}
+
+export function hasSchemaVersion9RequiredTableSql(connection: MigrationConnection): boolean {
+  return hasRequiredTableSql(connection)
+}
+
 export const schemaVersion9TableContracts = Object.freeze(
   [
     ...schemaVersion8TableContracts,
