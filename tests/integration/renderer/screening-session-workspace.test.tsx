@@ -406,6 +406,11 @@ describe('screening patient entry workspace', () => {
 
     expect(api.screeningEncounters.lifestyle.getWorkspace).toHaveBeenCalledWith({ encounterId })
     expect(mounted.container.querySelectorAll('.lifestyle-card')).toHaveLength(5)
+    expect(mounted.container.querySelector('.screening-workspace-active-encounter')).not.toBeNull()
+    expect(
+      mounted.container.querySelector('.screening-new-screening-workspace-bounded')
+    ).not.toBeNull()
+    expect(mounted.container.querySelector('.screening-split-workspace-bounded')).not.toBeNull()
     expect(text(mounted)).toContain('Alcohol')
     expect(text(mounted)).toContain('Tobacco and nicotine')
     expect(text(mounted)).toContain('Physical activity')
@@ -457,6 +462,178 @@ describe('screening patient entry workspace', () => {
       })
     )
     await mounted.unmount()
+  })
+
+  it.each([
+    ['CURRENT_DAILY', 'YES', 'Current • Use reported'],
+    ['CURRENT_DAILY', 'NO', 'Current • No use this week'],
+    ['CURRENT_DAILY', 'UNKNOWN', 'Current • Weekly use unknown'],
+    ['CURRENT_DAILY', 'DECLINED', 'Current • Weekly response declined'],
+    ['CURRENT_DAILY', 'PREFER_NOT_TO_ANSWER', 'Current • Prefer not to answer'],
+    ['CURRENT_DAILY', '', 'Current • Tobacco draft in progress'],
+    ['FORMER', 'YES', 'Former • Use reported • Review baseline'],
+    ['FORMER', 'NO', 'Former • No use this week'],
+    ['FORMER', 'UNKNOWN', 'Former • Weekly use unknown'],
+    ['FORMER', 'DECLINED', 'Former • Weekly response declined'],
+    ['FORMER', 'PREFER_NOT_TO_ANSWER', 'Former • Prefer not to answer'],
+    ['FORMER', '', 'Former • Tobacco draft in progress'],
+    ['NEVER', 'YES', 'Never • Use reported • Review baseline'],
+    ['NEVER', 'NO', 'Never • No use this week'],
+    ['NEVER', 'UNKNOWN', 'Never • Weekly use unknown'],
+    ['NEVER', 'DECLINED', 'Never • Weekly response declined'],
+    ['NEVER', 'PREFER_NOT_TO_ANSWER', 'Never • Prefer not to answer'],
+    ['NEVER', '', 'Never • Tobacco draft in progress'],
+    ['UNKNOWN', 'YES', 'Unknown • Use reported • Review baseline'],
+    ['UNKNOWN', 'NO', 'Unknown • No use this week'],
+    ['UNKNOWN', 'UNKNOWN', 'Unknown • Weekly use unknown'],
+    ['UNKNOWN', 'DECLINED', 'Unknown • Weekly response declined'],
+    ['UNKNOWN', 'PREFER_NOT_TO_ANSWER', 'Unknown • Prefer not to answer'],
+    ['UNKNOWN', '', 'Unknown • Tobacco draft in progress'],
+    ['DECLINED', 'YES', 'Declined • Use reported • Review baseline'],
+    ['DECLINED', 'NO', 'Declined • No use this week'],
+    ['DECLINED', 'UNKNOWN', 'Declined • Weekly use unknown'],
+    ['DECLINED', 'DECLINED', 'Declined • Weekly response declined'],
+    ['DECLINED', 'PREFER_NOT_TO_ANSWER', 'Declined • Prefer not to answer'],
+    ['DECLINED', '', 'Declined • Tobacco draft in progress']
+  ] as const)('renders %s/%s Tobacco summary as %s', async (status, response, summary) => {
+    const api = createApi()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'LOADED',
+        workspace: publicLifestyleWorkspaceWithTobaccoStatus(status, response)
+      })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Tobacco and nicotine')
+    expect(
+      mounted.container.querySelector('.lifestyle-card:nth-child(2) .lifestyle-card-summary')
+        ?.textContent
+    ).toContain(summary)
+
+    await mounted.unmount()
+  })
+
+  it('clears a deselected Tobacco baseline Other description and keeps its error target isolated', async () => {
+    const api = createApi()
+    const workspace = publicLifestyleWorkspaceWithTobacco()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace })
+    )
+    api.screeningEncounters.lifestyle.saveTobaccoBaseline.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'SAVED', workspace })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Tobacco and nicotine')
+    await clickButton(mounted, 'Tobacco Baseline')
+    const otherCheckbox = mounted.container.querySelector<HTMLInputElement>(
+      '#tobacco-baseline-product-OTHER'
+    )
+    if (otherCheckbox === null) throw new Error('Expected Tobacco baseline Other checkbox.')
+    await act(async () => {
+      otherCheckbox.click()
+      await flushPromises()
+    })
+    await flushReact()
+    const otherInput = inputByLabel(mounted, 'Other product')
+    await changeInput(otherInput, 'A local product')
+    expect(otherInput.value).toBe('A local product')
+
+    await act(async () => {
+      otherCheckbox.click()
+      await flushPromises()
+    })
+    await flushReact()
+    expect(mounted.container.querySelector('#tobacco-baseline-other-product')).toBeNull()
+
+    const panel = mounted.container.querySelector('#lifestyle-tobacco-baseline-panel')
+    expect(panel?.querySelector('#tobacco-baseline-product-OTHER')).not.toBeNull()
+    await clickButton(mounted, 'Save baseline')
+    expect(api.screeningEncounters.lifestyle.saveTobaccoBaseline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productTypes: ['CIGARETTE'],
+        otherProductDescription: null
+      })
+    )
+    expect(mounted.container.querySelector('#tobacco-weekly-response-error')).toBeNull()
+
+    await mounted.unmount()
+  })
+
+  it('focuses the first invalid Tobacco control and keeps product errors associated with real elements', async () => {
+    const api = createApi()
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Tobacco and nicotine')
+    await clickButton(mounted, 'Tobacco Baseline')
+    await clickButton(mounted, 'Save baseline')
+
+    const everGroup = mounted.container.querySelector('#tobacco-baseline-ever-used')
+    const everRadio = mounted.container.querySelector<HTMLInputElement>(
+      '#tobacco-baseline-ever-YES'
+    )
+    expect(everGroup?.getAttribute('aria-invalid')).toBe('true')
+    expect(everGroup?.getAttribute('aria-describedby')).toBe('tobacco-baseline-ever-used-error')
+    expect(mounted.container.querySelector('#tobacco-baseline-ever-used-error')).not.toBeNull()
+    expect(document.activeElement).toBe(everRadio)
+
+    await mounted.unmount()
+
+    const tobaccoApi = createApi()
+    tobaccoApi.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: publicLifestyleWorkspaceWithTobacco() })
+    )
+    const tobaccoMounted = await mountWorkspace({ api: tobaccoApi })
+    await openLifestyle(tobaccoMounted)
+    await clickButton(tobaccoMounted, 'Tobacco and nicotine')
+    await clickButton(tobaccoMounted, 'Add product')
+
+    const newProductType = tobaccoMounted.container.querySelector<HTMLSelectElement>(
+      'select[id^="tobacco-product-new-"][id$="-type"]'
+    )
+    expect(newProductType).not.toBeNull()
+    expect(newProductType?.getAttribute('aria-describedby')).toMatch(
+      /^tobacco-product-new-.*-type-error$/
+    )
+    await clickButton(tobaccoMounted, 'Save draft')
+
+    const productError = tobaccoMounted.container.querySelector<HTMLParagraphElement>(
+      '[id^="tobacco-product-new-"][id$="-type-error"]'
+    )
+    expect(productError).not.toBeNull()
+    expect(newProductType?.getAttribute('aria-describedby')).toBe(productError?.id)
+    expect(newProductType?.getAttribute('aria-invalid')).toBe('true')
+    expect(document.activeElement).toBe(newProductType)
+
+    const newProductRow = newProductType?.closest('.lifestyle-product-row')
+    const removeNewProduct = newProductRow?.querySelector<HTMLButtonElement>('button')
+    if (removeNewProduct === null || removeNewProduct === undefined) {
+      throw new Error('Expected remove button for the new Tobacco product row.')
+    }
+    await act(async () => {
+      removeNewProduct.click()
+      await flushPromises()
+    })
+    await flushReact()
+    expect(document.activeElement?.id).toBe(
+      'tobacco-product-16161616-1616-4161-8161-161616161616-type'
+    )
+    const remainingProductRow = tobaccoMounted.container.querySelector('.lifestyle-product-row')
+    const removeRemainingProduct = remainingProductRow?.querySelector<HTMLButtonElement>('button')
+    if (removeRemainingProduct === null || removeRemainingProduct === undefined) {
+      throw new Error('Expected remove button for the remaining Tobacco product row.')
+    }
+    await act(async () => {
+      removeRemainingProduct.click()
+      await flushPromises()
+    })
+    await flushReact()
+    expect(document.activeElement?.id).toBe('tobacco-add-product')
+    await tobaccoMounted.unmount()
   })
 
   it('restores persisted Alcohol baseline and weekly values after entering Lifestyle', async () => {
@@ -2028,6 +2205,40 @@ function publicLifestyleWorkspaceWithTobacco(): ScreeningLifestyleWorkspace {
           }
         ],
         updatedAt: baseTimestamp
+      }
+    },
+    activeTobaccoBaseline: baseline,
+    referencedTobaccoBaseline: baseline
+  }
+}
+
+function publicLifestyleWorkspaceWithTobaccoStatus(
+  status: 'CURRENT_DAILY' | 'FORMER' | 'NEVER' | 'UNKNOWN' | 'DECLINED',
+  response: 'YES' | 'NO' | 'UNKNOWN' | 'DECLINED' | 'PREFER_NOT_TO_ANSWER' | ''
+): ScreeningLifestyleWorkspace {
+  const workspace = publicLifestyleWorkspaceWithTobacco()
+  const baseline = {
+    ...workspace.activeTobaccoBaseline!,
+    status,
+    everRegularlyUsed: status === 'NEVER' ? ('NO' as const) : ('YES' as const),
+    currentUseFrequency:
+      status === 'CURRENT_DAILY'
+        ? ('EVERY_DAY' as const)
+        : status === 'FORMER' || status === 'NEVER'
+          ? ('NOT_AT_ALL' as const)
+          : status === 'DECLINED'
+            ? ('DECLINED' as const)
+            : ('UNKNOWN' as const),
+    formerUseApproximateStopDate: status === 'FORMER' ? '2024' : null
+  }
+  return {
+    ...workspace,
+    draft: {
+      ...workspace.draft!,
+      tobacco: {
+        ...workspace.draft!.tobacco!,
+        weeklyResponse: response === '' ? null : response,
+        products: []
       }
     },
     activeTobaccoBaseline: baseline,

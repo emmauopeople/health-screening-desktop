@@ -1111,7 +1111,12 @@ export function ScreeningSessionWorkspace({
   }, [activeTab, activeWorkspaceTab, loadLifestyleWorkspace])
 
   return (
-    <section className="screening-workspace" aria-labelledby={headingId}>
+    <section
+      className={`screening-workspace${
+        activeWorkspaceTab === 'NEW_SCREENING' ? ' screening-workspace-active-encounter' : ''
+      }`}
+      aria-labelledby={headingId}
+    >
       <div className="screening-workspace-heading">
         <div>
           <h1 id={headingId} ref={headingRef}>
@@ -1450,7 +1455,10 @@ function NewScreeningWorkspace({
   ): void
 }): React.JSX.Element {
   return (
-    <section className="screening-new-screening-workspace" aria-label="New Screening workspace">
+    <section
+      className="screening-new-screening-workspace screening-new-screening-workspace-bounded"
+      aria-label="New Screening workspace"
+    >
       <OpenPatientTabStrip
         activeTab={activeTab}
         openTabs={openTabs}
@@ -1467,7 +1475,7 @@ function NewScreeningWorkspace({
           </button>
         </div>
       ) : (
-        <div className="screening-split-workspace">
+        <div className="screening-split-workspace screening-split-workspace-bounded">
           <PatientContextPanel tab={activeTab} />
           <CurrentEncounterPanel
             location={location}

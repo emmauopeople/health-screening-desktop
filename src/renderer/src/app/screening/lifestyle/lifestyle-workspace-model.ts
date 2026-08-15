@@ -36,6 +36,7 @@ export {
   tobaccoProductOptions,
   tobaccoUnitOptions,
   tobaccoWeeklyOptions,
+  toggleTobaccoBaselineProduct,
   type TobaccoBaselineForm,
   type TobaccoCardStatus,
   type TobaccoFieldError,

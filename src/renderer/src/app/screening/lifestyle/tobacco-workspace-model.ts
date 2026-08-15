@@ -343,6 +343,23 @@ export function updateTobaccoResponse(
     : { ...form, weeklyResponse: response, products: [] }
 }
 
+export function toggleTobaccoBaselineProduct(
+  form: TobaccoBaselineForm,
+  productType: TobaccoProductType
+): TobaccoBaselineForm {
+  const productTypes = form.productTypes.includes(productType)
+    ? form.productTypes.filter((item) => item !== productType)
+    : [...form.productTypes, productType]
+  return {
+    ...form,
+    productTypes,
+    otherProductDescription:
+      productTypes.includes('OTHER') && form.productTypes.includes('OTHER')
+        ? form.otherProductDescription
+        : ''
+  }
+}
+
 export function createTobaccoBaselineRequest(
   encounterId: string,
   workspace: ScreeningLifestyleWorkspace | null,
@@ -429,6 +446,9 @@ export function getTobaccoCardSummary(
   if (status === 'LOCKED') return 'Locked'
   const baseline = state.workspace ? getTobaccoBaselineForInterpretation(state.workspace) : null
   const baselineLabel = formatTobaccoBaselineStatus(baseline?.status)
+  if (baseline !== null && baseline !== undefined && status !== 'BASELINE_REVIEW') {
+    return `${baselineLabel} ${String.fromCodePoint(0x2022)} ${formatTobaccoWeeklySummary(state.tobacco.weeklyResponse)}`
+  }
   if (status === 'BASELINE_REVIEW') return `${baselineLabel} • Use reported • Review baseline`
   if (status === 'COMPLETE' && state.tobacco.weeklyResponse === 'NO') {
     return `${baselineLabel} • No use this week`
@@ -436,6 +456,20 @@ export function getTobaccoCardSummary(
   if (status === 'COMPLETE') return `${baselineLabel} • Use reported`
   if (baseline === null || baseline === undefined) return 'Baseline required'
   return 'Tobacco draft in progress'
+}
+
+function formatTobaccoWeeklySummary(response: TobaccoWeeklyResponse): string {
+  return response === 'YES'
+    ? 'Use reported'
+    : response === 'NO'
+      ? 'No use this week'
+      : response === 'UNKNOWN'
+        ? 'Weekly use unknown'
+        : response === 'DECLINED'
+          ? 'Weekly response declined'
+          : response === 'PREFER_NOT_TO_ANSWER'
+            ? 'Prefer not to answer'
+            : 'Tobacco draft in progress'
 }
 
 function baselineProductsApplicable(form: TobaccoBaselineForm): boolean {

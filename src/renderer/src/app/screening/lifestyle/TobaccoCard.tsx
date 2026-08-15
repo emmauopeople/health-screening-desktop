@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 import type { PublicScreeningEncounterStartSummary } from '@shared/ipc'
 
@@ -11,6 +11,7 @@ import {
   tobaccoProductOptions,
   tobaccoUnitOptions,
   tobaccoWeeklyOptions,
+  toggleTobaccoBaselineProduct,
   type LifestyleDraftState,
   type TobaccoBaselineForm,
   type TobaccoFieldError,
@@ -48,7 +49,8 @@ export function TobaccoCard({
   useEffect(() => {
     const error = errors[0]
     if (error === undefined) return
-    document.getElementById(error.fieldId)?.focus()
+    const focusId = tobaccoErrorFocusId(error.fieldId)
+    document.getElementById(focusId)?.focus()
   }, [errors])
 
   return (
@@ -252,12 +254,7 @@ function TobaccoBaselinePanel({
                   checked={form.productTypes.includes(option.value)}
                   disabled={disabled}
                   onChange={() =>
-                    onUpdate((current) => ({
-                      ...current,
-                      productTypes: current.productTypes.includes(option.value)
-                        ? current.productTypes.filter((item) => item !== option.value)
-                        : [...current.productTypes, option.value]
-                    }))
+                    onUpdate((current) => toggleTobaccoBaselineProduct(current, option.value))
                   }
                 />
                 {option.label}
@@ -285,9 +282,7 @@ function TobaccoBaselinePanel({
         ids={[
           'tobacco-baseline-ever-used',
           'tobacco-baseline-frequency',
-          'tobacco-baseline-stop-date',
-          'tobacco-baseline-product-types',
-          'tobacco-baseline-other-product'
+          'tobacco-baseline-product-types'
         ]}
       />
       <div className="lifestyle-inline-actions">
@@ -320,10 +315,27 @@ function TobaccoWeeklyPanel({
   readonly disabled: boolean
   onUpdate(update: (form: TobaccoWeeklyForm) => TobaccoWeeklyForm): void
 }): React.JSX.Element {
+  const pendingFocusRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const focusId = pendingFocusRef.current
+    if (focusId === null) return
+    pendingFocusRef.current = null
+    document.getElementById(focusId)?.focus()
+  }, [form.products])
+
   return (
     <section className="lifestyle-weekly-panel" aria-labelledby="lifestyle-tobacco-weekly-title">
       <h4 id="lifestyle-tobacco-weekly-title">Weekly tobacco and nicotine</h4>
-      <fieldset>
+      <fieldset
+        id="tobacco-weekly-response"
+        aria-invalid={errors.some((error) => error.fieldId === 'tobacco-weekly-response')}
+        aria-describedby={
+          errors.some((error) => error.fieldId === 'tobacco-weekly-response')
+            ? errorId('tobacco-weekly-response')
+            : undefined
+        }
+      >
         <legend>
           {baselineStatus === 'UNKNOWN' || baselineStatus === 'DECLINED'
             ? 'Can tobacco or nicotine use be recorded for the past 7 days?'
@@ -332,6 +344,7 @@ function TobaccoWeeklyPanel({
         {tobaccoWeeklyOptions.map((option) => (
           <label className="lifestyle-choice" key={option.value}>
             <input
+              id={`tobacco-weekly-response-${option.value}`}
               type="radio"
               name="tobacco-weekly-response"
               checked={form.weeklyResponse === option.value}
@@ -361,12 +374,19 @@ function TobaccoWeeklyPanel({
                 }))
               }
               onRemove={() =>
-                onUpdate((current) => ({
-                  ...current,
-                  products: current.products
-                    .filter((item) => item.clientKey !== product.clientKey)
-                    .map((item, rowIndex) => ({ ...item, sequenceNumber: rowIndex + 1 }))
-                }))
+                onUpdate((current) => {
+                  const target = current.products[index + 1] ?? current.products[index - 1]
+                  pendingFocusRef.current =
+                    target === undefined
+                      ? 'tobacco-add-product'
+                      : `tobacco-product-${target.clientKey}-type`
+                  return {
+                    ...current,
+                    products: current.products
+                      .filter((item) => item.clientKey !== product.clientKey)
+                      .map((item, rowIndex) => ({ ...item, sequenceNumber: rowIndex + 1 }))
+                  }
+                })
               }
               onMove={(direction) =>
                 onUpdate((current) => reorderProducts(current, index, direction))
@@ -375,13 +395,15 @@ function TobaccoWeeklyPanel({
           ))}
           <button
             className="button button-secondary"
+            id="tobacco-add-product"
             type="button"
             disabled={disabled || form.products.length >= 20}
             onClick={() =>
-              onUpdate((current) => ({
-                ...current,
-                products: [...current.products, createProduct(current.products.length + 1)]
-              }))
+              onUpdate((current) => {
+                const nextProduct = createProduct(current.products.length + 1)
+                pendingFocusRef.current = `tobacco-product-${nextProduct.clientKey}-type`
+                return { ...current, products: [...current.products, nextProduct] }
+              })
             }
           >
             Add product
@@ -442,6 +464,11 @@ function ProductRow({
           </option>
         ))}
       </select>
+      {errorFor('type') ? (
+        <p id={errorId(`${prefix}-type`)} className="field-error">
+          {errorFor('type')?.message}
+        </p>
+      ) : null}
       <Field
         id={`${prefix}-days`}
         label="Days used during the past 7 days"
@@ -485,6 +512,11 @@ function ProductRow({
           </option>
         ))}
       </select>
+      {errorFor('unit') ? (
+        <p id={errorId(`${prefix}-unit`)} className="field-error">
+          {errorFor('unit')?.message}
+        </p>
+      ) : null}
       {product.productType === 'OTHER' ? (
         <Field
           id={`${prefix}-other-product`}
@@ -628,6 +660,19 @@ function reorderProducts(
 
 function errorId(fieldId: string): string {
   return `${fieldId}-error`
+}
+
+function tobaccoErrorFocusId(fieldId: string): string {
+  const focusTargets: Record<string, string> = {
+    'tobacco-baseline-ever-used': 'tobacco-baseline-ever-YES',
+    'tobacco-baseline-frequency': 'tobacco-baseline-frequency-EVERY_DAY',
+    'tobacco-baseline-product-types': 'tobacco-baseline-product-CIGARETTE',
+    'tobacco-baseline-stop-date': 'tobacco-baseline-stop-date',
+    'tobacco-baseline-other-product': 'tobacco-baseline-other-product',
+    'tobacco-weekly-response': 'tobacco-weekly-response-YES',
+    'tobacco-products': 'tobacco-add-product'
+  }
+  return focusTargets[fieldId] ?? fieldId
 }
 function formatResponse(value: string): string {
   return value === 'YES'

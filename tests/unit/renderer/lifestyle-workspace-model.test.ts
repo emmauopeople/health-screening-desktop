@@ -20,6 +20,7 @@ import {
   getTobaccoBaselineForInterpretation,
   getTobaccoCardSummary,
   mapTobaccoBaselineStatus,
+  toggleTobaccoBaselineProduct,
   updateTobaccoResponse,
   validateTobaccoBaseline,
   validateTobaccoWeeklyDraft,
@@ -341,6 +342,60 @@ describe('Lifestyle Alcohol workspace model', () => {
 
 describe('Lifestyle Tobacco workspace model', () => {
   it.each([
+    ['CURRENT_DAILY', 'YES', 'Current | Use reported'],
+    ['CURRENT_DAILY', 'NO', 'Current | No use this week'],
+    ['CURRENT_DAILY', 'UNKNOWN', 'Current | Weekly use unknown'],
+    ['CURRENT_DAILY', 'DECLINED', 'Current | Weekly response declined'],
+    ['CURRENT_DAILY', 'PREFER_NOT_TO_ANSWER', 'Current | Prefer not to answer'],
+    ['CURRENT_DAILY', '', 'Current | Tobacco draft in progress'],
+    ['FORMER', 'YES', 'Former | Use reported | Review baseline'],
+    ['FORMER', 'NO', 'Former | No use this week'],
+    ['FORMER', 'UNKNOWN', 'Former | Weekly use unknown'],
+    ['FORMER', 'DECLINED', 'Former | Weekly response declined'],
+    ['FORMER', 'PREFER_NOT_TO_ANSWER', 'Former | Prefer not to answer'],
+    ['FORMER', '', 'Former | Tobacco draft in progress'],
+    ['NEVER', 'YES', 'Never | Use reported | Review baseline'],
+    ['NEVER', 'NO', 'Never | No use this week'],
+    ['NEVER', 'UNKNOWN', 'Never | Weekly use unknown'],
+    ['NEVER', 'DECLINED', 'Never | Weekly response declined'],
+    ['NEVER', 'PREFER_NOT_TO_ANSWER', 'Never | Prefer not to answer'],
+    ['NEVER', '', 'Never | Tobacco draft in progress'],
+    ['UNKNOWN', 'YES', 'Unknown | Use reported | Review baseline'],
+    ['UNKNOWN', 'NO', 'Unknown | No use this week'],
+    ['UNKNOWN', 'UNKNOWN', 'Unknown | Weekly use unknown'],
+    ['UNKNOWN', 'DECLINED', 'Unknown | Weekly response declined'],
+    ['UNKNOWN', 'PREFER_NOT_TO_ANSWER', 'Unknown | Prefer not to answer'],
+    ['UNKNOWN', '', 'Unknown | Tobacco draft in progress'],
+    ['DECLINED', 'YES', 'Declined | Use reported | Review baseline'],
+    ['DECLINED', 'NO', 'Declined | No use this week'],
+    ['DECLINED', 'UNKNOWN', 'Declined | Weekly use unknown'],
+    ['DECLINED', 'DECLINED', 'Declined | Weekly response declined'],
+    ['DECLINED', 'PREFER_NOT_TO_ANSWER', 'Declined | Prefer not to answer'],
+    ['DECLINED', '', 'Declined | Tobacco draft in progress']
+  ] as const)('summarizes %s baseline with %s weekly response', (status, response, summary) => {
+    const state = createLifestyleDraftStateFromWorkspace(
+      tobaccoWorkspaceWithStatus(status, response)
+    )
+    expect(getTobaccoCardSummary(state, true)).toBe(
+      summary.replaceAll(' | ', ` ${String.fromCodePoint(0x2022)} `)
+    )
+  })
+
+  it('clears a hidden baseline Other description when Other is deselected', () => {
+    const form: TobaccoBaselineForm = {
+      everRegularlyUsed: 'YES',
+      currentUseFrequency: 'EVERY_DAY',
+      formerUseApproximateStopDate: '',
+      productTypes: ['OTHER'],
+      otherProductDescription: 'Persisted description'
+    }
+    const cleared = toggleTobaccoBaselineProduct(form, 'OTHER')
+    expect(cleared.productTypes).toEqual([])
+    expect(cleared.otherProductDescription).toBe('')
+    expect(toggleTobaccoBaselineProduct(cleared, 'OTHER').otherProductDescription).toBe('')
+  })
+
+  it.each([
     ['NO', '', 'NEVER', 'NOT_AT_ALL'],
     ['DECLINED', '', 'DECLINED', 'DECLINED'],
     ['YES', 'EVERY_DAY', 'CURRENT_DAILY', 'EVERY_DAY'],
@@ -603,5 +658,44 @@ function workspaceWithDraft({
     },
     referencedTobaccoBaseline: null,
     referencedWorkBaseline: null
+  }
+}
+
+function tobaccoWorkspaceWithStatus(
+  status: 'CURRENT_DAILY' | 'FORMER' | 'NEVER' | 'UNKNOWN' | 'DECLINED',
+  response: 'YES' | 'NO' | 'UNKNOWN' | 'DECLINED' | 'PREFER_NOT_TO_ANSWER' | ''
+): ScreeningLifestyleWorkspace {
+  const workspace = workspaceWithDraft()
+  const baseline = {
+    id: tobaccoBaselineId,
+    version: 2,
+    status,
+    everRegularlyUsed: status === 'NEVER' ? ('NO' as const) : ('YES' as const),
+    formerUseApproximateStopDate: status === 'FORMER' ? '2024' : null,
+    currentUseFrequency:
+      status === 'CURRENT_DAILY'
+        ? ('EVERY_DAY' as const)
+        : status === 'FORMER' || status === 'NEVER'
+          ? ('NOT_AT_ALL' as const)
+          : status === 'DECLINED'
+            ? ('DECLINED' as const)
+            : ('UNKNOWN' as const),
+    productTypes: ['CIGARETTE' as const],
+    otherProductDescription: null,
+    updatedAt: timestamp
+  }
+  return {
+    ...workspace,
+    draft: {
+      ...workspace.draft!,
+      tobaccoBaselineVersionId: baseline.id,
+      tobacco: {
+        ...workspace.draft!.tobacco!,
+        weeklyResponse: response === '' ? null : response,
+        products: []
+      }
+    },
+    activeTobaccoBaseline: baseline,
+    referencedTobaccoBaseline: baseline
   }
 }

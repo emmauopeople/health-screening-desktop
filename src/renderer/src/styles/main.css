@@ -955,6 +955,15 @@ h1 {
   background: var(--shell-background);
 }
 
+.application-workspace:has(.screening-workspace-active-encounter) {
+  overflow: hidden;
+}
+
+.application-workspace:has(.screening-workspace-active-encounter)
+  > .screening-workspace-active-encounter {
+  height: 100%;
+}
+
 .application-workspace h1 {
   max-width: none;
   margin: 0;
@@ -1374,6 +1383,18 @@ h1 {
   display: grid;
   gap: 16px;
   min-width: 0;
+}
+
+.screening-workspace-active-encounter {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  flex-direction: column;
+}
+
+.screening-workspace-active-encounter > .screening-new-screening-workspace-bounded {
+  min-height: 0;
+  flex: 1 1 auto;
 }
 
 .screening-workspace-heading {
@@ -1825,6 +1846,11 @@ h1 {
   min-width: 0;
 }
 
+.screening-new-screening-workspace-bounded {
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .screening-open-patient-strip {
   display: flex;
   align-items: center;
@@ -1868,6 +1894,19 @@ h1 {
   grid-template-columns: minmax(320px, 38fr) minmax(0, 62fr);
   gap: 16px;
   align-items: start;
+}
+
+.screening-split-workspace-bounded {
+  min-height: 0;
+  align-items: stretch;
+}
+
+.screening-split-workspace-bounded > .screening-context-panel,
+.screening-split-workspace-bounded > .screening-current-encounter-panel {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .screening-new-screening-empty {
@@ -3406,6 +3445,40 @@ h1 {
   .screening-patients-layout,
   .screening-split-workspace {
     grid-template-columns: 1fr;
+  }
+
+  .screening-workspace-active-encounter {
+    display: grid;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .application-workspace:has(.screening-workspace-active-encounter) {
+    overflow: auto;
+  }
+
+  .application-workspace:has(.screening-workspace-active-encounter)
+    > .screening-workspace-active-encounter {
+    height: auto;
+  }
+
+  .screening-workspace-active-encounter > .screening-new-screening-workspace-bounded {
+    min-height: auto;
+  }
+
+  .screening-new-screening-workspace-bounded {
+    grid-template-rows: none;
+  }
+
+  .screening-split-workspace-bounded {
+    min-height: auto;
+    align-items: start;
+  }
+
+  .screening-split-workspace-bounded > .screening-context-panel,
+  .screening-split-workspace-bounded > .screening-current-encounter-panel {
+    min-height: auto;
+    overflow: visible;
   }
 }
 
