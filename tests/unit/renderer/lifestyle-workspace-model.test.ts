@@ -4,11 +4,13 @@ import type { ScreeningLifestyleWorkspace } from '@shared/ipc'
 import {
   createAlcoholBaselineRequest,
   createAlcoholSaveDraftRequest,
+  collapseLifestylePanels,
   createLifestyleDraftStateFromWorkspace,
   getAlcoholCardStatus,
   getAlcoholCardSummary,
   isAlcoholComplete,
   mapAlcoholBaselineStatus,
+  toggleLifestyleCard,
   updateAlcoholResponse,
   validateAlcoholBaseline,
   validateAlcoholWeeklyDraft,
@@ -82,6 +84,71 @@ describe('Lifestyle Alcohol workspace model', () => {
       daysAtLargestAmount: '',
       commonBeverageTypes: [],
       otherBeverageDescription: ''
+    })
+  })
+
+  it('collapses every Lifestyle panel without changing clinical form values', () => {
+    const state = {
+      ...createLifestyleDraftStateFromWorkspace(workspaceWithDraft()),
+      alcoholExpanded: true,
+      baselineOpen: true,
+      tobaccoExpanded: true,
+      tobaccoBaselineOpen: true
+    }
+
+    const collapsed = collapseLifestylePanels(state)
+
+    expect(collapsed).toMatchObject({
+      alcoholExpanded: false,
+      baselineOpen: false,
+      tobaccoExpanded: false,
+      tobaccoBaselineOpen: false,
+      alcohol: state.alcohol,
+      tobacco: state.tobacco,
+      baselineForm: state.baselineForm,
+      tobaccoBaselineForm: state.tobaccoBaselineForm,
+      workspace: state.workspace,
+      dirty: state.dirty
+    })
+  })
+
+  it('keeps card expansion mutually exclusive and closes nested panels', () => {
+    const state = {
+      ...createLifestyleDraftStateFromWorkspace(workspaceWithDraft()),
+      alcoholExpanded: true,
+      baselineOpen: true,
+      tobaccoExpanded: false,
+      tobaccoBaselineOpen: false
+    }
+
+    const tobaccoOpened = toggleLifestyleCard(state, 'TOBACCO')
+    expect(tobaccoOpened).toMatchObject({
+      alcoholExpanded: false,
+      baselineOpen: false,
+      tobaccoExpanded: true,
+      tobaccoBaselineOpen: false
+    })
+
+    const tobaccoClosed = toggleLifestyleCard(
+      { ...tobaccoOpened, tobaccoBaselineOpen: true },
+      'TOBACCO'
+    )
+    expect(tobaccoClosed).toMatchObject({
+      alcoholExpanded: false,
+      baselineOpen: false,
+      tobaccoExpanded: false,
+      tobaccoBaselineOpen: false
+    })
+
+    const alcoholOpened = toggleLifestyleCard(
+      { ...tobaccoClosed, tobaccoExpanded: true, tobaccoBaselineOpen: true },
+      'ALCOHOL'
+    )
+    expect(alcoholOpened).toMatchObject({
+      alcoholExpanded: true,
+      baselineOpen: false,
+      tobaccoExpanded: false,
+      tobaccoBaselineOpen: false
     })
   })
 

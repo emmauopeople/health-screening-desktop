@@ -5,6 +5,7 @@ import { AlcoholCard } from './AlcoholCard'
 import { TobaccoCard } from './TobaccoCard'
 import {
   getAlcoholCardStatus,
+  toggleLifestyleCard,
   validateAlcoholBaseline,
   validateAlcoholWeeklyDraft,
   type AlcoholBaselineForm,
@@ -117,11 +118,7 @@ export function LifestyleStep({
                 onUpdate((current) => ({ ...current, baselineOpen: !current.baselineOpen }))
               }}
               onToggleExpanded={() => {
-                onUpdate((current) => ({
-                  ...current,
-                  alcoholExpanded: !current.alcoholExpanded,
-                  tobaccoExpanded: false
-                }))
+                onUpdate((current) => toggleLifestyleCard(current, 'ALCOHOL'))
               }}
               onSaveBaseline={onSaveBaseline}
             />
@@ -141,11 +138,7 @@ export function LifestyleStep({
                 }))
               }
               onToggleExpanded={() =>
-                onUpdate((current) => ({
-                  ...current,
-                  tobaccoExpanded: !current.tobaccoExpanded,
-                  alcoholExpanded: false
-                }))
+                onUpdate((current) => toggleLifestyleCard(current, 'TOBACCO'))
               }
               onSaveBaseline={onSaveTobaccoBaseline}
             />

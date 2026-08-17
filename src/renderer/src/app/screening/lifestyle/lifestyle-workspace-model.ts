@@ -92,6 +92,8 @@ export interface LifestyleDraftState {
   readonly dirty: boolean
 }
 
+export type LifestyleExpandedCard = 'ALCOHOL' | 'TOBACCO'
+
 export const alcoholBeverageOptions: readonly {
   readonly value: AlcoholBeverageCode
   readonly label: string
@@ -163,6 +165,49 @@ export function createLifestyleDraftStateFromWorkspace(
       : createInitialTobaccoWeeklyForm(),
     tobaccoValidationErrors: [],
     dirty: false
+  }
+}
+
+/**
+ * Close every Lifestyle card and nested panel after a successful persistence
+ * operation. Form values are intentionally left untouched by this transition.
+ */
+export function collapseLifestylePanels(state: LifestyleDraftState): LifestyleDraftState {
+  return {
+    ...state,
+    alcoholExpanded: false,
+    baselineOpen: false,
+    tobaccoExpanded: false,
+    tobaccoBaselineOpen: false
+  }
+}
+
+/**
+ * Keep the two implemented cards mutually exclusive while preserving their
+ * local clinical form values. Closing a card also closes its nested panel.
+ */
+export function toggleLifestyleCard(
+  state: LifestyleDraftState,
+  card: LifestyleExpandedCard
+): LifestyleDraftState {
+  if (card === 'ALCOHOL') {
+    const alcoholExpanded = !state.alcoholExpanded
+    return {
+      ...state,
+      alcoholExpanded,
+      baselineOpen: alcoholExpanded ? state.baselineOpen : false,
+      tobaccoExpanded: false,
+      tobaccoBaselineOpen: false
+    }
+  }
+
+  const tobaccoExpanded = !state.tobaccoExpanded
+  return {
+    ...state,
+    tobaccoExpanded,
+    tobaccoBaselineOpen: tobaccoExpanded ? state.tobaccoBaselineOpen : false,
+    alcoholExpanded: false,
+    baselineOpen: false
   }
 }
 

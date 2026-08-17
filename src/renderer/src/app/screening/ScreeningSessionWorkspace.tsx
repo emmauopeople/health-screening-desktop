@@ -37,6 +37,7 @@ import {
   createAlcoholSaveDraftRequest,
   createInitialLifestyleDraftState,
   createLifestyleDraftStateFromWorkspace,
+  collapseLifestylePanels,
   validateAlcoholBaseline,
   validateAlcoholWeeklyDraft,
   createTobaccoBaselineRequest as createTobaccoBaselineRequestFromForm,
@@ -1043,12 +1044,23 @@ export function ScreeningSessionWorkspace({
           return
         }
 
+        if (result.data.workspace.encounterId !== encounterId) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Draft could not be saved. Try again.'
+          }))
+          return
+        }
+
         const workspace = result.data.workspace
         updateLifestyleDraft(patientId, () =>
-          createLifestyleDraftStateFromWorkspace(workspace, {
-            saveStatus: 'SAVED',
-            statusMessage: 'Draft saved'
-          })
+          collapseLifestylePanels(
+            createLifestyleDraftStateFromWorkspace(workspace, {
+              saveStatus: 'SAVED',
+              statusMessage: 'Draft saved'
+            })
+          )
         )
       } catch {
         if (

@@ -464,6 +464,113 @@ describe('screening patient entry workspace', () => {
     await mounted.unmount()
   })
 
+  it('collapses all Lifestyle panels after a successful draft save and preserves values', async () => {
+    const api = createApi()
+    const workspace = publicLifestyleWorkspaceWithTobacco()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace })
+    )
+    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'SAVED', workspace })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Tobacco and nicotine')
+    await clickButton(mounted, 'Save draft')
+
+    expect(text(mounted)).toContain('Draft saved')
+    expect(mounted.container.querySelector('#lifestyle-alcohol-content')).toBeNull()
+    expect(mounted.container.querySelector('#lifestyle-alcohol-baseline-panel')).toBeNull()
+    expect(mounted.container.querySelector('#lifestyle-tobacco-content')).toBeNull()
+    expect(mounted.container.querySelector('#lifestyle-tobacco-baseline-panel')).toBeNull()
+    expect(text(mounted)).toContain('Alcohol complete')
+    expect(text(mounted)).toContain('Use reported')
+
+    await clickButton(mounted, 'Alcohol')
+    expect(
+      inputByLabel(mounted, 'How many drinks did you have in total during the past 7 days?').value
+    ).toBe('3')
+    await clickButton(mounted, 'Tobacco and nicotine')
+    expect(inputByLabel(mounted, 'Days used during the past 7 days').value).toBe('2')
+
+    await mounted.unmount()
+  })
+
+  it('closes nested baseline panels when switching or collapsing cards', async () => {
+    const api = createApi()
+    const workspace = publicLifestyleWorkspaceWithTobacco()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Alcohol Baseline')
+    expect(mounted.container.querySelector('#lifestyle-alcohol-baseline-panel')).not.toBeNull()
+
+    await clickButton(mounted, 'Tobacco and nicotine')
+    expect(mounted.container.querySelector('#lifestyle-alcohol-content')).toBeNull()
+    expect(mounted.container.querySelector('#lifestyle-alcohol-baseline-panel')).toBeNull()
+
+    await clickButton(mounted, 'Tobacco Baseline')
+    expect(mounted.container.querySelector('#lifestyle-tobacco-baseline-panel')).not.toBeNull()
+    await clickButton(mounted, 'Tobacco and nicotine')
+    expect(mounted.container.querySelector('#lifestyle-tobacco-content')).toBeNull()
+    expect(mounted.container.querySelector('#lifestyle-tobacco-baseline-panel')).toBeNull()
+
+    await clickButton(mounted, 'Tobacco and nicotine')
+    expect(mounted.container.querySelector('#lifestyle-tobacco-content')).not.toBeNull()
+    expect(mounted.container.querySelector('#lifestyle-tobacco-baseline-panel')).toBeNull()
+
+    await mounted.unmount()
+  })
+
+  it('keeps the open card open after failed or wrong-encounter draft responses', async () => {
+    const api = createApi()
+    const workspace = publicLifestyleWorkspaceWithTobacco()
+    const failedSave =
+      createDeferred<
+        Awaited<ReturnType<HealthScreeningApi['screeningEncounters']['lifestyle']['saveDraft']>>
+      >()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace })
+    )
+    const wrongEncounterWorkspace = publicLifestyleWorkspaceWithTobacco()
+    api.screeningEncounters.lifestyle.saveDraft
+      .mockReturnValueOnce(failedSave.promise)
+      .mockResolvedValueOnce(
+        createIpcSuccess({
+          status: 'SAVED',
+          workspace: {
+            ...wrongEncounterWorkspace,
+            encounterId: secondEncounterId,
+            draft: wrongEncounterWorkspace.draft
+              ? { ...wrongEncounterWorkspace.draft, encounterId: secondEncounterId }
+              : null
+          }
+        })
+      )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Tobacco and nicotine')
+    await clickButton(mounted, 'Save draft')
+    expect(api.screeningEncounters.lifestyle.saveDraft).toHaveBeenCalledOnce()
+    expect(mounted.container.querySelector('#lifestyle-tobacco-content')).not.toBeNull()
+
+    failedSave.resolve(createScreeningEncounterIpcFailure('IPC_UNAVAILABLE'))
+    await flushReact()
+    expect(mounted.container.querySelector('#lifestyle-tobacco-content')).not.toBeNull()
+    expect(text(mounted)).not.toContain('Draft saved')
+
+    await clickButton(mounted, 'Save draft')
+    expect(mounted.container.querySelector('#lifestyle-tobacco-content')).not.toBeNull()
+    expect(text(mounted)).not.toContain('Draft saved')
+
+    await mounted.unmount()
+  })
+
   it.each([
     ['CURRENT_DAILY', 'YES', 'Current • Use reported'],
     ['CURRENT_DAILY', 'NO', 'Current • No use this week'],
