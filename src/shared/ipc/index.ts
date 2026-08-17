@@ -223,6 +223,7 @@ export {
   createScreeningVitalsGetDraftLoadedResult,
   createScreeningVitalsSaveDraftStatusResult,
   publicScreeningVitalsDraftSchema,
+  screeningVitalsDraftReadingSchema,
   publicScreeningEncounterStartSummarySchema,
   screeningEncounterFailureSchema,
   screeningEncounterIpcErrorCodeSchema,

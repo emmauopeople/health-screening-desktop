@@ -58,6 +58,58 @@ const changedReadingAt = '2026-08-06T15:00:00.000Z'
 const nextDeploymentDate = '2026-08-07T12:00:00.000Z'
 
 describe('screening vitals draft service integration', () => {
+  it('rejects out-of-range, zero, negative, and decimal readings before persistence', async () => {
+    await withVitalsService(({ connection, service }) => {
+      seedCoreGraph(connection)
+
+      for (const reading of [
+        { ...completeReading(1), systolic: 301 },
+        { ...completeReading(1), diastolic: 121 },
+        { ...completeReading(1), pulse: 301 },
+        { ...completeReading(1), systolic: 0 },
+        { ...completeReading(1), pulse: -1 },
+        { ...completeReading(1), diastolic: 80.5 }
+      ]) {
+        expect(service.saveVitalsDraft(createVitalsRequest({ readings: [reading] }))).toEqual({
+          status: 'VALIDATION_FAILED'
+        })
+      }
+
+      expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(0)
+      expect(readTableCount(connection, 'screening_vitals_draft_readings')).toBe(0)
+    })
+  })
+
+  it('saves and reloads valid low readings without changing referral or encounter state', async () => {
+    await withVitalsService(({ connection, service }) => {
+      seedCoreGraph(connection)
+      const encountersBefore = readEncounterRows(connection)
+
+      const saved = service.saveVitalsDraft(
+        createVitalsRequest({
+          readings: [
+            {
+              ...completeReading(1),
+              systolic: 89,
+              diastolic: 49,
+              pulse: 44
+            }
+          ]
+        })
+      )
+
+      expect(saved.status).toBe('SAVED')
+      if (saved.status !== 'SAVED') return
+
+      expect(saved.draft.readings[0]).toMatchObject({ systolic: 89, diastolic: 49, pulse: 44 })
+      expect(service.getVitalsDraft({ encounterId: parseEntityId(encounterId) })).toEqual({
+        status: 'LOADED',
+        draft: saved.draft
+      })
+      expect(readEncounterRows(connection)).toEqual(encountersBefore)
+    })
+  })
+
   it('loads no draft for a current editable encounter without creating an empty record', async () => {
     await withVitalsService(({ connection, service, currentScreeningSessionSpies }) => {
       seedCoreGraph(connection)

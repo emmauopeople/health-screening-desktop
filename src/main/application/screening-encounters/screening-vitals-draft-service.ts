@@ -18,6 +18,7 @@ import {
 } from '@main/database'
 import { parseEntityId, type EntityId } from '@main/foundation/entity-id'
 import type { UtcTimestamp } from '@main/foundation/utc-clock'
+import { VITALS_DIASTOLIC_MAX, VITALS_PULSE_MAX, VITALS_SYSTOLIC_MAX } from '@shared/vitals-bounds'
 
 import {
   LocalSessionAuthorizationError,
@@ -614,9 +615,9 @@ function parseRequestReading(value: unknown): ParsedSaveVitalsDraftReadingInput 
   return Object.freeze({
     id: data.id === null ? null : parseEntityId(data.id),
     sequenceNumber: parseSequenceNumber(data.sequenceNumber),
-    systolic: parseOptionalPositiveInteger(data.systolic),
-    diastolic: parseOptionalPositiveInteger(data.diastolic),
-    pulse: parseOptionalPositiveInteger(data.pulse),
+    systolic: parseOptionalBoundedInteger(data.systolic, VITALS_SYSTOLIC_MAX),
+    diastolic: parseOptionalBoundedInteger(data.diastolic, VITALS_DIASTOLIC_MAX),
+    pulse: parseOptionalBoundedInteger(data.pulse, VITALS_PULSE_MAX),
     measurementSite:
       data.measurementSite === null ? null : parseVitalsMeasurementSite(data.measurementSite),
     patientPosition:
@@ -643,7 +644,7 @@ function parseSequenceNumber(value: unknown): number {
   return value
 }
 
-function parseOptionalPositiveInteger(value: unknown): number | null {
+function parseOptionalBoundedInteger(value: unknown, maximum: number): number | null {
   if (value === null) {
     return null
   }
@@ -652,6 +653,7 @@ function parseOptionalPositiveInteger(value: unknown): number | null {
     typeof value !== 'number' ||
     !Number.isSafeInteger(value) ||
     value < 1 ||
+    value > maximum ||
     Object.is(value, -0)
   ) {
     throw new RepositoryValidationError()

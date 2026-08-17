@@ -184,6 +184,10 @@ function hasExactResponseChecks(connection: MigrationConnection): boolean {
   )
 }
 
+export function hasSchemaVersion10RequiredResponseChecks(connection: MigrationConnection): boolean {
+  return hasExactResponseChecks(connection)
+}
+
 function normalizeSchemaSql(sql: string): string {
   return sql
     .replace(/\s+/g, ' ')

@@ -1,6 +1,14 @@
 import { z } from 'zod'
 
 import { createIpcSuccess, createIpcSuccessResultSchema, safeIpcErrorMessages } from './result'
+import {
+  VITALS_DIASTOLIC_MAX,
+  VITALS_DIASTOLIC_MIN,
+  VITALS_PULSE_MAX,
+  VITALS_PULSE_MIN,
+  VITALS_SYSTOLIC_MAX,
+  VITALS_SYSTOLIC_MIN
+} from '../vitals-bounds'
 
 const unsafeTransportValue = Symbol('UnsafeScreeningEncounterIpcTransportValue')
 const utcTimestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u
@@ -19,6 +27,25 @@ export const screeningVitalsPatientPositionSchema = z.enum(['LYING', 'STANDING',
 export const screeningVitalsMeasurementTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u)
 export const screeningVitalsPositiveIntegerSchema = z.number().int().min(1).safe()
 export const screeningVitalsPositiveNumberSchema = z.number().positive()
+export const screeningVitalsSystolicSchema = z
+  .number()
+  .int()
+  .min(VITALS_SYSTOLIC_MIN)
+  .max(VITALS_SYSTOLIC_MAX)
+  .safe()
+export const screeningVitalsDiastolicSchema = z
+  .number()
+  .int()
+  .min(VITALS_DIASTOLIC_MIN)
+  .max(VITALS_DIASTOLIC_MAX)
+  .safe()
+export const screeningVitalsPulseSchema = z
+  .number()
+  .int()
+  .min(VITALS_PULSE_MIN)
+  .max(VITALS_PULSE_MAX)
+  .safe()
+export const publicScreeningVitalsReadingValueSchema = z.number().int().min(1).safe()
 
 export const screeningEncounterStartRequestSchema = exactObject({
   patientId: screeningEncounterUuidSchema,
@@ -30,9 +57,9 @@ export const screeningVitalsGetDraftRequestSchema = exactObject({
 export const screeningVitalsDraftReadingRequestSchema = exactObject({
   id: screeningEncounterUuidSchema.nullable(),
   sequenceNumber: screeningVitalsPositiveIntegerSchema,
-  systolic: screeningVitalsPositiveIntegerSchema.nullable(),
-  diastolic: screeningVitalsPositiveIntegerSchema.nullable(),
-  pulse: screeningVitalsPositiveIntegerSchema.nullable(),
+  systolic: screeningVitalsSystolicSchema.nullable(),
+  diastolic: screeningVitalsDiastolicSchema.nullable(),
+  pulse: screeningVitalsPulseSchema.nullable(),
   measurementSite: screeningVitalsMeasurementSiteSchema.nullable(),
   patientPosition: screeningVitalsPatientPositionSchema.nullable(),
   measurementTime: screeningVitalsMeasurementTimeSchema.nullable()
@@ -86,9 +113,9 @@ export const screeningVitalsDraftReadingSchema = z
   .object({
     id: screeningEncounterUuidSchema,
     sequenceNumber: screeningVitalsPositiveIntegerSchema,
-    systolic: screeningVitalsPositiveIntegerSchema.nullable(),
-    diastolic: screeningVitalsPositiveIntegerSchema.nullable(),
-    pulse: screeningVitalsPositiveIntegerSchema.nullable(),
+    systolic: publicScreeningVitalsReadingValueSchema.nullable(),
+    diastolic: publicScreeningVitalsReadingValueSchema.nullable(),
+    pulse: publicScreeningVitalsReadingValueSchema.nullable(),
     measurementSite: screeningVitalsMeasurementSiteSchema.nullable(),
     patientPosition: screeningVitalsPatientPositionSchema.nullable(),
     measurementTime: screeningVitalsMeasurementTimeSchema.nullable()

@@ -10,8 +10,9 @@ import baselineActiveProtocolSql from './sql/0007-baseline-active-protocol.sql?r
 import screeningVitalsDraftsSql from './sql/0008-screening-vitals-drafts.sql?raw'
 import lifestyleFoundationSql from './sql/0009-lifestyle-foundation.sql?raw'
 import lifestyleActivityResponseSemanticsSql from './sql/0010-lifestyle-activity-response-semantics.sql?raw'
+import vitalsReadingBoundsSql from './sql/0011-vitals-reading-bounds.sql?raw'
 
-export const targetSchemaVersion = 10
+export const targetSchemaVersion = 11
 
 const initialSchemaMigration = Object.freeze({
   version: 1,
@@ -74,6 +75,12 @@ const lifestyleActivityResponseSemanticsMigration = Object.freeze({
   sql: lifestyleActivityResponseSemanticsSql
 } satisfies DatabaseMigration)
 
+const vitalsReadingBoundsMigration = Object.freeze({
+  version: 11,
+  name: 'vitals-reading-bounds',
+  sql: vitalsReadingBoundsSql
+} satisfies DatabaseMigration)
+
 export const databaseMigrations = Object.freeze([
   initialSchemaMigration,
   patientRegistryManagementMigration,
@@ -84,7 +91,8 @@ export const databaseMigrations = Object.freeze([
   baselineActiveProtocolMigration,
   screeningVitalsDraftsMigration,
   lifestyleFoundationMigration,
-  lifestyleActivityResponseSemanticsMigration
+  lifestyleActivityResponseSemanticsMigration,
+  vitalsReadingBoundsMigration
 ] as const)
 
 export function resolveDatabaseMigrations(

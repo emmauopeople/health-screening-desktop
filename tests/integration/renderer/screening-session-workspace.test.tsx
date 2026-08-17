@@ -398,6 +398,140 @@ describe('screening patient entry workspace', () => {
     await mounted.unmount()
   })
 
+  it('enforces Vitals field bounds with inline association and invalid-field focus', async () => {
+    const api = createApi()
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+    const systolic = inputByLabel(mounted, 'Reading 1 systolic')
+    await changeInput(systolic, '301')
+    await clickButton(mounted, 'Save draft')
+
+    expect(api.screeningEncounters.vitals.saveDraft).not.toHaveBeenCalled()
+    expect(text(mounted)).toContain('Systolic blood pressure cannot be more than 300.')
+    expect(systolic.getAttribute('aria-invalid')).toBe('true')
+    const describedBy = systolic.getAttribute('aria-describedby')
+    expect(describedBy).not.toBeNull()
+    expect(mounted.container.querySelector(`#${describedBy}`)?.textContent).toContain(
+      'Systolic blood pressure cannot be more than 300.'
+    )
+    expect(
+      mounted.container
+        .querySelector('.screening-vitals-validation')
+        ?.classList.contains('screening-vitals-validation-error')
+    ).toBe(true)
+    expect(document.activeElement).toBe(systolic)
+
+    await changeInput(systolic, '300')
+    const diastolic = inputByLabel(mounted, 'Reading 1 diastolic')
+    await changeInput(diastolic, '121')
+    await clickButton(mounted, 'Save draft')
+    expect(text(mounted)).toContain('Diastolic blood pressure cannot be more than 120.')
+    expect(document.activeElement).toBe(diastolic)
+
+    await changeInput(diastolic, '120')
+    const pulse = inputByLabel(mounted, 'Reading 1 pulse')
+    await changeInput(pulse, '301')
+    await clickButton(mounted, 'Save draft')
+    expect(text(mounted)).toContain('Pulse cannot be more than 300.')
+    expect(document.activeElement).toBe(pulse)
+
+    await changeInput(pulse, '300')
+    expect(buttonByText(mounted, 'Save draft').disabled).toBe(false)
+
+    await mounted.unmount()
+  })
+
+  it('shows an accessible advisory independently for each valid low reading and not at thresholds', async () => {
+    const api = createApi()
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+    const systolic = inputByLabel(mounted, 'Reading 1 systolic')
+    const diastolic = inputByLabel(mounted, 'Reading 1 diastolic')
+    const pulse = inputByLabel(mounted, 'Reading 1 pulse')
+
+    expect(
+      mounted.container.querySelectorAll('.screening-vitals-low-reading-advisory')
+    ).toHaveLength(0)
+
+    await changeInput(systolic, '89')
+    expect(
+      mounted.container.querySelectorAll('.screening-vitals-low-reading-advisory')
+    ).toHaveLength(1)
+    expect(text(mounted)).toContain(
+      'This reading is lower than the screening threshold. Recommend medical review, especially if the patient has symptoms.'
+    )
+
+    await changeInput(systolic, '90')
+    await changeInput(diastolic, '49')
+    expect(
+      mounted.container.querySelectorAll('.screening-vitals-low-reading-advisory')
+    ).toHaveLength(1)
+    await changeInput(diastolic, '50')
+    await changeInput(pulse, '44')
+    expect(
+      mounted.container.querySelectorAll('.screening-vitals-low-reading-advisory')
+    ).toHaveLength(1)
+    await changeInput(pulse, '45')
+    expect(
+      mounted.container.querySelectorAll('.screening-vitals-low-reading-advisory')
+    ).toHaveLength(0)
+
+    for (const invalidValue of ['', '0', '301', 'not-a-number']) {
+      await changeInput(systolic, invalidValue)
+      expect(
+        mounted.container.querySelectorAll('.screening-vitals-low-reading-advisory')
+      ).toHaveLength(0)
+    }
+
+    expect(text(mounted)).toContain('Referral status')
+    expect(
+      mounted.container.querySelector('#screening-referral-title')?.parentElement?.textContent
+    ).toContain('—')
+
+    await mounted.unmount()
+  })
+
+  it('shows the advisory for a low reading restored from persisted data', async () => {
+    const api = createApi({
+      vitalsDraft: publicVitalsDraftFromRequest(
+        {
+          encounterId,
+          expectedVersion: null,
+          readings: [
+            {
+              id: null,
+              sequenceNumber: 1,
+              systolic: 89,
+              diastolic: 50,
+              pulse: 45,
+              measurementSite: null,
+              patientPosition: null,
+              measurementTime: null
+            }
+          ],
+          weightKg: null,
+          waistCm: null,
+          notes: null
+        },
+        { status: 'DRAFT', rowVersion: 2 }
+      )
+    })
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+
+    expect(
+      mounted.container.querySelectorAll('.screening-vitals-low-reading-advisory')
+    ).toHaveLength(1)
+    expect(text(mounted)).toContain(
+      'This reading is lower than the screening threshold. Recommend medical review, especially if the patient has symptoms.'
+    )
+
+    await mounted.unmount()
+  })
+
   it('loads the Lifestyle shell with only Alcohol enabled', async () => {
     const api = createApi()
     const mounted = await mountWorkspace({ api })
@@ -1966,10 +2100,12 @@ async function mountWorkspaceWithReactTabState({
 
 function createApi({
   patients = [patientSummary()],
-  session = publicCurrentSession()
+  session = publicCurrentSession(),
+  vitalsDraft = null
 }: {
   readonly patients?: readonly PublicPatientSummary[]
   readonly session?: PublicCurrentScreeningSession
+  readonly vitalsDraft?: PublicScreeningVitalsDraft | null
 } = {}): MockedHealthScreeningApi {
   return {
     patient: {
@@ -1992,7 +2128,9 @@ function createApi({
         )
       ),
       vitals: {
-        getDraft: vi.fn(() => Promise.resolve(createIpcSuccess({ status: 'LOADED', draft: null }))),
+        getDraft: vi.fn(() =>
+          Promise.resolve(createIpcSuccess({ status: 'LOADED', draft: vitalsDraft }))
+        ),
         saveDraft: vi.fn((request) =>
           Promise.resolve(
             createIpcSuccess({

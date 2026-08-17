@@ -4,10 +4,7 @@ import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import { describe, expect, it, vi } from 'vitest'
 
-import {
-  createProductionDatabaseMigrationRunner,
-  MigrationCompatibilityError
-} from '@main/database'
+import { MigrationCompatibilityError } from '@main/database'
 import { validateSchemaVersion10 } from '@main/database/migrations'
 import { databaseMigrations } from '@main/database/migrations/migration-manifest'
 import { runDatabaseMigrations } from '@main/database/migrations/migration-runner'
@@ -126,11 +123,14 @@ async function withDatabase(test: (connection: Database.Database) => void): Prom
 }
 
 function migrateToCurrent(connection: Database.Database): void {
-  createProductionDatabaseMigrationRunner({
+  runDatabaseMigrations({
+    connection,
+    migrations: databaseMigrations.slice(0, 10),
     applicationVersion: '1.0.0',
     logger: { info: vi.fn(), error: vi.fn() },
-    clock: { now: () => now }
-  })(connection)
+    clock: { now: () => now },
+    expectedHighestVersion: 10
+  })
 }
 
 function migrateWithAlteredMigration(
@@ -138,9 +138,11 @@ function migrateWithAlteredMigration(
   version: 9 | 10,
   transform: (sql: string) => string
 ): void {
-  const migrations = databaseMigrations.map((migration) =>
-    migration.version === version ? { ...migration, sql: transform(migration.sql) } : migration
-  )
+  const migrations = databaseMigrations
+    .slice(0, 10)
+    .map((migration) =>
+      migration.version === version ? { ...migration, sql: transform(migration.sql) } : migration
+    )
   runDatabaseMigrations({
     connection,
     migrations,

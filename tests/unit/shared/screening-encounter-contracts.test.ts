@@ -8,6 +8,8 @@ import {
   screeningEncounterStartRequestSchema,
   screeningEncounterStartResultSchema,
   screeningEncounterStartSuccessDataSchema,
+  screeningVitalsDraftReadingRequestSchema,
+  screeningVitalsDraftReadingSchema,
   type PublicScreeningEncounterStartSummary,
   type ScreeningEncounterStartRequest
 } from '@shared/ipc'
@@ -32,6 +34,68 @@ const encounter: PublicScreeningEncounterStartSummary = {
 }
 
 describe('screening encounter IPC contracts', () => {
+  it('enforces the Vitals whole-number bounds while allowing blank draft fields', () => {
+    const baseReading = {
+      id: null,
+      sequenceNumber: 1,
+      systolic: null,
+      diastolic: null,
+      pulse: null,
+      measurementSite: null,
+      patientPosition: null,
+      measurementTime: null
+    }
+
+    expect(screeningVitalsDraftReadingRequestSchema.parse(baseReading)).toEqual(baseReading)
+    expect(
+      screeningVitalsDraftReadingRequestSchema.parse({
+        ...baseReading,
+        systolic: 1,
+        diastolic: 1,
+        pulse: 1
+      })
+    ).toMatchObject({ systolic: 1, diastolic: 1, pulse: 1 })
+    expect(
+      screeningVitalsDraftReadingRequestSchema.parse({
+        ...baseReading,
+        systolic: 300,
+        diastolic: 120,
+        pulse: 300
+      })
+    ).toMatchObject({ systolic: 300, diastolic: 120, pulse: 300 })
+
+    for (const [field, value] of [
+      ['systolic', 301],
+      ['diastolic', 121],
+      ['pulse', 301],
+      ['systolic', 0],
+      ['diastolic', 0],
+      ['pulse', 0],
+      ['systolic', 1.5],
+      ['diastolic', 80.5],
+      ['pulse', 70.5]
+    ] as const) {
+      expect(() =>
+        screeningVitalsDraftReadingRequestSchema.parse({ ...baseReading, [field]: value })
+      ).toThrow()
+    }
+  })
+
+  it('accepts legacy positive whole-number readings in persisted responses', () => {
+    expect(
+      screeningVitalsDraftReadingSchema.parse({
+        id: '44444444-4444-4444-8444-444444444444',
+        sequenceNumber: 1,
+        systolic: 301,
+        diastolic: 121,
+        pulse: 302,
+        measurementSite: null,
+        patientPosition: null,
+        measurementTime: null
+      })
+    ).toMatchObject({ systolic: 301, diastolic: 121, pulse: 302 })
+  })
+
   it('defines the fixed start channel', () => {
     expect(ipcChannels.screeningEncounters.start).toBe(
       'health-screening:screening-encounters:start'

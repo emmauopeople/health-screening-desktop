@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type Dispatch,
@@ -29,6 +30,18 @@ import type {
   ScreeningSessionErrorCode,
   ScreeningLifestyleWorkspace
 } from '@shared/ipc'
+import {
+  VITALS_DIASTOLIC_MAX,
+  VITALS_DIASTOLIC_MIN,
+  VITALS_LOW_DIASTOLIC_THRESHOLD,
+  VITALS_LOW_PULSE_THRESHOLD,
+  VITALS_LOW_READING_ADVISORY,
+  VITALS_LOW_SYSTOLIC_THRESHOLD,
+  VITALS_PULSE_MAX,
+  VITALS_PULSE_MIN,
+  VITALS_SYSTOLIC_MAX,
+  VITALS_SYSTOLIC_MIN
+} from '@shared/vitals-bounds'
 
 import type { WorkspaceNavigationGuard } from '../shell/application-shell-types'
 import { LifestyleStep } from './lifestyle/LifestyleStep'
@@ -659,7 +672,6 @@ export function ScreeningSessionWorkspace({
           statusMessage: validation.message,
           validationErrors: validation.errors
         }))
-        focusMessage()
         return
       }
 
@@ -734,7 +746,7 @@ export function ScreeningSessionWorkspace({
         }
       }
     },
-    [api, focusMessage, mountedRef, updateVitalsDraft]
+    [api, mountedRef, updateVitalsDraft]
   )
 
   const loadLifestyleWorkspace = useCallback(
@@ -1761,6 +1773,26 @@ function VitalsStep({
 }): React.JSX.Element {
   const controlsDisabled = draft.loadStatus !== 'READY' || draft.saveStatus === 'SAVING'
 
+  useLayoutEffect(() => {
+    const firstError = draft.validationErrors[0]
+
+    if (firstError === undefined) {
+      return
+    }
+
+    const controlId = getVitalsFocusTargetId(firstError.fieldId)
+    const control = controlId === null ? null : document.getElementById(controlId)
+
+    if (control !== null) {
+      control.focus({ preventScroll: true })
+      return
+    }
+
+    document.getElementById(getVitalsErrorElementId(firstError.fieldId))?.focus({
+      preventScroll: true
+    })
+  }, [draft.validationErrors])
+
   if (draft.loadStatus === 'LOADING' || draft.loadStatus === 'NOT_LOADED') {
     return (
       <section className="screening-current-step" aria-labelledby="screening-vitals-step-title">
@@ -1819,11 +1851,17 @@ function VitalsStep({
                   <th scope="row">{index + 1}</th>
                   <td>
                     <input
+                      id={getVitalsControlId(reading.id, 'systolic')}
                       aria-label={`Reading ${index + 1} systolic`}
                       inputMode="numeric"
                       type="number"
-                      min="0"
+                      min={String(VITALS_SYSTOLIC_MIN)}
+                      max={String(VITALS_SYSTOLIC_MAX)}
                       aria-invalid={hasVitalsFieldError(draft, reading.id, 'systolic')}
+                      aria-describedby={getVitalsErrorDescriptionId(
+                        draft,
+                        `${reading.id}:systolic`
+                      )}
                       value={reading.systolic}
                       disabled={controlsDisabled}
                       onChange={(event) => {
@@ -1839,11 +1877,17 @@ function VitalsStep({
                   </td>
                   <td>
                     <input
+                      id={getVitalsControlId(reading.id, 'diastolic')}
                       aria-label={`Reading ${index + 1} diastolic`}
                       inputMode="numeric"
                       type="number"
-                      min="0"
+                      min={String(VITALS_DIASTOLIC_MIN)}
+                      max={String(VITALS_DIASTOLIC_MAX)}
                       aria-invalid={hasVitalsFieldError(draft, reading.id, 'diastolic')}
+                      aria-describedby={getVitalsErrorDescriptionId(
+                        draft,
+                        `${reading.id}:diastolic`
+                      )}
                       value={reading.diastolic}
                       disabled={controlsDisabled}
                       onChange={(event) => {
@@ -1859,11 +1903,14 @@ function VitalsStep({
                   </td>
                   <td>
                     <input
+                      id={getVitalsControlId(reading.id, 'pulse')}
                       aria-label={`Reading ${index + 1} pulse`}
                       inputMode="numeric"
                       type="number"
-                      min="0"
+                      min={String(VITALS_PULSE_MIN)}
+                      max={String(VITALS_PULSE_MAX)}
                       aria-invalid={hasVitalsFieldError(draft, reading.id, 'pulse')}
+                      aria-describedby={getVitalsErrorDescriptionId(draft, `${reading.id}:pulse`)}
                       value={reading.pulse}
                       disabled={controlsDisabled}
                       onChange={(event) => {
@@ -1879,8 +1926,10 @@ function VitalsStep({
                   </td>
                   <td>
                     <select
+                      id={getVitalsControlId(reading.id, 'site')}
                       aria-label={`Reading ${index + 1} site`}
                       aria-invalid={hasVitalsFieldError(draft, reading.id, 'site')}
+                      aria-describedby={getVitalsErrorDescriptionId(draft, `${reading.id}:site`)}
                       value={reading.site}
                       disabled={controlsDisabled}
                       onChange={(event) => {
@@ -1903,8 +1952,13 @@ function VitalsStep({
                   </td>
                   <td>
                     <select
+                      id={getVitalsControlId(reading.id, 'position')}
                       aria-label={`Reading ${index + 1} position`}
                       aria-invalid={hasVitalsFieldError(draft, reading.id, 'position')}
+                      aria-describedby={getVitalsErrorDescriptionId(
+                        draft,
+                        `${reading.id}:position`
+                      )}
                       value={reading.position}
                       disabled={controlsDisabled}
                       onChange={(event) => {
@@ -1927,9 +1981,11 @@ function VitalsStep({
                   </td>
                   <td>
                     <input
+                      id={getVitalsControlId(reading.id, 'time')}
                       aria-label={`Reading ${index + 1} time`}
                       type="time"
                       aria-invalid={hasVitalsFieldError(draft, reading.id, 'time')}
+                      aria-describedby={getVitalsErrorDescriptionId(draft, `${reading.id}:time`)}
                       value={reading.time}
                       disabled={controlsDisabled}
                       onChange={(event) => {
@@ -1974,6 +2030,20 @@ function VitalsStep({
           </table>
         </div>
 
+        {draft.readings.map((reading, index) =>
+          hasLowVitalsReading(reading) ? (
+            <div
+              className="screening-vitals-low-reading-advisory"
+              key={`${reading.id}:low-reading-advisory`}
+              role="status"
+              aria-live="polite"
+            >
+              <span>Reading {index + 1}: </span>
+              {VITALS_LOW_READING_ADVISORY}
+            </div>
+          ) : null
+        )}
+
         <div className="screening-vitals-table-actions">
           <button
             className="button button-secondary"
@@ -1996,11 +2066,20 @@ function VitalsStep({
         </div>
 
         {draft.validationErrors.length > 0 ? (
-          <div className="screening-vitals-validation" role="alert">
+          <div
+            className="screening-vitals-validation screening-vitals-validation-error"
+            role="alert"
+          >
             {draft.statusMessage ?? 'Complete or remove the highlighted readings.'}
             <ul className="screening-vitals-validation-list">
               {draft.validationErrors.map((error) => (
-                <li key={`${error.fieldId}:${error.message}`}>{error.message}</li>
+                <li
+                  id={getVitalsErrorElementId(error.fieldId)}
+                  key={`${error.fieldId}:${error.message}`}
+                  tabIndex={-1}
+                >
+                  {error.message}
+                </li>
               ))}
             </ul>
           </div>
@@ -2019,10 +2098,12 @@ function VitalsStep({
           <label>
             <span>Weight (kg)</span>
             <input
+              id={getVitalsControlId('top-level', 'weight')}
               aria-label="Weight in kilograms"
               type="number"
               min="0"
               aria-invalid={hasOptionalVitalsFieldError(draft, 'weight')}
+              aria-describedby={getVitalsErrorDescriptionId(draft, 'weight')}
               value={draft.weightKg}
               disabled={controlsDisabled}
               onChange={(event) => {
@@ -2043,10 +2124,12 @@ function VitalsStep({
           <label>
             <span>Waist (optional)</span>
             <input
+              id={getVitalsControlId('top-level', 'waist')}
               aria-label="Waist optional"
               type="number"
               min="0"
               aria-invalid={hasOptionalVitalsFieldError(draft, 'waist')}
+              aria-describedby={getVitalsErrorDescriptionId(draft, 'waist')}
               value={draft.waist}
               disabled={controlsDisabled}
               onChange={(event) => {
@@ -2067,6 +2150,7 @@ function VitalsStep({
           <label>
             <span>Notes</span>
             <textarea
+              id={getVitalsControlId('top-level', 'notes')}
               aria-label="Vitals notes"
               value={draft.notes}
               disabled={controlsDisabled}
@@ -2296,22 +2380,28 @@ function parseVitalsReadingForRequest(
   'id' | 'sequenceNumber'
 > {
   const parsed = {
-    systolic: parseOptionalInteger(
+    systolic: parseOptionalBoundedInteger(
       reading.systolic,
       `${reading.id}:systolic`,
       `Reading ${readingNumber} systolic`,
+      VITALS_SYSTOLIC_MAX,
+      'Systolic blood pressure cannot be more than 300.',
       errors
     ),
-    diastolic: parseOptionalInteger(
+    diastolic: parseOptionalBoundedInteger(
       reading.diastolic,
       `${reading.id}:diastolic`,
       `Reading ${readingNumber} diastolic`,
+      VITALS_DIASTOLIC_MAX,
+      'Diastolic blood pressure cannot be more than 120.',
       errors
     ),
-    pulse: parseOptionalInteger(
+    pulse: parseOptionalBoundedInteger(
       reading.pulse,
       `${reading.id}:pulse`,
       `Reading ${readingNumber} pulse`,
+      VITALS_PULSE_MAX,
+      'Pulse cannot be more than 300.',
       errors
     ),
     measurementSite: reading.site === '' ? null : (reading.site as VitalsMeasurementSite),
@@ -2350,10 +2440,12 @@ function parseVitalsReadingForRequest(
   return parsed
 }
 
-function parseOptionalInteger(
+function parseOptionalBoundedInteger(
   value: string,
   fieldId: string,
   label: string,
+  maximum: number,
+  maximumMessage: string,
   errors: VitalsValidationError[]
 ): number | null {
   const trimmed = value.trim()
@@ -2362,15 +2454,22 @@ function parseOptionalInteger(
     return null
   }
 
+  const message = `${label} must be a whole number from 1 to ${maximum}.`
+
   if (!/^[1-9]\d*$/u.test(trimmed)) {
-    errors.push({ fieldId, message: `${label} must be a positive whole number.` })
+    errors.push({ fieldId, message })
     return null
   }
 
   const parsed = Number(trimmed)
 
   if (!Number.isSafeInteger(parsed) || parsed < 1) {
-    errors.push({ fieldId, message: `${label} must be a positive whole number.` })
+    errors.push({ fieldId, message })
+    return null
+  }
+
+  if (parsed > maximum) {
+    errors.push({ fieldId, message: maximumMessage })
     return null
   }
 
@@ -2422,6 +2521,63 @@ function hasOneCompleteReading(
 
 function hasVitalsFieldError(draft: VitalsDraft, readingId: string, fieldName: string): boolean {
   return draft.validationErrors.some((error) => error.fieldId === `${readingId}:${fieldName}`)
+}
+
+function getVitalsControlId(readingId: string, fieldName: string): string {
+  return `vitals-${readingId}-${fieldName}`
+}
+
+function getVitalsFocusTargetId(fieldId: string): string | null {
+  const separatorIndex = fieldId.lastIndexOf(':')
+  if (separatorIndex >= 0) {
+    return getVitalsControlId(fieldId.slice(0, separatorIndex), fieldId.slice(separatorIndex + 1))
+  }
+
+  switch (fieldId) {
+    case 'weight':
+      return getVitalsControlId('top-level', 'weight')
+    case 'waist':
+      return getVitalsControlId('top-level', 'waist')
+    default:
+      return null
+  }
+}
+
+function getVitalsErrorElementId(fieldId: string): string {
+  return `vitals-error-${fieldId.replace(/[^A-Za-z0-9_-]/gu, '-')}`
+}
+
+function getVitalsErrorDescriptionId(draft: VitalsDraft, fieldId: string): string | undefined {
+  return draft.validationErrors.some((error) => error.fieldId === fieldId)
+    ? getVitalsErrorElementId(fieldId)
+    : undefined
+}
+
+function hasLowVitalsReading(reading: VitalsReadingDraft): boolean {
+  const systolic = parseValidVitalsValue(reading.systolic, VITALS_SYSTOLIC_MIN, VITALS_SYSTOLIC_MAX)
+  const diastolic = parseValidVitalsValue(
+    reading.diastolic,
+    VITALS_DIASTOLIC_MIN,
+    VITALS_DIASTOLIC_MAX
+  )
+  const pulse = parseValidVitalsValue(reading.pulse, VITALS_PULSE_MIN, VITALS_PULSE_MAX)
+
+  return (
+    (systolic !== null && systolic < VITALS_LOW_SYSTOLIC_THRESHOLD) ||
+    (diastolic !== null && diastolic < VITALS_LOW_DIASTOLIC_THRESHOLD) ||
+    (pulse !== null && pulse < VITALS_LOW_PULSE_THRESHOLD)
+  )
+}
+
+function parseValidVitalsValue(value: string, minimum: number, maximum: number): number | null {
+  const trimmed = value.trim()
+
+  if (!/^[1-9]\d*$/u.test(trimmed)) {
+    return null
+  }
+
+  const parsed = Number(trimmed)
+  return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : null
 }
 
 function hasOptionalVitalsFieldError(draft: VitalsDraft, fieldName: string): boolean {

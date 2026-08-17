@@ -70,8 +70,8 @@ describe('database transaction executor', () => {
       const logger = createLogger()
       const executor = createExecutor(connection, { logger })
 
-      expect(readUserVersion(connection)).toBe(10)
-      expect(readLedgerCount(connection)).toBe(10)
+      expect(readUserVersion(connection)).toBe(11)
+      expect(readLedgerCount(connection)).toBe(11)
 
       const result = executor.run((context) => {
         expect(context.connection).not.toBe(connection)
@@ -105,8 +105,8 @@ describe('database transaction executor', () => {
       expect(connection.inTransaction).toBe(false)
       expect(readTableCount(connection, 'app_settings')).toBe(1)
       expect(readTableCount(connection, 'sync_attempts')).toBe(1)
-      expect(readUserVersion(connection)).toBe(10)
-      expect(readLedgerCount(connection)).toBe(10)
+      expect(readUserVersion(connection)).toBe(11)
+      expect(readLedgerCount(connection)).toBe(11)
       expect(readLogs(logger)).toBe('')
 
       connection.close()
@@ -293,8 +293,8 @@ describe('database transaction executor', () => {
         expect(error).toBeInstanceOf(DatabaseTransactionStateError)
         expectSafeControlledError(error)
         expect(work).not.toHaveBeenCalled()
-        expect(readUserVersion(connection)).toBe(10)
-        expect(readLedgerCount(connection)).toBe(10)
+        expect(readUserVersion(connection)).toBe(11)
+        expect(readLedgerCount(connection)).toBe(11)
         expect(readTableCount(connection, 'app_settings')).toBe(0)
         expect(readLogs(logger)).toBe(
           'Database transaction failed; phase=state; errorType=DatabaseTransactionStateError'
