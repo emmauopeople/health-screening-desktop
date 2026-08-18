@@ -329,9 +329,53 @@ export function validateTobaccoWeeklyDraft(form: TobaccoWeeklyForm): readonly To
 }
 
 export function isTobaccoComplete(form: TobaccoWeeklyForm): boolean {
-  if (form.weeklyResponse === '') return false
-  if (form.weeklyResponse !== 'YES') return form.products.length === 0
-  return form.products.length > 0 && validateTobaccoWeeklyDraft(form).length === 0
+  return validateCompleteTobaccoWeekly(form).length === 0
+}
+
+export function validateCompleteTobaccoWeekly(
+  form: TobaccoWeeklyForm
+): readonly TobaccoFieldError[] {
+  const errors = [...validateTobaccoWeeklyDraft(form)]
+  if (form.weeklyResponse === '') {
+    errors.push({
+      fieldId: 'tobacco-weekly-response',
+      message: 'Select a weekly Tobacco response.'
+    })
+  } else if (form.weeklyResponse === 'YES' && form.products.length === 0) {
+    errors.push({ fieldId: 'tobacco-products', message: 'Add a product to complete this answer.' })
+  }
+  return errors
+}
+
+export function validateTobaccoCompletionReadiness(state: {
+  readonly workspace: ScreeningLifestyleWorkspace | null
+  readonly tobacco: TobaccoWeeklyForm
+  readonly tobaccoBaselineReviewConfirmedVersionId: string | null
+}): readonly TobaccoFieldError[] {
+  const errors: TobaccoFieldError[] = []
+  const baseline = state.workspace ? getTobaccoBaselineForInterpretation(state.workspace) : null
+  const hasReferencedBaseline =
+    state.workspace?.draft?.tobaccoBaselineVersionId !== null &&
+    state.workspace?.draft?.tobaccoBaselineVersionId !== undefined &&
+    baseline !== null &&
+    baseline !== undefined
+  if (!hasReferencedBaseline) {
+    errors.push({
+      fieldId: 'tobacco-baseline-reference',
+      message: 'Save a Tobacco baseline to complete Lifestyle.'
+    })
+  }
+  errors.push(...validateCompleteTobaccoWeekly(state.tobacco))
+  if (
+    hasTobaccoBaselineReviewConflict(baseline?.status, state.tobacco.weeklyResponse) &&
+    state.tobaccoBaselineReviewConfirmedVersionId !== baseline?.id
+  ) {
+    errors.push({
+      fieldId: 'tobacco-baseline-review-confirmation',
+      message: 'Confirm the referenced Tobacco baseline review.'
+    })
+  }
+  return errors
 }
 
 export function updateTobaccoResponse(
@@ -414,27 +458,31 @@ export function tobaccoToRequest(
 export function getTobaccoCardStatus(
   state: {
     readonly loadStatus: string
-    readonly saveStatus: string
     readonly tobaccoValidationErrors: readonly TobaccoFieldError[]
     readonly workspace: ScreeningLifestyleWorkspace | null
     readonly tobacco: TobaccoWeeklyForm
+    readonly tobaccoBaselineReviewConfirmedVersionId: string | null
   },
   editable: boolean
 ): TobaccoCardStatus {
-  if (!editable) return 'LOCKED'
+  if (!editable) return state.workspace?.draft?.status === 'COMPLETE' ? 'COMPLETE' : 'LOCKED'
   if (state.loadStatus !== 'READY' || state.workspace === null) return 'NOT_STARTED'
-  if (state.tobaccoValidationErrors.length > 0 || state.saveStatus === 'ERROR') {
+  if (state.tobaccoValidationErrors.length > 0) {
     return 'VALIDATION_ERROR'
   }
   const baseline = getTobaccoBaselineForInterpretation(state.workspace)
   if (baseline === null || baseline === undefined) return 'NOT_STARTED'
+  const hasReferencedBaseline =
+    state.workspace.draft?.tobaccoBaselineVersionId !== null &&
+    state.workspace.draft?.tobaccoBaselineVersionId !== undefined
   if (
-    state.tobacco.weeklyResponse === 'YES' &&
-    ['FORMER', 'NEVER', 'UNKNOWN', 'DECLINED'].includes(baseline.status)
+    hasReferencedBaseline &&
+    hasTobaccoBaselineReviewConflict(baseline.status, state.tobacco.weeklyResponse) &&
+    state.tobaccoBaselineReviewConfirmedVersionId !== baseline.id
   ) {
     return 'BASELINE_REVIEW'
   }
-  if (isTobaccoComplete(state.tobacco)) return 'COMPLETE'
+  if (validateTobaccoCompletionReadiness(state).length === 0) return 'COMPLETE'
   return 'IN_PROGRESS'
 }
 
@@ -488,6 +536,13 @@ function formatTobaccoBaselineStatus(status: string | undefined): string {
           : status === 'DECLINED'
             ? 'Declined'
             : 'Unknown'
+}
+
+function hasTobaccoBaselineReviewConflict(
+  baselineStatus: string | undefined,
+  weeklyResponse: string
+): boolean {
+  return (baselineStatus === 'FORMER' || baselineStatus === 'NEVER') && weeklyResponse === 'YES'
 }
 
 function toTobaccoWeeklyResponse(value: string | null): TobaccoWeeklyResponse {

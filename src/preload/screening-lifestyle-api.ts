@@ -6,6 +6,8 @@ import {
   screeningLifestyleCompleteResultSchema,
   screeningLifestyleGetWorkspaceRequestSchema,
   screeningLifestyleGetWorkspaceResultSchema,
+  screeningLifestyleReopenRequestSchema,
+  screeningLifestyleReopenResultSchema,
   screeningLifestyleSaveAlcoholBaselineResultSchema,
   screeningLifestyleSaveDraftRequestSchema,
   screeningLifestyleSaveDraftResultSchema,
@@ -18,6 +20,8 @@ import {
   type ScreeningLifestyleCompleteResult,
   type ScreeningLifestyleGetWorkspaceRequest,
   type ScreeningLifestyleGetWorkspaceResult,
+  type ScreeningLifestyleReopenRequest,
+  type ScreeningLifestyleReopenResult,
   type ScreeningLifestyleSaveAlcoholBaselineRequest,
   type ScreeningLifestyleSaveAlcoholBaselineResult,
   type ScreeningLifestyleSaveDraftRequest,
@@ -88,6 +92,14 @@ export function createScreeningLifestyleApi(invoke: IpcInvoke): ScreeningLifesty
         requestSchema: screeningLifestyleCompleteRequestSchema,
         resultSchema: screeningLifestyleCompleteResultSchema,
         channel: ipcChannels.screeningEncounters.lifestyle.complete
+      }),
+    reopen: (request: ScreeningLifestyleReopenRequest) =>
+      invokeLifestyle<ScreeningLifestyleReopenRequest, ScreeningLifestyleReopenResult>({
+        invoke,
+        request,
+        requestSchema: screeningLifestyleReopenRequestSchema,
+        resultSchema: screeningLifestyleReopenResultSchema,
+        channel: ipcChannels.screeningEncounters.lifestyle.reopen
       })
   })
 }

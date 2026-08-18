@@ -19,6 +19,8 @@ import {
   screeningLifestyleCompleteResultSchema,
   screeningLifestyleGetWorkspaceRequestSchema,
   screeningLifestyleGetWorkspaceResultSchema,
+  screeningLifestyleReopenRequestSchema,
+  screeningLifestyleReopenResultSchema,
   screeningLifestyleSaveAlcoholBaselineResultSchema,
   screeningLifestyleSaveDraftRequestSchema,
   screeningLifestyleSaveDraftResultSchema,
@@ -31,6 +33,8 @@ import {
   type ScreeningLifestyleGetWorkspaceRequest,
   type ScreeningLifestyleGetWorkspaceResult,
   type ScreeningLifestyleIpcErrorCode,
+  type ScreeningLifestyleReopenRequest,
+  type ScreeningLifestyleReopenResult,
   type ScreeningLifestyleSaveAlcoholBaselineResult,
   type ScreeningLifestyleSaveAlcoholBaselineRequest,
   type ScreeningLifestyleSaveDraftRequest,
@@ -77,6 +81,7 @@ export interface ScreeningLifestyleIpcHandlers {
     event: IpcSenderValidationEvent,
     request: unknown
   ): Promise<ScreeningLifestyleCompleteResult>
+  reopen(event: IpcSenderValidationEvent, request: unknown): Promise<ScreeningLifestyleReopenResult>
 }
 
 export function createScreeningLifestyleIpcHandlers({
@@ -182,6 +187,20 @@ export function createScreeningLifestyleIpcHandlers({
         ),
       navigationPolicy,
       logger
+    }),
+    reopen: createHandler<ScreeningLifestyleReopenRequest, ScreeningLifestyleReopenResult>({
+      channel: ipcChannels.screeningEncounters.lifestyle.reopen,
+      requestSchema: screeningLifestyleReopenRequestSchema,
+      resultSchema: screeningLifestyleReopenResultSchema,
+      invalidResult: () => createIpcSuccess({ status: 'VALIDATION_FAILED' as const }),
+      serviceCall: (request) =>
+        mapReopenedResult(
+          screeningLifestyleService.reopenLifestyle(
+            request as unknown as Parameters<ScreeningLifestyleService['reopenLifestyle']>[0]
+          )
+        ),
+      navigationPolicy,
+      logger
     })
   })
 }
@@ -259,6 +278,17 @@ function mapCompletedResult(
       workspace: toPublicWorkspace(result.workspace)
     }) as ScreeningLifestyleCompleteResult
   return createIpcSuccess({ status: result.status }) as ScreeningLifestyleCompleteResult
+}
+
+function mapReopenedResult(
+  result: ReturnType<ScreeningLifestyleService['reopenLifestyle']>
+): ScreeningLifestyleReopenResult {
+  if (result.status === 'REOPENED')
+    return createIpcSuccess({
+      status: 'REOPENED',
+      workspace: toPublicWorkspace(result.workspace)
+    }) as ScreeningLifestyleReopenResult
+  return createIpcSuccess({ status: result.status }) as ScreeningLifestyleReopenResult
 }
 
 function toPublicWorkspace(workspace: LifestyleWorkspaceSummary): LifestyleWorkspaceSummary {

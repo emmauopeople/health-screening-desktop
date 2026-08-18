@@ -63,7 +63,8 @@ const approvedOperationSchemas = new Map<
     'screening-encounter.lifestyle-work-baseline-created.v1'
   ],
   ['SCREENING_LIFESTYLE_DRAFT_SAVED', 'screening-encounter.lifestyle-draft-saved.v1'],
-  ['SCREENING_LIFESTYLE_STEP_COMPLETED', 'screening-encounter.lifestyle-step-completed.v1']
+  ['SCREENING_LIFESTYLE_STEP_COMPLETED', 'screening-encounter.lifestyle-step-completed.v1'],
+  ['SCREENING_LIFESTYLE_REOPENED', 'screening-encounter.lifestyle-reopened.v1']
 ])
 const maximumPayloadDepth = 4
 const maximumPayloadNodes = 80

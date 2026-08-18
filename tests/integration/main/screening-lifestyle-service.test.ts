@@ -154,7 +154,7 @@ describe('screening Lifestyle application service integration', () => {
       if (result.status !== 'SAVED') return
       expect(result.workspace.draft).toMatchObject({
         encounterId,
-        status: 'IN_PROGRESS',
+        status: 'DRAFT',
         periodStart: '2026-07-31',
         periodEnd: '2026-08-06'
       })
@@ -671,8 +671,8 @@ describe('screening Lifestyle application service integration', () => {
     }
   )
 
-  it('reopens a completed draft when a baseline reference changes', async () => {
-    await withLifestyleService(({ service }) => {
+  it('reopens a completed draft only through the explicit audited reopen operation', async () => {
+    await withLifestyleService(({ service, connection }) => {
       const alcohol = service.saveAlcoholBaseline(alcoholBaselineRequest())
       if (alcohol.status !== 'SAVED' || alcohol.workspace.draft === null)
         throw new Error('Expected alcohol baseline')
@@ -701,20 +701,62 @@ describe('screening Lifestyle application service integration', () => {
       if (completed.status !== 'COMPLETED' || completed.workspace.draft === null)
         throw new Error('Expected completed Lifestyle draft')
 
-      const reopened = service.saveAlcoholBaseline({
+      const blockedBaselineEdit = service.saveAlcoholBaseline({
         ...alcoholBaselineRequest(),
         status: 'FORMER',
         expectedBaselineVersion: 1,
         expectedDraftVersion: completed.workspace.draft.rowVersion
       })
-      expect(reopened).toMatchObject({
-        status: 'SAVED',
-        workspace: { draft: { status: 'IN_PROGRESS' } }
+      expect(blockedBaselineEdit).toEqual({ status: 'ENCOUNTER_NOT_EDITABLE' })
+
+      expect(
+        service.reopenLifestyle({
+          encounterId: parseEntityId(encounterId),
+          expectedVersion: null
+        } as never)
+      ).toEqual({ status: 'VALIDATION_FAILED' })
+
+      expect(
+        service.reopenLifestyle({
+          encounterId: parseEntityId(encounterId),
+          expectedVersion: completed.workspace.draft.rowVersion - 1
+        })
+      ).toEqual({ status: 'VERSION_CONFLICT' })
+
+      const reopened = service.reopenLifestyle({
+        encounterId: parseEntityId(encounterId),
+        expectedVersion: completed.workspace.draft.rowVersion
       })
-      if (reopened.status !== 'SAVED' || reopened.workspace.draft === null) return
-      expect(reopened.workspace.draft.alcoholBaselineVersionId).not.toBe(
+      expect(reopened).toMatchObject({
+        status: 'REOPENED',
+        workspace: { draft: { status: 'DRAFT' } }
+      })
+      if (reopened.status !== 'REOPENED' || reopened.workspace.draft === null) return
+      expect(reopened.workspace.draft.alcoholBaselineVersionId).toBe(
         completed.workspace.draft.alcoholBaselineVersionId
       )
+      expect(reopened.workspace.draft.tobacco?.products).toEqual(
+        completed.workspace.draft.tobacco?.products
+      )
+      expect(reopened.workspace.draft.otherActivities).toEqual(
+        completed.workspace.draft.otherActivities
+      )
+      const auditRow = connection
+        .prepare(
+          "SELECT metadata_json FROM audit_log WHERE action = 'SCREENING_LIFESTYLE_REOPENED'"
+        )
+        .get() as { metadata_json: string }
+      const metadata = JSON.parse(auditRow.metadata_json) as Record<string, unknown>
+      expect(metadata).toMatchObject({
+        encounter_id: encounterId,
+        previous_draft_status: 'COMPLETE',
+        draft_status: 'DRAFT',
+        draft_id: completed.workspace.draft.id,
+        alcohol_baseline_reference_id: completed.workspace.draft.alcoholBaselineVersionId,
+        tobacco_baseline_reference_id: completed.workspace.draft.tobaccoBaselineVersionId,
+        work_baseline_reference_id: completed.workspace.draft.workBaselineVersionId
+      })
+      expect(JSON.stringify(metadata)).not.toMatch(/Worker|Community activity|weeklyResponse/u)
       expect(
         service.completeLifestyle({
           ...completeWeeklyRequest({ expectedVersion: reopened.workspace.draft.rowVersion }),
@@ -722,6 +764,70 @@ describe('screening Lifestyle application service integration', () => {
           tobaccoBaselineReviewConfirmedVersionId: reopened.workspace.draft.tobaccoBaselineVersionId
         })
       ).toEqual({ status: 'VALIDATION_FAILED' })
+    })
+  })
+
+  it('rejects reopen when unauthorized, wrong-encounter, or parent encounter is not editable', async () => {
+    await withLifestyleService(
+      ({ service }) => {
+        expect(
+          service.reopenLifestyle({
+            encounterId: parseEntityId(encounterId),
+            expectedVersion: 1
+          })
+        ).toEqual({ status: 'FORBIDDEN' })
+      },
+      { sessionRole: 'VIEWER' as LocalUserRole }
+    )
+
+    await withLifestyleService(({ service }) => {
+      expect(
+        service.reopenLifestyle({
+          encounterId: parseEntityId('95000000-0000-4000-8000-000000009999'),
+          expectedVersion: 1
+        })
+      ).toEqual({ status: 'ENCOUNTER_NOT_FOUND' })
+    })
+
+    await withLifestyleService(({ service, connection }) => {
+      const alcohol = service.saveAlcoholBaseline(alcoholBaselineRequest())
+      if (alcohol.status !== 'SAVED' || alcohol.workspace.draft === null)
+        throw new Error('Expected alcohol baseline')
+      const tobacco = service.saveTobaccoBaseline({
+        ...tobaccoBaselineRequest(),
+        expectedDraftVersion: alcohol.workspace.draft.rowVersion
+      })
+      if (tobacco.status !== 'SAVED' || tobacco.workspace.draft === null)
+        throw new Error('Expected tobacco baseline')
+      const work = service.saveWorkBaseline({
+        ...workBaselineRequest(),
+        expectedDraftVersion: tobacco.workspace.draft.rowVersion
+      })
+      if (work.status !== 'SAVED' || work.workspace.draft === null)
+        throw new Error('Expected work baseline')
+      const draft = service.saveLifestyleDraft(
+        completeWeeklyRequest({ expectedVersion: work.workspace.draft.rowVersion })
+      )
+      if (draft.status !== 'SAVED' || draft.workspace.draft === null)
+        throw new Error('Expected Lifestyle draft')
+      const completed = service.completeLifestyle({
+        ...completeWeeklyRequest({ expectedVersion: draft.workspace.draft.rowVersion }),
+        alcoholBaselineReviewConfirmedVersionId: null,
+        tobaccoBaselineReviewConfirmedVersionId: null
+      })
+      if (completed.status !== 'COMPLETED' || completed.workspace.draft === null)
+        throw new Error('Expected completed Lifestyle draft')
+
+      connection
+        .prepare("UPDATE screening_encounters SET status = 'COMPLETED' WHERE id = ?")
+        .run(encounterId)
+
+      expect(
+        service.reopenLifestyle({
+          encounterId: parseEntityId(encounterId),
+          expectedVersion: completed.workspace.draft.rowVersion
+        })
+      ).toEqual({ status: 'ENCOUNTER_NOT_EDITABLE' })
     })
   })
 

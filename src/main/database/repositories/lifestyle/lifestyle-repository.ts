@@ -30,6 +30,7 @@ import type {
   LifestyleAlcoholWeeklyRecord,
   LifestyleDraftRecord,
   LifestyleDraftBaselineReferenceUpdateInput,
+  LifestyleDraftReopenInput,
   LifestyleDraftUpdateInput,
   LifestyleDraftUpdateResult,
   LifestyleRepository,
@@ -221,7 +222,9 @@ export function createLifestyleRepository(connection: Database.Database): Lifest
     updateDraftBaselineReferences: (
       tx: DatabaseTransactionConnection,
       input: LifestyleDraftBaselineReferenceUpdateInput
-    ) => updateDraftBaselineReferences(tx, input)
+    ) => updateDraftBaselineReferences(tx, input),
+    reopenDraft: (tx: DatabaseTransactionConnection, input: LifestyleDraftReopenInput) =>
+      reopenDraft(tx, input)
   }
   return Object.freeze(repository)
 }
@@ -390,6 +393,7 @@ function updateDraft(
     if (!current) return { status: 'NOT_FOUND' }
     if (current.rowVersion !== parsed.expectedRowVersion)
       return { status: 'VERSION_CONFLICT', draft: current }
+    if (current.status === 'COMPLETE') return { status: 'INVALID_STATUS', draft: current }
     validateReferencedBaselines(
       tx,
       current.patientId,
@@ -473,6 +477,7 @@ function updateDraftBaselineReferences(
     if (!current) return { status: 'NOT_FOUND' }
     if (current.rowVersion !== parsed.expectedRowVersion)
       return { status: 'VERSION_CONFLICT', draft: current }
+    if (current.status === 'COMPLETE') return { status: 'INVALID_STATUS', draft: current }
     validateReferencedBaselines(
       tx,
       current.patientId,
@@ -492,7 +497,7 @@ function updateDraftBaselineReferences(
         'UPDATE lifestyle_drafts SET status = ?, alcohol_baseline_version_id = ?, tobacco_baseline_version_id = ?, work_baseline_version_id = ?, updated_by = ?, updated_at = ?, row_version = row_version + 1 WHERE id = ? AND row_version = ?'
       )
       .run(
-        current.status === 'COMPLETE' ? 'IN_PROGRESS' : current.status,
+        current.status,
         parsed.alcoholBaselineVersionId,
         parsed.tobaccoBaselineVersionId,
         parsed.workBaselineVersionId,
@@ -501,6 +506,48 @@ function updateDraftBaselineReferences(
         parsed.id,
         parsed.expectedRowVersion
       )
+    if (result.changes !== 1) return { status: 'VERSION_CONFLICT', draft: current }
+    return {
+      status: 'UPDATED',
+      draft:
+        readDraftById(tx, parsed.id) ??
+        (() => {
+          throw new RepositoryDataIntegrityError()
+        })()
+    }
+  } catch (error) {
+    throw mapWriteError(error)
+  }
+}
+
+function reopenDraft(
+  tx: DatabaseTransactionConnection,
+  input: LifestyleDraftReopenInput
+): LifestyleDraftUpdateResult {
+  assertActiveDatabaseTransactionConnection(tx)
+  try {
+    const data = readDataProperties(input, [
+      'id',
+      'expectedRowVersion',
+      'actorId',
+      'occurredAt'
+    ] as const)
+    const parsed = {
+      id: parseEntityId(data.id),
+      expectedRowVersion: parsePositiveVersion(data.expectedRowVersion),
+      actorId: parseEntityId(data.actorId),
+      occurredAt: parseUtcTimestamp(data.occurredAt)
+    }
+    const current = readDraftById(tx, parsed.id)
+    if (!current) return { status: 'NOT_FOUND' }
+    if (current.rowVersion !== parsed.expectedRowVersion)
+      return { status: 'VERSION_CONFLICT', draft: current }
+    if (current.status !== 'COMPLETE') return { status: 'INVALID_STATUS', draft: current }
+    const result = tx
+      .prepare(
+        "UPDATE lifestyle_drafts SET status = 'DRAFT', updated_by = ?, updated_at = ?, row_version = row_version + 1 WHERE id = ? AND row_version = ? AND status = 'COMPLETE'"
+      )
+      .run(parsed.actorId, parsed.occurredAt, parsed.id, parsed.expectedRowVersion)
     if (result.changes !== 1) return { status: 'VERSION_CONFLICT', draft: current }
     return {
       status: 'UPDATED',
@@ -1196,7 +1243,7 @@ function readOtherActivity(row: Record<string, unknown>): LifestyleOtherActivity
     lifestyleDraftId: parseEntityId(row.lifestyle_draft_id),
     sequenceNumber: Number(row.sequence_number),
     category: row.category as LifestyleOtherActivityRow['category'],
-    description: String(row.description),
+    description: row.description as string | null,
     daysInPastSevenDays: Number(row.days_in_past_seven_days),
     averageMinutesPerDay: Number(row.average_minutes_per_day),
     intensity: row.intensity as LifestyleOtherActivityRow['intensity'],

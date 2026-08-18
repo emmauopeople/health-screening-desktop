@@ -64,6 +64,10 @@ const completeRequest = {
   alcoholBaselineReviewConfirmedVersionId: null,
   tobaccoBaselineReviewConfirmedVersionId: null
 } as const
+const reopenRequest = {
+  encounterId: lifestyleEncounterId,
+  expectedVersion: 4
+} as const
 
 describe('screening Lifestyle IPC handlers', () => {
   it.each([
@@ -72,7 +76,8 @@ describe('screening Lifestyle IPC handlers', () => {
     ['saveTobaccoBaseline', 'SAVED'],
     ['saveWorkBaseline', 'SAVED'],
     ['saveDraft', 'SAVED'],
-    ['complete', 'COMPLETED']
+    ['complete', 'COMPLETED'],
+    ['reopen', 'REOPENED']
   ] as const)('maps a successful %s operation', async (operation, status) => {
     const service = createSuccessfulService()
     const handlers = createHandlers(service)
@@ -91,6 +96,7 @@ describe('screening Lifestyle IPC handlers', () => {
     await handlers.saveWorkBaseline(event, workBaselineRequest)
     await handlers.saveDraft(event, request)
     await handlers.complete(event, completeRequest)
+    await handlers.reopen(event, reopenRequest)
 
     expect(service.getLifestyleWorkspace).toHaveBeenCalledWith({
       encounterId: lifestyleEncounterId
@@ -100,6 +106,17 @@ describe('screening Lifestyle IPC handlers', () => {
     expect(service.saveWorkBaseline).toHaveBeenCalledWith(workBaselineRequest)
     expect(service.saveLifestyleDraft).toHaveBeenCalledWith(request)
     expect(service.completeLifestyle).toHaveBeenCalledWith(completeRequest)
+    expect(service.reopenLifestyle).toHaveBeenCalledWith(reopenRequest)
+  })
+
+  it('rejects a reopen request without a positive expected version before reaching the service', async () => {
+    const service = createSuccessfulService()
+    const handlers = createHandlers(service)
+
+    await expect(
+      handlers.reopen(event, { ...reopenRequest, expectedVersion: null } as never)
+    ).resolves.toEqual(createIpcSuccess({ status: 'VALIDATION_FAILED' }))
+    expect(service.reopenLifestyle).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -256,6 +273,8 @@ function operationRequest(operation: string): unknown {
       return request
     case 'complete':
       return completeRequest
+    case 'reopen':
+      return reopenRequest
     default:
       return request
   }
@@ -289,7 +308,8 @@ function createSuccessfulService(
         ? overrides.implementation()
         : { status: 'SAVED' as const, workspace }
     ),
-    completeLifestyle: vi.fn(() => ({ status: 'COMPLETED' as const, workspace }))
+    completeLifestyle: vi.fn(() => ({ status: 'COMPLETED' as const, workspace })),
+    reopenLifestyle: vi.fn(() => ({ status: 'REOPENED' as const, workspace }))
   } as unknown as ScreeningLifestyleService
 }
 
@@ -303,7 +323,8 @@ function createServiceWithStatus(
     saveTobaccoBaseline: vi.fn(() => result),
     saveWorkBaseline: vi.fn(() => result),
     saveLifestyleDraft: vi.fn(() => result),
-    completeLifestyle: vi.fn(() => result)
+    completeLifestyle: vi.fn(() => result),
+    reopenLifestyle: vi.fn(() => result)
   } as unknown as ScreeningLifestyleService
 }
 

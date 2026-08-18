@@ -116,7 +116,8 @@ describe('shared IPC contracts', () => {
             'health-screening:screening-encounters:lifestyle:save-tobacco-baseline',
           saveWorkBaseline: 'health-screening:screening-encounters:lifestyle:save-work-baseline',
           saveDraft: 'health-screening:screening-encounters:lifestyle:save-draft',
-          complete: 'health-screening:screening-encounters:lifestyle:complete'
+          complete: 'health-screening:screening-encounters:lifestyle:complete',
+          reopen: 'health-screening:screening-encounters:lifestyle:reopen'
         }
       },
       installationSettings: {
@@ -128,9 +129,10 @@ describe('shared IPC contracts', () => {
     })
     const allChannels = flattenChannelStrings(ipcChannels)
 
-    expect(allChannels).toHaveLength(43)
+    expect(allChannels).toHaveLength(44)
     expect(new Set(allChannels).size).toBe(allChannels.length)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.lifestyle.complete)
+    expect(allChannels).toContain(ipcChannels.screeningEncounters.lifestyle.reopen)
   })
 
   it('keeps patient requests strict and main-process-authored', () => {

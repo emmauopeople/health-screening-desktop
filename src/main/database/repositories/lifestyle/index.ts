@@ -26,6 +26,7 @@ export type {
   LifestyleDate,
   LifestyleDraftBaselineReferenceUpdateInput,
   LifestyleDraftOwnershipInput,
+  LifestyleDraftReopenInput,
   LifestyleDraftRecord,
   LifestyleDraftStatus,
   LifestyleDraftUpdateInput,

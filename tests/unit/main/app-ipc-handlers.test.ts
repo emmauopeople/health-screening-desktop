@@ -92,7 +92,8 @@ const applicationOwnedHandlerChannels = Object.freeze([
   ipcChannels.screeningEncounters.lifestyle.saveTobaccoBaseline,
   ipcChannels.screeningEncounters.lifestyle.saveWorkBaseline,
   ipcChannels.screeningEncounters.lifestyle.saveDraft,
-  ipcChannels.screeningEncounters.lifestyle.complete
+  ipcChannels.screeningEncounters.lifestyle.complete,
+  ipcChannels.screeningEncounters.lifestyle.reopen
 ])
 
 describe('application IPC handlers', () => {
@@ -208,7 +209,7 @@ describe('application IPC handler registration', () => {
 
     const dispose = registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(42)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(43)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
@@ -237,6 +238,7 @@ describe('application IPC handler registration', () => {
       'health-screening:patient:search',
       'health-screening:screening-encounters:lifestyle:complete',
       'health-screening:screening-encounters:lifestyle:get-workspace',
+      'health-screening:screening-encounters:lifestyle:reopen',
       'health-screening:screening-encounters:lifestyle:save-alcohol-baseline',
       'health-screening:screening-encounters:lifestyle:save-draft',
       'health-screening:screening-encounters:lifestyle:save-tobacco-baseline',
@@ -260,7 +262,7 @@ describe('application IPC handler registration', () => {
     expect([...ipcMain.handlers.keys()]).toEqual(['unrelated:channel'])
   })
 
-  it('registers exactly six Lifestyle handlers and disposes only its owned channels', () => {
+  it('registers exactly seven Lifestyle handlers and disposes only its owned channels', () => {
     const ipcMain = createMockIpcMain()
     const unrelatedHandler = vi.fn()
     ipcMain.handlers.set('unrelated:channel', unrelatedHandler)
@@ -270,7 +272,7 @@ describe('application IPC handler registration', () => {
       createDependencies().screeningLifestyle
     )
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(6)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(7)
     expect([...ipcMain.handlers.keys()]).toEqual([
       'unrelated:channel',
       ipcChannels.screeningEncounters.lifestyle.getWorkspace,
@@ -278,7 +280,8 @@ describe('application IPC handler registration', () => {
       ipcChannels.screeningEncounters.lifestyle.saveTobaccoBaseline,
       ipcChannels.screeningEncounters.lifestyle.saveWorkBaseline,
       ipcChannels.screeningEncounters.lifestyle.saveDraft,
-      ipcChannels.screeningEncounters.lifestyle.complete
+      ipcChannels.screeningEncounters.lifestyle.complete,
+      ipcChannels.screeningEncounters.lifestyle.reopen
     ])
 
     dispose()
@@ -290,7 +293,8 @@ describe('application IPC handler registration', () => {
       ipcChannels.screeningEncounters.lifestyle.saveTobaccoBaseline,
       ipcChannels.screeningEncounters.lifestyle.saveWorkBaseline,
       ipcChannels.screeningEncounters.lifestyle.saveDraft,
-      ipcChannels.screeningEncounters.lifestyle.complete
+      ipcChannels.screeningEncounters.lifestyle.complete,
+      ipcChannels.screeningEncounters.lifestyle.reopen
     ])
     expect(ipcMain.handlers.get('unrelated:channel')).toBe(unrelatedHandler)
   })
@@ -363,7 +367,7 @@ describe('application IPC handler registration', () => {
     registerApplicationIpcHandlers(ipcMain, createDependencies())
     registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(84)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(86)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getHealth)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
@@ -396,6 +400,7 @@ describe('application IPC handler registration', () => {
       'health-screening:patient:search',
       'health-screening:screening-encounters:lifestyle:complete',
       'health-screening:screening-encounters:lifestyle:get-workspace',
+      'health-screening:screening-encounters:lifestyle:reopen',
       'health-screening:screening-encounters:lifestyle:save-alcohol-baseline',
       'health-screening:screening-encounters:lifestyle:save-draft',
       'health-screening:screening-encounters:lifestyle:save-tobacco-baseline',
@@ -1038,7 +1043,8 @@ function createScreeningLifestyleService(): ScreeningLifestyleService {
     saveTobaccoBaseline: vi.fn(() => ({ status: 'UNAVAILABLE' as const })),
     saveWorkBaseline: vi.fn(() => ({ status: 'UNAVAILABLE' as const })),
     saveLifestyleDraft: vi.fn(() => ({ status: 'UNAVAILABLE' as const })),
-    completeLifestyle: vi.fn(() => ({ status: 'UNAVAILABLE' as const }))
+    completeLifestyle: vi.fn(() => ({ status: 'UNAVAILABLE' as const })),
+    reopenLifestyle: vi.fn(() => ({ status: 'UNAVAILABLE' as const }))
   }
 }
 

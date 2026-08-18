@@ -1,5 +1,6 @@
 import type {
   ScreeningLifestyleSaveAlcoholBaselineRequest,
+  ScreeningLifestyleCompleteRequest,
   ScreeningLifestyleSaveDraftRequest,
   ScreeningLifestyleWorkspace
 } from '@shared/ipc'
@@ -9,13 +10,41 @@ import {
   createInitialTobaccoBaselineForm,
   createInitialTobaccoWeeklyForm,
   getTobaccoBaselineForEditableForm,
+  getTobaccoBaselineForInterpretation,
   tobaccoBaselineToForm,
   tobaccoToRequest,
   tobaccoWeeklyToForm,
+  validateTobaccoCompletionReadiness,
+  validateTobaccoWeeklyDraft,
   type TobaccoBaselineForm,
   type TobaccoFieldError,
   type TobaccoWeeklyForm
 } from './tobacco-workspace-model'
+import {
+  createInitialOtherActivityForm,
+  createInitialPhysicalActivityForm,
+  createInitialWorkBaselineForm,
+  createInitialWorkWeeklyForm,
+  otherActivityToForm,
+  physicalActivityToForm,
+  workBaselineToForm,
+  workWeeklyToForm,
+  otherActivityToRequest,
+  physicalActivityToRequest,
+  validateCompleteOtherActivity,
+  validateCompletePhysicalActivity,
+  validateOtherActivity,
+  validatePhysicalActivity,
+  validateWorkCompletionReadiness,
+  workWeeklyToRequest,
+  type ActivityFieldError,
+  type OtherActivityForm,
+  type PhysicalActivityForm,
+  type WorkBaselineForm,
+  type WorkWeeklyForm
+} from './activity-workspace-model'
+
+export * from './activity-workspace-model'
 
 export {
   createInitialTobaccoBaselineForm,
@@ -31,6 +60,8 @@ export {
   tobaccoToRequest,
   tobaccoWeeklyToForm,
   validateTobaccoBaseline,
+  validateTobaccoCompletionReadiness,
+  validateCompleteTobaccoWeekly,
   validateTobaccoWeeklyDraft,
   tobaccoFrequencyOptions,
   tobaccoProductOptions,
@@ -50,8 +81,17 @@ export type AlcoholWeeklyResponse =
 export type LifestyleLoadStatus = 'NOT_LOADED' | 'LOADING' | 'READY' | 'ERROR'
 export type LifestyleSaveStatus = 'IDLE' | 'SAVING' | 'SAVED' | 'ERROR'
 export type AlcoholFieldError = { readonly fieldId: string; readonly message: string }
+export type LifestyleBaselineSaveDomain = 'ALCOHOL' | 'TOBACCO' | 'WORK'
 export type AlcoholCardStatus =
   'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETE' | 'BASELINE_REVIEW' | 'VALIDATION_ERROR' | 'LOCKED'
+
+export interface LifestyleCompletionReadiness {
+  readonly validationErrors: readonly AlcoholFieldError[]
+  readonly tobaccoValidationErrors: readonly TobaccoFieldError[]
+  readonly physicalActivityValidationErrors: readonly ActivityFieldError[]
+  readonly workValidationErrors: readonly ActivityFieldError[]
+  readonly otherActivityValidationErrors: readonly ActivityFieldError[]
+}
 
 export interface AlcoholBaselineForm {
   readonly everConsumed: AlcoholEverResponse
@@ -89,10 +129,25 @@ export interface LifestyleDraftState {
   readonly tobaccoBaselineForm: TobaccoBaselineForm
   readonly tobacco: TobaccoWeeklyForm
   readonly tobaccoValidationErrors: readonly TobaccoFieldError[]
+  readonly physicalActivityExpanded: boolean
+  readonly physicalActivity: PhysicalActivityForm
+  readonly physicalActivityValidationErrors: readonly ActivityFieldError[]
+  readonly workExpanded: boolean
+  readonly workBaselineOpen: boolean
+  readonly workBaselineForm: WorkBaselineForm
+  readonly work: WorkWeeklyForm
+  readonly workValidationErrors: readonly ActivityFieldError[]
+  readonly otherActivityExpanded: boolean
+  readonly otherActivity: OtherActivityForm
+  readonly otherActivityValidationErrors: readonly ActivityFieldError[]
+  readonly alcoholBaselineReviewConfirmedVersionId: string | null
+  readonly tobaccoBaselineReviewConfirmedVersionId: string | null
+  readonly validationFocusRequestToken: string | null
   readonly dirty: boolean
 }
 
-export type LifestyleExpandedCard = 'ALCOHOL' | 'TOBACCO'
+export type LifestyleExpandedCard =
+  'ALCOHOL' | 'TOBACCO' | 'PHYSICAL_ACTIVITY' | 'WORK' | 'OTHER_ACTIVITY'
 
 export const alcoholBeverageOptions: readonly {
   readonly value: AlcoholBeverageCode
@@ -133,6 +188,20 @@ export function createInitialLifestyleDraftState(): LifestyleDraftState {
     tobaccoBaselineForm: createInitialTobaccoBaselineForm(),
     tobacco: createInitialTobaccoWeeklyForm(),
     tobaccoValidationErrors: [],
+    physicalActivityExpanded: false,
+    physicalActivity: createInitialPhysicalActivityForm(),
+    physicalActivityValidationErrors: [],
+    workExpanded: false,
+    workBaselineOpen: false,
+    workBaselineForm: createInitialWorkBaselineForm(),
+    work: createInitialWorkWeeklyForm(),
+    workValidationErrors: [],
+    otherActivityExpanded: false,
+    otherActivity: createInitialOtherActivityForm(),
+    otherActivityValidationErrors: [],
+    alcoholBaselineReviewConfirmedVersionId: null,
+    tobaccoBaselineReviewConfirmedVersionId: null,
+    validationFocusRequestToken: null,
     dirty: false
   }
 }
@@ -143,6 +212,7 @@ export function createLifestyleDraftStateFromWorkspace(
 ): LifestyleDraftState {
   const baseline = getAlcoholBaselineForEditableForm(workspace)
   const tobaccoBaseline = getTobaccoBaselineForEditableForm(workspace)
+  const workBaseline = workspace.activeWorkBaseline ?? workspace.referencedWorkBaseline
   return {
     loadStatus: 'READY',
     saveStatus: options.saveStatus ?? 'IDLE',
@@ -164,6 +234,26 @@ export function createLifestyleDraftStateFromWorkspace(
       ? tobaccoWeeklyToForm(workspace.draft.tobacco)
       : createInitialTobaccoWeeklyForm(),
     tobaccoValidationErrors: [],
+    physicalActivityExpanded: false,
+    physicalActivity: workspace.draft?.physicalActivity
+      ? physicalActivityToForm(workspace.draft.physicalActivity)
+      : createInitialPhysicalActivityForm(),
+    physicalActivityValidationErrors: [],
+    workExpanded: false,
+    workBaselineOpen: false,
+    workBaselineForm: workBaseline
+      ? workBaselineToForm(workBaseline)
+      : createInitialWorkBaselineForm(),
+    work: workspace.draft?.work
+      ? workWeeklyToForm(workspace.draft.work)
+      : createInitialWorkWeeklyForm(),
+    workValidationErrors: [],
+    otherActivityExpanded: false,
+    otherActivity: otherActivityToForm(workspace),
+    otherActivityValidationErrors: [],
+    alcoholBaselineReviewConfirmedVersionId: null,
+    tobaccoBaselineReviewConfirmedVersionId: null,
+    validationFocusRequestToken: null,
     dirty: false
   }
 }
@@ -178,7 +268,61 @@ export function collapseLifestylePanels(state: LifestyleDraftState): LifestyleDr
     alcoholExpanded: false,
     baselineOpen: false,
     tobaccoExpanded: false,
-    tobaccoBaselineOpen: false
+    tobaccoBaselineOpen: false,
+    physicalActivityExpanded: false,
+    workExpanded: false,
+    workBaselineOpen: false,
+    otherActivityExpanded: false
+  }
+}
+
+export function mergeLifestyleBaselineSaveWorkspace(
+  current: LifestyleDraftState,
+  workspace: ScreeningLifestyleWorkspace,
+  domain: LifestyleBaselineSaveDomain,
+  statusMessage: string
+): LifestyleDraftState {
+  const authoritative = createLifestyleDraftStateFromWorkspace(workspace, {
+    saveStatus: 'SAVED',
+    statusMessage
+  })
+  const alcoholBaselineId = getAlcoholBaselineForInterpretation(workspace)?.id ?? null
+  const tobaccoBaselineId = getTobaccoBaselineForInterpretation(workspace)?.id ?? null
+
+  return {
+    ...authoritative,
+    alcoholExpanded: domain === 'ALCOHOL' ? true : current.alcoholExpanded,
+    baselineOpen: domain === 'ALCOHOL' ? false : current.baselineOpen,
+    baselineForm: domain === 'ALCOHOL' ? authoritative.baselineForm : current.baselineForm,
+    alcohol: current.alcohol,
+    validationErrors: validateAlcoholWeeklyDraft(current.alcohol),
+    tobaccoExpanded: domain === 'TOBACCO' ? true : current.tobaccoExpanded,
+    tobaccoBaselineOpen: domain === 'TOBACCO' ? false : current.tobaccoBaselineOpen,
+    tobaccoBaselineForm:
+      domain === 'TOBACCO' ? authoritative.tobaccoBaselineForm : current.tobaccoBaselineForm,
+    tobacco: current.tobacco,
+    tobaccoValidationErrors: validateTobaccoWeeklyDraft(current.tobacco),
+    physicalActivityExpanded: current.physicalActivityExpanded,
+    physicalActivity: current.physicalActivity,
+    physicalActivityValidationErrors: validatePhysicalActivity(current.physicalActivity),
+    workExpanded: domain === 'WORK' ? true : current.workExpanded,
+    workBaselineOpen: domain === 'WORK' ? false : current.workBaselineOpen,
+    workBaselineForm: domain === 'WORK' ? authoritative.workBaselineForm : current.workBaselineForm,
+    work: current.work,
+    workValidationErrors: domain === 'WORK' ? [] : current.workValidationErrors,
+    otherActivityExpanded: current.otherActivityExpanded,
+    otherActivity: current.otherActivity,
+    otherActivityValidationErrors: validateOtherActivity(current.otherActivity),
+    alcoholBaselineReviewConfirmedVersionId:
+      current.alcoholBaselineReviewConfirmedVersionId === alcoholBaselineId
+        ? current.alcoholBaselineReviewConfirmedVersionId
+        : null,
+    tobaccoBaselineReviewConfirmedVersionId:
+      current.tobaccoBaselineReviewConfirmedVersionId === tobaccoBaselineId
+        ? current.tobaccoBaselineReviewConfirmedVersionId
+        : null,
+    validationFocusRequestToken: null,
+    dirty: current.dirty
   }
 }
 
@@ -197,17 +341,33 @@ export function toggleLifestyleCard(
       alcoholExpanded,
       baselineOpen: alcoholExpanded ? state.baselineOpen : false,
       tobaccoExpanded: false,
-      tobaccoBaselineOpen: false
+      tobaccoBaselineOpen: false,
+      physicalActivityExpanded: false,
+      workExpanded: false,
+      workBaselineOpen: false,
+      otherActivityExpanded: false
     }
   }
 
-  const tobaccoExpanded = !state.tobaccoExpanded
+  const expanded =
+    card === 'TOBACCO'
+      ? state.tobaccoExpanded
+      : card === 'PHYSICAL_ACTIVITY'
+        ? state.physicalActivityExpanded
+        : card === 'WORK'
+          ? state.workExpanded
+          : state.otherActivityExpanded
+  const nextExpanded = !expanded
   return {
     ...state,
-    tobaccoExpanded,
-    tobaccoBaselineOpen: tobaccoExpanded ? state.tobaccoBaselineOpen : false,
+    tobaccoExpanded: card === 'TOBACCO' ? nextExpanded : false,
+    tobaccoBaselineOpen: false,
     alcoholExpanded: false,
-    baselineOpen: false
+    baselineOpen: false,
+    physicalActivityExpanded: card === 'PHYSICAL_ACTIVITY' ? nextExpanded : false,
+    workExpanded: card === 'WORK' ? nextExpanded : false,
+    workBaselineOpen: card === 'WORK' && nextExpanded ? state.workBaselineOpen : false,
+    otherActivityExpanded: card === 'OTHER_ACTIVITY' ? nextExpanded : false
   }
 }
 
@@ -405,19 +565,99 @@ export function validateAlcoholWeeklyDraft(form: AlcoholWeeklyForm): readonly Al
 }
 
 export function isAlcoholComplete(form: AlcoholWeeklyForm): boolean {
-  if (form.weeklyResponse === '') return false
-  if (form.weeklyResponse !== 'YES') return !hasAlcoholDetails(form)
-  if (
-    form.drinkingDays === '' ||
-    form.totalStandardizedDrinks === '' ||
-    form.largestOneDayAmount === '' ||
-    form.daysAtLargestAmount === ''
-  ) {
-    return false
+  return validateCompleteAlcoholWeekly(form).length === 0
+}
+
+export function validateCompleteAlcoholWeekly(
+  form: AlcoholWeeklyForm
+): readonly AlcoholFieldError[] {
+  const errors = [...validateAlcoholWeeklyDraft(form)]
+  if (form.weeklyResponse === '') {
+    errors.push({ fieldId: 'weeklyResponse', message: 'Select a weekly alcohol response.' })
+    return errors
   }
+  if (form.weeklyResponse === 'YES') {
+    const required: readonly [keyof AlcoholWeeklyForm, string, string][] = [
+      ['drinkingDays', 'drinkingDays', 'Enter drinking days to complete this answer.'],
+      [
+        'totalStandardizedDrinks',
+        'totalStandardizedDrinks',
+        'Enter total drinks to complete this answer.'
+      ],
+      [
+        'largestOneDayAmount',
+        'largestOneDayAmount',
+        'Enter the highest daily amount to complete this answer.'
+      ],
+      [
+        'daysAtLargestAmount',
+        'daysAtLargestAmount',
+        'Enter days at the highest amount to complete this answer.'
+      ]
+    ]
+    for (const [property, fieldId, message] of required) {
+      if (form[property] === '') errors.push({ fieldId, message })
+    }
+    if (form.commonBeverageTypes.includes('OTHER') && form.otherBeverageDescription.trim() === '') {
+      errors.push({
+        fieldId: 'weeklyOtherBeverageDescription',
+        message: 'Enter an Other beverage description to complete this answer.'
+      })
+    }
+  }
+  return errors
+}
+
+export function validateAlcoholCompletionReadiness(
+  state: LifestyleDraftState
+): readonly AlcoholFieldError[] {
+  const errors: AlcoholFieldError[] = []
+  const baseline = state.workspace ? getAlcoholBaselineForInterpretation(state.workspace) : null
+  const hasReferencedBaseline =
+    state.workspace?.draft?.alcoholBaselineVersionId !== null &&
+    state.workspace?.draft?.alcoholBaselineVersionId !== undefined &&
+    baseline !== null &&
+    baseline !== undefined
+  if (!hasReferencedBaseline) {
+    errors.push({
+      fieldId: 'alcohol-baseline-reference',
+      message: 'Save an Alcohol baseline to complete Lifestyle.'
+    })
+  }
+  errors.push(...validateCompleteAlcoholWeekly(state.alcohol))
+  if (
+    hasBaselineReviewConflict(baseline?.status, state.alcohol.weeklyResponse) &&
+    state.alcoholBaselineReviewConfirmedVersionId !== baseline?.id
+  ) {
+    errors.push({
+      fieldId: 'alcohol-baseline-review-confirmation',
+      message: 'Confirm the referenced Alcohol baseline review.'
+    })
+  }
+  return errors
+}
+
+export function validateLifestyleCompletionReadiness(
+  state: LifestyleDraftState
+): LifestyleCompletionReadiness {
+  return {
+    validationErrors: validateAlcoholCompletionReadiness(state),
+    tobaccoValidationErrors: validateTobaccoCompletionReadiness(state),
+    physicalActivityValidationErrors: validateCompletePhysicalActivity(state.physicalActivity),
+    workValidationErrors: validateWorkCompletionReadiness(state),
+    otherActivityValidationErrors: validateCompleteOtherActivity(state.otherActivity)
+  }
+}
+
+export function hasLifestyleCompletionReadinessErrors(
+  readiness: LifestyleCompletionReadiness
+): boolean {
   return (
-    !validateAlcoholWeeklyDraft(form).some((error) => error.fieldId !== 'weeklyResponse') &&
-    (!form.commonBeverageTypes.includes('OTHER') || form.otherBeverageDescription.trim() !== '')
+    readiness.validationErrors.length > 0 ||
+    readiness.tobaccoValidationErrors.length > 0 ||
+    readiness.physicalActivityValidationErrors.length > 0 ||
+    readiness.workValidationErrors.length > 0 ||
+    readiness.otherActivityValidationErrors.length > 0
   )
 }
 
@@ -425,23 +665,27 @@ export function getAlcoholCardStatus(
   state: LifestyleDraftState,
   editable: boolean
 ): AlcoholCardStatus {
-  if (!editable) return 'LOCKED'
+  if (!editable) return state.workspace?.draft?.status === 'COMPLETE' ? 'COMPLETE' : 'LOCKED'
   if (state.loadStatus !== 'READY' || state.workspace === null) return 'NOT_STARTED'
-  if (state.validationErrors.length > 0 || state.saveStatus === 'ERROR') return 'VALIDATION_ERROR'
+  if (state.validationErrors.length > 0) return 'VALIDATION_ERROR'
   if (state.workspace.draft === null && state.workspace.activeAlcoholBaseline === null) {
     return 'NOT_STARTED'
   }
   const baseline = getAlcoholBaselineForInterpretation(state.workspace)
   const response = state.alcohol.weeklyResponse
-  if (
+  const hasReferencedBaseline =
+    state.workspace.draft?.alcoholBaselineVersionId !== null &&
+    state.workspace.draft?.alcoholBaselineVersionId !== undefined &&
     baseline !== null &&
-    baseline !== undefined &&
-    (baseline.status === 'FORMER' || baseline.status === 'NEVER') &&
-    response === 'YES'
+    baseline !== undefined
+  if (
+    hasReferencedBaseline &&
+    hasBaselineReviewConflict(baseline?.status, response) &&
+    state.alcoholBaselineReviewConfirmedVersionId !== baseline?.id
   ) {
     return 'BASELINE_REVIEW'
   }
-  if (isAlcoholComplete(state.alcohol) && baseline !== null && baseline !== undefined) {
+  if (validateAlcoholCompletionReadiness(state).length === 0) {
     return 'COMPLETE'
   }
   if (baseline !== null && baseline !== undefined) return 'IN_PROGRESS'
@@ -541,25 +785,44 @@ export function createAlcoholSaveDraftRequest(
     expectedVersion: draft?.rowVersion ?? null,
     alcohol: alcoholToRequest(state.alcohol),
     tobacco: shouldPersistTobacco(state) ? tobaccoToRequest(state.tobacco) : null,
-    physicalActivity: draft?.physicalActivity
-      ? {
-          id: draft.physicalActivity.id,
-          weeklyResponse: draft.physicalActivity.weeklyResponse,
-          sedentaryTimeResponse: draft.physicalActivity.sedentaryTimeResponse,
-          sedentaryMinutesPerDay: draft.physicalActivity.sedentaryMinutesPerDay,
-          activities: draft.physicalActivity.activities.map((activity) =>
-            stripFields(activity, ['weeklyMinutes', 'updatedAt'])
-          )
-        }
+    physicalActivity: shouldPersistPhysicalActivity(state)
+      ? physicalActivityToRequest(state.physicalActivity)
       : null,
-    work: draft?.work ? { id: draft.work.id, weeklyResponse: draft.work.weeklyResponse } : null,
-    otherActivityResponse: draft?.otherActivityResponse ?? null,
-    otherActivities: draft?.otherActivities.map((activity) => stripUpdatedAt(activity)) ?? []
+    work: shouldPersistWork(state) ? workWeeklyToRequest(state.work) : null,
+    ...otherActivityToRequest(state.otherActivity)
   }
 }
 
-function stripUpdatedAt<T extends object>(value: T): Omit<T, 'updatedAt'> {
-  return stripFields(value, ['updatedAt']) as Omit<T, 'updatedAt'>
+export function createLifestyleCompleteRequest(
+  encounterId: string,
+  state: LifestyleDraftState
+): ScreeningLifestyleCompleteRequest {
+  const alcoholBaseline = state.workspace
+    ? getAlcoholBaselineForInterpretation(state.workspace)
+    : null
+  const tobaccoBaseline = state.workspace
+    ? getTobaccoBaselineForInterpretation(state.workspace)
+    : null
+  return {
+    ...createAlcoholSaveDraftRequest(encounterId, state),
+    alcoholBaselineReviewConfirmedVersionId:
+      hasBaselineReviewConflict(alcoholBaseline?.status, state.alcohol.weeklyResponse) &&
+      state.alcoholBaselineReviewConfirmedVersionId === alcoholBaseline?.id
+        ? state.alcoholBaselineReviewConfirmedVersionId
+        : null,
+    tobaccoBaselineReviewConfirmedVersionId:
+      hasBaselineReviewConflict(tobaccoBaseline?.status, state.tobacco.weeklyResponse) &&
+      state.tobaccoBaselineReviewConfirmedVersionId === tobaccoBaseline?.id
+        ? state.tobaccoBaselineReviewConfirmedVersionId
+        : null
+  }
+}
+
+export function hasBaselineReviewConflict(
+  baselineStatus: string | undefined,
+  weeklyResponse: string
+): boolean {
+  return (baselineStatus === 'FORMER' || baselineStatus === 'NEVER') && weeklyResponse === 'YES'
 }
 
 function shouldPersistTobacco(state: LifestyleDraftState): boolean {
@@ -570,13 +833,22 @@ function shouldPersistTobacco(state: LifestyleDraftState): boolean {
   )
 }
 
-function stripFields<T extends object, K extends string>(
-  value: T,
-  fields: readonly K[]
-): Omit<T, K> {
-  const copy = { ...value } as Record<string, unknown>
-  for (const field of fields) delete copy[field]
-  return copy as Omit<T, K>
+function shouldPersistPhysicalActivity(state: LifestyleDraftState): boolean {
+  return (
+    (state.workspace?.draft?.physicalActivity !== null &&
+      state.workspace?.draft?.physicalActivity !== undefined) ||
+    state.physicalActivity.weeklyResponse !== '' ||
+    state.physicalActivity.sedentaryTimeResponse !== '' ||
+    state.physicalActivity.sedentaryMinutesPerDay !== '' ||
+    state.physicalActivity.activities.length > 0
+  )
+}
+
+function shouldPersistWork(state: LifestyleDraftState): boolean {
+  return (
+    (state.workspace?.draft?.work !== null && state.workspace?.draft?.work !== undefined) ||
+    state.work.weeklyResponse !== ''
+  )
 }
 
 function emptyAlcoholBaselineForm(): AlcoholBaselineForm {

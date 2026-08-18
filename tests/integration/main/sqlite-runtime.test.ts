@@ -52,7 +52,7 @@ describe('SQLite runtime integration', () => {
       expect(connection.pragma('synchronous', { simple: true })).toBe(1)
       expect(connection.pragma('busy_timeout', { simple: true })).toBe(5000)
       expect(connection.pragma('trusted_schema', { simple: true })).toBe(0)
-      expect(connection.pragma('user_version', { simple: true })).toBe(11)
+      expect(connection.pragma('user_version', { simple: true })).toBe(12)
       expect(
         connection.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all()
       ).toContainEqual({ name: 'schema_migrations' })
@@ -84,7 +84,9 @@ describe('SQLite runtime integration', () => {
         'Database migration applied; version=10; name=lifestyle-activity-response-semantics',
         'Database migration started; version=11; name=vitals-reading-bounds',
         'Database migration applied; version=11; name=vitals-reading-bounds',
-        'Database migrations current; schemaVersion=11',
+        'Database migration started; version=12; name=optional-other-activity-description',
+        'Database migration applied; version=12; name=optional-other-activity-description',
+        'Database migrations current; schemaVersion=12',
         'Database runtime initialized.',
         'Database runtime closed.'
       ])

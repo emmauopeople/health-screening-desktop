@@ -8,6 +8,7 @@ import {
   getAlcoholCardStatus,
   getAlcoholCardSummary,
   getAlcoholBaselineForInterpretation,
+  hasBaselineReviewConflict,
   type AlcoholBaselineForm,
   type AlcoholFieldError,
   type AlcoholWeeklyForm,
@@ -17,39 +18,48 @@ import {
 interface AlcoholCardProps {
   readonly state: LifestyleDraftState
   readonly encounterStatus: PublicScreeningEncounterStartSummary['status']
+  readonly readOnly?: boolean
   onUpdateBaseline(update: (form: AlcoholBaselineForm) => AlcoholBaselineForm): void
   onUpdateAlcohol(update: (form: AlcoholWeeklyForm) => AlcoholWeeklyForm): void
   onToggleBaseline(): void
   onToggleExpanded(): void
   onSaveBaseline(): void
+  onConfirmBaselineReview(confirmed: boolean): void
 }
 
 export function AlcoholCard({
   state,
   encounterStatus,
+  readOnly = false,
   onUpdateBaseline,
   onUpdateAlcohol,
   onToggleBaseline,
   onToggleExpanded,
-  onSaveBaseline
+  onSaveBaseline,
+  onConfirmBaselineReview
 }: AlcoholCardProps): React.JSX.Element {
   const [drinkGuidanceOpen, setDrinkGuidanceOpen] = useState(false)
-  const editable = encounterStatus === 'DRAFT'
+  const editable = encounterStatus === 'DRAFT' && !readOnly
   const controlsDisabled = !editable || state.saveStatus === 'SAVING'
   const status = getAlcoholCardStatus(state, editable)
   const summary = getAlcoholCardSummary(state, editable)
   const baseline =
     state.workspace === null ? null : getAlcoholBaselineForInterpretation(state.workspace)
   const hasBaseline = baseline !== null && baseline !== undefined
+  const showBaselineReviewConfirmation = hasBaselineReviewConflict(
+    baseline?.status,
+    state.alcohol.weeklyResponse
+  )
   const baselineErrors = (fieldId: string): AlcoholFieldError | undefined =>
     state.validationErrors.find((error) => error.fieldId === fieldId)
   const weeklyErrors = (fieldId: string): AlcoholFieldError | undefined =>
     state.validationErrors.find((error) => error.fieldId === fieldId)
-  const statusLabel = formatAlcoholStatus(status)
+  const statusLabel = formatAlcoholStatus(status, editable)
+  const statusClass = status === 'COMPLETE' && editable ? 'ready' : status.toLowerCase()
 
   return (
     <section
-      className={`lifestyle-card lifestyle-card-alcohol lifestyle-card-status-${status.toLowerCase()}`}
+      className={`lifestyle-card lifestyle-card-alcohol lifestyle-card-status-${statusClass}`}
       aria-labelledby="lifestyle-alcohol-title"
     >
       <button
@@ -57,7 +67,7 @@ export function AlcoholCard({
         type="button"
         aria-expanded={state.alcoholExpanded}
         aria-controls="lifestyle-alcohol-content"
-        disabled={!editable && !hasBaseline}
+        disabled={state.saveStatus === 'SAVING'}
         onClick={onToggleExpanded}
       >
         <span>
@@ -76,10 +86,11 @@ export function AlcoholCard({
         <div id="lifestyle-alcohol-content" className="lifestyle-card-content">
           <button
             className="button button-secondary lifestyle-inline-button"
+            id="lifestyle-alcohol-baseline-button"
             type="button"
             aria-expanded={state.baselineOpen}
             aria-controls="lifestyle-alcohol-baseline-panel"
-            disabled={controlsDisabled}
+            disabled={state.saveStatus === 'SAVING'}
             onClick={onToggleBaseline}
           >
             Alcohol Baseline
@@ -250,11 +261,24 @@ export function AlcoholCard({
               aria-labelledby="lifestyle-alcohol-weekly-title"
             >
               <h4 id="lifestyle-alcohol-weekly-title">Weekly alcohol</h4>
+              {showBaselineReviewConfirmation && baseline ? (
+                <label className="lifestyle-choice" htmlFor="alcohol-baseline-review-confirmation">
+                  <input
+                    id="alcohol-baseline-review-confirmation"
+                    type="checkbox"
+                    checked={state.alcoholBaselineReviewConfirmedVersionId === baseline.id}
+                    disabled={controlsDisabled}
+                    onChange={(event) => onConfirmBaselineReview(event.target.checked)}
+                  />
+                  I have reviewed this baseline
+                </label>
+              ) : null}
               <fieldset>
                 <legend>Did you consume alcohol during the past 7 days?</legend>
                 {alcoholWeeklyOptions.map((option) => (
                   <label className="lifestyle-choice" key={option.value}>
                     <input
+                      id={`alcohol-weekly-response-${option.value}`}
                       type="radio"
                       name="alcohol-weekly-response"
                       value={option.value}
@@ -529,7 +553,11 @@ function formatResponse(value: string): string {
     : value.charAt(0) + value.slice(1).toLowerCase()
 }
 
-function formatAlcoholStatus(status: ReturnType<typeof getAlcoholCardStatus>): string {
+function formatAlcoholStatus(
+  status: ReturnType<typeof getAlcoholCardStatus>,
+  editable: boolean
+): string {
+  if (status === 'COMPLETE' && editable) return 'Ready'
   return {
     NOT_STARTED: 'Not started',
     IN_PROGRESS: 'In progress',

@@ -387,6 +387,138 @@ describe('Lifestyle persistence foundation', () => {
     })
   })
 
+  it('reopens only completed drafts and preserves stored Lifestyle rows', async () => {
+    await withLifestyleDatabase(({ executor, repository, connection }) => {
+      const draft = executor.run((context) =>
+        repository.insertDraft(context.connection, createDraftInput())
+      )
+      const notCompleted = executor.run((context) =>
+        repository.reopenDraft(context.connection, {
+          id: draft.id,
+          expectedRowVersion: draft.rowVersion,
+          actorId: parseEntityId(ids.user),
+          occurredAt: secondTime
+        })
+      )
+      expect(notCompleted).toMatchObject({ status: 'INVALID_STATUS' })
+
+      const completed = executor.run((context) =>
+        repository.updateDraft(context.connection, {
+          ...emptyDraftUpdate(draft.id, draft.rowVersion, secondTime),
+          status: 'COMPLETE',
+          alcohol: {
+            id: parseEntityId(ids.alcohol),
+            weeklyResponse: 'YES',
+            drinkingDays: 2,
+            totalStandardizedDrinks: 3,
+            largestOneDayAmount: 2,
+            daysAtLargestAmount: 1,
+            commonBeverageTypes: ['BEER'],
+            otherBeverageDescription: null
+          },
+          tobacco: {
+            id: parseEntityId(ids.tobacco),
+            weeklyResponse: 'YES',
+            products: [tobaccoProduct(ids.product, 1, 1)]
+          },
+          physicalActivity: {
+            id: parseEntityId(ids.physical),
+            weeklyResponse: 'YES',
+            sedentaryTimeResponse: 'RECORDED',
+            sedentaryMinutesPerDay: 60,
+            activities: [
+              {
+                id: parseEntityId(ids.activity),
+                sequenceNumber: 1,
+                activityDomain: 'EXERCISE',
+                description: null,
+                intensity: 'MODERATE',
+                daysInPastSevenDays: 3,
+                averageMinutesPerActiveDay: 20
+              }
+            ]
+          },
+          work: { id: parseEntityId(ids.work), weeklyResponse: 'USUAL' },
+          otherActivityResponse: 'YES',
+          otherActivities: [
+            {
+              id: parseEntityId(ids.otherActivity1),
+              sequenceNumber: 1,
+              category: 'SPORT',
+              description: null,
+              daysInPastSevenDays: 2,
+              averageMinutesPerDay: 30,
+              intensity: 'LIGHT'
+            }
+          ]
+        })
+      )
+      expect(completed.status).toBe('UPDATED')
+      if (completed.status !== 'UPDATED') return
+      const blockedReferenceUpdate = executor.run((context) =>
+        repository.updateDraftBaselineReferences(context.connection, {
+          id: completed.draft.id,
+          expectedRowVersion: completed.draft.rowVersion,
+          alcoholBaselineVersionId: completed.draft.alcoholBaselineVersionId,
+          tobaccoBaselineVersionId: completed.draft.tobaccoBaselineVersionId,
+          workBaselineVersionId: completed.draft.workBaselineVersionId,
+          actorId: parseEntityId(ids.user),
+          occurredAt: thirdTime
+        })
+      )
+      expect(blockedReferenceUpdate).toMatchObject({
+        status: 'INVALID_STATUS',
+        draft: { status: 'COMPLETE', rowVersion: completed.draft.rowVersion }
+      })
+
+      const childTables = [
+        'lifestyle_alcohol_weekly_records',
+        'lifestyle_tobacco_weekly_records',
+        'lifestyle_tobacco_product_rows',
+        'lifestyle_physical_activity_weekly_records',
+        'lifestyle_activity_rows',
+        'lifestyle_work_weekly_records',
+        'lifestyle_other_activity_rows'
+      ] as const
+      const before = new Map(childTables.map((table) => [table, snapshotTable(connection, table)]))
+
+      const stale = executor.run((context) =>
+        repository.reopenDraft(context.connection, {
+          id: completed.draft.id,
+          expectedRowVersion: completed.draft.rowVersion - 1,
+          actorId: parseEntityId(ids.user),
+          occurredAt: thirdTime
+        })
+      )
+      expect(stale.status).toBe('VERSION_CONFLICT')
+
+      const reopened = executor.run((context) =>
+        repository.reopenDraft(context.connection, {
+          id: completed.draft.id,
+          expectedRowVersion: completed.draft.rowVersion,
+          actorId: parseEntityId(ids.user),
+          occurredAt: thirdTime
+        })
+      )
+      expect(reopened).toMatchObject({
+        status: 'UPDATED',
+        draft: { status: 'DRAFT', rowVersion: completed.draft.rowVersion + 1 }
+      })
+      for (const table of childTables)
+        expect(snapshotTable(connection, table)).toEqual(before.get(table))
+
+      const secondReopen = executor.run((context) =>
+        repository.reopenDraft(context.connection, {
+          id: completed.draft.id,
+          expectedRowVersion: completed.draft.rowVersion + 1,
+          actorId: parseEntityId(ids.user),
+          occurredAt: thirdTime
+        })
+      )
+      expect(secondReopen).toMatchObject({ status: 'INVALID_STATUS' })
+    })
+  })
+
   it('enforces Tobacco and Physical Activity weekly branch consistency at the repository boundary', async () => {
     await withLifestyleDatabase(({ executor, repository }) => {
       const draft = executor.run((context) =>
@@ -719,6 +851,28 @@ describe('Lifestyle persistence foundation', () => {
       expect(changed?.updatedAt).toBe(fourthTime)
       expect(added?.createdAt).toBe(fourthTime)
       expect(added?.updatedAt).toBe(fourthTime)
+    })
+  })
+
+  it('accepts and reloads a blank optional Other Activity description', async () => {
+    await withLifestyleDatabase(({ executor, repository }) => {
+      const draft = executor.run((context) =>
+        repository.insertDraft(context.connection, createDraftInput())
+      )
+      const updated = executor.run((context) =>
+        repository.updateDraft(context.connection, {
+          ...emptyDraftUpdate(draft.id, draft.rowVersion, firstTime),
+          otherActivities: [otherActivity(ids.otherActivity1, 1, 'SPORT', null)]
+        })
+      )
+
+      expect(updated.status).toBe('UPDATED')
+      if (updated.status !== 'UPDATED') return
+      expect(updated.draft.otherActivities[0]?.description).toBeNull()
+      expect(
+        repository.findDraftByEncounter(parseEntityId(ids.encounter))?.otherActivities[0]
+          ?.description
+      ).toBeNull()
     })
   })
 
@@ -1351,7 +1505,7 @@ function otherActivity(
   id: string,
   sequenceNumber: number,
   category: 'HOUSEHOLD' | 'COMMUNITY' | 'SPORT',
-  description: string
+  description: string | null
 ): LifestyleOtherActivityInput {
   return {
     id: parseEntityId(id),
@@ -1553,6 +1707,10 @@ function queryRows(
   ...parameters: readonly unknown[]
 ): readonly Record<string, unknown>[] {
   return connection.prepare(sql).all(...parameters) as Record<string, unknown>[]
+}
+
+function snapshotTable(connection: Database.Database, table: string): readonly unknown[] {
+  return connection.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all() as readonly unknown[]
 }
 
 async function withLifestyleDatabase(

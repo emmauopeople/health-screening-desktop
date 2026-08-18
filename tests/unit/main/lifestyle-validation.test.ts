@@ -672,6 +672,23 @@ describe('Lifestyle persistence validation', () => {
         ]
       })
     ).toThrow()
+    expect(() =>
+      parseLifestyleDraftUpdateInput({
+        ...base,
+        otherActivityResponse: 'YES',
+        otherActivities: [
+          {
+            id,
+            sequenceNumber: 1,
+            category: 'SPORT',
+            description: 'x'.repeat(501),
+            daysInPastSevenDays: 1,
+            averageMinutesPerDay: 30,
+            intensity: 'LIGHT'
+          }
+        ]
+      })
+    ).toThrow()
     expect(() => parseCompleteLifestyleOtherActivityInput('YES', [])).toThrow()
     expect(() => parseCompleteLifestyleOtherActivityInput('NO', [])).not.toThrow()
   })
