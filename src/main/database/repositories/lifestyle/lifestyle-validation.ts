@@ -683,7 +683,7 @@ function parseOtherActivity(value: unknown): LifestyleOtherActivityInput {
     'averageMinutesPerDay',
     'intensity'
   ] as const)
-  const description = parseRequiredText(data.description)
+  const description = parseNullableText(data.description)
   return {
     id: parseEntityId(data.id),
     sequenceNumber: parsePositiveInteger(data.sequenceNumber),

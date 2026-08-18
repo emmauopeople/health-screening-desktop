@@ -247,7 +247,7 @@ export interface LifestyleOtherActivityRow {
   readonly lifestyleDraftId: EntityId
   readonly sequenceNumber: number
   readonly category: LifestyleOtherActivityCategory
-  readonly description: string
+  readonly description: string | null
   readonly daysInPastSevenDays: number
   readonly averageMinutesPerDay: number
   readonly intensity: LifestyleActivityIntensity
@@ -323,6 +323,13 @@ export interface LifestyleDraftBaselineReferenceUpdateInput {
   readonly occurredAt: UtcTimestamp
 }
 
+export interface LifestyleDraftReopenInput {
+  readonly id: EntityId
+  readonly expectedRowVersion: number
+  readonly actorId: EntityId
+  readonly occurredAt: UtcTimestamp
+}
+
 export interface LifestyleAlcoholWeeklyInput {
   readonly id: EntityId
   readonly weeklyResponse: LifestyleResponse | null
@@ -379,7 +386,7 @@ export interface LifestyleOtherActivityInput {
   readonly id: EntityId
   readonly sequenceNumber: number
   readonly category: LifestyleOtherActivityCategory
-  readonly description: string
+  readonly description: string | null
   readonly daysInPastSevenDays: number
   readonly averageMinutesPerDay: number
   readonly intensity: LifestyleActivityIntensity
@@ -393,6 +400,7 @@ export type LifestyleDraftUpdateResult =
   | { readonly status: 'UPDATED'; readonly draft: LifestyleDraftRecord }
   | { readonly status: 'NOT_FOUND' }
   | { readonly status: 'VERSION_CONFLICT'; readonly draft: LifestyleDraftRecord }
+  | { readonly status: 'INVALID_STATUS'; readonly draft: LifestyleDraftRecord }
 
 export interface LifestyleRepository {
   findActiveAlcoholBaseline(
@@ -480,5 +488,9 @@ export interface LifestyleRepository {
   updateDraftBaselineReferences(
     connection: DatabaseTransactionConnection,
     input: LifestyleDraftBaselineReferenceUpdateInput
+  ): LifestyleDraftUpdateResult
+  reopenDraft(
+    connection: DatabaseTransactionConnection,
+    input: LifestyleDraftReopenInput
   ): LifestyleDraftUpdateResult
 }

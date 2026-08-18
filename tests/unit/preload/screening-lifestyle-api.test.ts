@@ -58,7 +58,8 @@ const requests = {
     ...draftRequest,
     alcoholBaselineReviewConfirmedVersionId: null,
     tobaccoBaselineReviewConfirmedVersionId: null
-  }
+  },
+  reopen: { encounterId: lifestyleEncounterId, expectedVersion: 4 }
 } as const
 
 const operationTable = [
@@ -67,11 +68,12 @@ const operationTable = [
   ['saveTobaccoBaseline', ipcChannels.screeningEncounters.lifestyle.saveTobaccoBaseline, 'SAVED'],
   ['saveWorkBaseline', ipcChannels.screeningEncounters.lifestyle.saveWorkBaseline, 'SAVED'],
   ['saveDraft', ipcChannels.screeningEncounters.lifestyle.saveDraft, 'SAVED'],
-  ['complete', ipcChannels.screeningEncounters.lifestyle.complete, 'COMPLETED']
+  ['complete', ipcChannels.screeningEncounters.lifestyle.complete, 'COMPLETED'],
+  ['reopen', ipcChannels.screeningEncounters.lifestyle.reopen, 'REOPENED']
 ] as const
 
 describe('preload Lifestyle API', () => {
-  it('exposes exactly six fixed methods and no transport escape hatch', () => {
+  it('exposes exactly seven fixed methods and no transport escape hatch', () => {
     const api = createHealthScreeningApi(vi.fn())
     const lifestyle = api.screeningEncounters.lifestyle
 
@@ -81,7 +83,8 @@ describe('preload Lifestyle API', () => {
       'saveTobaccoBaseline',
       'saveWorkBaseline',
       'saveDraft',
-      'complete'
+      'complete',
+      'reopen'
     ])
     expect(Object.isFrozen(lifestyle)).toBe(true)
     expect('ipcRenderer' in lifestyle).toBe(false)
@@ -135,6 +138,12 @@ describe('preload Lifestyle API', () => {
         })
       ).resolves.toEqual(createIpcSuccess({ status: 'VALIDATION_FAILED' }))
     }
+    await expect(
+      lifestyle.reopen({ ...requests.reopen, actorId: lifestyleEncounterId } as never)
+    ).resolves.toEqual(createIpcSuccess({ status: 'VALIDATION_FAILED' }))
+    await expect(
+      lifestyle.reopen({ ...requests.reopen, expectedVersion: null } as never)
+    ).resolves.toEqual(createIpcSuccess({ status: 'VALIDATION_FAILED' }))
     await expect(lifestyle.saveAlcoholBaseline(invalidBaselineRequest as never)).resolves.toEqual(
       createIpcSuccess({ status: 'VALIDATION_FAILED' })
     )

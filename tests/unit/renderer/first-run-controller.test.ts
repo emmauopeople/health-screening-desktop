@@ -595,7 +595,8 @@ function createApi({
         ),
         saveWorkBaseline: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
         saveDraft: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
-        complete: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+        complete: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+        reopen: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const }))
       }
     },
     installationSettings: {

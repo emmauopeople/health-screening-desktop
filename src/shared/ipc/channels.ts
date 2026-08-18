@@ -49,7 +49,8 @@ export const ipcChannels = {
       saveTobaccoBaseline: 'health-screening:screening-encounters:lifestyle:save-tobacco-baseline',
       saveWorkBaseline: 'health-screening:screening-encounters:lifestyle:save-work-baseline',
       saveDraft: 'health-screening:screening-encounters:lifestyle:save-draft',
-      complete: 'health-screening:screening-encounters:lifestyle:complete'
+      complete: 'health-screening:screening-encounters:lifestyle:complete',
+      reopen: 'health-screening:screening-encounters:lifestyle:reopen'
     }
   },
   installationSettings: {

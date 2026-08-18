@@ -134,7 +134,7 @@ export interface LifestyleOtherActivitySummary {
   readonly id: EntityId
   readonly sequenceNumber: number
   readonly category: LifestyleOtherActivityInput['category']
-  readonly description: string
+  readonly description: string | null
   readonly daysInPastSevenDays: number
   readonly averageMinutesPerDay: number
   readonly intensity: LifestyleOtherActivityInput['intensity']
@@ -234,6 +234,11 @@ export interface CompleteLifestyleRequest extends SaveLifestyleDraftRequest {
   readonly tobaccoBaselineReviewConfirmedVersionId: EntityId | null
 }
 
+export interface ReopenLifestyleRequest {
+  readonly encounterId: EntityId
+  readonly expectedVersion: number
+}
+
 export interface LifestyleWorkspaceSummary {
   readonly encounterId: EntityId
   readonly draft: LifestyleDraftSummary | null
@@ -272,6 +277,10 @@ export type CompleteLifestyleResult =
   | { readonly status: 'COMPLETED'; readonly workspace: LifestyleWorkspaceSummary }
   | { readonly status: LifestyleServiceControlledStatus }
 
+export type ReopenLifestyleResult =
+  | { readonly status: 'REOPENED'; readonly workspace: LifestyleWorkspaceSummary }
+  | { readonly status: LifestyleServiceControlledStatus }
+
 export interface ScreeningLifestyleService {
   getLifestyleWorkspace(request: GetLifestyleWorkspaceRequest): GetLifestyleWorkspaceResult
   saveAlcoholBaseline(request: SaveLifestyleAlcoholBaselineRequest): SaveLifestyleResult
@@ -279,6 +288,7 @@ export interface ScreeningLifestyleService {
   saveWorkBaseline(request: SaveLifestyleWorkBaselineRequest): SaveLifestyleResult
   saveLifestyleDraft(request: SaveLifestyleDraftRequest): SaveLifestyleResult
   completeLifestyle(request: CompleteLifestyleRequest): CompleteLifestyleResult
+  reopenLifestyle(request: ReopenLifestyleRequest): ReopenLifestyleResult
 }
 
 export interface ScreeningLifestyleServiceDependencies {

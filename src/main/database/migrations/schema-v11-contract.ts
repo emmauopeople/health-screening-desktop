@@ -63,7 +63,7 @@ function isSchemaVersion11Valid(connection: MigrationConnection): boolean {
       hasSchemaVersion9RequiredForeignKeys(connection) &&
       hasSchemaVersion9RequiredTableSql(connection) &&
       hasSchemaVersion10RequiredResponseChecks(connection) &&
-      hasExactTriggerSql(connection)
+      hasSchemaVersion11ExactTriggerSql(connection)
     )
   } catch {
     return false
@@ -87,7 +87,7 @@ function hasStrictTables(connection: MigrationConnection): boolean {
   return schemaVersion11TableNames.every((name) => strictTables.get(name) === 1)
 }
 
-function hasExactTriggerSql(connection: MigrationConnection): boolean {
+export function hasSchemaVersion11ExactTriggerSql(connection: MigrationConnection): boolean {
   return newTriggerNames.every((triggerName) => {
     const row = connection
       .prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?")

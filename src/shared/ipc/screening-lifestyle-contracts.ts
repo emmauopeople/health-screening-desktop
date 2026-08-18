@@ -232,7 +232,7 @@ const otherActivityRequestSchema = exactObject({
   id: idOrNullSchema,
   sequenceNumber: positiveIntegerSchema,
   category: otherActivityCategorySchema,
-  description: screeningLifestyleTextSchema,
+  description: nullableTextSchema,
   daysInPastSevenDays: z.number().int().min(1).max(7).safe(),
   averageMinutesPerDay: z.number().int().min(1).max(1440).safe(),
   intensity: intensitySchema
@@ -259,6 +259,10 @@ export const screeningLifestyleCompleteRequestSchema = exactObject({
   otherActivities: z.array(otherActivityRequestSchema).max(50),
   alcoholBaselineReviewConfirmedVersionId: idOrNullSchema,
   tobaccoBaselineReviewConfirmedVersionId: idOrNullSchema
+})
+export const screeningLifestyleReopenRequestSchema = exactObject({
+  encounterId: screeningLifestyleUuidSchema,
+  expectedVersion: screeningLifestyleVersionSchema
 })
 export const screeningLifestyleGetWorkspaceRequestSchema = exactObject({
   encounterId: screeningLifestyleUuidSchema
@@ -334,7 +338,7 @@ const publicOtherActivitySchema = z
     id: screeningLifestyleUuidSchema,
     sequenceNumber: positiveIntegerSchema,
     category: otherActivityCategorySchema,
-    description: screeningLifestyleTextSchema,
+    description: nullableTextSchema,
     daysInPastSevenDays: z.number().int().min(1).max(7).safe(),
     averageMinutesPerDay: z.number().int().min(1).max(1440).safe(),
     intensity: intensitySchema,
@@ -444,7 +448,9 @@ export type ScreeningLifestyleIpcFailure = {
     readonly message: string
   }
 }
-type ScreeningLifestyleWorkspaceResult<TStatus extends 'LOADED' | 'SAVED' | 'COMPLETED'> =
+type ScreeningLifestyleWorkspaceResult<
+  TStatus extends 'LOADED' | 'SAVED' | 'COMPLETED' | 'REOPENED'
+> =
   | {
       readonly ok: true
       readonly data:
@@ -458,11 +464,12 @@ export type ScreeningLifestyleSaveTobaccoBaselineResult = ScreeningLifestyleWork
 export type ScreeningLifestyleSaveWorkBaselineResult = ScreeningLifestyleWorkspaceResult<'SAVED'>
 export type ScreeningLifestyleSaveDraftResult = ScreeningLifestyleWorkspaceResult<'SAVED'>
 export type ScreeningLifestyleCompleteResult = ScreeningLifestyleWorkspaceResult<'COMPLETED'>
+export type ScreeningLifestyleReopenResult = ScreeningLifestyleWorkspaceResult<'REOPENED'>
 
-function successWithWorkspace(status: 'LOADED' | 'SAVED' | 'COMPLETED'): z.ZodTypeAny {
+function successWithWorkspace(status: 'LOADED' | 'SAVED' | 'COMPLETED' | 'REOPENED'): z.ZodTypeAny {
   return z.object({ status: z.literal(status), workspace: publicWorkspaceSchema }).strict()
 }
-function resultWithWorkspace(status: 'LOADED' | 'SAVED' | 'COMPLETED'): z.ZodTypeAny {
+function resultWithWorkspace(status: 'LOADED' | 'SAVED' | 'COMPLETED' | 'REOPENED'): z.ZodTypeAny {
   return withSafeTransportPreprocess(
     z.discriminatedUnion('ok', [
       createIpcSuccessResultSchema(z.union([successWithWorkspace(status), controlledResultSchema])),
@@ -499,6 +506,9 @@ export const screeningLifestyleSaveDraftResultSchema = resultWithWorkspace(
 export const screeningLifestyleCompleteResultSchema = resultWithWorkspace(
   'COMPLETED'
 ) as z.ZodType<ScreeningLifestyleCompleteResult>
+export const screeningLifestyleReopenResultSchema = resultWithWorkspace(
+  'REOPENED'
+) as z.ZodType<ScreeningLifestyleReopenResult>
 
 export type ScreeningLifestyleGetWorkspaceRequest = z.infer<
   typeof screeningLifestyleGetWorkspaceRequestSchema
@@ -518,6 +528,7 @@ export type ScreeningLifestyleSaveDraftRequest = z.infer<
 export type ScreeningLifestyleCompleteRequest = z.infer<
   typeof screeningLifestyleCompleteRequestSchema
 >
+export type ScreeningLifestyleReopenRequest = z.infer<typeof screeningLifestyleReopenRequestSchema>
 export type ScreeningLifestyleApi = {
   getWorkspace(
     request: ScreeningLifestyleGetWorkspaceRequest
@@ -533,6 +544,7 @@ export type ScreeningLifestyleApi = {
   ): Promise<ScreeningLifestyleSaveWorkBaselineResult>
   saveDraft(request: ScreeningLifestyleSaveDraftRequest): Promise<ScreeningLifestyleSaveDraftResult>
   complete(request: ScreeningLifestyleCompleteRequest): Promise<ScreeningLifestyleCompleteResult>
+  reopen(request: ScreeningLifestyleReopenRequest): Promise<ScreeningLifestyleReopenResult>
 }
 
 export function createScreeningLifestyleIpcFailure(code: ScreeningLifestyleIpcErrorCode): {

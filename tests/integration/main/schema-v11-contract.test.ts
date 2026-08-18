@@ -241,7 +241,7 @@ async function withDatabase(test: (connection: Database.Database) => void): Prom
 function migrateToCurrent(connection: Database.Database): void {
   runDatabaseMigrations({
     connection,
-    migrations: databaseMigrations,
+    migrations: databaseMigrations.slice(0, 11),
     applicationVersion: '1.0.0',
     logger: { info: vi.fn(), error: vi.fn() },
     clock: { now: () => now },

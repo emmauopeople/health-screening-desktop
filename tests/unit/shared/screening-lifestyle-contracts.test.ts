@@ -9,6 +9,8 @@ import {
   screeningLifestyleCompleteResultSchema,
   screeningLifestyleFailureSchema,
   screeningLifestyleGetWorkspaceRequestSchema,
+  screeningLifestyleReopenRequestSchema,
+  screeningLifestyleReopenResultSchema,
   screeningLifestyleSaveDraftRequestSchema,
   screeningLifestyleGetWorkspaceResultSchema,
   screeningLifestyleSaveAlcoholBaselineResultSchema,
@@ -35,8 +37,8 @@ const draftRequest = {
 }
 
 describe('screening Lifestyle IPC contracts', () => {
-  it('defines only the six namespaced Lifestyle channels', () => {
-    expect(Object.values(ipcChannels.screeningEncounters.lifestyle)).toHaveLength(6)
+  it('defines only the seven namespaced Lifestyle channels', () => {
+    expect(Object.values(ipcChannels.screeningEncounters.lifestyle)).toHaveLength(7)
     expect(
       Object.values(ipcChannels.screeningEncounters.lifestyle).every((channel) =>
         channel.startsWith('health-screening:screening-encounters:lifestyle:')
@@ -48,12 +50,32 @@ describe('screening Lifestyle IPC contracts', () => {
     expect(screeningLifestyleGetWorkspaceRequestSchema.safeParse({ encounterId }).success).toBe(
       true
     )
+    expect(
+      screeningLifestyleReopenRequestSchema.safeParse({ encounterId, expectedVersion: 4 }).success
+    ).toBe(true)
     expect(screeningLifestyleSaveDraftRequestSchema.safeParse(draftRequest).success).toBe(true)
     expect(
       screeningLifestyleCompleteRequestSchema.safeParse({
         ...draftRequest,
         alcoholBaselineReviewConfirmedVersionId: null,
         tobaccoBaselineReviewConfirmedVersionId: null
+      }).success
+    ).toBe(true)
+    expect(
+      screeningLifestyleSaveDraftRequestSchema.safeParse({
+        ...draftRequest,
+        otherActivityResponse: 'YES',
+        otherActivities: [
+          {
+            id: null,
+            sequenceNumber: 1,
+            category: 'SPORT',
+            description: null,
+            daysInPastSevenDays: 2,
+            averageMinutesPerDay: 30,
+            intensity: 'MODERATE'
+          }
+        ]
       }).success
     ).toBe(true)
     expect(
@@ -116,6 +138,17 @@ describe('screening Lifestyle IPC contracts', () => {
     const hostile = Object.assign(Object.create({ trusted: true }), draftRequest)
     expect(screeningLifestyleSaveDraftRequestSchema.safeParse(accessor).success).toBe(false)
     expect(screeningLifestyleSaveDraftRequestSchema.safeParse(hostile).success).toBe(false)
+    expect(
+      screeningLifestyleReopenRequestSchema.safeParse({
+        encounterId,
+        expectedVersion: 4,
+        patientId: encounterId
+      }).success
+    ).toBe(false)
+    expect(
+      screeningLifestyleReopenRequestSchema.safeParse({ encounterId, expectedVersion: null })
+        .success
+    ).toBe(false)
   })
 
   it('accepts every public success result and every controlled status', () => {
@@ -128,6 +161,10 @@ describe('screening Lifestyle IPC contracts', () => {
       status: 'COMPLETED' as const,
       workspace: validLifestyleWorkspace
     })
+    const reopened = createIpcSuccess({
+      status: 'REOPENED' as const,
+      workspace: validLifestyleWorkspace
+    })
 
     expect(screeningLifestyleGetWorkspaceResultSchema.safeParse(loaded).success).toBe(true)
     expect(screeningLifestyleSaveAlcoholBaselineResultSchema.safeParse(saved).success).toBe(true)
@@ -135,6 +172,7 @@ describe('screening Lifestyle IPC contracts', () => {
     expect(screeningLifestyleSaveWorkBaselineResultSchema.safeParse(saved).success).toBe(true)
     expect(screeningLifestyleSaveDraftResultSchema.safeParse(saved).success).toBe(true)
     expect(screeningLifestyleCompleteResultSchema.safeParse(completed).success).toBe(true)
+    expect(screeningLifestyleReopenResultSchema.safeParse(reopened).success).toBe(true)
 
     for (const status of [
       'AUTHENTICATION_REQUIRED',

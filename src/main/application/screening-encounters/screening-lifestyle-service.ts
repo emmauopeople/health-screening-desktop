@@ -61,6 +61,8 @@ import type {
   LifestyleDraftSummary,
   LifestyleOtherActivitySummary,
   LifestylePhysicalActivityWeeklySummary,
+  ReopenLifestyleRequest,
+  ReopenLifestyleResult,
   LifestyleTobaccoBaselineSummary,
   LifestyleTobaccoProductSummary,
   LifestyleTobaccoWeeklySummary,
@@ -83,6 +85,7 @@ const tobaccoBaselineAction = parseAuditActionCode('SCREENING_LIFESTYLE_TOBACCO_
 const workBaselineAction = parseAuditActionCode('SCREENING_LIFESTYLE_WORK_BASELINE_CREATED')
 const draftSavedAction = parseAuditActionCode('SCREENING_LIFESTYLE_DRAFT_SAVED')
 const stepCompletedAction = parseAuditActionCode('SCREENING_LIFESTYLE_STEP_COMPLETED')
+const reopenedAction = parseAuditActionCode('SCREENING_LIFESTYLE_REOPENED')
 
 const getRequestKeys = Object.freeze(['encounterId'] as const)
 const baselineCommonKeys = Object.freeze([
@@ -104,6 +107,7 @@ const completionConfirmationKeys = Object.freeze([
   'alcoholBaselineReviewConfirmedVersionId',
   'tobaccoBaselineReviewConfirmedVersionId'
 ] as const)
+const reopenRequestKeys = Object.freeze(['encounterId', 'expectedVersion'] as const)
 
 type ValidatedActor = Readonly<{ userId: EntityId }>
 type ValidatedContext = Readonly<{
@@ -132,6 +136,11 @@ interface ParsedDraftCommand {
 interface ParsedCompleteCommand extends ParsedDraftCommand {
   readonly alcoholBaselineReviewConfirmedVersionId: EntityId | null
   readonly tobaccoBaselineReviewConfirmedVersionId: EntityId | null
+}
+
+interface ParsedReopenCommand {
+  readonly encounterId: EntityId
+  readonly expectedVersion: number
 }
 
 type BaselineDomain = 'alcohol' | 'tobacco' | 'work'
@@ -265,7 +274,7 @@ export function createScreeningLifestyleService({
     saveLifestyleDraft(request: SaveLifestyleDraftRequest): SaveLifestyleResult {
       return saveDraft({
         request,
-        targetStatus: 'IN_PROGRESS',
+        targetStatus: 'DRAFT',
         action: draftSavedAction,
         operation: 'SCREENING_LIFESTYLE_DRAFT_SAVED',
         schemaVersion: 'screening-encounter.lifestyle-draft-saved.v1',
@@ -285,6 +294,23 @@ export function createScreeningLifestyleService({
 
     completeLifestyle(request: CompleteLifestyleRequest): CompleteLifestyleResult {
       return completeDraft({
+        request,
+        authenticationSessionService,
+        currentScreeningSessionService,
+        installationLocationService,
+        installationRepository,
+        locationRepository,
+        screeningSessionRepository,
+        screeningEncounterRepository,
+        lifestyleRepository,
+        screeningEncounterOutboxRepository,
+        auditEventRepository,
+        transactionExecutor
+      })
+    },
+
+    reopenLifestyle(request: ReopenLifestyleRequest): ReopenLifestyleResult {
+      return reopenDraft({
         request,
         authenticationSessionService,
         currentScreeningSessionService,
@@ -355,6 +381,7 @@ function saveBaseline({
       if (draft !== null && !matchesContext(draft, encounterContext.context)) {
         return statusResult('UNAVAILABLE')
       }
+      if (draft?.status === 'COMPLETE') return statusResult('ENCOUNTER_NOT_EDITABLE')
       const versionStatus = validateExpectedVersion(
         draft?.rowVersion ?? null,
         command.expectedDraftVersion
@@ -458,7 +485,7 @@ function saveDraft({
   ...dependencies
 }: ServiceDependencies & {
   readonly request: SaveLifestyleDraftRequest
-  readonly targetStatus: 'IN_PROGRESS'
+  readonly targetStatus: 'DRAFT'
   readonly action: ReturnType<typeof parseAuditActionCode>
   readonly operation: 'SCREENING_LIFESTYLE_DRAFT_SAVED'
   readonly schemaVersion: 'screening-encounter.lifestyle-draft-saved.v1'
@@ -491,6 +518,7 @@ function saveDraft({
       if (existing !== null && !matchesContext(existing, encounterContext.context)) {
         return statusResult('UNAVAILABLE')
       }
+      if (existing?.status === 'COMPLETE') return statusResult('ENCOUNTER_NOT_EDITABLE')
       if (existing === null && command.expectedVersion !== null)
         return statusResult('VERSION_CONFLICT')
 
@@ -537,7 +565,7 @@ function saveDraft({
       const versionStatus = createdDraft
         ? null
         : validateExpectedVersion(existing.rowVersion, command.expectedVersion)
-      if (isDraftEquivalent(existing, parsed, 'IN_PROGRESS'))
+      if (!createdDraft && isDraftEquivalent(existing, parsed, targetStatus))
         return savedWorkspaceResult(
           dependencies.lifestyleRepository,
           context.connection,
@@ -679,6 +707,81 @@ function completeDraft({
       })
 
       return completedWorkspaceResult(
+        dependencies.lifestyleRepository,
+        context.connection,
+        command.encounterId,
+        encounterContext.context
+      )
+    })
+  } catch {
+    return statusResult('UNAVAILABLE')
+  }
+}
+
+function reopenDraft({
+  request,
+  ...dependencies
+}: ServiceDependencies & {
+  readonly request: ReopenLifestyleRequest
+}): ReopenLifestyleResult {
+  const actorResult = resolveTrustedActor(dependencies.authenticationSessionService)
+  if (actorResult.status !== 'VALID') return statusResult(actorResult.statusCode)
+
+  const command = parseReopenCommand(request)
+  if (command === null) return statusResult('VALIDATION_FAILED')
+
+  const locationResult =
+    dependencies.installationLocationService.resolveConfiguredInstallationLocation()
+  if (locationResult.status !== 'RESOLVED') return statusResult(locationResult.status)
+
+  try {
+    return dependencies.transactionExecutor.run<ReopenLifestyleResult>((context) => {
+      const occurredAt = context.nowUtc()
+      const encounterContext = validateEncounterContext(
+        context.connection,
+        command.encounterId,
+        locationResult.location.id,
+        dependencies
+      )
+      if (encounterContext.status !== 'VALID') return statusResult(encounterContext.statusCode)
+
+      const existing = dependencies.lifestyleRepository.findDraftByEncounterForWrite(
+        context.connection,
+        command.encounterId
+      )
+      if (existing === null || !matchesContext(existing, encounterContext.context)) {
+        return statusResult(existing === null ? 'VALIDATION_FAILED' : 'UNAVAILABLE')
+      }
+      const versionStatus = validateExpectedVersion(existing.rowVersion, command.expectedVersion)
+      if (versionStatus !== null) return statusResult(versionStatus)
+      if (existing.status !== 'COMPLETE') return statusResult('VALIDATION_FAILED')
+
+      const updateResult = dependencies.lifestyleRepository.reopenDraft(context.connection, {
+        id: existing.id,
+        expectedRowVersion: existing.rowVersion,
+        actorId: actorResult.actor.userId,
+        occurredAt
+      })
+      if (updateResult.status === 'VERSION_CONFLICT') return statusResult('VERSION_CONFLICT')
+      if (updateResult.status !== 'UPDATED') return statusResult('VALIDATION_FAILED')
+
+      insertLifestyleEvents({
+        dependencies,
+        connection: context.connection,
+        installation: encounterContext.context.installation,
+        actorId: actorResult.actor.userId,
+        encounter: encounterContext.context.encounter,
+        draft: updateResult.draft,
+        action: reopenedAction,
+        operation: 'SCREENING_LIFESTYLE_REOPENED',
+        schemaVersion: 'screening-encounter.lifestyle-reopened.v1',
+        occurredAt,
+        previousDraftStatus: existing.status,
+        auditId: context.newEntityId(),
+        outboxId: context.newEntityId()
+      })
+
+      return reopenedWorkspaceResult(
         dependencies.lifestyleRepository,
         context.connection,
         command.encounterId,
@@ -1035,6 +1138,20 @@ function completedWorkspaceResult(
   }
 }
 
+function reopenedWorkspaceResult(
+  repository: LifestyleRepository,
+  connection: DatabaseTransactionConnection,
+  encounterId: EntityId,
+  context: ValidatedContext
+): ReopenLifestyleResult {
+  const draft = repository.findDraftByEncounterForWrite(connection, encounterId)
+  if (draft === null) throw new RepositoryDataIntegrityError()
+  return {
+    status: 'REOPENED',
+    workspace: loadWorkspace(repository, connection, encounterId, draft, context)
+  }
+}
+
 type LifestyleBaselineInput =
   LifestyleAlcoholBaselineInput | LifestyleTobaccoBaselineInput | LifestyleWorkBaselineInput
 
@@ -1112,7 +1229,8 @@ function insertLifestyleEvents({
   baselineId,
   baselineVersion,
   alcoholBaselineReviewConfirmedVersionId,
-  tobaccoBaselineReviewConfirmedVersionId
+  tobaccoBaselineReviewConfirmedVersionId,
+  previousDraftStatus
 }: {
   readonly dependencies: ServiceDependencies
   readonly connection: DatabaseTransactionConnection
@@ -1135,6 +1253,7 @@ function insertLifestyleEvents({
   readonly baselineVersion?: number
   readonly alcoholBaselineReviewConfirmedVersionId?: EntityId | null
   readonly tobaccoBaselineReviewConfirmedVersionId?: EntityId | null
+  readonly previousDraftStatus?: LifestyleDraftRecord['status']
 }): void {
   const metadata = createEventMetadata(
     draft,
@@ -1142,7 +1261,8 @@ function insertLifestyleEvents({
     baselineId,
     baselineVersion,
     alcoholBaselineReviewConfirmedVersionId,
-    tobaccoBaselineReviewConfirmedVersionId
+    tobaccoBaselineReviewConfirmedVersionId,
+    previousDraftStatus
   )
   dependencies.auditEventRepository.insert(connection, {
     id: auditId,
@@ -1170,7 +1290,8 @@ function createEventMetadata(
   baselineId?: EntityId,
   baselineVersion?: number,
   alcoholBaselineReviewConfirmedVersionId?: EntityId | null,
-  tobaccoBaselineReviewConfirmedVersionId?: EntityId | null
+  tobaccoBaselineReviewConfirmedVersionId?: EntityId | null,
+  previousDraftStatus?: LifestyleDraftRecord['status']
 ): AuditMetadata {
   const metadata: Record<string, string | number | null> = {
     draft_id: draft.id,
@@ -1188,6 +1309,7 @@ function createEventMetadata(
   if (baselineDomain !== undefined) metadata.baseline_domain = baselineDomain
   if (baselineId !== undefined) metadata.baseline_version_id = baselineId
   if (baselineVersion !== undefined) metadata.baseline_version_number = baselineVersion
+  if (previousDraftStatus !== undefined) metadata.previous_draft_status = previousDraftStatus
   if (alcoholBaselineReviewConfirmedVersionId !== undefined)
     metadata.alcohol_baseline_review_confirmed_version_id = alcoholBaselineReviewConfirmedVersionId
   if (tobaccoBaselineReviewConfirmedVersionId !== undefined)
@@ -1199,7 +1321,7 @@ function normalizeDraftUpdate(
   fields: Record<string, unknown>,
   newEntityId: () => EntityId,
   expectedRowVersion: number,
-  status: 'IN_PROGRESS' | 'COMPLETE',
+  status: 'DRAFT' | 'COMPLETE',
   alcoholBaselineVersionId: EntityId | null,
   tobaccoBaselineVersionId: EntityId | null,
   workBaselineVersionId: EntityId | null,
@@ -1817,6 +1939,24 @@ function parseCompleteCommand(request: unknown): ParsedCompleteCommand | null {
   } catch {
     return null
   }
+}
+
+function parseReopenCommand(request: unknown): ParsedReopenCommand | null {
+  try {
+    const data = readDataProperties(request, reopenRequestKeys)
+    return {
+      encounterId: parseEntityId(data.encounterId),
+      expectedVersion: parseRequiredExpectedVersion(data.expectedVersion)
+    }
+  } catch {
+    return null
+  }
+}
+
+function parseRequiredExpectedVersion(value: unknown): number {
+  const parsed = parseExpectedVersion(value)
+  if (parsed === null) throw new Error()
+  return parsed
 }
 
 function parseExpectedVersion(value: unknown): number | null {

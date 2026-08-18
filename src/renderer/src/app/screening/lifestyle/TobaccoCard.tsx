@@ -6,6 +6,7 @@ import {
   getTobaccoBaselineForInterpretation,
   getTobaccoCardStatus,
   getTobaccoCardSummary,
+  hasBaselineReviewConflict,
   createEmptyTobaccoProductForm,
   tobaccoFrequencyOptions,
   tobaccoProductOptions,
@@ -22,40 +23,43 @@ import {
 interface TobaccoCardProps {
   readonly state: LifestyleDraftState
   readonly encounterStatus: PublicScreeningEncounterStartSummary['status']
+  readonly readOnly?: boolean
   onUpdateBaseline(update: (form: TobaccoBaselineForm) => TobaccoBaselineForm): void
   onUpdateTobacco(update: (form: TobaccoWeeklyForm) => TobaccoWeeklyForm): void
   onToggleBaseline(): void
   onToggleExpanded(): void
   onSaveBaseline(): void
+  onConfirmBaselineReview(confirmed: boolean): void
 }
 
 export function TobaccoCard({
   state,
   encounterStatus,
+  readOnly = false,
   onUpdateBaseline,
   onUpdateTobacco,
   onToggleBaseline,
   onToggleExpanded,
-  onSaveBaseline
+  onSaveBaseline,
+  onConfirmBaselineReview
 }: TobaccoCardProps): React.JSX.Element {
-  const editable = encounterStatus === 'DRAFT'
+  const editable = encounterStatus === 'DRAFT' && !readOnly
   const controlsDisabled = !editable || state.saveStatus === 'SAVING'
   const status = getTobaccoCardStatus(state, editable)
   const summary = getTobaccoCardSummary(state, editable)
   const baseline = state.workspace ? getTobaccoBaselineForInterpretation(state.workspace) : null
   const hasBaseline = baseline !== null && baseline !== undefined
+  const showBaselineReviewConfirmation = hasBaselineReviewConflict(
+    baseline?.status,
+    state.tobacco.weeklyResponse
+  )
   const errors = state.tobaccoValidationErrors
-
-  useEffect(() => {
-    const error = errors[0]
-    if (error === undefined) return
-    const focusId = tobaccoErrorFocusId(error.fieldId)
-    document.getElementById(focusId)?.focus()
-  }, [errors])
+  const statusLabel = formatStatus(status, editable)
+  const statusClass = status === 'COMPLETE' && editable ? 'ready' : status.toLowerCase()
 
   return (
     <section
-      className={`lifestyle-card lifestyle-card-status-${status.toLowerCase()}`}
+      className={`lifestyle-card lifestyle-card-status-${statusClass}`}
       aria-labelledby="lifestyle-tobacco-title"
     >
       <button
@@ -63,19 +67,16 @@ export function TobaccoCard({
         type="button"
         aria-expanded={state.tobaccoExpanded}
         aria-controls="lifestyle-tobacco-content"
-        disabled={!editable && !hasBaseline}
+        disabled={state.saveStatus === 'SAVING'}
         onClick={onToggleExpanded}
       >
         <span>
           <span className="lifestyle-card-kicker">2</span>
           <strong id="lifestyle-tobacco-title">Tobacco and nicotine</strong>
         </span>
-        <span
-          className="lifestyle-card-status"
-          aria-label={`Tobacco status: ${formatStatus(status)}`}
-        >
+        <span className="lifestyle-card-status" aria-label={`Tobacco status: ${statusLabel}`}>
           <span aria-hidden="true" className="lifestyle-status-mark" />
-          {formatStatus(status)}
+          {statusLabel}
         </span>
       </button>
       <p className="lifestyle-card-summary">{summary}</p>
@@ -84,10 +85,11 @@ export function TobaccoCard({
         <div id="lifestyle-tobacco-content" className="lifestyle-card-content">
           <button
             className="button button-secondary lifestyle-inline-button"
+            id="lifestyle-tobacco-baseline-button"
             type="button"
             aria-expanded={state.tobaccoBaselineOpen}
             aria-controls="lifestyle-tobacco-baseline-panel"
-            disabled={controlsDisabled}
+            disabled={state.saveStatus === 'SAVING'}
             onClick={onToggleBaseline}
           >
             Tobacco Baseline
@@ -111,6 +113,9 @@ export function TobaccoCard({
               errors={errors}
               disabled={controlsDisabled}
               onUpdate={onUpdateTobacco}
+              reviewConfirmed={state.tobaccoBaselineReviewConfirmedVersionId === baseline?.id}
+              showReviewConfirmation={showBaselineReviewConfirmation}
+              onConfirmBaselineReview={onConfirmBaselineReview}
             />
           ) : (
             <p className="lifestyle-inline-note">Baseline required.</p>
@@ -307,13 +312,19 @@ function TobaccoWeeklyPanel({
   baselineStatus,
   errors,
   disabled,
-  onUpdate
+  onUpdate,
+  reviewConfirmed,
+  showReviewConfirmation,
+  onConfirmBaselineReview
 }: {
   readonly form: TobaccoWeeklyForm
   readonly baselineStatus?: string
   readonly errors: readonly TobaccoFieldError[]
   readonly disabled: boolean
+  readonly reviewConfirmed: boolean
+  readonly showReviewConfirmation: boolean
   onUpdate(update: (form: TobaccoWeeklyForm) => TobaccoWeeklyForm): void
+  onConfirmBaselineReview(confirmed: boolean): void
 }): React.JSX.Element {
   const pendingFocusRef = useRef<string | null>(null)
 
@@ -327,6 +338,18 @@ function TobaccoWeeklyPanel({
   return (
     <section className="lifestyle-weekly-panel" aria-labelledby="lifestyle-tobacco-weekly-title">
       <h4 id="lifestyle-tobacco-weekly-title">Weekly tobacco and nicotine</h4>
+      {showReviewConfirmation ? (
+        <label className="lifestyle-choice" htmlFor="tobacco-baseline-review-confirmation">
+          <input
+            id="tobacco-baseline-review-confirmation"
+            type="checkbox"
+            checked={reviewConfirmed}
+            disabled={disabled}
+            onChange={(event) => onConfirmBaselineReview(event.target.checked)}
+          />
+          I have reviewed this baseline
+        </label>
+      ) : null}
       <fieldset
         id="tobacco-weekly-response"
         aria-invalid={errors.some((error) => error.fieldId === 'tobacco-weekly-response')}
@@ -662,18 +685,6 @@ function errorId(fieldId: string): string {
   return `${fieldId}-error`
 }
 
-function tobaccoErrorFocusId(fieldId: string): string {
-  const focusTargets: Record<string, string> = {
-    'tobacco-baseline-ever-used': 'tobacco-baseline-ever-YES',
-    'tobacco-baseline-frequency': 'tobacco-baseline-frequency-EVERY_DAY',
-    'tobacco-baseline-product-types': 'tobacco-baseline-product-CIGARETTE',
-    'tobacco-baseline-stop-date': 'tobacco-baseline-stop-date',
-    'tobacco-baseline-other-product': 'tobacco-baseline-other-product',
-    'tobacco-weekly-response': 'tobacco-weekly-response-YES',
-    'tobacco-products': 'tobacco-add-product'
-  }
-  return focusTargets[fieldId] ?? fieldId
-}
 function formatResponse(value: string): string {
   return value === 'YES'
     ? 'Yes'
@@ -683,7 +694,8 @@ function formatResponse(value: string): string {
         ? 'Unknown'
         : 'Declined'
 }
-function formatStatus(status: string): string {
+function formatStatus(status: string, editable = false): string {
+  if (status === 'COMPLETE' && editable) return 'Ready'
   return status === 'BASELINE_REVIEW'
     ? 'Baseline review required'
     : status === 'COMPLETE'

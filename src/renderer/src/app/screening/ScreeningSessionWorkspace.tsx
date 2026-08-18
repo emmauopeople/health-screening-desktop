@@ -51,11 +51,20 @@ import {
   createInitialLifestyleDraftState,
   createLifestyleDraftStateFromWorkspace,
   collapseLifestylePanels,
+  getAlcoholBaselineForInterpretation,
+  getTobaccoBaselineForInterpretation,
   validateAlcoholBaseline,
   validateAlcoholWeeklyDraft,
   createTobaccoBaselineRequest as createTobaccoBaselineRequestFromForm,
   validateTobaccoBaseline,
   validateTobaccoWeeklyDraft,
+  hasLifestyleCompletionReadinessErrors,
+  validateLifestyleCompletionReadiness,
+  mergeLifestyleBaselineSaveWorkspace,
+  validatePhysicalActivity,
+  validateOtherActivity,
+  validateWorkBaseline,
+  workBaselineToRequest,
   type LifestyleDraftState
 } from './lifestyle/lifestyle-workspace-model'
 import {
@@ -196,6 +205,7 @@ export function ScreeningSessionWorkspace({
   const vitalsSaveRequestRef = useRef<Map<string, number>>(new Map())
   const lifestyleLoadRequestRef = useRef<Map<string, number>>(new Map())
   const lifestyleSaveRequestRef = useRef<Map<string, number>>(new Map())
+  const lifestyleValidationFocusRequestRef = useRef(0)
   const lifestyleActiveEncounterRef = useRef<string | null>(null)
   const lifestyleContextEpochRef = useRef(0)
   const workspaceEpochRef = useRef(0)
@@ -223,6 +233,14 @@ export function ScreeningSessionWorkspace({
       focusMessage()
     },
     [focusMessage]
+  )
+
+  const requestLifestyleValidationFocus = useCallback(
+    (encounterId: string, state: LifestyleDraftState): LifestyleDraftState => ({
+      ...state,
+      validationFocusRequestToken: `${encounterId}:${++lifestyleValidationFocusRequestRef.current}`
+    }),
+    []
   )
 
   const clearTransientWorkflowState = useCallback((): void => {
@@ -786,7 +804,10 @@ export function ScreeningSessionWorkspace({
 
         if (result.data.status === 'LOADED' && hasLifestyleWorkspace(result.data)) {
           const workspace = result.data.workspace
-          updateLifestyleDraft(patientId, () => createLifestyleDraftStateFromWorkspace(workspace))
+          const nextState = createLifestyleDraftStateFromWorkspace(workspace)
+          updateLifestyleDraft(patientId, () =>
+            workspace.draft?.status === 'COMPLETE' ? collapseLifestylePanels(nextState) : nextState
+          )
           return
         }
 
@@ -823,16 +844,17 @@ export function ScreeningSessionWorkspace({
       const validationErrors = validateAlcoholBaseline(draft.baselineForm)
       const request = createAlcoholBaselineRequest(encounterId, draft)
       if (validationErrors.length > 0 || request === null) {
-        updateLifestyleDraft(patientId, (current) => ({
-          ...current,
-          saveStatus: 'ERROR',
-          statusMessage: 'Baseline could not be saved. Check the highlighted fields.',
-          validationErrors:
-            validationErrors.length > 0
-              ? validationErrors
-              : [{ fieldId: 'baselineEverConsumed', message: 'Select an answer.' }]
-        }))
-        focusMessage()
+        updateLifestyleDraft(patientId, (current) =>
+          requestLifestyleValidationFocus(encounterId, {
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Baseline could not be saved. Check the highlighted fields.',
+            validationErrors:
+              validationErrors.length > 0
+                ? validationErrors
+                : [{ fieldId: 'baselineEverConsumed', message: 'Select an answer.' }]
+          })
+        )
         return
       }
 
@@ -874,22 +896,17 @@ export function ScreeningSessionWorkspace({
         }
 
         const workspace = result.data.workspace
-        updateLifestyleDraft(patientId, (current) => {
-          const next = createLifestyleDraftStateFromWorkspace(workspace, {
-            saveStatus: 'SAVED',
-            statusMessage: 'Baseline saved'
-          })
-          return {
-            ...next,
-            alcohol: current.alcohol,
-            validationErrors: validateAlcoholWeeklyDraft(current.alcohol),
-            tobacco: current.tobacco,
-            tobaccoBaselineForm: current.tobaccoBaselineForm,
-            tobaccoValidationErrors: current.tobaccoValidationErrors,
-            dirty: current.dirty,
-            baselineOpen: false
-          }
-        })
+        if (workspace.encounterId !== encounterId) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Baseline could not be saved. Try again.'
+          }))
+          return
+        }
+        updateLifestyleDraft(patientId, (current) =>
+          mergeLifestyleBaselineSaveWorkspace(current, workspace, 'ALCOHOL', 'Baseline saved')
+        )
       } catch {
         if (
           mountedRef.current &&
@@ -905,7 +922,7 @@ export function ScreeningSessionWorkspace({
         }
       }
     },
-    [api, focusMessage, mountedRef, updateLifestyleDraft]
+    [api, mountedRef, requestLifestyleValidationFocus, updateLifestyleDraft]
   )
 
   const saveLifestyleTobaccoBaseline = useCallback(
@@ -919,16 +936,17 @@ export function ScreeningSessionWorkspace({
         draft.tobaccoBaselineForm
       )
       if (validationErrors.length > 0 || request === null) {
-        updateLifestyleDraft(patientId, (current) => ({
-          ...current,
-          saveStatus: 'ERROR',
-          statusMessage: 'Tobacco baseline could not be saved. Check the highlighted fields.',
-          tobaccoValidationErrors:
-            validationErrors.length > 0
-              ? validationErrors
-              : [{ fieldId: 'tobacco-baseline-ever-used', message: 'Select an answer.' }]
-        }))
-        focusMessage()
+        updateLifestyleDraft(patientId, (current) =>
+          requestLifestyleValidationFocus(encounterId, {
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Tobacco baseline could not be saved. Check the highlighted fields.',
+            tobaccoValidationErrors:
+              validationErrors.length > 0
+                ? validationErrors
+                : [{ fieldId: 'tobacco-baseline-ever-used', message: 'Select an answer.' }]
+          })
+        )
         return
       }
       const requestId = (lifestyleSaveRequestRef.current.get(encounterId) ?? 0) + 1
@@ -965,19 +983,22 @@ export function ScreeningSessionWorkspace({
           return
         }
         const workspace = result.data.workspace
-        updateLifestyleDraft(patientId, (current) => ({
-          ...createLifestyleDraftStateFromWorkspace(workspace, {
-            saveStatus: 'SAVED',
-            statusMessage: 'Tobacco baseline saved'
-          }),
-          alcohol: current.alcohol,
-          validationErrors: validateAlcoholWeeklyDraft(current.alcohol),
-          tobacco: current.tobacco,
-          tobaccoValidationErrors: validateTobaccoWeeklyDraft(current.tobacco),
-          dirty: current.dirty,
-          tobaccoBaselineOpen: false,
-          tobaccoExpanded: true
-        }))
+        if (workspace.encounterId !== encounterId) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Tobacco baseline could not be saved. Try again.'
+          }))
+          return
+        }
+        updateLifestyleDraft(patientId, (current) =>
+          mergeLifestyleBaselineSaveWorkspace(
+            current,
+            workspace,
+            'TOBACCO',
+            'Tobacco baseline saved'
+          )
+        )
       } catch {
         if (
           mountedRef.current &&
@@ -993,7 +1014,89 @@ export function ScreeningSessionWorkspace({
         }
       }
     },
-    [api, focusMessage, mountedRef, updateLifestyleDraft]
+    [api, mountedRef, requestLifestyleValidationFocus, updateLifestyleDraft]
+  )
+
+  const saveLifestyleWorkBaseline = useCallback(
+    async (patientId: string, encounterId: string, draft: LifestyleDraftState): Promise<void> => {
+      if (draft.loadStatus !== 'READY' || draft.saveStatus === 'SAVING') return
+      const contextEpoch = lifestyleContextEpochRef.current
+      const validationErrors = validateWorkBaseline(draft.workBaselineForm)
+      const request = workBaselineToRequest(encounterId, draft.workspace, draft.workBaselineForm)
+      if (validationErrors.length > 0 || request === null) {
+        updateLifestyleDraft(patientId, (current) =>
+          requestLifestyleValidationFocus(encounterId, {
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Work baseline could not be saved. Check the highlighted fields.',
+            workValidationErrors:
+              validationErrors.length > 0
+                ? validationErrors
+                : [{ fieldId: 'work-baseline-status', message: 'Select an employment status.' }]
+          })
+        )
+        return
+      }
+      const requestId = (lifestyleSaveRequestRef.current.get(encounterId) ?? 0) + 1
+      lifestyleSaveRequestRef.current.set(encounterId, requestId)
+      updateLifestyleDraft(patientId, (current) => ({
+        ...current,
+        saveStatus: 'SAVING',
+        statusMessage: 'Saving Work baseline...',
+        workValidationErrors: []
+      }))
+      try {
+        const result = await api.screeningEncounters.lifestyle.saveWorkBaseline(request)
+        if (
+          !mountedRef.current ||
+          lifestyleSaveRequestRef.current.get(encounterId) !== requestId ||
+          lifestyleActiveEncounterRef.current !== encounterId ||
+          lifestyleContextEpochRef.current !== contextEpoch
+        )
+          return
+        if (!result.ok) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: getLifestyleFailureMessage(result.error.code)
+          }))
+          return
+        }
+        if (result.data.status !== 'SAVED' || !hasLifestyleWorkspace(result.data)) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: getLifestyleStatusMessage(result.data.status)
+          }))
+          return
+        }
+        const workspace = result.data.workspace
+        if (workspace.encounterId !== encounterId) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Work baseline could not be saved. Try again.'
+          }))
+          return
+        }
+        updateLifestyleDraft(patientId, (current) =>
+          mergeLifestyleBaselineSaveWorkspace(current, workspace, 'WORK', 'Work baseline saved')
+        )
+      } catch {
+        if (
+          mountedRef.current &&
+          lifestyleSaveRequestRef.current.get(encounterId) === requestId &&
+          lifestyleActiveEncounterRef.current === encounterId &&
+          lifestyleContextEpochRef.current === contextEpoch
+        )
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Work baseline could not be saved. Try again.'
+          }))
+      }
+    },
+    [api, mountedRef, requestLifestyleValidationFocus, updateLifestyleDraft]
   )
 
   const saveLifestyleDraft = useCallback(
@@ -1003,15 +1106,31 @@ export function ScreeningSessionWorkspace({
 
       const validationErrors = validateAlcoholWeeklyDraft(draft.alcohol)
       const tobaccoValidationErrors = validateTobaccoWeeklyDraft(draft.tobacco)
-      if (validationErrors.length > 0 || tobaccoValidationErrors.length > 0) {
-        updateLifestyleDraft(patientId, (current) => ({
-          ...current,
-          saveStatus: 'ERROR',
-          statusMessage: 'Draft could not be saved. Check the highlighted fields.',
-          validationErrors,
-          tobaccoValidationErrors
-        }))
-        focusMessage()
+      const physicalActivityValidationErrors = validatePhysicalActivity(draft.physicalActivity)
+      const workValidationErrors =
+        draft.workBaselineForm.status !== '' || draft.workBaselineOpen
+          ? validateWorkBaseline(draft.workBaselineForm)
+          : []
+      const otherActivityValidationErrors = validateOtherActivity(draft.otherActivity)
+      if (
+        validationErrors.length > 0 ||
+        tobaccoValidationErrors.length > 0 ||
+        physicalActivityValidationErrors.length > 0 ||
+        workValidationErrors.length > 0 ||
+        otherActivityValidationErrors.length > 0
+      ) {
+        updateLifestyleDraft(patientId, (current) =>
+          requestLifestyleValidationFocus(encounterId, {
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Draft could not be saved. Check the highlighted fields.',
+            validationErrors,
+            tobaccoValidationErrors,
+            physicalActivityValidationErrors,
+            workValidationErrors,
+            otherActivityValidationErrors
+          })
+        )
         return
       }
 
@@ -1022,7 +1141,11 @@ export function ScreeningSessionWorkspace({
         ...current,
         saveStatus: 'SAVING',
         statusMessage: 'Saving draft...',
-        validationErrors: []
+        validationErrors: [],
+        tobaccoValidationErrors: [],
+        physicalActivityValidationErrors: [],
+        workValidationErrors: [],
+        otherActivityValidationErrors: []
       }))
 
       try {
@@ -1056,7 +1179,8 @@ export function ScreeningSessionWorkspace({
           return
         }
 
-        if (result.data.workspace.encounterId !== encounterId) {
+        const workspace = result.data.workspace
+        if (workspace.encounterId !== encounterId) {
           updateLifestyleDraft(patientId, (current) => ({
             ...current,
             saveStatus: 'ERROR',
@@ -1065,14 +1189,24 @@ export function ScreeningSessionWorkspace({
           return
         }
 
-        const workspace = result.data.workspace
+        const nextState = createLifestyleDraftStateFromWorkspace(workspace, {
+          saveStatus: 'SAVED',
+          statusMessage: 'Draft saved'
+        })
         updateLifestyleDraft(patientId, () =>
-          collapseLifestylePanels(
-            createLifestyleDraftStateFromWorkspace(workspace, {
-              saveStatus: 'SAVED',
-              statusMessage: 'Draft saved'
-            })
-          )
+          collapseLifestylePanels({
+            ...nextState,
+            alcoholBaselineReviewConfirmedVersionId:
+              draft.alcoholBaselineReviewConfirmedVersionId ===
+              getAlcoholBaselineForInterpretation(workspace)?.id
+                ? draft.alcoholBaselineReviewConfirmedVersionId
+                : null,
+            tobaccoBaselineReviewConfirmedVersionId:
+              draft.tobaccoBaselineReviewConfirmedVersionId ===
+              getTobaccoBaselineForInterpretation(workspace)?.id
+                ? draft.tobaccoBaselineReviewConfirmedVersionId
+                : null
+          })
         )
       } catch {
         if (
@@ -1089,7 +1223,198 @@ export function ScreeningSessionWorkspace({
         }
       }
     },
-    [api, focusMessage, mountedRef, updateLifestyleDraft]
+    [api, mountedRef, requestLifestyleValidationFocus, updateLifestyleDraft]
+  )
+
+  const continueLifestyle = useCallback(
+    async (patientId: string, encounterId: string, draft: LifestyleDraftState): Promise<void> => {
+      if (draft.loadStatus !== 'READY' || draft.saveStatus === 'SAVING') return
+      const contextEpoch = lifestyleContextEpochRef.current
+      const readiness = validateLifestyleCompletionReadiness(draft)
+      if (hasLifestyleCompletionReadinessErrors(readiness)) {
+        updateLifestyleDraft(patientId, (current) =>
+          requestLifestyleValidationFocus(encounterId, {
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Cannot continue. Check the highlighted fields.',
+            validationErrors: readiness.validationErrors,
+            tobaccoValidationErrors: readiness.tobaccoValidationErrors,
+            physicalActivityValidationErrors: readiness.physicalActivityValidationErrors,
+            workValidationErrors: readiness.workValidationErrors,
+            otherActivityValidationErrors: readiness.otherActivityValidationErrors
+          })
+        )
+        return
+      }
+      const request = createAlcoholSaveDraftRequest(encounterId, draft)
+      const requestId = (lifestyleSaveRequestRef.current.get(encounterId) ?? 0) + 1
+      lifestyleSaveRequestRef.current.set(encounterId, requestId)
+      updateLifestyleDraft(patientId, (current) => ({
+        ...current,
+        saveStatus: 'SAVING',
+        statusMessage: 'Saving Lifestyle...',
+        validationErrors: [],
+        tobaccoValidationErrors: [],
+        physicalActivityValidationErrors: [],
+        workValidationErrors: [],
+        otherActivityValidationErrors: []
+      }))
+      try {
+        const result = await api.screeningEncounters.lifestyle.saveDraft(request)
+        if (
+          !mountedRef.current ||
+          lifestyleSaveRequestRef.current.get(encounterId) !== requestId ||
+          lifestyleActiveEncounterRef.current !== encounterId ||
+          lifestyleContextEpochRef.current !== contextEpoch
+        )
+          return
+        if (!result.ok) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: getLifestyleFailureMessage(result.error.code)
+          }))
+          return
+        }
+        if (result.data.status !== 'SAVED' || !hasLifestyleWorkspace(result.data)) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: getLifestyleStatusMessage(result.data.status)
+          }))
+          return
+        }
+        const workspace = result.data.workspace
+        if (workspace.encounterId !== encounterId) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Lifestyle could not be saved. Try again.'
+          }))
+          return
+        }
+        const nextState = createLifestyleDraftStateFromWorkspace(workspace, {
+          saveStatus: 'SAVED',
+          statusMessage: 'Lifestyle saved'
+        })
+        updateLifestyleDraft(patientId, () =>
+          collapseLifestylePanels({
+            ...nextState,
+            alcoholBaselineReviewConfirmedVersionId:
+              draft.alcoholBaselineReviewConfirmedVersionId ===
+              getAlcoholBaselineForInterpretation(workspace)?.id
+                ? draft.alcoholBaselineReviewConfirmedVersionId
+                : null,
+            tobaccoBaselineReviewConfirmedVersionId:
+              draft.tobaccoBaselineReviewConfirmedVersionId ===
+              getTobaccoBaselineForInterpretation(workspace)?.id
+                ? draft.tobaccoBaselineReviewConfirmedVersionId
+                : null
+          })
+        )
+      } catch {
+        if (
+          mountedRef.current &&
+          lifestyleSaveRequestRef.current.get(encounterId) === requestId &&
+          lifestyleActiveEncounterRef.current === encounterId &&
+          lifestyleContextEpochRef.current === contextEpoch
+        )
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Lifestyle could not be saved. Try again.'
+          }))
+      }
+    },
+    [api, mountedRef, requestLifestyleValidationFocus, updateLifestyleDraft]
+  )
+
+  const reopenLifestyle = useCallback(
+    async (patientId: string, encounterId: string, draft: LifestyleDraftState): Promise<void> => {
+      if (
+        draft.loadStatus !== 'READY' ||
+        draft.saveStatus === 'SAVING' ||
+        draft.workspace?.draft?.status !== 'COMPLETE'
+      )
+        return
+      const contextEpoch = lifestyleContextEpochRef.current
+      const requestId = (lifestyleSaveRequestRef.current.get(encounterId) ?? 0) + 1
+      lifestyleSaveRequestRef.current.set(encounterId, requestId)
+      updateLifestyleDraft(patientId, (current) => ({
+        ...current,
+        saveStatus: 'SAVING',
+        statusMessage: 'Reopening Lifestyle...',
+        validationErrors: [],
+        tobaccoValidationErrors: [],
+        physicalActivityValidationErrors: [],
+        workValidationErrors: [],
+        otherActivityValidationErrors: []
+      }))
+
+      try {
+        const result = await api.screeningEncounters.lifestyle.reopen({
+          encounterId,
+          expectedVersion: draft.workspace.draft.rowVersion
+        })
+        if (
+          !mountedRef.current ||
+          lifestyleSaveRequestRef.current.get(encounterId) !== requestId ||
+          lifestyleActiveEncounterRef.current !== encounterId ||
+          lifestyleContextEpochRef.current !== contextEpoch
+        )
+          return
+
+        if (!result.ok) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: getLifestyleFailureMessage(result.error.code)
+          }))
+          return
+        }
+
+        if (result.data.status !== 'REOPENED' || !hasLifestyleWorkspace(result.data)) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: getLifestyleStatusMessage(result.data.status)
+          }))
+          return
+        }
+
+        const workspace = result.data.workspace
+        if (workspace.encounterId !== encounterId) {
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Lifestyle could not be reopened. Try again.'
+          }))
+          return
+        }
+
+        updateLifestyleDraft(patientId, () =>
+          collapseLifestylePanels(
+            createLifestyleDraftStateFromWorkspace(workspace, {
+              saveStatus: 'SAVED',
+              statusMessage: 'Lifestyle reopened'
+            })
+          )
+        )
+      } catch {
+        if (
+          mountedRef.current &&
+          lifestyleSaveRequestRef.current.get(encounterId) === requestId &&
+          lifestyleActiveEncounterRef.current === encounterId &&
+          lifestyleContextEpochRef.current === contextEpoch
+        )
+          updateLifestyleDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Lifestyle could not be reopened. Try again.'
+          }))
+      }
+    },
+    [api, mountedRef, updateLifestyleDraft]
   )
 
   const retrySession = useCallback((): void => {
@@ -1213,7 +1538,10 @@ export function ScreeningSessionWorkspace({
               onLoadLifestyleWorkspace={loadLifestyleWorkspace}
               onSaveLifestyleBaseline={saveLifestyleBaseline}
               onSaveLifestyleTobaccoBaseline={saveLifestyleTobaccoBaseline}
+              onSaveLifestyleWorkBaseline={saveLifestyleWorkBaseline}
               onSaveLifestyleDraft={saveLifestyleDraft}
+              onContinueLifestyle={continueLifestyle}
+              onReopenLifestyle={reopenLifestyle}
               onUpdateLifestyleDraft={updateLifestyleDraft}
             />
           )}
@@ -1448,7 +1776,10 @@ function NewScreeningWorkspace({
   onLoadLifestyleWorkspace,
   onSaveLifestyleBaseline,
   onSaveLifestyleTobaccoBaseline,
+  onSaveLifestyleWorkBaseline,
   onSaveLifestyleDraft,
+  onContinueLifestyle,
+  onReopenLifestyle,
   onUpdateLifestyleDraft
 }: {
   readonly activeTab: PatientScreeningTab | null
@@ -1472,7 +1803,14 @@ function NewScreeningWorkspace({
     encounterId: string,
     draft: LifestyleDraftState
   ): void
+  onSaveLifestyleWorkBaseline(
+    patientId: string,
+    encounterId: string,
+    draft: LifestyleDraftState
+  ): void
   onSaveLifestyleDraft(patientId: string, encounterId: string, draft: LifestyleDraftState): void
+  onContinueLifestyle(patientId: string, encounterId: string, draft: LifestyleDraftState): void
+  onReopenLifestyle(patientId: string, encounterId: string, draft: LifestyleDraftState): void
   onUpdateLifestyleDraft(
     patientId: string,
     update: (draft: LifestyleDraftState) => LifestyleDraftState
@@ -1531,8 +1869,29 @@ function NewScreeningWorkspace({
                 activeTab.lifestyleDraft
               )
             }
+            onSaveLifestyleWorkBaseline={() =>
+              onSaveLifestyleWorkBaseline(
+                activeTab.patient.id,
+                activeTab.encounter.id,
+                activeTab.lifestyleDraft
+              )
+            }
             onSaveLifestyleDraft={() =>
               onSaveLifestyleDraft(
+                activeTab.patient.id,
+                activeTab.encounter.id,
+                activeTab.lifestyleDraft
+              )
+            }
+            onContinueLifestyle={() =>
+              onContinueLifestyle(
+                activeTab.patient.id,
+                activeTab.encounter.id,
+                activeTab.lifestyleDraft
+              )
+            }
+            onReopenLifestyle={() =>
+              onReopenLifestyle(
                 activeTab.patient.id,
                 activeTab.encounter.id,
                 activeTab.lifestyleDraft
@@ -1674,7 +2033,10 @@ function CurrentEncounterPanel({
   onLoadLifestyleWorkspace,
   onSaveLifestyleBaseline,
   onSaveLifestyleTobaccoBaseline,
+  onSaveLifestyleWorkBaseline,
   onSaveLifestyleDraft,
+  onContinueLifestyle,
+  onReopenLifestyle,
   onUpdateLifestyleDraft
 }: {
   readonly location: PublicScreeningSessionWorkspaceLocation
@@ -1685,7 +2047,10 @@ function CurrentEncounterPanel({
   onLoadLifestyleWorkspace(): void
   onSaveLifestyleBaseline(): void
   onSaveLifestyleTobaccoBaseline(): void
+  onSaveLifestyleWorkBaseline(): void
   onSaveLifestyleDraft(): void
+  onContinueLifestyle(): void
+  onReopenLifestyle(): void
   onUpdateLifestyleDraft(update: (draft: LifestyleDraftState) => LifestyleDraftState): void
 }): React.JSX.Element {
   const displayName = formatPatientName(tab.patient)
@@ -1742,6 +2107,13 @@ function CurrentEncounterPanel({
               tobaccoBaselineForm: draft.tobaccoBaselineForm,
               tobacco: draft.tobacco,
               tobaccoValidationErrors: draft.tobaccoValidationErrors,
+              physicalActivity: draft.physicalActivity,
+              physicalActivityValidationErrors: draft.physicalActivityValidationErrors,
+              workBaselineForm: draft.workBaselineForm,
+              work: draft.work,
+              workValidationErrors: draft.workValidationErrors,
+              otherActivity: draft.otherActivity,
+              otherActivityValidationErrors: draft.otherActivityValidationErrors,
               dirty: draft.dirty
             }))
             onLoadLifestyleWorkspace()
@@ -1749,7 +2121,10 @@ function CurrentEncounterPanel({
           onUpdate={onUpdateLifestyleDraft}
           onSaveBaseline={onSaveLifestyleBaseline}
           onSaveTobaccoBaseline={onSaveLifestyleTobaccoBaseline}
+          onSaveWorkBaseline={onSaveLifestyleWorkBaseline}
           onSaveDraft={onSaveLifestyleDraft}
+          onContinue={onContinueLifestyle}
+          onReopen={onReopenLifestyle}
         />
       )}
     </section>

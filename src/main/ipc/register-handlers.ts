@@ -88,7 +88,8 @@ const screeningLifestyleIpcChannels: readonly ScreeningLifestyleIpcChannel[] = O
   ipcChannels.screeningEncounters.lifestyle.saveTobaccoBaseline,
   ipcChannels.screeningEncounters.lifestyle.saveWorkBaseline,
   ipcChannels.screeningEncounters.lifestyle.saveDraft,
-  ipcChannels.screeningEncounters.lifestyle.complete
+  ipcChannels.screeningEncounters.lifestyle.complete,
+  ipcChannels.screeningEncounters.lifestyle.reopen
 ])
 const activeScreeningLifestyleRegistrations = new WeakMap<
   ApplicationIpcMain,
@@ -317,7 +318,8 @@ export function registerScreeningLifestyleIpcHandlers(
     [ipcChannels.screeningEncounters.lifestyle.saveTobaccoBaseline, handlers.saveTobaccoBaseline],
     [ipcChannels.screeningEncounters.lifestyle.saveWorkBaseline, handlers.saveWorkBaseline],
     [ipcChannels.screeningEncounters.lifestyle.saveDraft, handlers.saveDraft],
-    [ipcChannels.screeningEncounters.lifestyle.complete, handlers.complete]
+    [ipcChannels.screeningEncounters.lifestyle.complete, handlers.complete],
+    [ipcChannels.screeningEncounters.lifestyle.reopen, handlers.reopen]
   ]
   const installedChannels: ScreeningLifestyleIpcChannel[] = []
 
