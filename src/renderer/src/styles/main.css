@@ -401,6 +401,16 @@ h1 {
   text-shadow: 0 2px 12px rgba(3, 23, 42, 0.48);
 }
 
+.auth-login-logo {
+  width: 100%;
+  aspect-ratio: 1070 / 670;
+  margin: 0 0 10px;
+  background-image: url('../../../../assests/images/big-logo.png');
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+}
+
 .auth-login-intro p {
   margin: 0;
 }
@@ -2564,6 +2574,214 @@ h1 {
   background: #fff4f2;
 }
 
+.food-step {
+  gap: 14px;
+}
+
+.food-period {
+  margin: 6px 0 0;
+  color: var(--shell-secondary-text);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.food-response-panel,
+.food-rows-panel {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.food-response-panel legend,
+.food-row legend {
+  color: var(--shell-navy);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.food-response-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  gap: 8px 12px;
+}
+
+.food-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  color: #344054;
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.food-choice input {
+  accent-color: var(--shell-teal);
+}
+
+.food-rows-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.food-rows-header h4 {
+  margin: 0;
+  color: var(--shell-navy);
+  font-size: 0.95rem;
+}
+
+.food-add-button {
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 12px;
+  font-size: 0.82rem;
+}
+
+.food-row-list {
+  display: grid;
+  gap: 10px;
+}
+
+.food-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  margin: 0;
+  border: 1px solid #c8d3df;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfdff;
+}
+
+.food-row legend {
+  grid-column: 1 / -1;
+}
+
+.food-field {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  color: #344054;
+  font-size: 0.84rem;
+  font-weight: 760;
+}
+
+.food-field input,
+.food-field select {
+  width: 100%;
+  height: 38px;
+  min-height: 0;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--shell-text);
+  background: #ffffff;
+  font: inherit;
+}
+
+.food-field input:focus-visible,
+.food-field select:focus-visible {
+  outline: 3px solid rgba(15, 107, 122, 0.34);
+  outline-offset: 1px;
+}
+
+.food-field input[aria-invalid='true'],
+.food-field select[aria-invalid='true'],
+.food-choice input[aria-invalid='true'] {
+  border-color: #b42318;
+}
+
+.food-field input[aria-invalid='true']:focus-visible,
+.food-field select[aria-invalid='true']:focus-visible {
+  outline-color: rgba(180, 35, 24, 0.48);
+}
+
+.food-field-error {
+  min-height: 1.25em;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #912018;
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.25;
+  visibility: hidden;
+}
+
+.food-field-error-visible {
+  visibility: visible;
+}
+
+.food-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.food-suggestion {
+  min-height: 30px;
+  border: 1px solid #c8d3df;
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #344054;
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.food-suggestion span {
+  margin-left: 6px;
+  color: var(--shell-secondary-text);
+  font-size: 0.72rem;
+}
+
+.food-row-actions,
+.food-action-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.food-row-actions {
+  align-content: start;
+}
+
+.food-row-actions .button {
+  min-height: 32px;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+}
+
+.food-step-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #c8d3df;
+  border-radius: 6px;
+  padding: 9px 10px;
+  color: #344054;
+  background: #f8fbfd;
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.food-step-error {
+  border-color: #f1b5b0;
+  color: #912018;
+  background: #fff4f2;
+}
+
 .screening-vitals-entry {
   display: grid;
   gap: 12px;
@@ -3670,6 +3888,8 @@ h1 {
   .screening-stepper,
   .screening-vitals-fields,
   .screening-context-metrics,
+  .food-response-grid,
+  .food-row,
   .lifestyle-activity-row,
   .lifestyle-form-grid,
   .lifestyle-choice-grid {

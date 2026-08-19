@@ -28,6 +28,7 @@ import type {
   ScreeningVitalsSaveDraftSuccessData,
   ScreeningSessionEnsureCurrentSuccessData,
   ScreeningSessionErrorCode,
+  ScreeningFoodWorkspace,
   ScreeningLifestyleWorkspace
 } from '@shared/ipc'
 import {
@@ -44,6 +45,15 @@ import {
 } from '@shared/vitals-bounds'
 
 import type { WorkspaceNavigationGuard } from '../shell/application-shell-types'
+import { FoodStep } from './food/FoodStep'
+import {
+  createFoodDraftStateFromWorkspace,
+  createFoodSaveDraftRequest,
+  createInitialFoodDraftState,
+  getFoodFailureMessage,
+  getFoodStatusMessage,
+  type FoodDraftState
+} from './food/food-workspace-model'
 import { LifestyleStep } from './lifestyle/LifestyleStep'
 import {
   createAlcoholBaselineRequest,
@@ -120,6 +130,7 @@ export interface PatientScreeningTab {
   readonly encounter: PublicScreeningEncounterStartSummary
   readonly vitalsDraft: VitalsDraft
   readonly lifestyleDraft: LifestyleDraftState
+  readonly foodDraft: FoodDraftState
 }
 
 type WorkspaceMessage = {
@@ -128,7 +139,7 @@ type WorkspaceMessage = {
 }
 
 type ScreeningWorkspaceTab = 'PATIENTS' | 'NEW_SCREENING'
-type ScreeningWorkflowStep = 'VITALS' | 'LIFESTYLE'
+type ScreeningWorkflowStep = 'VITALS' | 'LIFESTYLE' | 'FOOD'
 type VitalsMeasurementSite = 'RIGHT_ARM' | 'LEFT_ARM' | 'LEFT_LEG' | 'RIGHT_LEG'
 type VitalsPosition = 'LYING' | 'STANDING' | 'SITTING'
 type VitalsDraftLoadStatus = 'NOT_LOADED' | 'LOADING' | 'READY' | 'ERROR'
@@ -208,6 +219,11 @@ export function ScreeningSessionWorkspace({
   const lifestyleValidationFocusRequestRef = useRef(0)
   const lifestyleActiveEncounterRef = useRef<string | null>(null)
   const lifestyleContextEpochRef = useRef(0)
+  const foodLoadRequestRef = useRef<Map<string, number>>(new Map())
+  const foodSaveRequestRef = useRef<Map<string, number>>(new Map())
+  const foodValidationFocusRequestRef = useRef(0)
+  const foodActiveEncounterRef = useRef<string | null>(null)
+  const foodContextEpochRef = useRef(0)
   const workspaceEpochRef = useRef(0)
   const pendingPatientIdsRef = useRef<Set<string>>(new Set())
   const messageRef = useRef<HTMLDivElement | null>(null)
@@ -243,6 +259,14 @@ export function ScreeningSessionWorkspace({
     []
   )
 
+  const requestFoodValidationFocus = useCallback(
+    (encounterId: string, state: FoodDraftState): FoodDraftState => ({
+      ...state,
+      validationFocusRequestToken: `${encounterId}:${++foodValidationFocusRequestRef.current}`
+    }),
+    []
+  )
+
   const clearTransientWorkflowState = useCallback((): void => {
     workspaceEpochRef.current += 1
     patientSearchRequestRef.current += 1
@@ -250,8 +274,12 @@ export function ScreeningSessionWorkspace({
     vitalsSaveRequestRef.current.clear()
     lifestyleLoadRequestRef.current.clear()
     lifestyleSaveRequestRef.current.clear()
+    foodLoadRequestRef.current.clear()
+    foodSaveRequestRef.current.clear()
     lifestyleActiveEncounterRef.current = null
     lifestyleContextEpochRef.current += 1
+    foodActiveEncounterRef.current = null
+    foodContextEpochRef.current += 1
     pendingPatientIdsRef.current.clear()
     setPatientSearchState(initialPatientSearchState)
     setPendingPatientIds(new Set())
@@ -425,6 +453,8 @@ export function ScreeningSessionWorkspace({
     const vitalsSaveRequests = vitalsSaveRequestRef.current
     const lifestyleLoadRequests = lifestyleLoadRequestRef.current
     const lifestyleSaveRequests = lifestyleSaveRequestRef.current
+    const foodLoadRequests = foodLoadRequestRef.current
+    const foodSaveRequests = foodSaveRequestRef.current
 
     return () => {
       workspaceEpochRef.current += 1
@@ -433,8 +463,12 @@ export function ScreeningSessionWorkspace({
       vitalsSaveRequests.clear()
       lifestyleLoadRequests.clear()
       lifestyleSaveRequests.clear()
+      foodLoadRequests.clear()
+      foodSaveRequests.clear()
       lifestyleActiveEncounterRef.current = null
       lifestyleContextEpochRef.current += 1
+      foodActiveEncounterRef.current = null
+      foodContextEpochRef.current += 1
       pendingPatientIds.clear()
     }
   }, [])
@@ -527,7 +561,8 @@ export function ScreeningSessionWorkspace({
                 patient,
                 encounter,
                 vitalsDraft: createInitialVitalsDraft(),
-                lifestyleDraft: createInitialLifestyleDraftState()
+                lifestyleDraft: createInitialLifestyleDraftState(),
+                foodDraft: createInitialFoodDraftState()
               }
             ]
           })
@@ -602,6 +637,17 @@ export function ScreeningSessionWorkspace({
           tab.patient.id === patientId
             ? { ...tab, lifestyleDraft: update(tab.lifestyleDraft) }
             : tab
+        )
+      )
+    },
+    [onOpenTabsChange]
+  )
+
+  const updateFoodDraft = useCallback(
+    (patientId: string, update: (draft: FoodDraftState) => FoodDraftState): void => {
+      onOpenTabsChange((currentTabs) =>
+        currentTabs.map((tab) =>
+          tab.patient.id === patientId ? { ...tab, foodDraft: update(tab.foodDraft) } : tab
         )
       )
     },
@@ -1312,6 +1358,7 @@ export function ScreeningSessionWorkspace({
                 : null
           })
         )
+        updateVitalsDraft(patientId, (current) => ({ ...current, activeStep: 'FOOD' }))
       } catch {
         if (
           mountedRef.current &&
@@ -1326,7 +1373,170 @@ export function ScreeningSessionWorkspace({
           }))
       }
     },
-    [api, mountedRef, requestLifestyleValidationFocus, updateLifestyleDraft]
+    [api, mountedRef, requestLifestyleValidationFocus, updateLifestyleDraft, updateVitalsDraft]
+  )
+
+  const loadFoodWorkspace = useCallback(
+    async (patientId: string, encounterId: string): Promise<void> => {
+      const requestId = (foodLoadRequestRef.current.get(encounterId) ?? 0) + 1
+      foodLoadRequestRef.current.set(encounterId, requestId)
+      updateFoodDraft(patientId, (draft) => ({
+        ...draft,
+        loadStatus: 'LOADING',
+        saveStatus: 'IDLE',
+        statusMessage: null,
+        validationErrors: []
+      }))
+
+      try {
+        const result = await api.screeningEncounters.food.getWorkspace({ encounterId })
+        if (
+          !mountedRef.current ||
+          foodLoadRequestRef.current.get(encounterId) !== requestId ||
+          foodActiveEncounterRef.current !== encounterId
+        )
+          return
+
+        if (!result.ok) {
+          updateFoodDraft(patientId, (current) => ({
+            ...current,
+            loadStatus: 'ERROR',
+            saveStatus: 'ERROR',
+            statusMessage: getFoodFailureMessage(result.error.code)
+          }))
+          return
+        }
+
+        if (result.data.status !== 'LOADED' || !hasFoodWorkspace(result.data)) {
+          updateFoodDraft(patientId, (current) => ({
+            ...current,
+            loadStatus: 'ERROR',
+            saveStatus: 'ERROR',
+            statusMessage: getFoodStatusMessage(result.data.status)
+          }))
+          return
+        }
+
+        const workspace = result.data.workspace
+        if (workspace.encounterId !== encounterId) {
+          updateFoodDraft(patientId, (current) => ({
+            ...current,
+            loadStatus: 'ERROR',
+            saveStatus: 'ERROR',
+            statusMessage: 'Food could not be loaded. Try again.'
+          }))
+          return
+        }
+
+        updateFoodDraft(patientId, (current) =>
+          current.dirty && current.loadStatus === 'READY'
+            ? current
+            : createFoodDraftStateFromWorkspace(workspace)
+        )
+      } catch {
+        if (
+          mountedRef.current &&
+          foodLoadRequestRef.current.get(encounterId) === requestId &&
+          foodActiveEncounterRef.current === encounterId
+        ) {
+          updateFoodDraft(patientId, (current) => ({
+            ...current,
+            loadStatus: 'ERROR',
+            saveStatus: 'ERROR',
+            statusMessage: 'Food could not be loaded. Try again.'
+          }))
+        }
+      }
+    },
+    [api, mountedRef, updateFoodDraft]
+  )
+
+  const saveFoodDraft = useCallback(
+    async (patientId: string, encounterId: string, draft: FoodDraftState): Promise<void> => {
+      if (draft.loadStatus !== 'READY' || draft.saveStatus === 'SAVING') return
+      const validation = createFoodSaveDraftRequest(encounterId, draft)
+      if (validation.status === 'INVALID') {
+        updateFoodDraft(patientId, (current) =>
+          requestFoodValidationFocus(encounterId, {
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Food draft could not be saved. Check the highlighted fields.',
+            validationErrors: validation.errors
+          })
+        )
+        return
+      }
+
+      const contextEpoch = foodContextEpochRef.current
+      const requestId = (foodSaveRequestRef.current.get(encounterId) ?? 0) + 1
+      foodSaveRequestRef.current.set(encounterId, requestId)
+      updateFoodDraft(patientId, (current) => ({
+        ...current,
+        saveStatus: 'SAVING',
+        statusMessage: 'Saving draft...',
+        validationErrors: []
+      }))
+
+      try {
+        const result = await api.screeningEncounters.food.saveDraft(validation.request)
+        if (
+          !mountedRef.current ||
+          foodSaveRequestRef.current.get(encounterId) !== requestId ||
+          foodActiveEncounterRef.current !== encounterId ||
+          foodContextEpochRef.current !== contextEpoch
+        )
+          return
+
+        if (!result.ok) {
+          updateFoodDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: getFoodFailureMessage(result.error.code)
+          }))
+          return
+        }
+
+        if (result.data.status !== 'SAVED' || !hasFoodWorkspace(result.data)) {
+          updateFoodDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: getFoodStatusMessage(result.data.status)
+          }))
+          return
+        }
+
+        const workspace = result.data.workspace
+        if (workspace.encounterId !== encounterId) {
+          updateFoodDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Food draft could not be saved. Try again.'
+          }))
+          return
+        }
+
+        updateFoodDraft(patientId, () =>
+          createFoodDraftStateFromWorkspace(workspace, {
+            saveStatus: 'SAVED',
+            statusMessage: 'Draft saved'
+          })
+        )
+      } catch {
+        if (
+          mountedRef.current &&
+          foodSaveRequestRef.current.get(encounterId) === requestId &&
+          foodActiveEncounterRef.current === encounterId &&
+          foodContextEpochRef.current === contextEpoch
+        ) {
+          updateFoodDraft(patientId, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Food draft could not be saved. Try again.'
+          }))
+        }
+      }
+    },
+    [api, mountedRef, requestFoodValidationFocus, updateFoodDraft]
   )
 
   const reopenLifestyle = useCallback(
@@ -1444,6 +1654,8 @@ export function ScreeningSessionWorkspace({
     const encounterId = activeWorkspaceTab === 'NEW_SCREENING' ? activeEncounterId : null
     lifestyleContextEpochRef.current += 1
     lifestyleActiveEncounterRef.current = encounterId
+    foodContextEpochRef.current += 1
+    foodActiveEncounterRef.current = encounterId
   }, [activeEncounterId, activeWorkspaceTab])
 
   useEffect(() => {
@@ -1458,6 +1670,19 @@ export function ScreeningSessionWorkspace({
 
     void loadLifestyleWorkspace(activeTab.patient.id, activeTab.encounter.id)
   }, [activeTab, activeWorkspaceTab, loadLifestyleWorkspace])
+
+  useEffect(() => {
+    if (
+      activeWorkspaceTab !== 'NEW_SCREENING' ||
+      activeTab === null ||
+      activeTab.vitalsDraft.activeStep !== 'FOOD' ||
+      activeTab.foodDraft.loadStatus !== 'NOT_LOADED'
+    ) {
+      return
+    }
+
+    void loadFoodWorkspace(activeTab.patient.id, activeTab.encounter.id)
+  }, [activeTab, activeWorkspaceTab, loadFoodWorkspace])
 
   return (
     <section
@@ -1543,6 +1768,9 @@ export function ScreeningSessionWorkspace({
               onContinueLifestyle={continueLifestyle}
               onReopenLifestyle={reopenLifestyle}
               onUpdateLifestyleDraft={updateLifestyleDraft}
+              onLoadFoodWorkspace={loadFoodWorkspace}
+              onSaveFoodDraft={saveFoodDraft}
+              onUpdateFoodDraft={updateFoodDraft}
             />
           )}
         </>
@@ -1780,7 +2008,10 @@ function NewScreeningWorkspace({
   onSaveLifestyleDraft,
   onContinueLifestyle,
   onReopenLifestyle,
-  onUpdateLifestyleDraft
+  onUpdateLifestyleDraft,
+  onLoadFoodWorkspace,
+  onSaveFoodDraft,
+  onUpdateFoodDraft
 }: {
   readonly activeTab: PatientScreeningTab | null
   readonly location: PublicScreeningSessionWorkspaceLocation
@@ -1815,6 +2046,9 @@ function NewScreeningWorkspace({
     patientId: string,
     update: (draft: LifestyleDraftState) => LifestyleDraftState
   ): void
+  onLoadFoodWorkspace(patientId: string, encounterId: string): void
+  onSaveFoodDraft(patientId: string, encounterId: string, draft: FoodDraftState): void
+  onUpdateFoodDraft(patientId: string, update: (draft: FoodDraftState) => FoodDraftState): void
 }): React.JSX.Element {
   return (
     <section
@@ -1900,6 +2134,13 @@ function NewScreeningWorkspace({
             onUpdateLifestyleDraft={(update) =>
               onUpdateLifestyleDraft(activeTab.patient.id, update)
             }
+            onLoadFoodWorkspace={() =>
+              onLoadFoodWorkspace(activeTab.patient.id, activeTab.encounter.id)
+            }
+            onSaveFoodDraft={() =>
+              onSaveFoodDraft(activeTab.patient.id, activeTab.encounter.id, activeTab.foodDraft)
+            }
+            onUpdateFoodDraft={(update) => onUpdateFoodDraft(activeTab.patient.id, update)}
           />
         </div>
       )}
@@ -2037,7 +2278,10 @@ function CurrentEncounterPanel({
   onSaveLifestyleDraft,
   onContinueLifestyle,
   onReopenLifestyle,
-  onUpdateLifestyleDraft
+  onUpdateLifestyleDraft,
+  onLoadFoodWorkspace,
+  onSaveFoodDraft,
+  onUpdateFoodDraft
 }: {
   readonly location: PublicScreeningSessionWorkspaceLocation
   readonly session: PublicCurrentScreeningSession
@@ -2052,6 +2296,9 @@ function CurrentEncounterPanel({
   onContinueLifestyle(): void
   onReopenLifestyle(): void
   onUpdateLifestyleDraft(update: (draft: LifestyleDraftState) => LifestyleDraftState): void
+  onLoadFoodWorkspace(): void
+  onSaveFoodDraft(): void
+  onUpdateFoodDraft(update: (draft: FoodDraftState) => FoodDraftState): void
 }): React.JSX.Element {
   const displayName = formatPatientName(tab.patient)
   const activeStepIndex = getActiveStepIndex(tab.vitalsDraft.activeStep)
@@ -2088,7 +2335,7 @@ function CurrentEncounterPanel({
           onContinue={() => onSaveVitalsDraft('COMPLETE_STEP')}
           onUpdateDraft={onUpdateVitalsDraft}
         />
-      ) : (
+      ) : tab.vitalsDraft.activeStep === 'LIFESTYLE' ? (
         <LifestyleStep
           encounterId={tab.encounter.id}
           encounterStatus={tab.encounter.status}
@@ -2125,6 +2372,28 @@ function CurrentEncounterPanel({
           onSaveDraft={onSaveLifestyleDraft}
           onContinue={onContinueLifestyle}
           onReopen={onReopenLifestyle}
+        />
+      ) : (
+        <FoodStep
+          encounterId={tab.encounter.id}
+          state={tab.foodDraft}
+          onBackToLifestyle={() => {
+            onUpdateVitalsDraft((draft) => ({ ...draft, activeStep: 'LIFESTYLE' }))
+          }}
+          onRetryLoad={onLoadFoodWorkspace}
+          onReload={() => {
+            onUpdateFoodDraft((draft) => ({
+              ...createInitialFoodDraftState(),
+              loadStatus: 'NOT_LOADED',
+              workspace: draft.workspace,
+              foodResponse: draft.foodResponse,
+              rows: draft.rows,
+              dirty: draft.dirty
+            }))
+            onLoadFoodWorkspace()
+          }}
+          onSaveDraft={onSaveFoodDraft}
+          onUpdate={onUpdateFoodDraft}
         />
       )}
     </section>
@@ -3009,7 +3278,14 @@ function isUuid(value: string): boolean {
 }
 
 function getActiveStepIndex(step: ScreeningWorkflowStep): number {
-  return step === 'LIFESTYLE' ? 1 : 0
+  switch (step) {
+    case 'VITALS':
+      return 0
+    case 'LIFESTYLE':
+      return 1
+    case 'FOOD':
+      return 2
+  }
 }
 
 function getEnsureCurrentBlockedState(
@@ -3224,6 +3500,13 @@ function hasLifestyleWorkspace(data: {
   readonly status: string
   readonly workspace?: ScreeningLifestyleWorkspace
 }): data is { readonly status: string; readonly workspace: ScreeningLifestyleWorkspace } {
+  return data.workspace !== undefined
+}
+
+function hasFoodWorkspace(data: {
+  readonly status: string
+  readonly workspace?: ScreeningFoodWorkspace
+}): data is { readonly status: string; readonly workspace: ScreeningFoodWorkspace } {
   return data.workspace !== undefined
 }
 

@@ -17,6 +17,7 @@ import {
   type PublicPatientSummary,
   type PublicScreeningEncounterStartSummary,
   type PublicScreeningVitalsDraft,
+  type ScreeningFoodWorkspace,
   type ScreeningLifestyleWorkspace,
   type ScreeningSessionErrorCode
 } from '@shared/ipc'
@@ -769,7 +770,10 @@ describe('screening patient entry workspace', () => {
     expect(api.screeningEncounters.lifestyle.saveDraft).toHaveBeenCalledOnce()
     expect(api.screeningEncounters.lifestyle.complete).not.toHaveBeenCalled()
     expect(api.screeningEncounters.lifestyle.saveDraft.mock.calls[0]?.[0].expectedVersion).toBe(4)
-    expect(mounted.container.querySelector('#screening-food-step-title')).toBeNull()
+    expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
+    expect(api.screeningEncounters.food.getWorkspace).toHaveBeenCalledOnce()
+    expect(buttonByText(mounted, 'Continue').disabled).toBe(true)
+    await clickButton(mounted, 'Previous')
     expect(text(mounted)).toContain('Editable')
     expect(buttonByText(mounted, 'Save draft').disabled).toBe(false)
     expect(buttonByText(mounted, 'Continue').disabled).toBe(false)
@@ -793,6 +797,191 @@ describe('screening patient entry workspace', () => {
     await clickButton(mounted, 'Continue')
     expect(api.screeningEncounters.lifestyle.saveDraft).toHaveBeenCalledTimes(3)
     expect(api.screeningEncounters.lifestyle.complete).not.toHaveBeenCalled()
+    expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
+
+    await mounted.unmount()
+  })
+
+  it('opens Food after valid Lifestyle Continue and saves reported Food draft rows', async () => {
+    const api = createApi()
+    const lifestyleWorkspace = publicCompleteLifestyleWorkspace()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: lifestyleWorkspace })
+    )
+    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValue(
+      createIpcSuccess({ status: 'SAVED', workspace: lifestyleWorkspace })
+    )
+    api.screeningEncounters.food.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: publicFoodWorkspace() })
+    )
+    api.screeningEncounters.food.saveDraft.mockImplementation((request) =>
+      Promise.resolve(
+        createIpcSuccess({
+          status: 'SAVED',
+          workspace: publicFoodWorkspaceFromRequest(request)
+        })
+      )
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Continue')
+
+    expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
+    expect(api.screeningEncounters.food.getWorkspace).toHaveBeenCalledWith({ encounterId })
+    expect(buttonByText(mounted, 'Continue').disabled).toBe(true)
+
+    await changeRadio(mounted, 'food-response', 'REPORTED')
+    await clickButton(mounted, 'Add food')
+    await clickButton(mounted, 'Rice')
+    await changeSelect(selectByLabel(mounted, 'Food 1 frequency'), '2_TO_3_DAYS')
+    await changeInput(inputByLabel(mounted, 'Food 1 preparation or note'), ' steamed ')
+    await clickButton(mounted, 'Save draft')
+
+    expect(api.screeningEncounters.food.saveDraft).toHaveBeenCalledOnce()
+    expect(api.screeningEncounters.food.saveDraft.mock.calls[0]?.[0]).toEqual({
+      encounterId,
+      expectedVersion: 1,
+      foodResponse: 'REPORTED',
+      rows: [
+        {
+          id: null,
+          sequenceNumber: 1,
+          catalogCode: 'RICE',
+          foodName: 'Rice',
+          frequencyCode: '2_TO_3_DAYS',
+          preparationNote: 'steamed'
+        }
+      ]
+    })
+    expect(JSON.stringify(api.screeningEncounters.food.saveDraft.mock.calls[0]?.[0])).not.toContain(
+      'foodNameNormalized'
+    )
+    expect(text(mounted)).toContain('Draft saved')
+
+    await clickButton(mounted, 'Previous')
+    expect(mounted.container.querySelector('#screening-lifestyle-step-title')).not.toBeNull()
+    await clickButton(mounted, 'Continue')
+    expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
+    expect(inputByLabel(mounted, 'Food 1 name').value).toBe('Rice')
+
+    await mounted.unmount()
+  })
+
+  it('keeps Food rendered when changing row frequency through React state updates', async () => {
+    const api = createApi()
+    const lifestyleWorkspace = publicCompleteLifestyleWorkspace()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: lifestyleWorkspace })
+    )
+    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValue(
+      createIpcSuccess({ status: 'SAVED', workspace: lifestyleWorkspace })
+    )
+    api.screeningEncounters.food.saveDraft.mockImplementation((request) =>
+      Promise.resolve(
+        createIpcSuccess({
+          status: 'SAVED',
+          workspace: publicFoodWorkspaceFromRequest(request)
+        })
+      )
+    )
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const mounted = await mountWorkspaceWithReactTabState({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Continue')
+    await changeRadio(mounted, 'food-response', 'REPORTED')
+    await clickButton(mounted, 'Add food')
+    await clickButton(mounted, 'Rice')
+    const firstName = inputByLabel(mounted, 'Food 1 name')
+    const firstFrequency = selectByLabel(mounted, 'Food 1 frequency')
+
+    for (const frequency of ['1_DAY', '2_TO_3_DAYS', '4_TO_6_DAYS', 'EVERY_DAY', '']) {
+      await changeSelect(firstFrequency, frequency)
+      expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
+      expect(mounted.container.querySelector('#screening-patient-context-title')).not.toBeNull()
+      expect(firstName.value).toBe('Rice')
+      expect(firstFrequency.value).toBe(frequency)
+    }
+    await clickButton(mounted, 'Save draft')
+    expect(api.screeningEncounters.food.saveDraft.mock.calls[0]?.[0].rows).toEqual([
+      {
+        id: null,
+        sequenceNumber: 1,
+        catalogCode: 'RICE',
+        foodName: 'Rice',
+        frequencyCode: null,
+        preparationNote: null
+      }
+    ])
+
+    const recoveredFirstName = inputByLabel(mounted, 'Food 1 name')
+    const recoveredFirstFrequency = selectByLabel(mounted, 'Food 1 frequency')
+    await changeSelect(recoveredFirstFrequency, 'EVERY_DAY')
+    await clickButton(mounted, 'Add food')
+    await changeInput(inputByLabel(mounted, 'Food 2 name'), 'Custom yam')
+    await changeInput(inputByLabel(mounted, 'Food 2 preparation or note'), 'boiled')
+    await changeSelect(selectByLabel(mounted, 'Food 2 frequency'), '2_TO_3_DAYS')
+
+    expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
+    expect(recoveredFirstName.value).toBe('Rice')
+    expect(recoveredFirstFrequency.value).toBe('EVERY_DAY')
+    expect(inputByLabel(mounted, 'Food 2 name').value).toBe('Custom yam')
+    expect(inputByLabel(mounted, 'Food 2 preparation or note').value).toBe('boiled')
+    expect(consoleError).not.toHaveBeenCalled()
+
+    await clickButton(mounted, 'Save draft')
+    expect(api.screeningEncounters.food.saveDraft.mock.calls[1]?.[0].rows).toEqual([
+      {
+        id: '56565656-5656-4565-8565-565656565650',
+        sequenceNumber: 1,
+        catalogCode: 'RICE',
+        foodName: 'Rice',
+        frequencyCode: 'EVERY_DAY',
+        preparationNote: null
+      },
+      {
+        id: null,
+        sequenceNumber: 2,
+        catalogCode: null,
+        foodName: 'Custom yam',
+        frequencyCode: '2_TO_3_DAYS',
+        preparationNote: 'boiled'
+      }
+    ])
+
+    await mounted.unmount()
+  })
+
+  it('keeps Food Save Draft permissive but blocks invalid row transport once per attempt', async () => {
+    const api = createApi()
+    const lifestyleWorkspace = publicCompleteLifestyleWorkspace()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: lifestyleWorkspace })
+    )
+    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValue(
+      createIpcSuccess({ status: 'SAVED', workspace: lifestyleWorkspace })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Continue')
+    await changeRadio(mounted, 'food-response', 'REPORTED')
+    await clickButton(mounted, 'Add food')
+    const note = inputByLabel(mounted, 'Food 1 preparation or note')
+    await changeInput(note, 'x'.repeat(201))
+    await clickButton(mounted, 'Save draft')
+
+    const foodName = inputByLabel(mounted, 'Food 1 name')
+    expect(api.screeningEncounters.food.saveDraft).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(foodName)
+    await changeInput(foodName, 'R')
+    expect(document.activeElement).toBe(foodName)
+    await changeInput(foodName, 'Ri')
+    expect(document.activeElement).toBe(foodName)
+
+    await clickButton(mounted, 'Save draft')
+    expect(document.activeElement).toBe(note)
 
     await mounted.unmount()
   })
@@ -830,8 +1019,9 @@ describe('screening patient entry workspace', () => {
     expect(api.screeningEncounters.lifestyle.saveDraft).toHaveBeenCalledTimes(2)
     expect(api.screeningEncounters.lifestyle.complete).not.toHaveBeenCalled()
     expect(text(mounted)).not.toContain('Cannot continue')
+    expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
+    await clickButton(mounted, 'Previous')
     expect(text(mounted)).toContain('Lifestyle saved')
-    expect(mounted.container.querySelector('#screening-food-step-title')).toBeNull()
     expect(mounted.container.querySelector('#lifestyle-alcohol-content')).toBeNull()
     expect(buttonByText(mounted, 'Save draft').disabled).toBe(false)
     expect(buttonByText(mounted, 'Continue').disabled).toBe(false)
@@ -2270,10 +2460,8 @@ describe('screening patient entry workspace', () => {
       encounterId
     )
     expect(api.screeningEncounters.lifestyle.complete).not.toHaveBeenCalled()
-    expect(text(mounted)).toContain('Lifestyle saved')
-    expect(mounted.container.querySelector('#screening-food-step-title')).toBeNull()
+    expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
     expect(text(mounted)).not.toContain('Read only')
-    expect(mounted.container.querySelector('#lifestyle-alcohol-content')).toBeNull()
 
     await clickButton(mounted, 'Search / open patient')
     await clickRow(mounted, 'Grace Hopper')
@@ -2291,7 +2479,8 @@ describe('screening patient entry workspace', () => {
     expect(buttonByText(mounted, 'Continue').disabled).toBe(false)
 
     await clickButton(mounted, 'Ada Lovelace')
-    expect(text(mounted)).toContain('Lifestyle saved')
+    expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
+    await clickButton(mounted, 'Previous')
     expect(mounted.container.querySelector('#lifestyle-alcohol-content')).toBeNull()
     await clickButton(mounted, 'Alcohol')
     expect(
@@ -2920,8 +3109,12 @@ function createApi({
         )
       },
       food: {
-        getWorkspace: vi.fn(() => Promise.resolve(createIpcSuccess({ status: 'UNAVAILABLE' }))),
-        saveDraft: vi.fn(() => Promise.resolve(createIpcSuccess({ status: 'UNAVAILABLE' })))
+        getWorkspace: vi.fn(() =>
+          Promise.resolve(createIpcSuccess({ status: 'LOADED', workspace: publicFoodWorkspace() }))
+        ),
+        saveDraft: vi.fn(() =>
+          Promise.resolve(createIpcSuccess({ status: 'SAVED', workspace: publicFoodWorkspace() }))
+        )
       }
     },
     screeningSessions: {
@@ -3028,6 +3221,73 @@ function publicLifestyleWorkspace(): ScreeningLifestyleWorkspace {
     referencedTobaccoBaseline: null,
     referencedWorkBaseline: null
   }
+}
+
+function publicFoodWorkspace(
+  overrides: Partial<ScreeningFoodWorkspace> = {}
+): ScreeningFoodWorkspace {
+  return {
+    encounterId,
+    draft: {
+      id: '45454545-4545-4454-8454-454545454545',
+      encounterId,
+      foodResponse: null,
+      rowVersion: 1,
+      periodStart: '2026-07-31',
+      periodEnd: operationalDate,
+      rows: [],
+      updatedAt: baseTimestamp
+    },
+    catalogItems: [
+      {
+        code: 'RICE',
+        displayName: 'Rice',
+        normalizedSearchName: 'rice',
+        sortOrder: 1
+      },
+      {
+        code: 'BEANS',
+        displayName: 'Beans',
+        normalizedSearchName: 'beans',
+        sortOrder: 2
+      }
+    ],
+    recentFoods: [
+      {
+        catalogCode: null,
+        foodNameSnapshot: 'Cassava',
+        foodNameNormalized: 'cassava',
+        lastRecordedAt: baseTimestamp
+      }
+    ],
+    ...overrides
+  }
+}
+
+function publicFoodWorkspaceFromRequest(
+  request: Parameters<HealthScreeningApi['screeningEncounters']['food']['saveDraft']>[0]
+): ScreeningFoodWorkspace {
+  return publicFoodWorkspace({
+    draft: {
+      id: '45454545-4545-4454-8454-454545454545',
+      encounterId: request.encounterId,
+      foodResponse: request.foodResponse,
+      rowVersion: (request.expectedVersion ?? 0) + 1,
+      periodStart: '2026-07-31',
+      periodEnd: operationalDate,
+      rows: request.rows.map((row, index) => ({
+        id: row.id ?? `56565656-5656-4565-8565-56565656565${index}`,
+        sequenceNumber: row.sequenceNumber,
+        catalogCode: row.catalogCode,
+        foodNameSnapshot: row.foodName,
+        foodNameNormalized: row.foodName.trim().toLocaleLowerCase('en-US'),
+        frequencyCode: row.frequencyCode,
+        preparationNote: row.preparationNote,
+        updatedAt: baseTimestamp
+      })),
+      updatedAt: baseTimestamp
+    }
+  })
 }
 
 function publicLifestyleWorkspaceWithAlcohol({
