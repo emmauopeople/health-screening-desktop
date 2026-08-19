@@ -248,6 +248,30 @@ export {
   type VitalsPatientPosition
 } from './screening-vitals-draft'
 export {
+  createFoodRepository,
+  foodFrequencyCodes,
+  foodResponseCodes,
+  foodSourceTypes,
+  normalizeFoodName,
+  normalizePreparationNote,
+  parseFoodDate,
+  parseFoodDraftOwnershipInput,
+  parseFoodDraftUpdateInput,
+  type FoodCatalogItemRecord,
+  type FoodDate,
+  type FoodDraftOwnershipInput,
+  type FoodDraftRecord,
+  type FoodDraftRowInput,
+  type FoodDraftRowRecord,
+  type FoodDraftUpdateInput,
+  type FoodDraftUpdateResult,
+  type FoodFrequencyCode,
+  type FoodRecentSuggestionRecord,
+  type FoodRepository,
+  type FoodResponse,
+  type FoodSourceType
+} from './food'
+export {
   createLifestyleRepository,
   calculateLifestyleWeeklyMinutes,
   parseCompleteLifestyleAlcoholWeeklyInput,

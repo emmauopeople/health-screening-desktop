@@ -46,9 +46,10 @@ describe('migration manifest', () => {
       { version: 9, name: 'lifestyle-foundation', checksumLength: 64 },
       { version: 10, name: 'lifestyle-activity-response-semantics', checksumLength: 64 },
       { version: 11, name: 'vitals-reading-bounds', checksumLength: 64 },
-      { version: 12, name: 'optional-other-activity-description', checksumLength: 64 }
+      { version: 12, name: 'optional-other-activity-description', checksumLength: 64 },
+      { version: 13, name: 'food-draft-foundation', checksumLength: 64 }
     ])
-    expect(targetSchemaVersion).toBe(12)
+    expect(targetSchemaVersion).toBe(13)
     expect(resolved[0]?.checksum).toBe(
       '36bb5114185c0a691c8ba8dc1fdfc749a6f5a7069cbcb5efb88a6b55dd6e5fed'
     )

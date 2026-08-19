@@ -12,8 +12,9 @@ import lifestyleFoundationSql from './sql/0009-lifestyle-foundation.sql?raw'
 import lifestyleActivityResponseSemanticsSql from './sql/0010-lifestyle-activity-response-semantics.sql?raw'
 import vitalsReadingBoundsSql from './sql/0011-vitals-reading-bounds.sql?raw'
 import optionalOtherActivityDescriptionSql from './sql/0012-optional-other-activity-description.sql?raw'
+import foodDraftFoundationSql from './sql/0013-food-draft-foundation.sql?raw'
 
-export const targetSchemaVersion = 12
+export const targetSchemaVersion = 13
 
 const initialSchemaMigration = Object.freeze({
   version: 1,
@@ -89,6 +90,12 @@ const optionalOtherActivityDescriptionMigration = Object.freeze({
   foreignKeyMode: 'disabled-during-transaction'
 } satisfies DatabaseMigration)
 
+const foodDraftFoundationMigration = Object.freeze({
+  version: 13,
+  name: 'food-draft-foundation',
+  sql: foodDraftFoundationSql
+} satisfies DatabaseMigration)
+
 export const databaseMigrations = Object.freeze([
   initialSchemaMigration,
   patientRegistryManagementMigration,
@@ -101,7 +108,8 @@ export const databaseMigrations = Object.freeze([
   lifestyleFoundationMigration,
   lifestyleActivityResponseSemanticsMigration,
   vitalsReadingBoundsMigration,
-  optionalOtherActivityDescriptionMigration
+  optionalOtherActivityDescriptionMigration,
+  foodDraftFoundationMigration
 ] as const)
 
 export function resolveDatabaseMigrations(

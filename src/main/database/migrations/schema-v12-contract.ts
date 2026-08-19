@@ -83,7 +83,7 @@ function isSchemaVersion12Valid(connection: MigrationConnection): boolean {
   }
 }
 
-function hasSchemaVersion12OtherActivityDescriptionContract(
+export function hasSchemaVersion12OtherActivityDescriptionContract(
   connection: MigrationConnection
 ): boolean {
   const tableSql = normalizeSchemaSql(

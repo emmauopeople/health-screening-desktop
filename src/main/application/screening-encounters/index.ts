@@ -8,6 +8,11 @@ export {
   createProductionScreeningVitalsDraftService,
   type ProductionScreeningVitalsDraftServiceOptions
 } from './screening-vitals-draft-service-composition'
+export { createScreeningFoodService } from './screening-food-service'
+export {
+  createProductionScreeningFoodService,
+  type ProductionScreeningFoodServiceOptions
+} from './screening-food-service-composition'
 export { createScreeningLifestyleService } from './screening-lifestyle-service'
 export {
   createProductionScreeningLifestyleService,
@@ -33,6 +38,21 @@ export type {
   VitalsDraftReadingSummary,
   VitalsDraftSummary
 } from './screening-vitals-draft-service-types'
+export type {
+  FoodCatalogItemSummary,
+  FoodDraftRowSummary,
+  FoodDraftSummary,
+  FoodRecentSuggestionSummary,
+  FoodServiceControlledStatus,
+  FoodWorkspaceSummary,
+  GetFoodWorkspaceRequest,
+  GetFoodWorkspaceResult,
+  SaveFoodDraftRequest,
+  SaveFoodDraftResult,
+  SaveFoodDraftRowRequest,
+  ScreeningFoodService,
+  ScreeningFoodServiceDependencies
+} from './screening-food-service-types'
 export type {
   CompleteLifestyleRequest,
   CompleteLifestyleResult,

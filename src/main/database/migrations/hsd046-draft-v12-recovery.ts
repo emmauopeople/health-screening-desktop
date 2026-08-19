@@ -34,7 +34,7 @@ export interface Hsd046DraftV12RecoveryResult {
   backupSizeBytes: number
   backupSha256: string
   beforeUserVersion: 12
-  afterUserVersion: 12
+  afterUserVersion: number
   draftChecksum: string
   finalChecksum: string
 }
@@ -241,6 +241,7 @@ export async function recoverHsd046DraftV12Database({
       applicationVersion,
       logger
     })(connection)
+    const afterUserVersion = readRawUserVersion(connection)
 
     logger.info('HSD-046 draft-v12 recovery completed.')
 
@@ -251,7 +252,7 @@ export async function recoverHsd046DraftV12Database({
       backupSizeBytes: backup.sizeBytes,
       backupSha256: backup.sha256,
       beforeUserVersion,
-      afterUserVersion: 12,
+      afterUserVersion,
       draftChecksum: hsd046KnownDraftVersion12Checksum,
       finalChecksum: finalVersion12Checksum
     }
@@ -542,6 +543,14 @@ function readUserVersion(connection: Database.Database): 12 {
     throw new Hsd046DraftV12RecoveryError('UnexpectedUserVersion')
   }
   return 12
+}
+
+function readRawUserVersion(connection: Database.Database): number {
+  const userVersion = connection.pragma('user_version', { simple: true })
+  if (typeof userVersion !== 'number' || !Number.isSafeInteger(userVersion) || userVersion < 0) {
+    throw new Hsd046DraftV12RecoveryError('UnexpectedUserVersion')
+  }
+  return userVersion
 }
 
 function readLedgerRows(connection: Database.Database): LedgerRow[] {

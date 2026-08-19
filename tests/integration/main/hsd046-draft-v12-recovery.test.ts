@@ -54,19 +54,28 @@ describe('HSD-046 unreleased draft-v12 local recovery', () => {
 
       expect(result.recovered).toBe(true)
       expect(result.draftChecksum).toBe(hsd046KnownDraftVersion12Checksum)
+      expect(result.afterUserVersion).toBe(13)
       expect(result.backupSizeBytes).toBeGreaterThan(0)
       expect(result.backupSha256).toMatch(/^[a-f0-9]{64}$/u)
 
       const recovered = openDatabase(databasePath)
       try {
-        expect(recovered.pragma('user_version', { simple: true })).toBe(12)
+        expect(recovered.pragma('user_version', { simple: true })).toBe(13)
         expect(readLedgerChecksum(recovered, 12)).toBe(result.finalChecksum)
         expect(readOtherActivityRow(recovered)).toEqual(beforeRow)
-        expect(readTableCounts(recovered)).toEqual(beforeCounts)
+        const afterCounts = readTableCounts(recovered)
+        for (const [tableName, count] of Object.entries(beforeCounts)) {
+          if (tableName === 'schema_migrations') {
+            expect(afterCounts[tableName]).toBe(13)
+          } else {
+            expect(afterCounts[tableName]).toBe(count)
+          }
+        }
+        expect(afterCounts.food_catalog_items).toBe(26)
+        expect(afterCounts.food_drafts).toBe(0)
+        expect(afterCounts.food_draft_rows).toBe(0)
         expect(recovered.pragma('foreign_key_check')).toEqual([])
         expect(recovered.pragma('integrity_check', { simple: true })).toBe('ok')
-        expect(() => validateSchemaVersion12(recovered, 'compatibility')).not.toThrow()
-
         const firstStartup = runProductionMigrations(recovered)
         const secondStartup = runProductionMigrations(recovered)
         expect(firstStartup.appliedVersions).toEqual([])
