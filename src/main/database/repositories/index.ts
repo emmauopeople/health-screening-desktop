@@ -272,6 +272,35 @@ export {
   type FoodSourceType
 } from './food'
 export {
+  createOtcRepository,
+  normalizeOtcDoseText,
+  normalizeOtcDurationText,
+  normalizeOtcFrequencyText,
+  normalizeOtcProductName,
+  normalizeOtcReasonForUse,
+  normalizeOtcSourceOfMedication,
+  normalizeOptionalOtcProductName,
+  isRowPermittingOtcResponse,
+  otcCurrentlyTakingResponseCodes,
+  otcResponseCodes,
+  otcSourceTypes,
+  parseOtcDate,
+  parseOtcDraftOwnershipInput,
+  parseOtcDraftUpdateInput,
+  type OtcCurrentlyTakingResponse,
+  type OtcDate,
+  type OtcDraftOwnershipInput,
+  type OtcDraftRecord,
+  type OtcDraftRowInput,
+  type OtcDraftRowRecord,
+  type OtcDraftUpdateInput,
+  type OtcDraftUpdateResult,
+  type OtcRecentMedicationSuggestionRecord,
+  type OtcRepository,
+  type OtcResponse,
+  type OtcSourceType
+} from './otc'
+export {
   createLifestyleRepository,
   calculateLifestyleWeeklyMinutes,
   parseCompleteLifestyleAlcoholWeeklyInput,

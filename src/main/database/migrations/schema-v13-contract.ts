@@ -246,20 +246,20 @@ function isSchemaVersion13Valid(connection: MigrationConnection): boolean {
   }
 }
 
-function hasSchemaVersion13FoodTableSql(connection: MigrationConnection): boolean {
+export function hasSchemaVersion13FoodTableSql(connection: MigrationConnection): boolean {
   return [...requiredFoodTableSqlSnippets.entries()].every(([tableName, requiredSnippets]) => {
     const tableSql = normalizeSchemaSql(readCreateTableSql(connection, tableName))
     return requiredSnippets.every((snippet) => tableSql.includes(snippet))
   })
 }
 
-function hasSchemaVersion13FoodForeignKeys(connection: MigrationConnection): boolean {
+export function hasSchemaVersion13FoodForeignKeys(connection: MigrationConnection): boolean {
   return [...foodForeignKeyContracts.entries()].every(([tableName, expected]) =>
     foreignKeyContractsMatch(readForeignKeys(connection, tableName), expected)
   )
 }
 
-function hasSchemaVersion13FoodCatalogSeed(connection: MigrationConnection): boolean {
+export function hasSchemaVersion13FoodCatalogSeed(connection: MigrationConnection): boolean {
   const rows = connection
     .prepare(
       'SELECT code, display_name, normalized_search_name, is_active, sort_order FROM food_catalog_items ORDER BY sort_order, code'

@@ -6,22 +6,22 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   createInstallationLocationService,
-  createScreeningFoodService,
+  createScreeningOtcService,
   LocalSessionAuthorizationError,
   LocalSessionLockedError,
   LocalSessionUnauthenticatedError,
   type CurrentScreeningSessionService,
   type LocalAuthenticationSessionService,
-  type ScreeningFoodService
+  type ScreeningOtcService
 } from '@main/application'
 import {
   RepositoryWriteError,
   createAuditEventRepository,
   createDatabaseTransactionExecutor,
-  createFoodRepository,
   createInstallationLocationConfigurationRepository,
   createInstallationRepository,
   createLocationRepository,
+  createOtcRepository,
   createProductionDatabaseMigrationRunner,
   createScreeningEncounterOutboxRepository,
   createScreeningEncounterRepository,
@@ -40,34 +40,30 @@ import { createUtcClock, type UtcTimestamp } from '@main/foundation/utc-clock'
 const now = '2026-08-10T12:00:00.000Z' as UtcTimestamp
 const later = '2026-08-10T13:00:00.000Z' as UtcTimestamp
 const ids = Object.freeze({
-  installation: 'e1000000-0000-4000-8000-000000000001',
-  admin: 'e1000000-0000-4000-8000-000000000002',
-  location: 'e1000000-0000-4000-8000-000000000003',
-  otherLocation: 'e1000000-0000-4000-8000-000000000012',
-  patient: 'e1000000-0000-4000-8000-000000000004',
-  session: 'e1000000-0000-4000-8000-000000000005',
-  encounter: 'e1000000-0000-4000-8000-000000000006',
-  amendment: 'e1000000-0000-4000-8000-000000000007',
-  draft: 'e1000000-0000-4000-8000-000000000008',
-  row: 'e1000000-0000-4000-8000-000000000009',
-  audit: 'e1000000-0000-4000-8000-000000000010',
-  outbox: 'e1000000-0000-4000-8000-000000000011'
+  installation: 'c1000000-0000-4000-8000-000000000001',
+  admin: 'c1000000-0000-4000-8000-000000000002',
+  location: 'c1000000-0000-4000-8000-000000000003',
+  otherLocation: 'c1000000-0000-4000-8000-000000000012',
+  patient: 'c1000000-0000-4000-8000-000000000004',
+  session: 'c1000000-0000-4000-8000-000000000005',
+  encounter: 'c1000000-0000-4000-8000-000000000006',
+  draft: 'c1000000-0000-4000-8000-000000000008',
+  row: 'c1000000-0000-4000-8000-000000000009',
+  audit: 'c1000000-0000-4000-8000-000000000010',
+  outbox: 'c1000000-0000-4000-8000-000000000011'
 })
 
-describe('screening Food application service integration', () => {
+describe('screening OTC application service integration', () => {
   it.each(['LOCAL_ADMIN', 'NURSE', 'TRAINED_SCREENER'] as const)(
     'allows approved role %s to load a workspace',
     async (role) => {
-      await withFoodService(
+      await withOtcService(
         ({ service }) => {
           const result = service.getWorkspace({ encounterId: parseEntityId(ids.encounter) })
           expect(result).toMatchObject({
             status: 'LOADED',
-            workspace: { encounterId: ids.encounter, draft: null }
+            workspace: { encounterId: ids.encounter, draft: null, recentMedications: [] }
           })
-          if (result.status === 'LOADED') {
-            expect(result.workspace.catalogItems).toHaveLength(26)
-          }
         },
         { sessionRole: role }
       )
@@ -75,7 +71,7 @@ describe('screening Food application service integration', () => {
   )
 
   it('maps authentication and request failures to controlled outcomes', async () => {
-    await withFoodService(
+    await withOtcService(
       ({ service }) => {
         expect(service.getWorkspace({ encounterId: parseEntityId(ids.encounter) })).toEqual({
           status: 'AUTHENTICATION_REQUIRED'
@@ -83,7 +79,7 @@ describe('screening Food application service integration', () => {
       },
       { authenticationFailure: new LocalSessionLockedError() }
     )
-    await withFoodService(
+    await withOtcService(
       ({ service }) => {
         expect(service.getWorkspace({ encounterId: parseEntityId(ids.encounter) })).toEqual({
           status: 'AUTHENTICATION_REQUIRED'
@@ -91,7 +87,7 @@ describe('screening Food application service integration', () => {
       },
       { authenticationFailure: new LocalSessionUnauthenticatedError() }
     )
-    await withFoodService(
+    await withOtcService(
       ({ service }) => {
         expect(service.getWorkspace({ encounterId: parseEntityId(ids.encounter) })).toEqual({
           status: 'FORBIDDEN'
@@ -99,68 +95,65 @@ describe('screening Food application service integration', () => {
       },
       { authenticationFailure: new LocalSessionAuthorizationError() }
     )
-    await withFoodService(({ service }) => {
+    await withOtcService(({ service }) => {
       expect(service.saveDraft({ ...draftRequest(), extra: true } as never)).toEqual({
         status: 'VALIDATION_FAILED'
       })
     })
-  }, 15_000)
+  })
 
   it('creates a permissive blank draft for the current session and returns authoritative workspace', async () => {
-    await withFoodService(({ connection, service, currentSessionCalls }) => {
+    await withOtcService(({ connection, service, currentSessionCalls }) => {
       const result = service.saveDraft(draftRequest())
 
       expect(result.status).toBe('SAVED')
       if (result.status !== 'SAVED') return
       expect(result.workspace.draft).toMatchObject({
         encounterId: ids.encounter,
-        foodResponse: null,
+        otcResponse: null,
         rowVersion: 1,
         periodStart: '2026-08-04',
         periodEnd: '2026-08-10',
         rows: []
       })
-      expect(result.workspace.catalogItems[0]).toMatchObject({ code: 'RICE', displayName: 'Rice' })
-      expect(readCount(connection, 'food_drafts')).toBe(1)
-      expect(readCount(connection, 'food_draft_rows')).toBe(0)
+      expect(readCount(connection, 'otc_drafts')).toBe(1)
+      expect(readCount(connection, 'otc_draft_rows')).toBe(0)
       expect(currentSessionCalls.count).toBe(1)
     })
   })
 
-  it('saves reported custom and catalog rows without completing or locking Food', async () => {
-    await withFoodService(({ service }) => {
-      const blank = service.saveDraft(draftRequest())
-      if (blank.status !== 'SAVED' || blank.workspace.draft === null) throw new Error('save failed')
-
+  it('saves partial rows without completing or locking OTC', async () => {
+    await withOtcService(({ service }) => {
       const saved = service.saveDraft(
         draftRequest({
-          expectedVersion: blank.workspace.draft.rowVersion,
-          foodResponse: 'REPORTED',
+          otcResponse: null,
           rows: [
             {
               id: null,
               sequenceNumber: 1,
-              catalogCode: 'RICE',
-              foodName: 'Rice',
-              frequencyCode: null,
-              preparationNote: '  with stew  '
+              productName: null,
+              reasonForUse: '  headache  ',
+              doseText: '  1 tablet  ',
+              frequencyText: null,
+              durationText: null,
+              sourceOfMedication: null,
+              currentlyTakingResponse: null
             }
           ]
         })
       )
 
       expect(saved.status).toBe('SAVED')
-      if (saved.status !== 'SAVED') return
+      if (saved.status !== 'SAVED' || saved.workspace.draft === null) return
       expect(saved.workspace.draft).toMatchObject({
-        foodResponse: 'REPORTED',
+        otcResponse: null,
         rowVersion: 2,
         rows: [
           {
-            catalogCode: 'RICE',
-            foodNameSnapshot: 'Rice',
-            foodNameNormalized: 'rice',
-            frequencyCode: null,
-            preparationNote: 'with stew'
+            productNameSnapshot: null,
+            productNameNormalized: null,
+            reasonForUse: 'headache',
+            doseText: '1 tablet'
           }
         ]
       })
@@ -168,65 +161,22 @@ describe('screening Food application service integration', () => {
     })
   })
 
-  it('rejects stale or inactive catalog selections before persisting a draft', async () => {
-    await withFoodService(({ connection, service }) => {
-      expect(
-        service.saveDraft(
-          draftRequest({
-            foodResponse: 'REPORTED',
-            rows: [
-              {
-                id: null,
-                sequenceNumber: 1,
-                catalogCode: 'RICE',
-                foodName: 'Beans',
-                frequencyCode: null,
-                preparationNote: null
-              }
-            ]
-          })
-        )
-      ).toEqual({ status: 'VALIDATION_FAILED' })
-      expectNoFoodSideEffects(connection)
-    })
-
-    await withFoodService(({ connection, service }) => {
-      connection.prepare("UPDATE food_catalog_items SET is_active = 0 WHERE code = 'RICE'").run()
-
-      expect(
-        service.saveDraft(
-          draftRequest({
-            foodResponse: 'REPORTED',
-            rows: [
-              {
-                id: null,
-                sequenceNumber: 1,
-                catalogCode: 'RICE',
-                foodName: 'Rice',
-                frequencyCode: null,
-                preparationNote: null
-              }
-            ]
-          })
-        )
-      ).toEqual({ status: 'VALIDATION_FAILED' })
-      expectNoFoodSideEffects(connection)
-    })
-  })
-
-  it('clears rows when saving UNKNOWN and rejects rows with non-reported responses', async () => {
-    await withFoodService(({ service }) => {
+  it('clears rows for explicit non-reported responses and preserves REPORTED with zero rows', async () => {
+    await withOtcService(({ service }) => {
       const reported = service.saveDraft(
         draftRequest({
-          foodResponse: 'REPORTED',
+          otcResponse: 'REPORTED',
           rows: [
             {
               id: null,
               sequenceNumber: 1,
-              catalogCode: null,
-              foodName: 'Yam',
-              frequencyCode: 'EVERY_DAY',
-              preparationNote: null
+              productName: 'Pain reliever',
+              reasonForUse: null,
+              doseText: null,
+              frequencyText: null,
+              durationText: null,
+              sourceOfMedication: null,
+              currentlyTakingResponse: null
             }
           ]
         })
@@ -237,39 +187,32 @@ describe('screening Food application service integration', () => {
       const unknown = service.saveDraft(
         draftRequest({
           expectedVersion: reported.workspace.draft.rowVersion,
-          foodResponse: 'UNKNOWN',
+          otcResponse: 'UNKNOWN',
           rows: []
         })
       )
       expect(unknown).toMatchObject({
         status: 'SAVED',
-        workspace: { draft: { foodResponse: 'UNKNOWN', rows: [] } }
+        workspace: { draft: { otcResponse: 'UNKNOWN', rows: [] } }
       })
       if (unknown.status !== 'SAVED' || unknown.workspace.draft === null) return
 
-      expect(
-        service.saveDraft(
-          draftRequest({
-            expectedVersion: unknown.workspace.draft.rowVersion,
-            foodResponse: 'DECLINED',
-            rows: [
-              {
-                id: null,
-                sequenceNumber: 1,
-                catalogCode: null,
-                foodName: 'Beans',
-                frequencyCode: null,
-                preparationNote: null
-              }
-            ]
-          })
-        )
-      ).toEqual({ status: 'VALIDATION_FAILED' })
+      const emptyReported = service.saveDraft(
+        draftRequest({
+          expectedVersion: unknown.workspace.draft.rowVersion,
+          otcResponse: 'REPORTED',
+          rows: []
+        })
+      )
+      expect(emptyReported).toMatchObject({
+        status: 'SAVED',
+        workspace: { draft: { otcResponse: 'REPORTED', rows: [] } }
+      })
     })
   })
 
   it('enforces expected versions and rejects non-draft, amendment, wrong-location, and closed-session contexts', async () => {
-    await withFoodService(({ connection, service }) => {
+    await withOtcService(({ connection, service }) => {
       const saved = service.saveDraft(draftRequest())
       expect(saved.status).toBe('SAVED')
       expect(service.saveDraft(draftRequest())).toEqual({ status: 'VERSION_CONFLICT' })
@@ -282,7 +225,7 @@ describe('screening Food application service integration', () => {
       })
     })
 
-    await withFoodService(({ connection, service }) => {
+    await withOtcService(({ connection, service }) => {
       connection
         .prepare('UPDATE screening_encounters SET amendment_of_encounter_id = ? WHERE id = ?')
         .run(ids.encounter, ids.encounter)
@@ -291,7 +234,7 @@ describe('screening Food application service integration', () => {
       })
     })
 
-    await withFoodService(({ connection, service }) => {
+    await withOtcService(({ connection, service }) => {
       connection
         .prepare(
           "UPDATE screening_sessions SET status = 'CLOSED', closed_by = ?, closed_at = ? WHERE id = ?"
@@ -303,20 +246,20 @@ describe('screening Food application service integration', () => {
     })
   })
 
-  it('rejects missing, inactive, mismatched, missing-session, and closed-session contexts without side effects', async () => {
-    await withFoodService(({ connection, service }) => {
+  it('rejects invalid configured/session contexts without side effects', async () => {
+    await withOtcService(({ connection, service }) => {
       connection.prepare('DELETE FROM installation_location_configuration').run()
       expect(service.saveDraft(draftRequest())).toEqual({ status: 'LOCATION_NOT_CONFIGURED' })
-      expectNoFoodSideEffects(connection)
+      expectNoOtcSideEffects(connection)
     })
 
-    await withFoodService(({ connection, service }) => {
+    await withOtcService(({ connection, service }) => {
       connection.prepare('UPDATE locations SET is_active = 0 WHERE id = ?').run(ids.location)
       expect(service.saveDraft(draftRequest())).toEqual({ status: 'LOCATION_INACTIVE' })
-      expectNoFoodSideEffects(connection)
+      expectNoOtcSideEffects(connection)
     })
 
-    await withFoodService(({ connection, service }) => {
+    await withOtcService(({ connection, service }) => {
       insertAlternateLocation(connection)
       connection
         .prepare(
@@ -324,65 +267,61 @@ describe('screening Food application service integration', () => {
         )
         .run(ids.otherLocation, later)
       expect(service.saveDraft(draftRequest())).toEqual({ status: 'SESSION_NOT_CURRENT' })
-      expectNoFoodSideEffects(connection)
+      expectNoOtcSideEffects(connection)
     })
 
-    await withFoodService(({ connection, service }) => {
+    await withOtcService(({ connection, service }) => {
       insertAlternateLocation(connection)
       connection
         .prepare('UPDATE screening_sessions SET location_id = ?, updated_at = ? WHERE id = ?')
         .run(ids.otherLocation, later, ids.session)
       expect(service.saveDraft(draftRequest())).toEqual({ status: 'SESSION_NOT_CURRENT' })
-      expectNoFoodSideEffects(connection)
+      expectNoOtcSideEffects(connection)
     })
 
-    await withFoodService(({ connection, service }) => {
+    await withOtcService(({ connection, service }) => {
       connection.pragma('foreign_keys = OFF')
       connection
         .prepare('UPDATE screening_encounters SET screening_session_id = ? WHERE id = ?')
-        .run('e1000000-0000-4000-8000-000000000099', ids.encounter)
+        .run('c1000000-0000-4000-8000-000000000099', ids.encounter)
       connection.pragma('foreign_keys = ON')
       expect(service.saveDraft(draftRequest())).toEqual({ status: 'SESSION_NOT_FOUND' })
-      expectNoFoodSideEffects(connection)
+      expectNoOtcSideEffects(connection)
     })
 
-    await withFoodService(({ connection, service }) => {
+    await withOtcService(({ connection, service }) => {
       connection
         .prepare(
           "UPDATE screening_sessions SET status = 'CLOSED', closed_by = ?, closed_at = ? WHERE id = ?"
         )
         .run(ids.admin, now, ids.session)
       expect(service.saveDraft(draftRequest())).toEqual({ status: 'SESSION_CLOSED' })
-      expectNoFoodSideEffects(connection)
+      expectNoOtcSideEffects(connection)
     })
   }, 15_000)
 
   it('rejects first draft creation when the encounter is not in the current session', async () => {
-    await withFoodService(
+    await withOtcService(
       ({ connection, service }) => {
         expect(service.saveDraft(draftRequest())).toEqual({ status: 'SESSION_NOT_CURRENT' })
-        expect(readCount(connection, 'food_drafts')).toBe(0)
-        expect(readCount(connection, 'audit_log')).toBe(0)
-        expect(readCount(connection, 'sync_outbox')).toBe(0)
+        expectNoOtcSideEffects(connection)
       },
       { currentSessionStatus: 'SESSION_NOT_FOUND' }
     )
   })
 
   it('rolls back draft writes when audit/outbox insertion fails', async () => {
-    await withFoodService(
+    await withOtcService(
       ({ connection, service }) => {
         expect(service.saveDraft(draftRequest())).toEqual({ status: 'UNAVAILABLE' })
-        expect(readCount(connection, 'food_drafts')).toBe(0)
-        expect(readCount(connection, 'audit_log')).toBe(0)
-        expect(readCount(connection, 'sync_outbox')).toBe(0)
+        expectNoOtcSideEffects(connection)
       },
       { failOutbox: true }
     )
   })
 
   it('does not duplicate audit or outbox events for equivalent saves', async () => {
-    await withFoodService(({ connection, service }) => {
+    await withOtcService(({ connection, service }) => {
       const blank = service.saveDraft(draftRequest())
       expect(blank.status).toBe('SAVED')
       if (blank.status !== 'SAVED' || blank.workspace.draft === null) return
@@ -401,15 +340,18 @@ describe('screening Food application service integration', () => {
       const updated = service.saveDraft(
         draftRequest({
           expectedVersion: unchangedBlank.workspace.draft.rowVersion,
-          foodResponse: 'REPORTED',
+          otcResponse: 'REPORTED',
           rows: [
             {
               id: null,
               sequenceNumber: 1,
-              catalogCode: null,
-              foodName: 'Yam',
-              frequencyCode: null,
-              preparationNote: null
+              productName: 'Pain reliever',
+              reasonForUse: 'Headache',
+              doseText: null,
+              frequencyText: null,
+              durationText: null,
+              sourceOfMedication: null,
+              currentlyTakingResponse: 'YES'
             }
           ]
         })
@@ -425,15 +367,18 @@ describe('screening Food application service integration', () => {
       const equivalentStale = service.saveDraft(
         draftRequest({
           expectedVersion: 1,
-          foodResponse: 'REPORTED',
+          otcResponse: 'REPORTED',
           rows: [
             {
               id: row.id,
               sequenceNumber: 1,
-              catalogCode: null,
-              foodName: row.foodNameSnapshot,
-              frequencyCode: null,
-              preparationNote: null
+              productName: row.productNameSnapshot,
+              reasonForUse: row.reasonForUse,
+              doseText: null,
+              frequencyText: null,
+              durationText: null,
+              sourceOfMedication: null,
+              currentlyTakingResponse: 'YES'
             }
           ]
         })
@@ -449,15 +394,18 @@ describe('screening Food application service integration', () => {
         service.saveDraft(
           draftRequest({
             expectedVersion: 1,
-            foodResponse: 'REPORTED',
+            otcResponse: 'REPORTED',
             rows: [
               {
                 id: row.id,
                 sequenceNumber: 1,
-                catalogCode: null,
-                foodName: row.foodNameSnapshot,
-                frequencyCode: 'EVERY_DAY',
-                preparationNote: null
+                productName: row.productNameSnapshot,
+                reasonForUse: row.reasonForUse,
+                doseText: 'changed',
+                frequencyText: null,
+                durationText: null,
+                sourceOfMedication: null,
+                currentlyTakingResponse: 'YES'
               }
             ]
           })
@@ -466,19 +414,114 @@ describe('screening Food application service integration', () => {
     })
   })
 
-  it('writes audit/outbox metadata without clinical values or free text', async () => {
-    await withFoodService(({ connection, service }) => {
-      const result = service.saveDraft(
+  it('treats reverse-array equivalent saves as unchanged in the service', async () => {
+    await withOtcService(({ connection, service }) => {
+      const created = service.saveDraft(
         draftRequest({
-          foodResponse: 'REPORTED',
+          otcResponse: 'REPORTED',
           rows: [
             {
               id: null,
               sequenceNumber: 1,
-              catalogCode: 'RICE',
-              foodName: 'Rice',
-              frequencyCode: 'EVERY_DAY',
-              preparationNote: 'with stew'
+              productName: 'Pain reliever',
+              reasonForUse: 'Headache',
+              doseText: null,
+              frequencyText: null,
+              durationText: null,
+              sourceOfMedication: null,
+              currentlyTakingResponse: 'YES'
+            },
+            {
+              id: null,
+              sequenceNumber: 2,
+              productName: 'Cough syrup',
+              reasonForUse: 'Cough',
+              doseText: null,
+              frequencyText: null,
+              durationText: null,
+              sourceOfMedication: null,
+              currentlyTakingResponse: 'NO'
+            }
+          ]
+        })
+      )
+      expect(created.status).toBe('SAVED')
+      if (created.status !== 'SAVED' || created.workspace.draft === null) return
+      const createdDraft = created.workspace.draft
+      const rows = createdDraft.rows
+      if (rows.length !== 2) throw new Error('expected two rows')
+      const reverseRows = [
+        {
+          id: rows[1]!.id,
+          sequenceNumber: 2,
+          productName: rows[1]!.productNameSnapshot,
+          reasonForUse: rows[1]!.reasonForUse,
+          doseText: null,
+          frequencyText: null,
+          durationText: null,
+          sourceOfMedication: null,
+          currentlyTakingResponse: 'NO' as const
+        },
+        {
+          id: rows[0]!.id,
+          sequenceNumber: 1,
+          productName: rows[0]!.productNameSnapshot,
+          reasonForUse: rows[0]!.reasonForUse,
+          doseText: null,
+          frequencyText: null,
+          durationText: null,
+          sourceOfMedication: null,
+          currentlyTakingResponse: 'YES' as const
+        }
+      ]
+
+      const current = service.saveDraft(
+        draftRequest({
+          expectedVersion: createdDraft.rowVersion,
+          otcResponse: 'REPORTED',
+          rows: reverseRows
+        })
+      )
+      expect(current.status).toBe('SAVED')
+      if (current.status !== 'SAVED' || current.workspace.draft === null) return
+      expect(current.workspace.draft.rowVersion).toBe(createdDraft.rowVersion)
+      expect(current.workspace.draft.updatedAt).toBe(createdDraft.updatedAt)
+      expect(current.workspace.draft.rows.map((row) => row.id)).toEqual(rows.map((row) => row.id))
+      expect(current.workspace.draft.rows.map((row) => row.updatedAt)).toEqual(
+        rows.map((row) => row.updatedAt)
+      )
+
+      const stale = service.saveDraft(
+        draftRequest({
+          expectedVersion: 1,
+          otcResponse: 'REPORTED',
+          rows: reverseRows
+        })
+      )
+      expect(stale.status).toBe('SAVED')
+      if (stale.status !== 'SAVED' || stale.workspace.draft === null) return
+      expect(stale.workspace.draft.rowVersion).toBe(createdDraft.rowVersion)
+      expect(readCount(connection, 'audit_log')).toBe(1)
+      expect(readCount(connection, 'sync_outbox')).toBe(1)
+    })
+  })
+
+  it('writes audit/outbox metadata without medication values or free text', async () => {
+    await withOtcService(({ connection, service }) => {
+      const result = service.saveDraft(
+        draftRequest({
+          otcResponse: 'REPORTED',
+          rows: [
+            {
+              id: null,
+              sequenceNumber: 1,
+              productName: 'Pain reliever',
+              reasonForUse: 'Headache',
+              doseText: '1 tablet',
+              frequencyText: 'daily',
+              durationText: '2 days',
+              sourceOfMedication: 'Pharmacy',
+              currentlyTakingResponse: 'YES'
             }
           ]
         })
@@ -495,30 +538,39 @@ describe('screening Food application service integration', () => {
         row_count: 1
       })
       const serialized = JSON.stringify(auditMetadata)
-      expect(serialized).not.toContain('Rice')
-      expect(serialized).not.toContain('rice')
-      expect(serialized).not.toContain('EVERY_DAY')
-      expect(serialized).not.toContain('with stew')
+      for (const prohibited of [
+        'Pain',
+        'pain',
+        'Headache',
+        'tablet',
+        'daily',
+        'days',
+        'Pharmacy',
+        'YES',
+        'REPORTED'
+      ]) {
+        expect(serialized).not.toContain(prohibited)
+      }
     })
   })
 })
 
-interface FoodServiceOptions {
+interface OtcServiceOptions {
   readonly sessionRole?: LocalUserRole
   readonly authenticationFailure?: Error
   readonly currentSessionStatus?: 'FOUND' | 'SESSION_NOT_FOUND' | 'SESSION_CLOSED'
   readonly failOutbox?: boolean
 }
 
-async function withFoodService(
+async function withOtcService(
   test: (context: {
     readonly connection: Database.Database
-    readonly service: ScreeningFoodService
+    readonly service: ScreeningOtcService
     readonly currentSessionCalls: { count: number }
   }) => void,
-  options: FoodServiceOptions = {}
+  options: OtcServiceOptions = {}
 ): Promise<void> {
-  const directory = await mkdtemp(join(tmpdir(), 'hsd047-food-service-'))
+  const directory = await mkdtemp(join(tmpdir(), 'hsd048-otc-service-'))
   const connection = new Database(join(directory, 'health-screening.sqlite3'))
   try {
     connection.pragma('foreign_keys = ON')
@@ -561,7 +613,7 @@ async function withFoodService(
     const outboxRepository = options.failOutbox
       ? createFailingOutboxRepository()
       : createScreeningEncounterOutboxRepository(connection)
-    const service = createScreeningFoodService({
+    const service = createScreeningOtcService({
       authenticationSessionService,
       currentScreeningSessionService,
       installationLocationService,
@@ -569,7 +621,7 @@ async function withFoodService(
       locationRepository,
       screeningSessionRepository,
       screeningEncounterRepository,
-      foodRepository: createFoodRepository(connection),
+      otcRepository: createOtcRepository(connection),
       screeningEncounterOutboxRepository: outboxRepository,
       auditEventRepository,
       transactionExecutor
@@ -584,7 +636,7 @@ async function withFoodService(
 function createAuthenticationSessionService({
   sessionRole = 'LOCAL_ADMIN',
   authenticationFailure
-}: FoodServiceOptions): LocalAuthenticationSessionService {
+}: OtcServiceOptions): LocalAuthenticationSessionService {
   return {
     login: vi.fn(),
     logout: vi.fn(),
@@ -615,7 +667,7 @@ function createAuthenticationSessionService({
 }
 
 function createMockCurrentSessionService(
-  options: FoodServiceOptions,
+  options: OtcServiceOptions,
   calls: { count: number }
 ): CurrentScreeningSessionService {
   return {
@@ -660,12 +712,12 @@ function createFailingOutboxRepository(): ScreeningEncounterOutboxRepository {
 }
 
 function draftRequest(
-  overrides: Partial<Parameters<ScreeningFoodService['saveDraft']>[0]> = {}
-): Parameters<ScreeningFoodService['saveDraft']>[0] {
+  overrides: Partial<Parameters<ScreeningOtcService['saveDraft']>[0]> = {}
+): Parameters<ScreeningOtcService['saveDraft']>[0] {
   return {
     encounterId: parseEntityId(ids.encounter),
     expectedVersion: null,
-    foodResponse: null,
+    otcResponse: null,
     rows: [],
     ...overrides
   }
@@ -782,8 +834,8 @@ function readCount(connection: Database.Database, tableName: string): number {
   return Number(row?.count ?? 0)
 }
 
-function expectNoFoodSideEffects(connection: Database.Database): void {
-  expect(readCount(connection, 'food_drafts')).toBe(0)
+function expectNoOtcSideEffects(connection: Database.Database): void {
+  expect(readCount(connection, 'otc_drafts')).toBe(0)
   expect(readCount(connection, 'audit_log')).toBe(0)
   expect(readCount(connection, 'sync_outbox')).toBe(0)
 }
@@ -804,7 +856,7 @@ function createQueuedIdGenerator(initialIds: readonly string[]): () => string {
   return () => {
     const next = queue.shift()
     if (next !== undefined) return next
-    const generated = `e1000000-0000-4000-8000-${String(generatedSuffix).padStart(12, '0')}`
+    const generated = `c1000000-0000-4000-8000-${String(generatedSuffix).padStart(12, '0')}`
     generatedSuffix += 1
     return generated
   }

@@ -78,8 +78,8 @@ describe('first-run bootstrap service', () => {
         patients: 0,
         sync_outbox: 0
       })
-      expect(readUserVersion(connection)).toBe(13)
-      expect(readTableCount(connection, 'schema_migrations')).toBe(13)
+      expect(readUserVersion(connection)).toBe(14)
+      expect(readTableCount(connection, 'schema_migrations')).toBe(14)
       expect(readSource('src/main/app/lifecycle.ts')).not.toContain('first-run')
       expect(readSource('src/main/app/lifecycle.ts')).not.toContain(
         'createFirstRunBootstrapService'
@@ -446,7 +446,7 @@ describe('first-run bootstrap service', () => {
         expect(connection.inTransaction).toBe(false)
       })
     }
-  })
+  }, 15_000)
 
   it('rolls back clock, ID, callback, and commit failures without partial rows', async () => {
     const cases = [

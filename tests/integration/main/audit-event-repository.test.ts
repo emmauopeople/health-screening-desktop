@@ -52,8 +52,8 @@ describe('audit event repository', () => {
       expect(listRecent(parseAuditQueryLimit(10))).toEqual([])
       expect(Object.isFrozen(listRecent(parseAuditQueryLimit(1)))).toBe(true)
       expect(readTableCount(connection, 'audit_log')).toBe(0)
-      expect(readUserVersion(connection)).toBe(13)
-      expect(readLedgerCount(connection)).toBe(13)
+      expect(readUserVersion(connection)).toBe(14)
+      expect(readLedgerCount(connection)).toBe(14)
     })
   })
 

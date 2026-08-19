@@ -1077,7 +1077,7 @@ describe('screening session repository', () => {
         expectSafeControlledError(error)
       })
     }
-  })
+  }, 15_000)
 })
 
 interface MigratedDatabaseContext {

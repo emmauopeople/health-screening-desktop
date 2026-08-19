@@ -13,6 +13,11 @@ export {
   createProductionScreeningFoodService,
   type ProductionScreeningFoodServiceOptions
 } from './screening-food-service-composition'
+export { createScreeningOtcService } from './screening-otc-service'
+export {
+  createProductionScreeningOtcService,
+  type ProductionScreeningOtcServiceOptions
+} from './screening-otc-service-composition'
 export { createScreeningLifestyleService } from './screening-lifestyle-service'
 export {
   createProductionScreeningLifestyleService,
@@ -53,6 +58,20 @@ export type {
   ScreeningFoodService,
   ScreeningFoodServiceDependencies
 } from './screening-food-service-types'
+export type {
+  GetOtcWorkspaceRequest,
+  GetOtcWorkspaceResult,
+  OtcDraftRowSummary,
+  OtcDraftSummary,
+  OtcRecentMedicationSuggestionSummary,
+  OtcServiceControlledStatus,
+  OtcWorkspaceSummary,
+  SaveOtcDraftRequest,
+  SaveOtcDraftResult,
+  SaveOtcDraftRowRequest,
+  ScreeningOtcService,
+  ScreeningOtcServiceDependencies
+} from './screening-otc-service-types'
 export type {
   CompleteLifestyleRequest,
   CompleteLifestyleResult,

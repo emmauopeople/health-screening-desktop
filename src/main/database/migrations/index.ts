@@ -13,6 +13,7 @@ import { validateSchemaVersion10 } from './schema-v10-contract'
 import { validateSchemaVersion11 } from './schema-v11-contract'
 import { validateSchemaVersion12 } from './schema-v12-contract'
 import { validateSchemaVersion13 } from './schema-v13-contract'
+import { validateSchemaVersion14 } from './schema-v14-contract'
 import type { DatabaseMigrationContext, DatabaseMigrationRunner } from './migration-types'
 
 const productionSchemaValidators = new Map([
@@ -28,7 +29,8 @@ const productionSchemaValidators = new Map([
   [10, validateSchemaVersion10],
   [11, validateSchemaVersion11],
   [12, validateSchemaVersion12],
-  [13, validateSchemaVersion13]
+  [13, validateSchemaVersion13],
+  [14, validateSchemaVersion14]
 ])
 
 export {
@@ -119,12 +121,22 @@ export {
 } from './schema-v12-contract'
 export {
   foodCatalogSeedRows,
+  hasSchemaVersion13FoodCatalogSeed,
+  hasSchemaVersion13FoodForeignKeys,
+  hasSchemaVersion13FoodTableSql,
   schemaVersion13NamedIndexes,
   schemaVersion13TableContracts,
   schemaVersion13TableNames,
   schemaVersion13TriggerNames,
   validateSchemaVersion13
 } from './schema-v13-contract'
+export {
+  schemaVersion14NamedIndexes,
+  schemaVersion14TableContracts,
+  schemaVersion14TableNames,
+  schemaVersion14TriggerNames,
+  validateSchemaVersion14
+} from './schema-v14-contract'
 
 export function createProductionDatabaseMigrationRunner({
   applicationVersion,

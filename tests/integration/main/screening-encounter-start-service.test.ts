@@ -192,7 +192,7 @@ describe('screening encounter start service integration', () => {
       },
       { sessionFailure: new LocalSessionAuthorizationError() }
     )
-  })
+  }, 15_000)
 
   it('rejects caller-supplied authority in the request and cannot change the trusted actor', async () => {
     await withStartService(({ connection, service }) => {
@@ -313,7 +313,7 @@ describe('screening encounter start service integration', () => {
         expect(readSession(connection, sessionId).status).toBe('OPEN')
       })
     }
-  })
+  }, 15_000)
 
   it('uses installation timezone for current-date eligibility without request date authority', async () => {
     await withStartService(

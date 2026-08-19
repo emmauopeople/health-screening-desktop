@@ -52,7 +52,7 @@ describe('SQLite runtime integration', () => {
       expect(connection.pragma('synchronous', { simple: true })).toBe(1)
       expect(connection.pragma('busy_timeout', { simple: true })).toBe(5000)
       expect(connection.pragma('trusted_schema', { simple: true })).toBe(0)
-      expect(connection.pragma('user_version', { simple: true })).toBe(13)
+      expect(connection.pragma('user_version', { simple: true })).toBe(14)
       expect(
         connection.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all()
       ).toContainEqual({ name: 'schema_migrations' })
@@ -88,7 +88,9 @@ describe('SQLite runtime integration', () => {
         'Database migration applied; version=12; name=optional-other-activity-description',
         'Database migration started; version=13; name=food-draft-foundation',
         'Database migration applied; version=13; name=food-draft-foundation',
-        'Database migrations current; schemaVersion=13',
+        'Database migration started; version=14; name=otc-draft-foundation',
+        'Database migration applied; version=14; name=otc-draft-foundation',
+        'Database migrations current; schemaVersion=14',
         'Database runtime initialized.',
         'Database runtime closed.'
       ])
