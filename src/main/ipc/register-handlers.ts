@@ -12,6 +12,8 @@ import type { PatientIpcHandlerDependencies } from '@main/ipc/handlers/patient-h
 import { createPatientIpcHandlers } from '@main/ipc/handlers/patient-handlers'
 import type { ScreeningEncounterIpcHandlerDependencies } from '@main/ipc/handlers/screening-encounter-handlers'
 import { createScreeningEncounterIpcHandlers } from '@main/ipc/handlers/screening-encounter-handlers'
+import type { ScreeningFoodIpcHandlerDependencies } from '@main/ipc/handlers/screening-food-handlers'
+import { createScreeningFoodIpcHandlers } from '@main/ipc/handlers/screening-food-handlers'
 import type { ScreeningLifestyleIpcHandlerDependencies } from '@main/ipc/handlers/screening-lifestyle-handlers'
 import { createScreeningLifestyleIpcHandlers } from '@main/ipc/handlers/screening-lifestyle-handlers'
 import type { ScreeningSessionIpcHandlerDependencies } from '@main/ipc/handlers/screening-session-handlers'
@@ -19,6 +21,7 @@ import { createScreeningSessionIpcHandlers } from '@main/ipc/handlers/screening-
 import {
   ipcChannels,
   type InstallationSettingsIpcChannel,
+  type ScreeningFoodIpcChannel,
   type ScreeningEncounterIpcChannel,
   type ScreeningLifestyleIpcChannel,
   type ScreeningSessionIpcChannel
@@ -38,6 +41,9 @@ interface ScreeningEncounterRegistrationOwnership {
   readonly id: symbol
 }
 interface ScreeningLifestyleRegistrationOwnership {
+  readonly id: symbol
+}
+interface ScreeningFoodRegistrationOwnership {
   readonly id: symbol
 }
 
@@ -95,6 +101,14 @@ const activeScreeningLifestyleRegistrations = new WeakMap<
   ApplicationIpcMain,
   ScreeningLifestyleRegistrationOwnership
 >()
+const screeningFoodIpcChannels: readonly ScreeningFoodIpcChannel[] = Object.freeze([
+  ipcChannels.screeningEncounters.food.getWorkspace,
+  ipcChannels.screeningEncounters.food.saveDraft
+])
+const activeScreeningFoodRegistrations = new WeakMap<
+  ApplicationIpcMain,
+  ScreeningFoodRegistrationOwnership
+>()
 
 export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependencies {
   readonly firstRun: FirstRunIpcHandlerDependencies
@@ -103,6 +117,7 @@ export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependen
   readonly screeningSessions: ScreeningSessionIpcHandlerDependencies
   readonly screeningEncounters: ScreeningEncounterIpcHandlerDependencies
   readonly screeningLifestyle: ScreeningLifestyleIpcHandlerDependencies
+  readonly screeningFood: ScreeningFoodIpcHandlerDependencies
   readonly installationSettings: InstallationSettingsIpcHandlerDependencies
 }
 
@@ -116,6 +131,7 @@ export function registerApplicationIpcHandlers(
   let disposeScreeningSessionHandlers: ApplicationIpcDisposer | undefined
   let disposeScreeningEncounterHandlers: ApplicationIpcDisposer | undefined
   let disposeScreeningLifestyleHandlers: ApplicationIpcDisposer | undefined
+  let disposeScreeningFoodHandlers: ApplicationIpcDisposer | undefined
 
   try {
     const appHandlers = createAppIpcHandlers(dependencies)
@@ -186,7 +202,12 @@ export function registerApplicationIpcHandlers(
       applicationIpcMain,
       dependencies.screeningLifestyle
     )
+    disposeScreeningFoodHandlers = registerScreeningFoodIpcHandlers(
+      applicationIpcMain,
+      dependencies.screeningFood
+    )
   } catch {
+    disposeScreeningFoodHandlers?.()
     disposeScreeningLifestyleHandlers?.()
     disposeScreeningEncounterHandlers?.()
     disposeScreeningSessionHandlers?.()
@@ -337,6 +358,38 @@ export function registerScreeningLifestyleIpcHandlers(
   return () => disposeScreeningLifestyleRegistration(applicationIpcMain, ownership)
 }
 
+export function registerScreeningFoodIpcHandlers(
+  applicationIpcMain: ApplicationIpcMain,
+  dependencies: ScreeningFoodIpcHandlerDependencies
+): ApplicationIpcDisposer {
+  if (activeScreeningFoodRegistrations.has(applicationIpcMain)) {
+    throw new ApplicationIpcRegistrationError()
+  }
+
+  const ownership: ScreeningFoodRegistrationOwnership = Object.freeze({
+    id: Symbol('screening-food-ipc-registration')
+  })
+  const handlers = createScreeningFoodIpcHandlers(dependencies)
+  const registrations: ReadonlyArray<readonly [ScreeningFoodIpcChannel, ApplicationIpcListener]> = [
+    [ipcChannels.screeningEncounters.food.getWorkspace, handlers.getWorkspace],
+    [ipcChannels.screeningEncounters.food.saveDraft, handlers.saveDraft]
+  ]
+  const installedChannels: ScreeningFoodIpcChannel[] = []
+
+  try {
+    for (const [channel, listener] of registrations) {
+      applicationIpcMain.handle(channel, listener)
+      installedChannels.push(channel)
+    }
+  } catch {
+    for (const channel of installedChannels.reverse()) applicationIpcMain.removeHandler(channel)
+    throw new ApplicationIpcRegistrationError()
+  }
+
+  activeScreeningFoodRegistrations.set(applicationIpcMain, ownership)
+  return () => disposeScreeningFoodRegistration(applicationIpcMain, ownership)
+}
+
 export function disposeApplicationIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
   disposeApplicationOwnedIpcHandlers(applicationIpcMain)
   activeApplicationRegistrations.delete(applicationIpcMain)
@@ -394,6 +447,7 @@ function disposeApplicationOwnedIpcHandlers(applicationIpcMain: ApplicationIpcMa
   disposeScreeningSessionIpcHandlers(applicationIpcMain)
   disposeScreeningEncounterIpcHandlers(applicationIpcMain)
   disposeScreeningLifestyleIpcHandlers(applicationIpcMain)
+  disposeScreeningFoodIpcHandlers(applicationIpcMain)
 }
 
 export function disposeScreeningLifestyleIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
@@ -407,6 +461,19 @@ function disposeScreeningLifestyleRegistration(
 ): void {
   if (activeScreeningLifestyleRegistrations.get(applicationIpcMain) !== ownership) return
   disposeScreeningLifestyleIpcHandlers(applicationIpcMain)
+}
+
+export function disposeScreeningFoodIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
+  for (const channel of screeningFoodIpcChannels) applicationIpcMain.removeHandler(channel)
+  activeScreeningFoodRegistrations.delete(applicationIpcMain)
+}
+
+function disposeScreeningFoodRegistration(
+  applicationIpcMain: ApplicationIpcMain,
+  ownership: ScreeningFoodRegistrationOwnership
+): void {
+  if (activeScreeningFoodRegistrations.get(applicationIpcMain) !== ownership) return
+  disposeScreeningFoodIpcHandlers(applicationIpcMain)
 }
 
 export function disposeScreeningSessionIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {

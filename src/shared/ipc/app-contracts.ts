@@ -58,6 +58,7 @@ import type {
   ScreeningVitalsSaveDraftRequest,
   ScreeningVitalsSaveDraftResult
 } from './screening-encounter-contracts'
+import type { ScreeningFoodApi } from './screening-food-contracts'
 import type { ScreeningLifestyleApi } from './screening-lifestyle-contracts'
 import type {
   ScreeningSessionCloseRequest,
@@ -171,6 +172,7 @@ export interface HealthScreeningApi {
       ): Promise<ScreeningVitalsCompleteStepResult>
     }
     lifestyle: ScreeningLifestyleApi
+    food: ScreeningFoodApi
   }
   installationSettings: {
     getConfiguredLocation(): Promise<InstallationSettingsGetConfiguredLocationResult>

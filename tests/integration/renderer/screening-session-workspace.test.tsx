@@ -66,6 +66,14 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
         typeof vi.fn<HealthScreeningApi['screeningEncounters']['lifestyle']['reopen']>
       >
     }
+    food: {
+      getWorkspace: ReturnType<
+        typeof vi.fn<HealthScreeningApi['screeningEncounters']['food']['getWorkspace']>
+      >
+      saveDraft: ReturnType<
+        typeof vi.fn<HealthScreeningApi['screeningEncounters']['food']['saveDraft']>
+      >
+    }
   } & HealthScreeningApi['screeningEncounters']
   screeningSessions: {
     getWorkspaceContext: ReturnType<
@@ -2910,6 +2918,10 @@ function createApi({
             createIpcSuccess({ status: 'REOPENED', workspace: publicLifestyleWorkspace() })
           )
         )
+      },
+      food: {
+        getWorkspace: vi.fn(() => Promise.resolve(createIpcSuccess({ status: 'UNAVAILABLE' }))),
+        saveDraft: vi.fn(() => Promise.resolve(createIpcSuccess({ status: 'UNAVAILABLE' })))
       }
     },
     screeningSessions: {

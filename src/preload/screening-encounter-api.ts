@@ -16,8 +16,9 @@ import {
   type ScreeningVitalsSaveDraftRequest,
   type ScreeningVitalsSaveDraftResult
 } from '@shared/ipc'
+import { createScreeningFoodApi } from './screening-food-api'
 import { createScreeningLifestyleApi } from './screening-lifestyle-api'
-import type { ScreeningLifestyleApi } from '@shared/ipc'
+import type { ScreeningFoodApi, ScreeningLifestyleApi } from '@shared/ipc'
 
 import type { IpcInvoke } from './authentication-api'
 
@@ -31,6 +32,7 @@ export interface ScreeningEncounterApi {
     ): Promise<ScreeningVitalsCompleteStepResult>
   }
   lifestyle: ScreeningLifestyleApi
+  food: ScreeningFoodApi
 }
 
 export function createScreeningEncounterApi(invoke: IpcInvoke): ScreeningEncounterApi {
@@ -45,7 +47,8 @@ export function createScreeningEncounterApi(invoke: IpcInvoke): ScreeningEncount
       completeStep: (request: ScreeningVitalsSaveDraftRequest) =>
         invokeVitalsCompleteStep({ invoke, request })
     }),
-    lifestyle: createScreeningLifestyleApi(invoke)
+    lifestyle: createScreeningLifestyleApi(invoke),
+    food: createScreeningFoodApi(invoke)
   })
 }
 

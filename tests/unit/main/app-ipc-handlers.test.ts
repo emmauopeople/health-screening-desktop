@@ -12,6 +12,7 @@ import {
   disposeApplicationIpcHandlers,
   registerApplicationIpcHandlers,
   registerScreeningEncounterIpcHandlers,
+  registerScreeningFoodIpcHandlers,
   registerScreeningLifestyleIpcHandlers,
   registerScreeningSessionIpcHandlers,
   type ApplicationIpcHandlerDependencies,
@@ -28,6 +29,7 @@ import type {
   PatientDemographicAmendmentService,
   PatientRegistryService,
   ScreeningEncounterStartService,
+  ScreeningFoodService,
   ScreeningVitalsDraftService,
   ScreeningLifestyleService,
   ScreeningSessionService,
@@ -93,7 +95,9 @@ const applicationOwnedHandlerChannels = Object.freeze([
   ipcChannels.screeningEncounters.lifestyle.saveWorkBaseline,
   ipcChannels.screeningEncounters.lifestyle.saveDraft,
   ipcChannels.screeningEncounters.lifestyle.complete,
-  ipcChannels.screeningEncounters.lifestyle.reopen
+  ipcChannels.screeningEncounters.lifestyle.reopen,
+  ipcChannels.screeningEncounters.food.getWorkspace,
+  ipcChannels.screeningEncounters.food.saveDraft
 ])
 
 describe('application IPC handlers', () => {
@@ -209,7 +213,7 @@ describe('application IPC handler registration', () => {
 
     const dispose = registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(43)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(45)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
@@ -236,6 +240,8 @@ describe('application IPC handler registration', () => {
       'health-screening:patient:mark-not-duplicate',
       'health-screening:patient:record-acknowledgment',
       'health-screening:patient:search',
+      'health-screening:screening-encounters:food:get-workspace',
+      'health-screening:screening-encounters:food:save-draft',
       'health-screening:screening-encounters:lifestyle:complete',
       'health-screening:screening-encounters:lifestyle:get-workspace',
       'health-screening:screening-encounters:lifestyle:reopen',
@@ -360,6 +366,85 @@ describe('application IPC handler registration', () => {
     dispose()
   })
 
+  it('registers exactly two Food handlers and disposes only its owned channels', () => {
+    const ipcMain = createMockIpcMain()
+    const unrelatedHandler = vi.fn()
+    ipcMain.handlers.set('unrelated:channel', unrelatedHandler)
+
+    const dispose = registerScreeningFoodIpcHandlers(ipcMain, createDependencies().screeningFood)
+
+    expect(ipcMain.handle).toHaveBeenCalledTimes(2)
+    expect([...ipcMain.handlers.keys()]).toEqual([
+      'unrelated:channel',
+      ipcChannels.screeningEncounters.food.getWorkspace,
+      ipcChannels.screeningEncounters.food.saveDraft
+    ])
+
+    dispose()
+    dispose()
+    expect([...ipcMain.handlers.keys()]).toEqual(['unrelated:channel'])
+    expect(ipcMain.removeHandler.mock.calls.flat()).toEqual([
+      ipcChannels.screeningEncounters.food.getWorkspace,
+      ipcChannels.screeningEncounters.food.saveDraft
+    ])
+    expect(ipcMain.handlers.get('unrelated:channel')).toBe(unrelatedHandler)
+  })
+
+  it('rejects duplicate Food registration without replacing the original handlers', () => {
+    const ipcMain = createMockIpcMain()
+    const firstDispose = registerScreeningFoodIpcHandlers(
+      ipcMain,
+      createDependencies().screeningFood
+    )
+    const originalHandlers = new Map(ipcMain.handlers)
+
+    expect(() =>
+      registerScreeningFoodIpcHandlers(ipcMain, createDependencies().screeningFood)
+    ).toThrow(ApplicationIpcRegistrationError)
+    expectHandlerMapsEqual(ipcMain.handlers, originalHandlers)
+
+    firstDispose()
+  })
+
+  it('does not let a stale Food disposer remove a newer registration', () => {
+    const ipcMain = createMockIpcMain()
+    const firstDispose = registerScreeningFoodIpcHandlers(
+      ipcMain,
+      createDependencies().screeningFood
+    )
+    firstDispose()
+    const secondDispose = registerScreeningFoodIpcHandlers(
+      ipcMain,
+      createDependencies().screeningFood
+    )
+    const newerHandlers = new Map(ipcMain.handlers)
+
+    firstDispose()
+    expectHandlerMapsEqual(ipcMain.handlers, newerHandlers)
+
+    secondDispose()
+  })
+
+  it('rolls back only Food handlers after a partial focused registration failure', () => {
+    const failingChannel = ipcChannels.screeningEncounters.food.saveDraft
+    const ipcMain = createMockIpcMain({ throwOnHandleChannel: failingChannel })
+    const unrelatedHandler = vi.fn()
+    ipcMain.handlers.set('unrelated:channel', unrelatedHandler)
+
+    expect(() =>
+      registerScreeningFoodIpcHandlers(ipcMain, createDependencies().screeningFood)
+    ).toThrow(ApplicationIpcRegistrationError)
+    expectOnlyUnrelatedHandler(ipcMain, unrelatedHandler)
+    expect(ipcMain.removeHandler.mock.calls.flat()).toEqual([
+      ipcChannels.screeningEncounters.food.getWorkspace
+    ])
+
+    ipcMain.setThrowOnHandleChannel(undefined)
+    const dispose = registerScreeningFoodIpcHandlers(ipcMain, createDependencies().screeningFood)
+    expect([...ipcMain.handlers.keys()]).toContain(failingChannel)
+    dispose()
+  })
+
   it('re-registration removes only application-owned handlers before replacement', () => {
     const ipcMain = createMockIpcMain()
     ipcMain.handlers.set('unrelated:channel', vi.fn())
@@ -367,7 +452,7 @@ describe('application IPC handler registration', () => {
     registerApplicationIpcHandlers(ipcMain, createDependencies())
     registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(86)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(90)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getHealth)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
@@ -398,6 +483,8 @@ describe('application IPC handler registration', () => {
       'health-screening:patient:mark-not-duplicate',
       'health-screening:patient:record-acknowledgment',
       'health-screening:patient:search',
+      'health-screening:screening-encounters:food:get-workspace',
+      'health-screening:screening-encounters:food:save-draft',
       'health-screening:screening-encounters:lifestyle:complete',
       'health-screening:screening-encounters:lifestyle:get-workspace',
       'health-screening:screening-encounters:lifestyle:reopen',
@@ -942,6 +1029,11 @@ function createDependencies(): ApplicationIpcHandlerDependencies {
       screeningLifestyleService: createScreeningLifestyleService(),
       logger: createLogger()
     },
+    screeningFood: {
+      navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
+      screeningFoodService: createScreeningFoodService(),
+      logger: createLogger()
+    },
     installationSettings: {
       navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
       authenticationSessionService: createAuthenticationSessionService(),
@@ -1045,6 +1137,13 @@ function createScreeningLifestyleService(): ScreeningLifestyleService {
     saveLifestyleDraft: vi.fn(() => ({ status: 'UNAVAILABLE' as const })),
     completeLifestyle: vi.fn(() => ({ status: 'UNAVAILABLE' as const })),
     reopenLifestyle: vi.fn(() => ({ status: 'UNAVAILABLE' as const }))
+  }
+}
+
+function createScreeningFoodService(): ScreeningFoodService {
+  return {
+    getWorkspace: vi.fn(() => ({ status: 'UNAVAILABLE' as const })),
+    saveDraft: vi.fn(() => ({ status: 'UNAVAILABLE' as const }))
   }
 }
 

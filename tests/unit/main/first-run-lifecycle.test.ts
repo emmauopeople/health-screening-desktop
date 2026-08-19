@@ -55,7 +55,7 @@ describe('first-run IPC lifecycle and scope', () => {
     expect(lifecycle).toContain('patientRegistryService,')
     expect(lifecycle).toContain('patientDemographicAmendmentService,')
     expect(lifecycle).toContain('patientAcknowledgmentService,')
-    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(12)
+    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(13)
   })
 
   it('composes screening-session IPC services from the initialized database runtime', () => {
@@ -87,7 +87,7 @@ describe('first-run IPC lifecycle and scope', () => {
     expect(lifecycle).toContain('screeningSessionService,')
     expect(lifecycle).toContain('currentScreeningSessionService,')
     expect(lifecycle).toContain('screeningSessionWorkspaceContextService,')
-    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(12)
+    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(13)
   })
 
   it('composes installation-settings IPC services from the initialized database runtime', () => {
@@ -121,10 +121,12 @@ describe('first-run IPC lifecycle and scope', () => {
       'const screeningEncounterStartService = createProductionScreeningEncounterStartService'
     const vitalsServiceStatement =
       'const screeningVitalsDraftService = createProductionScreeningVitalsDraftService'
+    const foodServiceStatement = 'const screeningFoodService = createProductionScreeningFoodService'
 
     expect(lifecycle.match(/createDatabaseRuntime\(/gu)?.length).toBe(1)
     expect(lifecycle).toContain('createProductionScreeningEncounterStartService')
     expect(lifecycle).toContain('createProductionScreeningVitalsDraftService')
+    expect(lifecycle).toContain('createProductionScreeningFoodService')
     expect(lifecycle.indexOf('databaseRuntime.initialize()')).toBeLessThan(
       lifecycle.indexOf(serviceStatement)
     )
@@ -134,9 +136,14 @@ describe('first-run IPC lifecycle and scope', () => {
     expect(lifecycle.indexOf(vitalsServiceStatement)).toBeLessThan(
       lifecycle.indexOf(registrationStatement)
     )
+    expect(lifecycle.indexOf(foodServiceStatement)).toBeLessThan(
+      lifecycle.indexOf(registrationStatement)
+    )
     expect(lifecycle).toContain('authenticationSessionService,')
     expect(lifecycle).toContain('screeningEncounterStartService,')
     expect(lifecycle).toContain('screeningVitalsDraftService,')
+    expect(lifecycle).toContain('screeningFood: {')
+    expect(lifecycle).toContain('screeningFoodService,')
   })
 
   it('keeps renderer first-run consumption scoped to the fixed preload API and preserves shell status text', () => {
