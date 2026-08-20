@@ -320,6 +320,65 @@ export function validateOtcDraftForSave(
   return errors
 }
 
+export function validateOtcDraftForContinue(
+  state: Pick<OtcDraftState, 'otcResponse' | 'rows'>
+): readonly OtcValidationError[] {
+  const errors = [...validateOtcDraftForSave(state)]
+  const meaningfulRows = state.rows.filter((row) => !isBlankOtcRow(row))
+
+  if (state.otcResponse === '') {
+    errors.push({
+      fieldId: 'otc-response',
+      message: 'Select an OTC response before continuing.'
+    })
+    return errors
+  }
+
+  if (state.otcResponse !== 'REPORTED') return errors
+
+  if (meaningfulRows.length === 0) {
+    errors.push({
+      fieldId: 'otc-response',
+      message: 'Add at least one medication before continuing.'
+    })
+    return errors
+  }
+
+  const firstRowByProduct = new Map<string, string>()
+  for (const row of meaningfulRows) {
+    const productName = row.productName.trim()
+    if (productName.length === 0) {
+      errors.push({
+        fieldId: `${row.localKey}:productName`,
+        message: 'Enter the medication name.'
+      })
+    } else {
+      const normalized = normalizeOtcProductName(productName)
+      const firstRow = firstRowByProduct.get(normalized)
+      if (firstRow === undefined) firstRowByProduct.set(normalized, row.localKey)
+      else
+        errors.push({
+          fieldId: `${row.localKey}:productName`,
+          message: 'Each medication may be reported only once.'
+        })
+    }
+
+    if (row.reasonForUse.trim().length === 0)
+      errors.push({
+        fieldId: `${row.localKey}:reasonForUse`,
+        message: 'Enter the reason for use.'
+      })
+
+    if (row.currentlyTakingResponse === '')
+      errors.push({
+        fieldId: `${row.localKey}:currentlyTakingResponse`,
+        message: 'Select whether the patient is currently taking this medication.'
+      })
+  }
+
+  return errors
+}
+
 export function getOtcFieldError(
   errors: readonly OtcValidationError[],
   fieldId: string
