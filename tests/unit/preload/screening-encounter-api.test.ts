@@ -105,6 +105,14 @@ describe('preload screening-encounter API', () => {
       'saveDraft',
       'completeStep'
     ])
+    expect(Object.keys(api.screeningEncounters.management)).toEqual([
+      'search',
+      'getDetail',
+      'addAddendum',
+      'openFlag',
+      'resolveFlag',
+      'voidEmptyDraft'
+    ])
     expect(Object.isFrozen(api)).toBe(true)
     expect(Object.isFrozen(api.screeningEncounters)).toBe(true)
     expect(Object.isFrozen(api.screeningEncounters.management)).toBe(true)
@@ -143,6 +151,25 @@ describe('preload screening-encounter API', () => {
     expect(invoke).not.toHaveBeenCalledWith('attacker:channel', expect.anything())
     expect(rendererRequest).toEqual(request)
     expect(Object.isFrozen(rendererRequest)).toBe(false)
+  })
+
+  it('invokes the fixed empty-draft void channel with a strict versioned request', async () => {
+    const response = createIpcSuccess({ status: 'VOIDED' as const, recordVersion: 2 })
+    const invoke = vi.fn().mockResolvedValue(response)
+    const api = createHealthScreeningApi(invoke)
+    const request = {
+      encounterId,
+      expectedVersion: 1,
+      reason: 'Created without screening data.'
+    }
+
+    await expect(api.screeningEncounters.management.voidEmptyDraft(request)).resolves.toEqual(
+      response
+    )
+    expect(invoke).toHaveBeenCalledWith(
+      ipcChannels.screeningEncounters.management.voidEmptyDraft,
+      request
+    )
   })
 
   it('invokes completion only after local strict validation', async () => {

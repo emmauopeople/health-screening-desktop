@@ -24,6 +24,8 @@ import {
   encounterManagementOpenFlagResultSchema,
   encounterManagementResolveFlagRequestSchema,
   encounterManagementResolveFlagResultSchema,
+  encounterManagementVoidEmptyDraftRequestSchema,
+  encounterManagementVoidEmptyDraftResultSchema,
   encounterManagementSearchRequestSchema,
   encounterManagementSearchResultSchema,
   createScreeningEncounterIpcFailure,
@@ -49,6 +51,8 @@ import {
   type EncounterManagementOpenFlagRequest,
   type EncounterManagementResolveFlagResult,
   type EncounterManagementResolveFlagRequest,
+  type EncounterManagementVoidEmptyDraftResult,
+  type EncounterManagementVoidEmptyDraftRequest,
   type EncounterManagementSearchResult,
   type EncounterManagementSearchRequest,
   type PublicCompletedScreeningEncounterSummary,
@@ -118,6 +122,10 @@ export interface ScreeningEncounterIpcHandlers {
     event: IpcSenderValidationEvent,
     request: unknown
   ): Promise<EncounterManagementResolveFlagResult>
+  voidEmptyEncounterDraft(
+    event: IpcSenderValidationEvent,
+    request: unknown
+  ): Promise<EncounterManagementVoidEmptyDraftResult>
 }
 
 export function createScreeningEncounterIpcHandlers({
@@ -304,6 +312,24 @@ export function createScreeningEncounterIpcHandlers({
       }) as Promise<EncounterManagementResolveFlagResult>
     },
 
+    async voidEmptyEncounterDraft(event: IpcSenderValidationEvent, request: unknown) {
+      return handleManagementRequest(event, request, {
+        channel: ipcChannels.screeningEncounters.management.voidEmptyDraft,
+        navigationPolicy,
+        requestSchema: encounterManagementVoidEmptyDraftRequestSchema,
+        resultSchema: encounterManagementVoidEmptyDraftResultSchema,
+        invoke: (data: EncounterManagementVoidEmptyDraftRequest) =>
+          createIpcSuccess(
+            screeningEncounterManagementService.voidEmptyDraft(
+              data.encounterId as EntityId,
+              data.expectedVersion,
+              data.reason
+            )
+          ),
+        logger
+      }) as Promise<EncounterManagementVoidEmptyDraftResult>
+    },
+
     async getVitalsDraft(
       event: IpcSenderValidationEvent,
       request: unknown
@@ -456,7 +482,8 @@ const unavailableManagementService: ScreeningEncounterManagementService = Object
   getDetail: () => ({ status: 'UNAVAILABLE' as const }),
   addAddendum: () => ({ status: 'UNAVAILABLE' as const }),
   openFlag: () => ({ status: 'UNAVAILABLE' as const }),
-  resolveFlag: () => ({ status: 'UNAVAILABLE' as const })
+  resolveFlag: () => ({ status: 'UNAVAILABLE' as const }),
+  voidEmptyDraft: () => ({ status: 'UNAVAILABLE' as const })
 })
 
 function toInternalStartRequest(

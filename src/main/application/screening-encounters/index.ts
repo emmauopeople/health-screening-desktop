@@ -48,7 +48,8 @@ export type {
   ScreeningEncounterManagementService,
   ScreeningEncounterManagementServiceDependencies,
   SearchManagedEncountersRequest,
-  SearchManagedEncountersServiceResult
+  SearchManagedEncountersServiceResult,
+  VoidEmptyEncounterDraftResult
 } from './screening-encounter-management-service-types'
 export type {
   ScreeningEncounterStartService,

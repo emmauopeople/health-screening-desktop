@@ -96,6 +96,11 @@ export const encounterManagementResolveFlagRequestSchema = exactObject({
   status: z.enum(['RESOLVED', 'DISMISSED']),
   resolutionNote: z.string().trim().min(1).max(1000)
 })
+export const encounterManagementVoidEmptyDraftRequestSchema = exactObject({
+  encounterId: screeningEncounterUuidSchema,
+  expectedVersion: screeningVitalsPositiveIntegerSchema,
+  reason: z.string().trim().min(1).max(500)
+})
 export const screeningVitalsGetDraftRequestSchema = exactObject({
   encounterId: screeningEncounterUuidSchema
 })
@@ -144,6 +149,7 @@ export const publicManagedEncounterSummarySchema = z
   .object({
     id: screeningEncounterUuidSchema,
     patientId: screeningEncounterUuidSchema,
+    screeningSessionId: screeningEncounterUuidSchema,
     patientCode: z.string().min(1).max(80),
     patientDisplayName: z.string().min(1).max(240),
     dateOfBirth: patientLocalDateSchema.nullable(),
@@ -152,7 +158,9 @@ export const publicManagedEncounterSummarySchema = z
     startedAt: screeningEncounterUtcTimestampSchema,
     completedAt: screeningEncounterUtcTimestampSchema.nullable(),
     noteCount: z.number().int().min(0).safe(),
-    openFlagCount: z.number().int().min(0).safe()
+    openFlagCount: z.number().int().min(0).safe(),
+    recordVersion: screeningVitalsPositiveIntegerSchema,
+    hasRecordedData: z.boolean()
   })
   .strict()
 export const publicEncounterAddendumSchema = z
@@ -230,6 +238,8 @@ const encounterManagementControlledStatusSchemas = [
   z.object({ status: z.literal('LOCATION_INACTIVE') }).strict(),
   z.object({ status: z.literal('ENCOUNTER_NOT_FOUND') }).strict(),
   z.object({ status: z.literal('ENCOUNTER_NOT_MANAGEABLE') }).strict(),
+  z.object({ status: z.literal('ENCOUNTER_NOT_EMPTY') }).strict(),
+  z.object({ status: z.literal('VERSION_CONFLICT') }).strict(),
   z.object({ status: z.literal('FLAG_NOT_FOUND') }).strict(),
   z.object({ status: z.literal('UNAVAILABLE') }).strict()
 ] as const
@@ -259,6 +269,15 @@ export const encounterManagementOpenFlagSuccessDataSchema = z.discriminatedUnion
 ])
 export const encounterManagementResolveFlagSuccessDataSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('UPDATED'), flag: publicEncounterReviewFlagSchema }).strict(),
+  ...encounterManagementControlledStatusSchemas
+])
+export const encounterManagementVoidEmptyDraftSuccessDataSchema = z.discriminatedUnion('status', [
+  z
+    .object({
+      status: z.literal('VOIDED'),
+      recordVersion: screeningVitalsPositiveIntegerSchema
+    })
+    .strict(),
   ...encounterManagementControlledStatusSchemas
 ])
 
@@ -461,6 +480,12 @@ export const encounterManagementResolveFlagResultSchema = withSafeTransportPrepr
     screeningEncounterFailureSchema
   ])
 )
+export const encounterManagementVoidEmptyDraftResultSchema = withSafeTransportPreprocess(
+  z.discriminatedUnion('ok', [
+    createIpcSuccessResultSchema(encounterManagementVoidEmptyDraftSuccessDataSchema),
+    screeningEncounterFailureSchema
+  ])
+)
 
 export type ScreeningEncounterStatus = z.infer<typeof screeningEncounterStatusSchema>
 export type EncounterManagementFlagCategory = z.infer<typeof encounterManagementFlagCategorySchema>
@@ -480,6 +505,9 @@ export type EncounterManagementOpenFlagRequest = z.infer<
 export type EncounterManagementResolveFlagRequest = z.infer<
   typeof encounterManagementResolveFlagRequestSchema
 >
+export type EncounterManagementVoidEmptyDraftRequest = z.infer<
+  typeof encounterManagementVoidEmptyDraftRequestSchema
+>
 export type PublicManagedEncounterSummary = z.infer<typeof publicManagedEncounterSummarySchema>
 export type PublicEncounterAddendum = z.infer<typeof publicEncounterAddendumSchema>
 export type PublicEncounterReviewFlag = z.infer<typeof publicEncounterReviewFlagSchema>
@@ -496,6 +524,9 @@ export type EncounterManagementOpenFlagResult = z.infer<
 >
 export type EncounterManagementResolveFlagResult = z.infer<
   typeof encounterManagementResolveFlagResultSchema
+>
+export type EncounterManagementVoidEmptyDraftResult = z.infer<
+  typeof encounterManagementVoidEmptyDraftResultSchema
 >
 export type ScreeningEncounterStartRequest = z.infer<typeof screeningEncounterStartRequestSchema>
 export type ScreeningCompletionSection = z.infer<typeof screeningCompletionSectionSchema>

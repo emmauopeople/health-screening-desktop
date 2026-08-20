@@ -49,7 +49,8 @@ export const ipcChannels = {
       getDetail: 'health-screening:screening-encounters:management:get-detail',
       addAddendum: 'health-screening:screening-encounters:management:add-addendum',
       openFlag: 'health-screening:screening-encounters:management:open-flag',
-      resolveFlag: 'health-screening:screening-encounters:management:resolve-flag'
+      resolveFlag: 'health-screening:screening-encounters:management:resolve-flag',
+      voidEmptyDraft: 'health-screening:screening-encounters:management:void-empty-draft'
     },
     lifestyle: {
       getWorkspace: 'health-screening:screening-encounters:lifestyle:get-workspace',

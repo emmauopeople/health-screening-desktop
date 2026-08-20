@@ -58,6 +58,8 @@ import type {
   EncounterManagementOpenFlagResult,
   EncounterManagementResolveFlagRequest,
   EncounterManagementResolveFlagResult,
+  EncounterManagementVoidEmptyDraftRequest,
+  EncounterManagementVoidEmptyDraftResult,
   EncounterManagementSearchRequest,
   EncounterManagementSearchResult,
   ScreeningEncounterCompleteRequest,
@@ -192,6 +194,9 @@ export interface HealthScreeningApi {
       resolveFlag(
         request: EncounterManagementResolveFlagRequest
       ): Promise<EncounterManagementResolveFlagResult>
+      voidEmptyDraft(
+        request: EncounterManagementVoidEmptyDraftRequest
+      ): Promise<EncounterManagementVoidEmptyDraftResult>
     }
     vitals: {
       getDraft(request: ScreeningVitalsGetDraftRequest): Promise<ScreeningVitalsGetDraftResult>

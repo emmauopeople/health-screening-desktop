@@ -8,6 +8,8 @@ import {
   encounterManagementOpenFlagResultSchema,
   encounterManagementResolveFlagRequestSchema,
   encounterManagementResolveFlagResultSchema,
+  encounterManagementVoidEmptyDraftRequestSchema,
+  encounterManagementVoidEmptyDraftResultSchema,
   encounterManagementSearchRequestSchema,
   encounterManagementSearchResultSchema,
   ipcChannels,
@@ -29,6 +31,8 @@ import {
   type EncounterManagementOpenFlagResult,
   type EncounterManagementResolveFlagRequest,
   type EncounterManagementResolveFlagResult,
+  type EncounterManagementVoidEmptyDraftRequest,
+  type EncounterManagementVoidEmptyDraftResult,
   type EncounterManagementSearchRequest,
   type EncounterManagementSearchResult,
   type ScreeningEncounterStartResult,
@@ -64,6 +68,9 @@ export interface ScreeningEncounterApi {
     resolveFlag(
       request: EncounterManagementResolveFlagRequest
     ): Promise<EncounterManagementResolveFlagResult>
+    voidEmptyDraft(
+      request: EncounterManagementVoidEmptyDraftRequest
+    ): Promise<EncounterManagementVoidEmptyDraftResult>
   }
   vitals: {
     getDraft(request: ScreeningVitalsGetDraftRequest): Promise<ScreeningVitalsGetDraftResult>
@@ -122,6 +129,17 @@ export function createScreeningEncounterApi(invoke: IpcInvoke): ScreeningEncount
           ipcChannels.screeningEncounters.management.resolveFlag,
           encounterManagementResolveFlagRequestSchema,
           encounterManagementResolveFlagResultSchema,
+          request
+        ),
+      voidEmptyDraft: (request: EncounterManagementVoidEmptyDraftRequest) =>
+        invokeManaged<
+          EncounterManagementVoidEmptyDraftRequest,
+          EncounterManagementVoidEmptyDraftResult
+        >(
+          invoke,
+          ipcChannels.screeningEncounters.management.voidEmptyDraft,
+          encounterManagementVoidEmptyDraftRequestSchema,
+          encounterManagementVoidEmptyDraftResultSchema,
           request
         )
     }),

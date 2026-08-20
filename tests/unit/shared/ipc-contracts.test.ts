@@ -114,7 +114,8 @@ describe('shared IPC contracts', () => {
           getDetail: 'health-screening:screening-encounters:management:get-detail',
           addAddendum: 'health-screening:screening-encounters:management:add-addendum',
           openFlag: 'health-screening:screening-encounters:management:open-flag',
-          resolveFlag: 'health-screening:screening-encounters:management:resolve-flag'
+          resolveFlag: 'health-screening:screening-encounters:management:resolve-flag',
+          voidEmptyDraft: 'health-screening:screening-encounters:management:void-empty-draft'
         },
         lifestyle: {
           getWorkspace: 'health-screening:screening-encounters:lifestyle:get-workspace',
@@ -145,7 +146,7 @@ describe('shared IPC contracts', () => {
     })
     const allChannels = flattenChannelStrings(ipcChannels)
 
-    expect(allChannels).toHaveLength(54)
+    expect(allChannels).toHaveLength(55)
     expect(new Set(allChannels).size).toBe(allChannels.length)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.lifestyle.complete)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.complete)
@@ -156,6 +157,7 @@ describe('shared IPC contracts', () => {
     expect(allChannels).toContain(ipcChannels.screeningEncounters.otc.saveDraft)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.management.search)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.management.resolveFlag)
+    expect(allChannels).toContain(ipcChannels.screeningEncounters.management.voidEmptyDraft)
   })
 
   it('keeps patient requests strict and main-process-authored', () => {

@@ -10,6 +10,7 @@ export type EncounterReviewFlagStatus = 'OPEN' | 'RESOLVED' | 'DISMISSED'
 export interface ManagedEncounterSummaryRecord {
   readonly id: EntityId
   readonly patientId: EntityId
+  readonly screeningSessionId: EntityId
   readonly patientCode: string
   readonly patientDisplayName: string
   readonly dateOfBirth: string | null
@@ -19,6 +20,8 @@ export interface ManagedEncounterSummaryRecord {
   readonly completedAt: UtcTimestamp | null
   readonly noteCount: number
   readonly openFlagCount: number
+  readonly recordVersion: number
+  readonly hasRecordedData: boolean
 }
 
 export interface EncounterAddendumRecord {
@@ -136,4 +139,13 @@ export interface ScreeningEncounterManagementRepository {
     connection: DatabaseTransactionConnection,
     input: ResolveEncounterReviewFlagInput
   ): EncounterReviewFlagRecord | null
+  voidEmptyDraft(
+    connection: DatabaseTransactionConnection,
+    input: {
+      readonly encounterId: EntityId
+      readonly expectedVersion: number
+      readonly reason: string
+      readonly updatedAt: UtcTimestamp
+    }
+  ): 'VOIDED' | 'NOT_FOUND' | 'NOT_DRAFT' | 'VERSION_CONFLICT' | 'NOT_EMPTY'
 }

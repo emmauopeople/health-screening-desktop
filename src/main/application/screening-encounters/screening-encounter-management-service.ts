@@ -27,6 +27,7 @@ const entityType = parseAuditEntityType('SCREENING_ENCOUNTER')
 const addendumAction = parseAuditActionCode('SCREENING_ENCOUNTER_ADDENDUM_ADDED')
 const flagOpenedAction = parseAuditActionCode('SCREENING_ENCOUNTER_REVIEW_FLAG_OPENED')
 const flagUpdatedAction = parseAuditActionCode('SCREENING_ENCOUNTER_REVIEW_FLAG_UPDATED')
+const encounterVoidedAction = parseAuditActionCode('SCREENING_ENCOUNTER_VOIDED')
 const categories = new Set<EncounterReviewFlagCategory>([
   'POSSIBLE_DATA_ERROR',
   'MISSING_INFORMATION',
@@ -219,6 +220,59 @@ export function createScreeningEncounterManagementService(
           status: error instanceof RepositoryValidationError ? 'VALIDATION_FAILED' : 'UNAVAILABLE'
         }
       }
+    },
+
+    voidEmptyDraft(encounterId, expectedVersion, reason) {
+      const actor = resolveActor(dependencies)
+      if (actor.status !== 'VALID') return { status: actor.statusCode }
+      const location = resolveLocation(dependencies)
+      if (location.status !== 'RESOLVED') return { status: location.status }
+      try {
+        const parsedEncounterId = parseEntityId(encounterId)
+        const parsedVersion = parsePositiveInteger(expectedVersion)
+        const parsedReason = parseText(reason, 500)
+        return dependencies.transactionExecutor.run((context) => {
+          const encounter = dependencies.screeningEncounterRepository.getByIdForWrite(
+            context.connection,
+            parsedEncounterId
+          )
+          if (encounter === null || encounter.locationId !== location.location.id)
+            return { status: 'ENCOUNTER_NOT_FOUND' as const }
+          if (encounter.status !== 'DRAFT') return { status: 'ENCOUNTER_NOT_MANAGEABLE' as const }
+          if (encounter.recordVersion !== parsedVersion)
+            return { status: 'VERSION_CONFLICT' as const }
+
+          const occurredAt = context.nowUtc()
+          const result = dependencies.managementRepository.voidEmptyDraft(context.connection, {
+            encounterId: parsedEncounterId,
+            expectedVersion: parsedVersion,
+            reason: parsedReason,
+            updatedAt: occurredAt
+          })
+          if (result === 'NOT_EMPTY') return { status: 'ENCOUNTER_NOT_EMPTY' as const }
+          if (result === 'VERSION_CONFLICT') return { status: 'VERSION_CONFLICT' as const }
+          if (result === 'NOT_FOUND') return { status: 'ENCOUNTER_NOT_FOUND' as const }
+          if (result !== 'VOIDED') return { status: 'ENCOUNTER_NOT_MANAGEABLE' as const }
+
+          const resultingVersion = parsedVersion + 1
+          writeEvent(
+            dependencies,
+            context,
+            actor.actorId,
+            parsedEncounterId,
+            occurredAt,
+            encounterVoidedAction,
+            'SCREENING_ENCOUNTER_VOIDED',
+            'screening-encounter.voided.v1',
+            { encounter_id: parsedEncounterId, record_version: resultingVersion }
+          )
+          return Object.freeze({ status: 'VOIDED' as const, recordVersion: resultingVersion })
+        })
+      } catch (error) {
+        return {
+          status: error instanceof RepositoryValidationError ? 'VALIDATION_FAILED' : 'UNAVAILABLE'
+        }
+      }
     }
   }
   return Object.freeze(service)
@@ -246,11 +300,13 @@ function writeEvent(
   operation:
     | 'SCREENING_ENCOUNTER_ADDENDUM_ADDED'
     | 'SCREENING_ENCOUNTER_REVIEW_FLAG_OPENED'
-    | 'SCREENING_ENCOUNTER_REVIEW_FLAG_UPDATED',
+    | 'SCREENING_ENCOUNTER_REVIEW_FLAG_UPDATED'
+    | 'SCREENING_ENCOUNTER_VOIDED',
   schema:
     | 'screening-encounter.addendum-added.v1'
     | 'screening-encounter.review-flag-opened.v1'
-    | 'screening-encounter.review-flag-updated.v1',
+    | 'screening-encounter.review-flag-updated.v1'
+    | 'screening-encounter.voided.v1',
   metadata: AuditMetadata
 ): void {
   const installation = dependencies.installationRepository.get()
@@ -321,4 +377,9 @@ function parseText(value: unknown, maximum: number): string {
   const text = value.trim()
   if (text.length === 0 || text.length > maximum) throw new RepositoryValidationError()
   return text
+}
+function parsePositiveInteger(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1)
+    throw new RepositoryValidationError()
+  return value
 }

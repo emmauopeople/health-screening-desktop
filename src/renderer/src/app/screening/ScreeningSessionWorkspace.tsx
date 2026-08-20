@@ -380,7 +380,9 @@ export function ScreeningSessionWorkspace({
         const readySessionId = data.session.id
         onOpenTabsChange((currentTabs) => {
           const currentSessionTabs = currentTabs.filter(
-            (tab) => tab.encounter.screeningSessionId === readySessionId
+            (tab) =>
+              tab.encounter.status === 'DRAFT' ||
+              tab.encounter.screeningSessionId === readySessionId
           )
 
           onActivePatientIdChange((currentActivePatientId) => {
@@ -623,18 +625,7 @@ export function ScreeningSessionWorkspace({
               return currentTabs
             }
 
-            return [
-              ...currentTabs,
-              {
-                patient,
-                encounter,
-                vitalsDraft: createInitialVitalsDraft(),
-                lifestyleDraft: createInitialLifestyleDraftState(),
-                foodDraft: createInitialFoodDraftState(),
-                otcDraft: createInitialOtcDraftState(),
-                completionState: createInitialScreeningCompletionState()
-              }
-            ]
+            return [...currentTabs, createPatientScreeningTab(patient, encounter)]
           })
           onActivePatientIdChange(patient.id)
           selectWorkspaceTab('NEW_SCREENING')
@@ -3551,6 +3542,23 @@ function createInitialVitalsDraft(): VitalsDraft {
   return {
     ...createReadyEmptyVitalsDraft(),
     loadStatus: 'NOT_LOADED'
+  }
+}
+
+// Shared with the shell so an existing draft can enter the same tab initialization path.
+// eslint-disable-next-line react-refresh/only-export-components
+export function createPatientScreeningTab(
+  patient: PublicPatientSummary,
+  encounter: PublicScreeningEncounterStartSummary
+): PatientScreeningTab {
+  return {
+    patient,
+    encounter,
+    vitalsDraft: createInitialVitalsDraft(),
+    lifestyleDraft: createInitialLifestyleDraftState(),
+    foodDraft: createInitialFoodDraftState(),
+    otcDraft: createInitialOtcDraftState(),
+    completionState: createInitialScreeningCompletionState()
   }
 }
 

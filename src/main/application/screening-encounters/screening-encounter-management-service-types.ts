@@ -26,6 +26,8 @@ export type EncounterManagementControlledStatus =
   | 'LOCATION_INACTIVE'
   | 'ENCOUNTER_NOT_FOUND'
   | 'ENCOUNTER_NOT_MANAGEABLE'
+  | 'ENCOUNTER_NOT_EMPTY'
+  | 'VERSION_CONFLICT'
   | 'FLAG_NOT_FOUND'
   | 'UNAVAILABLE'
 
@@ -55,6 +57,10 @@ export type ResolveEncounterReviewFlagResult =
   | { readonly status: 'UPDATED'; readonly flag: EncounterReviewFlagRecord }
   | { readonly status: EncounterManagementControlledStatus }
 
+export type VoidEmptyEncounterDraftResult =
+  | { readonly status: 'VOIDED'; readonly recordVersion: number }
+  | { readonly status: EncounterManagementControlledStatus }
+
 export interface ScreeningEncounterManagementService {
   search(request: SearchManagedEncountersRequest): SearchManagedEncountersServiceResult
   getDetail(encounterId: EntityId): GetManagedEncounterResult
@@ -70,6 +76,11 @@ export interface ScreeningEncounterManagementService {
     status: Extract<EncounterReviewFlagStatus, 'RESOLVED' | 'DISMISSED'>,
     resolutionNote: string
   ): ResolveEncounterReviewFlagResult
+  voidEmptyDraft(
+    encounterId: EntityId,
+    expectedVersion: number,
+    reason: string
+  ): VoidEmptyEncounterDraftResult
 }
 
 export interface ScreeningEncounterManagementServiceDependencies {

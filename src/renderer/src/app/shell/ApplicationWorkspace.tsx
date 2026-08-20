@@ -12,9 +12,11 @@ import { InstallationLocationAdministrationWorkspace } from '../administration/I
 import { PatientRegistryWorkspace } from '../patients/PatientRegistryWorkspace'
 import { ManageEncountersWorkspace } from '../screening/manage/ManageEncountersWorkspace'
 import {
+  createPatientScreeningTab,
   ScreeningSessionWorkspace,
   type PatientScreeningTab
 } from '../screening/ScreeningSessionWorkspace'
+import { screeningPatientTabLimit } from '../screening/screening-session-workspace-model'
 import { DashboardWorkspace } from './DashboardWorkspace'
 import { PlannedModuleWorkspace } from './PlannedModuleWorkspace'
 import type {
@@ -116,6 +118,24 @@ export function ApplicationWorkspace({
           headingId={workspaceHeadingId}
           headingRef={headingRef}
           onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
+          onResumeDraft={(patient, encounter) => {
+            const existingTab = openScreeningPatientTabs.find(
+              (tab) => tab.encounter.id === encounter.id
+            )
+            if (existingTab !== undefined) {
+              setActiveScreeningPatientId(existingTab.patient.id)
+              onSelectCommand('SCREENING_NEW_SCREENING')
+              return true
+            }
+            if (openScreeningPatientTabs.length >= screeningPatientTabLimit) return false
+            setOpenScreeningPatientTabs((currentTabs) => [
+              ...currentTabs,
+              createPatientScreeningTab(patient, encounter)
+            ])
+            setActiveScreeningPatientId(patient.id)
+            onSelectCommand('SCREENING_NEW_SCREENING')
+            return true
+          }}
         />
       ) : (
         <PlannedModuleWorkspace

@@ -48,6 +48,7 @@ const flagStatuses = new Set<EncounterReviewFlagStatus>(['OPEN', 'RESOLVED', 'DI
 const encounterSummaryColumns = `
   encounter.id,
   encounter.patient_id,
+  encounter.screening_session_id,
   patient.patient_code,
   patient.display_name AS patient_display_name,
   patient.date_of_birth,
@@ -55,6 +56,18 @@ const encounterSummaryColumns = `
   encounter.status,
   encounter.started_at,
   encounter.completed_at,
+  encounter.record_version,
+  CASE WHEN
+    EXISTS (SELECT 1 FROM screening_vitals_drafts draft WHERE draft.encounter_id = encounter.id)
+    OR EXISTS (SELECT 1 FROM lifestyle_drafts draft WHERE draft.encounter_id = encounter.id)
+    OR EXISTS (SELECT 1 FROM food_drafts draft WHERE draft.encounter_id = encounter.id)
+    OR EXISTS (SELECT 1 FROM otc_drafts draft WHERE draft.encounter_id = encounter.id)
+    OR EXISTS (SELECT 1 FROM blood_pressure_readings final_vitals WHERE final_vitals.encounter_id = encounter.id)
+    OR EXISTS (SELECT 1 FROM lifestyle_logs final_lifestyle WHERE final_lifestyle.encounter_id = encounter.id)
+    OR EXISTS (SELECT 1 FROM food_logs final_food WHERE final_food.encounter_id = encounter.id)
+    OR EXISTS (SELECT 1 FROM otc_medication_logs final_otc WHERE final_otc.encounter_id = encounter.id)
+    THEN 1 ELSE 0
+  END AS has_recorded_data,
   (SELECT COUNT(*) FROM screening_encounter_addenda addendum WHERE addendum.encounter_id = encounter.id) AS note_count,
   (SELECT COUNT(*) FROM screening_encounter_review_flags flag WHERE flag.encounter_id = encounter.id AND flag.status = 'OPEN') AS open_flag_count
 `
@@ -308,6 +321,35 @@ export function createScreeningEncounterManagementRepository(
       } catch (error) {
         rethrowWrite(error)
       }
+    },
+
+    voidEmptyDraft(scopedConnection, input) {
+      assertActiveDatabaseTransactionConnection(scopedConnection)
+      const encounterId = parseEntityId(input.encounterId)
+      const expectedVersion = parsePositiveInteger(input.expectedVersion)
+      const reason = parseText(input.reason, 500)
+      const updatedAt = parseUtcTimestamp(input.updatedAt)
+      try {
+        const current = scopedConnection
+          .prepare('SELECT status, record_version FROM screening_encounters WHERE id = ?')
+          .get(encounterId) as Record<string, unknown> | undefined
+        if (current === undefined) return 'NOT_FOUND'
+        if (current['status'] !== 'DRAFT') return 'NOT_DRAFT'
+        if (parsePositiveInteger(current['record_version']) !== expectedVersion)
+          return 'VERSION_CONFLICT'
+        if (hasRecordedData(scopedConnection, encounterId)) return 'NOT_EMPTY'
+
+        const result = scopedConnection
+          .prepare(
+            `UPDATE screening_encounters
+             SET status = 'VOID', void_reason = ?, updated_at = ?, record_version = record_version + 1
+             WHERE id = ? AND status = 'DRAFT' AND record_version = ?`
+          )
+          .run(reason, updatedAt, encounterId, expectedVersion)
+        return result.changes === 1 ? 'VOIDED' : 'VERSION_CONFLICT'
+      } catch (error) {
+        rethrowWrite(error)
+      }
     }
   }
   return Object.freeze(repository)
@@ -348,6 +390,7 @@ function readSummary(row: Record<string, unknown>): ManagedEncounterSummaryRecor
   return Object.freeze({
     id: parseEntityId(row['id']),
     patientId: parseEntityId(row['patient_id']),
+    screeningSessionId: parseEntityId(row['screening_session_id']),
     patientCode: parseStoredText(row['patient_code']),
     patientDisplayName: parseStoredText(row['patient_display_name']),
     dateOfBirth: parseNullableText(row['date_of_birth']),
@@ -356,7 +399,9 @@ function readSummary(row: Record<string, unknown>): ManagedEncounterSummaryRecor
     startedAt: parseUtcTimestamp(row['started_at']),
     completedAt: row['completed_at'] === null ? null : parseUtcTimestamp(row['completed_at']),
     noteCount: parseCount(row['note_count']),
-    openFlagCount: parseCount(row['open_flag_count'])
+    openFlagCount: parseCount(row['open_flag_count']),
+    recordVersion: parsePositiveInteger(row['record_version']),
+    hasRecordedData: parseBooleanInteger(row['has_recorded_data'])
   })
 }
 
@@ -464,6 +509,39 @@ function parsePositiveInteger(value: unknown): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1)
     throw new RepositoryDataIntegrityError()
   return value
+}
+function parseBooleanInteger(value: unknown): boolean {
+  if (value !== 0 && value !== 1) throw new RepositoryDataIntegrityError()
+  return value === 1
+}
+function hasRecordedData(
+  connection: DatabaseTransactionConnection,
+  encounterId: EntityId
+): boolean {
+  const row = connection
+    .prepare(
+      `SELECT (
+         EXISTS (SELECT 1 FROM screening_vitals_drafts WHERE encounter_id = ?)
+         OR EXISTS (SELECT 1 FROM lifestyle_drafts WHERE encounter_id = ?)
+         OR EXISTS (SELECT 1 FROM food_drafts WHERE encounter_id = ?)
+         OR EXISTS (SELECT 1 FROM otc_drafts WHERE encounter_id = ?)
+         OR EXISTS (SELECT 1 FROM blood_pressure_readings WHERE encounter_id = ?)
+         OR EXISTS (SELECT 1 FROM lifestyle_logs WHERE encounter_id = ?)
+         OR EXISTS (SELECT 1 FROM food_logs WHERE encounter_id = ?)
+         OR EXISTS (SELECT 1 FROM otc_medication_logs WHERE encounter_id = ?)
+       ) AS has_recorded_data`
+    )
+    .get(
+      encounterId,
+      encounterId,
+      encounterId,
+      encounterId,
+      encounterId,
+      encounterId,
+      encounterId,
+      encounterId
+    ) as { has_recorded_data?: unknown } | undefined
+  return parseBooleanInteger(row?.has_recorded_data)
 }
 function escapeLike(value: string): string {
   return value.replaceAll('%', '\\%').replaceAll('_', '\\_')

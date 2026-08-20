@@ -47,7 +47,10 @@ const ids = Object.freeze({
   flagAudit: '52000000-0000-4000-8000-000000000016',
   flagOutbox: '52000000-0000-4000-8000-000000000017',
   resolveAudit: '52000000-0000-4000-8000-000000000018',
-  resolveOutbox: '52000000-0000-4000-8000-000000000019'
+  resolveOutbox: '52000000-0000-4000-8000-000000000019',
+  draftVitals: '52000000-0000-4000-8000-000000000021',
+  voidAudit: '52000000-0000-4000-8000-000000000022',
+  voidOutbox: '52000000-0000-4000-8000-000000000023'
 })
 
 describe('screening encounter management service integration', () => {
@@ -135,6 +138,58 @@ describe('screening encounter management service integration', () => {
         readCount(connection, 'audit_log'),
         readCount(connection, 'sync_outbox')
       ]).toEqual(sideEffectsBefore)
+
+      const draftSearch = service.search({ query: 'draft', status: 'DRAFT', page: 1, pageSize: 25 })
+      expect(draftSearch).toMatchObject({
+        status: 'LOADED',
+        result: {
+          items: [
+            {
+              id: ids.draftEncounter,
+              screeningSessionId: ids.session,
+              recordVersion: 1,
+              hasRecordedData: false
+            }
+          ]
+        }
+      })
+
+      connection
+        .prepare(
+          `INSERT INTO screening_vitals_drafts
+             (id, encounter_id, status, weight_kg, waist_cm, notes, created_by, created_at,
+              updated_by, updated_at, row_version)
+           VALUES (?, ?, 'DRAFT', NULL, NULL, NULL, ?, ?, ?, ?, 1)`
+        )
+        .run(ids.draftVitals, ids.draftEncounter, ids.user, now, ids.user, now)
+      expect(
+        service.voidEmptyDraft(parseEntityId(ids.draftEncounter), 1, 'Created in error.')
+      ).toEqual({ status: 'ENCOUNTER_NOT_EMPTY' })
+      expect(readCount(connection, 'audit_log')).toBe(3)
+      expect(readCount(connection, 'sync_outbox')).toBe(3)
+
+      connection.prepare('DELETE FROM screening_vitals_drafts WHERE id = ?').run(ids.draftVitals)
+      expect(
+        service.voidEmptyDraft(parseEntityId(ids.draftEncounter), 1, 'Created in error.')
+      ).toEqual({ status: 'VOIDED', recordVersion: 2 })
+      expect(
+        connection
+          .prepare(
+            'SELECT status, void_reason, record_version FROM screening_encounters WHERE id = ?'
+          )
+          .get(ids.draftEncounter)
+      ).toEqual({ status: 'VOID', void_reason: 'Created in error.', record_version: 2 })
+      expect(readCount(connection, 'audit_log')).toBe(4)
+      expect(readCount(connection, 'sync_outbox')).toBe(4)
+      const voidMetadata = JSON.stringify({
+        audit: connection
+          .prepare('SELECT metadata_json FROM audit_log WHERE action = ?')
+          .get('SCREENING_ENCOUNTER_VOIDED'),
+        outbox: connection
+          .prepare('SELECT payload_json FROM sync_outbox WHERE operation = ?')
+          .get('SCREENING_ENCOUNTER_VOIDED')
+      })
+      expect(voidMetadata).not.toContain('Created in error')
     })
   })
 })
@@ -167,7 +222,9 @@ async function withService(
           ids.flagAudit,
           ids.flagOutbox,
           ids.resolveAudit,
-          ids.resolveOutbox
+          ids.resolveOutbox,
+          ids.voidAudit,
+          ids.voidOutbox
         ])
       ),
       clock: createUtcClock(() => later)
