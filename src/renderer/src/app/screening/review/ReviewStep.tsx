@@ -9,6 +9,7 @@ import {
   type LifestyleDraftState
 } from '../lifestyle/lifestyle-workspace-model'
 import type { OtcDraftState } from '../otc/otc-workspace-model'
+import type { ScreeningEncounterStatus } from '@shared/ipc'
 
 export interface ReviewVitalsReading {
   readonly sequenceNumber: number
@@ -32,11 +33,19 @@ export interface ReviewStepProps {
   readonly lifestyle: LifestyleDraftState
   readonly food: FoodDraftState
   readonly otc: OtcDraftState
+  readonly encounterStatus: ScreeningEncounterStatus
+  readonly completionState: {
+    readonly reviewConfirmed: boolean
+    readonly saveStatus: 'IDLE' | 'SAVING' | 'COMPLETED' | 'ERROR'
+    readonly statusMessage: string | null
+  }
   onBackToOtc(): void
+  onComplete(): void
   onEditVitals(): void
   onEditLifestyle(): void
   onEditFood(): void
   onEditOtc(): void
+  onReviewConfirmedChange(reviewConfirmed: boolean): void
 }
 
 export function ReviewStep({
@@ -44,14 +53,21 @@ export function ReviewStep({
   lifestyle,
   food,
   otc,
+  encounterStatus,
+  completionState,
   onBackToOtc,
+  onComplete,
   onEditVitals,
   onEditLifestyle,
   onEditFood,
-  onEditOtc
+  onEditOtc,
+  onReviewConfirmedChange
 }: ReviewStepProps): React.JSX.Element {
   const workBaseline =
     lifestyle.workspace === null ? null : getWorkBaselineForInterpretation(lifestyle.workspace)
+  const completed = encounterStatus === 'COMPLETED' || completionState.saveStatus === 'COMPLETED'
+  const saving = completionState.saveStatus === 'SAVING'
+  const reviewLocked = completed || saving
 
   return (
     <section
@@ -68,7 +84,7 @@ export function ReviewStep({
 
       <div className="review-grid">
         <article className="review-card">
-          <ReviewCardHeader title="Vitals" onEdit={onEditVitals} />
+          <ReviewCardHeader title="Vitals" disabled={reviewLocked} onEdit={onEditVitals} />
           <div className="review-table-wrap">
             <table className="review-table">
               <thead>
@@ -114,7 +130,11 @@ export function ReviewStep({
         </article>
 
         <article className="review-card">
-          <ReviewCardHeader title="Weekly lifestyle" onEdit={onEditLifestyle} />
+          <ReviewCardHeader
+            title="Weekly lifestyle"
+            disabled={reviewLocked}
+            onEdit={onEditLifestyle}
+          />
           <ul className="review-summary-list">
             <li>
               <strong>Alcohol:</strong> {getAlcoholCardSummary(lifestyle, true)}
@@ -226,7 +246,7 @@ export function ReviewStep({
         </article>
 
         <article className="review-card">
-          <ReviewCardHeader title="Food" onEdit={onEditFood} />
+          <ReviewCardHeader title="Food" disabled={reviewLocked} onEdit={onEditFood} />
           <p>
             <strong>Response:</strong> {formatFoodResponse(food.foodResponse)}
           </p>
@@ -244,7 +264,7 @@ export function ReviewStep({
         </article>
 
         <article className="review-card">
-          <ReviewCardHeader title="OTC medications" onEdit={onEditOtc} />
+          <ReviewCardHeader title="OTC medications" disabled={reviewLocked} onEdit={onEditOtc} />
           <p>
             <strong>Response:</strong> {formatOtcResponse(otc.otcResponse)}
           </p>
@@ -263,12 +283,44 @@ export function ReviewStep({
         </article>
       </div>
 
+      {completionState.statusMessage !== null ? (
+        <div
+          className={`screening-message${
+            completionState.saveStatus === 'ERROR' ? ' screening-message-alert' : ''
+          }`}
+          role={completionState.saveStatus === 'ERROR' ? 'alert' : 'status'}
+        >
+          {completionState.statusMessage}
+        </div>
+      ) : null}
+
+      <label className="review-confirmation">
+        <input
+          type="checkbox"
+          aria-label="I confirm the screening information has been reviewed."
+          checked={completionState.reviewConfirmed}
+          disabled={reviewLocked}
+          onChange={(event) => onReviewConfirmedChange(event.currentTarget.checked)}
+        />
+        <span>I confirm the screening information has been reviewed.</span>
+      </label>
+
       <div className="screening-encounter-actions">
-        <button className="button button-secondary" type="button" onClick={onBackToOtc}>
+        <button
+          className="button button-secondary"
+          type="button"
+          disabled={reviewLocked}
+          onClick={onBackToOtc}
+        >
           Previous
         </button>
-        <button className="button button-primary" type="button" disabled>
-          Complete screening
+        <button
+          className="button button-primary"
+          type="button"
+          disabled={!completionState.reviewConfirmed || reviewLocked}
+          onClick={onComplete}
+        >
+          {saving ? 'Completing...' : completed ? 'Screening complete' : 'Complete screening'}
         </button>
       </div>
     </section>
@@ -277,9 +329,11 @@ export function ReviewStep({
 
 function ReviewCardHeader({
   title,
+  disabled,
   onEdit
 }: {
   readonly title: string
+  readonly disabled: boolean
   onEdit(): void
 }): React.JSX.Element {
   return (
@@ -289,6 +343,7 @@ function ReviewCardHeader({
         className="button button-secondary review-edit-button"
         type="button"
         aria-label={`Edit ${title}`}
+        disabled={disabled}
         onClick={onEdit}
       >
         Edit

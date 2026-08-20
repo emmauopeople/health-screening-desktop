@@ -50,6 +50,8 @@ import type {
 } from './patient-contracts'
 import { createIpcResultSchema } from './result'
 import type {
+  ScreeningEncounterCompleteRequest,
+  ScreeningEncounterCompleteResult,
   ScreeningEncounterStartRequest,
   ScreeningEncounterStartResult,
   ScreeningVitalsCompleteStepResult,
@@ -165,6 +167,7 @@ export interface HealthScreeningApi {
   }
   screeningEncounters: {
     start(request: ScreeningEncounterStartRequest): Promise<ScreeningEncounterStartResult>
+    complete(request: ScreeningEncounterCompleteRequest): Promise<ScreeningEncounterCompleteResult>
     vitals: {
       getDraft(request: ScreeningVitalsGetDraftRequest): Promise<ScreeningVitalsGetDraftResult>
       saveDraft(request: ScreeningVitalsSaveDraftRequest): Promise<ScreeningVitalsSaveDraftResult>

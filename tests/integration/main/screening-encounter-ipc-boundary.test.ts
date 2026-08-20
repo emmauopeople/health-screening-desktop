@@ -255,6 +255,9 @@ async function withScreeningEncounterIpc(
         navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
         screeningEncounterStartService,
         screeningVitalsDraftService: createScreeningVitalsDraftService(),
+        screeningCompletionService: {
+          complete: vi.fn(() => ({ status: 'UNAVAILABLE' as const }))
+        },
         logger: createLogger()
       })
     })

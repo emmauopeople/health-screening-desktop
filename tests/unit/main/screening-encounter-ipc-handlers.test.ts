@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { createDevelopmentNavigationPolicy } from '@main/app/navigation-policy'
-import type { ScreeningEncounterStartService, ScreeningVitalsDraftService } from '@main/application'
+import type {
+  ScreeningCompletionService,
+  ScreeningEncounterStartService,
+  ScreeningVitalsDraftService
+} from '@main/application'
 import { parseEntityId } from '@main/foundation/entity-id'
 import type { UtcTimestamp } from '@main/foundation/utc-clock'
 import {
@@ -112,6 +116,17 @@ const vitalsSaveRequest = Object.freeze({
   waistCm: null,
   notes: null
 })
+const completeRequest = Object.freeze({
+  encounterId,
+  expectedEncounterVersion: 1,
+  expectedVitalsVersion: 2,
+  expectedLifestyleVersion: 3,
+  expectedFoodVersion: 4,
+  expectedOtcVersion: 5,
+  reviewConfirmed: true as const,
+  alcoholBaselineReviewConfirmedVersionId: null,
+  tobaccoBaselineReviewConfirmedVersionId: null
+})
 
 describe('screening encounter IPC handlers', () => {
   it('passes only the validated request to the HSD-029A service', async () => {
@@ -143,6 +158,41 @@ describe('screening encounter IPC handlers', () => {
     )
     expect(requestInspected).toBe(false)
     expect(harness.start).not.toHaveBeenCalled()
+  })
+
+  it('validates and maps completion without exposing internal fields', async () => {
+    const harness = createHarness()
+    harness.completion.mockReturnValue({
+      status: 'COMPLETED',
+      encounter: {
+        ...internalEncounter,
+        status: 'COMPLETED',
+        completedAt: timestamp as UtcTimestamp,
+        recordVersion: 2
+      }
+    })
+
+    await expect(harness.handlers.complete(createAllowedEvent(), completeRequest)).resolves.toEqual(
+      createIpcSuccess({
+        status: 'COMPLETED',
+        encounter: {
+          ...encounter,
+          status: 'COMPLETED',
+          completedAt: timestamp,
+          recordVersion: 2
+        }
+      })
+    )
+    expect(harness.completion).toHaveBeenCalledWith(completeRequest)
+
+    const invalidHarness = createHarness()
+    await expect(
+      invalidHarness.handlers.complete(createAllowedEvent(), {
+        ...completeRequest,
+        reviewConfirmed: false
+      })
+    ).resolves.toEqual(createIpcSuccess({ status: 'VALIDATION_FAILED' }))
+    expect(invalidHarness.completion).not.toHaveBeenCalled()
   })
 
   it('rejects malformed and over-posted requests without stripping forbidden fields', async () => {
@@ -380,6 +430,7 @@ interface HandlerHarness {
     readonly saveVitalsDraft: ReturnType<typeof vi.fn>
     readonly completeVitalsStep: ReturnType<typeof vi.fn>
   }
+  readonly completion: ReturnType<typeof vi.fn>
   readonly logger: TestLogger
 }
 
@@ -401,14 +452,18 @@ function createHarness({
     start
   } as unknown as ScreeningEncounterStartService
   const vitals = createScreeningVitalsDraftService()
+  const completion = vi.fn<ScreeningCompletionService['complete']>(() => ({
+    status: 'UNAVAILABLE'
+  }))
   const handlers = createScreeningEncounterIpcHandlers({
     navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
     screeningEncounterStartService,
     screeningVitalsDraftService: vitals as unknown as ScreeningVitalsDraftService,
+    screeningCompletionService: { complete: completion },
     logger
   })
 
-  return { handlers, start, vitals, logger }
+  return { handlers, start, vitals, completion, logger }
 }
 
 function createScreeningVitalsDraftService(): HandlerHarness['vitals'] {

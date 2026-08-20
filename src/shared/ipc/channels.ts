@@ -40,6 +40,7 @@ export const ipcChannels = {
   },
   screeningEncounters: {
     start: 'health-screening:screening-encounters:start',
+    complete: 'health-screening:screening-encounters:complete',
     getVitalsDraft: 'health-screening:screening-encounters:vitals:get-draft',
     saveVitalsDraft: 'health-screening:screening-encounters:vitals:save-draft',
     completeVitalsStep: 'health-screening:screening-encounters:vitals:complete-step',

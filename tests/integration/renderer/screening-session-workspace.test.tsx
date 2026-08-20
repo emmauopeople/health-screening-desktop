@@ -1086,6 +1086,30 @@ describe('screening patient entry workspace', () => {
     expect(mounted.container.querySelector('#screening-otc-step-title')).not.toBeNull()
     expect(inputByLabel(mounted, 'Medication name').value).toBe('Ibuprofen')
 
+    await clickButton(mounted, 'Continue')
+    const reviewConfirmation = inputByLabel(
+      mounted,
+      'I confirm the screening information has been reviewed.'
+    )
+    expect(reviewConfirmation.type).toBe('checkbox')
+    expect(buttonByText(mounted, 'Complete screening').disabled).toBe(true)
+    await clickInput(reviewConfirmation)
+    expect(buttonByText(mounted, 'Complete screening').disabled).toBe(false)
+
+    await clickButton(mounted, 'Complete screening')
+
+    expect(api.screeningEncounters.complete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        encounterId,
+        expectedEncounterVersion: 1,
+        reviewConfirmed: true
+      })
+    )
+    expect(text(mounted)).toContain('Screening completed.')
+    expect(buttonByText(mounted, 'Screening complete').disabled).toBe(true)
+    expect(buttonByText(mounted, 'Previous').disabled).toBe(true)
+    expect(buttonByText(mounted, 'Edit Vitals').disabled).toBe(true)
+
     await mounted.unmount()
   })
 
@@ -3565,6 +3589,20 @@ function createApi({
           })
         )
       ),
+      complete: vi.fn((request) =>
+        Promise.resolve(
+          createIpcSuccess({
+            status: 'COMPLETED',
+            encounter: {
+              ...encounterSummary(),
+              id: request.encounterId,
+              status: 'COMPLETED',
+              completedAt: baseTimestamp,
+              recordVersion: 2
+            }
+          })
+        )
+      ),
       vitals: {
         getDraft: vi.fn(() =>
           Promise.resolve(createIpcSuccess({ status: 'LOADED', draft: vitalsDraft }))
@@ -4228,6 +4266,14 @@ async function clickButton(mounted: MountedWorkspace, label: string): Promise<vo
 
   await act(async () => {
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await flushPromises()
+  })
+  await flushReact()
+}
+
+async function clickInput(input: HTMLInputElement): Promise<void> {
+  await act(async () => {
+    input.click()
     await flushPromises()
   })
   await flushReact()

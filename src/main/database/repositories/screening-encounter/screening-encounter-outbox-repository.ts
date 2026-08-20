@@ -66,7 +66,8 @@ const approvedOperationSchemas = new Map<
   ['SCREENING_LIFESTYLE_STEP_COMPLETED', 'screening-encounter.lifestyle-step-completed.v1'],
   ['SCREENING_LIFESTYLE_REOPENED', 'screening-encounter.lifestyle-reopened.v1'],
   ['SCREENING_FOOD_DRAFT_SAVED', 'screening-encounter.food-draft-saved.v1'],
-  ['SCREENING_OTC_DRAFT_SAVED', 'screening-encounter.otc-draft-saved.v1']
+  ['SCREENING_OTC_DRAFT_SAVED', 'screening-encounter.otc-draft-saved.v1'],
+  ['SCREENING_ENCOUNTER_COMPLETED', 'screening-encounter.completed.v1']
 ])
 const maximumPayloadDepth = 4
 const maximumPayloadNodes = 80

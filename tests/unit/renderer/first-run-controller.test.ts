@@ -580,6 +580,7 @@ function createApi({
     },
     screeningEncounters: {
       start: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+      complete: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
       vitals: {
         getDraft: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
         saveDraft: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),

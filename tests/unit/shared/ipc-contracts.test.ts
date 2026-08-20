@@ -105,6 +105,7 @@ describe('shared IPC contracts', () => {
       },
       screeningEncounters: {
         start: 'health-screening:screening-encounters:start',
+        complete: 'health-screening:screening-encounters:complete',
         getVitalsDraft: 'health-screening:screening-encounters:vitals:get-draft',
         saveVitalsDraft: 'health-screening:screening-encounters:vitals:save-draft',
         completeVitalsStep: 'health-screening:screening-encounters:vitals:complete-step',
@@ -137,9 +138,10 @@ describe('shared IPC contracts', () => {
     })
     const allChannels = flattenChannelStrings(ipcChannels)
 
-    expect(allChannels).toHaveLength(48)
+    expect(allChannels).toHaveLength(49)
     expect(new Set(allChannels).size).toBe(allChannels.length)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.lifestyle.complete)
+    expect(allChannels).toContain(ipcChannels.screeningEncounters.complete)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.lifestyle.reopen)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.food.getWorkspace)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.food.saveDraft)

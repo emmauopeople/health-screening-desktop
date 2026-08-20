@@ -204,6 +204,7 @@ export {
   type InsertScreeningSessionOutboxInput
 } from './screening-session'
 export {
+  createScreeningEncounterCompletionRepository,
   createScreeningEncounterOutboxRepository,
   createScreeningEncounterRepository,
   parseInsertCanonicalRootScreeningEncounterInput,
@@ -211,9 +212,16 @@ export {
   readDataProperties,
   parseScreeningEncounterRecordVersion,
   parseScreeningEncounterStatus,
+  type CompleteScreeningEncounterPersistenceInput,
+  type CompleteScreeningEncounterPersistenceResult,
   type InsertCanonicalRootScreeningEncounterInput,
   type InsertCanonicalRootScreeningEncounterResult,
   type InsertScreeningEncounterOutboxInput,
+  type ScreeningCompletionFoodLogInput,
+  type ScreeningCompletionLifestyleLogInput,
+  type ScreeningCompletionOtcLogInput,
+  type ScreeningCompletionVitalsReadingInput,
+  type ScreeningEncounterCompletionRepository,
   type ScreeningEncounterOutboxOperation,
   type ScreeningEncounterOutboxPayload,
   type ScreeningEncounterOutboxPayloadScalar,

@@ -14,6 +14,7 @@ export type ScreeningEncounterOutboxOperation =
   | 'SCREENING_LIFESTYLE_REOPENED'
   | 'SCREENING_FOOD_DRAFT_SAVED'
   | 'SCREENING_OTC_DRAFT_SAVED'
+  | 'SCREENING_ENCOUNTER_COMPLETED'
 export type ScreeningEncounterOutboxPayloadSchemaVersion =
   | 'screening-encounter.start.v1'
   | 'screening-encounter.vitals-draft-saved.v1'
@@ -26,6 +27,7 @@ export type ScreeningEncounterOutboxPayloadSchemaVersion =
   | 'screening-encounter.lifestyle-reopened.v1'
   | 'screening-encounter.food-draft-saved.v1'
   | 'screening-encounter.otc-draft-saved.v1'
+  | 'screening-encounter.completed.v1'
 
 export type ScreeningEncounterOutboxPayloadScalar = null | boolean | number | string
 export type ScreeningEncounterOutboxPayloadValue =

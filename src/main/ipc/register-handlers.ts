@@ -86,6 +86,7 @@ const activeApplicationRegistrations = new WeakMap<
 >()
 const screeningEncounterIpcChannels: readonly ScreeningEncounterIpcChannel[] = Object.freeze([
   ipcChannels.screeningEncounters.start,
+  ipcChannels.screeningEncounters.complete,
   ipcChannels.screeningEncounters.getVitalsDraft,
   ipcChannels.screeningEncounters.saveVitalsDraft,
   ipcChannels.screeningEncounters.completeVitalsStep
@@ -313,6 +314,7 @@ export function registerScreeningEncounterIpcHandlers(
     readonly [ScreeningEncounterIpcChannel, ApplicationIpcListener]
   > = [
     [ipcChannels.screeningEncounters.start, screeningEncounterHandlers.start],
+    [ipcChannels.screeningEncounters.complete, screeningEncounterHandlers.complete],
     [ipcChannels.screeningEncounters.getVitalsDraft, screeningEncounterHandlers.getVitalsDraft],
     [ipcChannels.screeningEncounters.saveVitalsDraft, screeningEncounterHandlers.saveVitalsDraft],
     [

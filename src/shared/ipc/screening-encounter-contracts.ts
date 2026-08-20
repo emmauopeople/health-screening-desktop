@@ -51,6 +51,18 @@ export const screeningEncounterStartRequestSchema = exactObject({
   patientId: screeningEncounterUuidSchema,
   screeningSessionId: screeningEncounterUuidSchema
 })
+export const screeningCompletionSectionSchema = z.enum(['VITALS', 'LIFESTYLE', 'FOOD', 'OTC'])
+export const screeningEncounterCompleteRequestSchema = exactObject({
+  encounterId: screeningEncounterUuidSchema,
+  expectedEncounterVersion: screeningVitalsPositiveIntegerSchema,
+  expectedVitalsVersion: screeningVitalsPositiveIntegerSchema,
+  expectedLifestyleVersion: screeningVitalsPositiveIntegerSchema,
+  expectedFoodVersion: screeningVitalsPositiveIntegerSchema,
+  expectedOtcVersion: screeningVitalsPositiveIntegerSchema,
+  reviewConfirmed: z.literal(true),
+  alcoholBaselineReviewConfirmedVersionId: screeningEncounterUuidSchema.nullable(),
+  tobaccoBaselineReviewConfirmedVersionId: screeningEncounterUuidSchema.nullable()
+})
 export const screeningVitalsGetDraftRequestSchema = exactObject({
   encounterId: screeningEncounterUuidSchema
 })
@@ -80,6 +92,17 @@ export const publicScreeningEncounterStartSummarySchema = z
     screeningSessionId: screeningEncounterUuidSchema,
     status: screeningEncounterStatusSchema,
     startedAt: screeningEncounterUtcTimestampSchema,
+    recordVersion: z.number().int().min(1).safe()
+  })
+  .strict()
+export const publicCompletedScreeningEncounterSummarySchema = z
+  .object({
+    id: screeningEncounterUuidSchema,
+    patientId: screeningEncounterUuidSchema,
+    screeningSessionId: screeningEncounterUuidSchema,
+    status: z.literal('COMPLETED'),
+    startedAt: screeningEncounterUtcTimestampSchema,
+    completedAt: screeningEncounterUtcTimestampSchema,
     recordVersion: z.number().int().min(1).safe()
   })
   .strict()
@@ -176,6 +199,27 @@ export const screeningVitalsCompleteStepSuccessDataSchema = z.discriminatedUnion
     .strict(),
   ...screeningVitalsControlledStatusSchemas
 ])
+export const screeningEncounterCompleteSuccessDataSchema = z.discriminatedUnion('status', [
+  z
+    .object({
+      status: z.literal('COMPLETED'),
+      encounter: publicCompletedScreeningEncounterSummarySchema
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal('ALREADY_COMPLETED'),
+      encounter: publicCompletedScreeningEncounterSummarySchema
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal('INCOMPLETE'),
+      section: screeningCompletionSectionSchema
+    })
+    .strict(),
+  ...screeningVitalsControlledStatusSchemas
+])
 
 export const screeningEncounterIpcErrorCodeSchema = z.enum([
   'IPC_FORBIDDEN',
@@ -226,11 +270,30 @@ export const screeningVitalsCompleteStepResultSchema = withSafeTransportPreproce
     screeningEncounterFailureSchema
   ])
 )
+export const screeningEncounterCompleteResultSchema = withSafeTransportPreprocess(
+  z.discriminatedUnion('ok', [
+    createIpcSuccessResultSchema(screeningEncounterCompleteSuccessDataSchema),
+    screeningEncounterFailureSchema
+  ])
+)
 
 export type ScreeningEncounterStatus = z.infer<typeof screeningEncounterStatusSchema>
 export type ScreeningEncounterStartRequest = z.infer<typeof screeningEncounterStartRequestSchema>
+export type ScreeningCompletionSection = z.infer<typeof screeningCompletionSectionSchema>
+export type ScreeningEncounterCompleteRequest = z.infer<
+  typeof screeningEncounterCompleteRequestSchema
+>
 export type PublicScreeningEncounterStartSummary = z.infer<
   typeof publicScreeningEncounterStartSummarySchema
+>
+export type PublicCompletedScreeningEncounterSummary = z.infer<
+  typeof publicCompletedScreeningEncounterSummarySchema
+>
+export type ScreeningEncounterCompleteSuccessData = z.infer<
+  typeof screeningEncounterCompleteSuccessDataSchema
+>
+export type ScreeningEncounterCompleteResult = z.infer<
+  typeof screeningEncounterCompleteResultSchema
 >
 export type ScreeningEncounterStartSuccessData = z.infer<
   typeof screeningEncounterStartSuccessDataSchema
