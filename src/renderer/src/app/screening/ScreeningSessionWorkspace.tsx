@@ -22,6 +22,7 @@ import type {
   PublicScreeningVitalsDraft,
   PublicScreeningSessionWorkspaceLocation,
   ScreeningEncounterIpcErrorCode,
+  ScreeningCompletionSection,
   ScreeningEncounterStartSuccessData,
   ScreeningVitalsCompleteStepSuccessData,
   ScreeningVitalsGetDraftSuccessData,
@@ -146,6 +147,7 @@ export interface PatientScreeningTab {
   readonly lifestyleDraft: LifestyleDraftState
   readonly foodDraft: FoodDraftState
   readonly otcDraft: OtcDraftState
+  readonly completionState: ScreeningCompletionState
 }
 
 type WorkspaceMessage = {
@@ -159,6 +161,13 @@ type VitalsMeasurementSite = 'RIGHT_ARM' | 'LEFT_ARM' | 'LEFT_LEG' | 'RIGHT_LEG'
 type VitalsPosition = 'LYING' | 'STANDING' | 'SITTING'
 type VitalsDraftLoadStatus = 'NOT_LOADED' | 'LOADING' | 'READY' | 'ERROR'
 type VitalsDraftSaveStatus = 'IDLE' | 'SAVING' | 'SAVED' | 'ERROR'
+type ScreeningCompletionSaveStatus = 'IDLE' | 'SAVING' | 'COMPLETED' | 'ERROR'
+
+interface ScreeningCompletionState {
+  readonly reviewConfirmed: boolean
+  readonly saveStatus: ScreeningCompletionSaveStatus
+  readonly statusMessage: string | null
+}
 
 interface PendingOtcSave {
   readonly requestId: number
@@ -254,6 +263,7 @@ export function ScreeningSessionWorkspace({
   const otcActivePatientRef = useRef<string | null>(null)
   const otcActiveEncounterRef = useRef<string | null>(null)
   const otcContextEpochRef = useRef(0)
+  const completionSaveRequestRef = useRef<Map<string, number>>(new Map())
   const workspaceEpochRef = useRef(0)
   const pendingPatientIdsRef = useRef<Set<string>>(new Set())
   const messageRef = useRef<HTMLDivElement | null>(null)
@@ -316,6 +326,7 @@ export function ScreeningSessionWorkspace({
     foodSaveRequestRef.current.clear()
     otcLoadRequestRef.current.clear()
     otcSaveRequestRef.current.clear()
+    completionSaveRequestRef.current.clear()
     for (const pendingSave of otcPendingSaveRef.current.values()) pendingSave.resolve()
     otcPendingSaveRef.current.clear()
     lifestyleActiveEncounterRef.current = null
@@ -502,6 +513,7 @@ export function ScreeningSessionWorkspace({
     const foodSaveRequests = foodSaveRequestRef.current
     const otcLoadRequests = otcLoadRequestRef.current
     const otcSaveRequests = otcSaveRequestRef.current
+    const completionSaveRequests = completionSaveRequestRef.current
     const otcPendingSaves = otcPendingSaveRef.current
 
     return () => {
@@ -515,6 +527,7 @@ export function ScreeningSessionWorkspace({
       foodSaveRequests.clear()
       otcLoadRequests.clear()
       otcSaveRequests.clear()
+      completionSaveRequests.clear()
       for (const pendingSave of otcPendingSaves.values()) pendingSave.resolve()
       otcPendingSaves.clear()
       lifestyleActiveEncounterRef.current = null
@@ -618,7 +631,8 @@ export function ScreeningSessionWorkspace({
                 vitalsDraft: createInitialVitalsDraft(),
                 lifestyleDraft: createInitialLifestyleDraftState(),
                 foodDraft: createInitialFoodDraftState(),
-                otcDraft: createInitialOtcDraftState()
+                otcDraft: createInitialOtcDraftState(),
+                completionState: createInitialScreeningCompletionState()
               }
             ]
           })
@@ -720,6 +734,23 @@ export function ScreeningSessionWorkspace({
         currentTabs.map((tab) =>
           tab.patient.id === patientId && tab.encounter.id === encounterId
             ? { ...tab, otcDraft: update(tab.otcDraft) }
+            : tab
+        )
+      )
+    },
+    [onOpenTabsChange]
+  )
+
+  const updateCompletionState = useCallback(
+    (
+      patientId: string,
+      encounterId: string,
+      update: (state: ScreeningCompletionState) => ScreeningCompletionState
+    ): void => {
+      onOpenTabsChange((currentTabs) =>
+        currentTabs.map((tab) =>
+          tab.patient.id === patientId && tab.encounter.id === encounterId
+            ? { ...tab, completionState: update(tab.completionState) }
             : tab
         )
       )
@@ -1935,6 +1966,127 @@ export function ScreeningSessionWorkspace({
     [requestOtcValidationFocus, saveOtcDraft, updateOtcDraft]
   )
 
+  const completeScreening = useCallback(
+    async (tab: PatientScreeningTab): Promise<void> => {
+      const { completionState, encounter, foodDraft, lifestyleDraft, otcDraft, patient } = tab
+      if (
+        completionState.saveStatus === 'SAVING' ||
+        completionState.saveStatus === 'COMPLETED' ||
+        encounter.status === 'COMPLETED'
+      ) {
+        return
+      }
+
+      const vitalsVersion = tab.vitalsDraft.expectedVersion
+      const lifestyleVersion = lifestyleDraft.workspace?.draft?.rowVersion ?? null
+      const foodVersion = foodDraft.workspace?.draft?.rowVersion ?? null
+      const otcVersion = otcDraft.workspace?.draft?.rowVersion ?? null
+
+      if (
+        !completionState.reviewConfirmed ||
+        vitalsVersion === null ||
+        lifestyleVersion === null ||
+        foodVersion === null ||
+        otcVersion === null
+      ) {
+        updateCompletionState(patient.id, encounter.id, (current) => ({
+          ...current,
+          saveStatus: 'ERROR',
+          statusMessage: completionState.reviewConfirmed
+            ? 'Return to the incomplete section before completing the screening.'
+            : 'Confirm that the screening information has been reviewed.'
+        }))
+        return
+      }
+
+      const requestId = (completionSaveRequestRef.current.get(encounter.id) ?? 0) + 1
+      completionSaveRequestRef.current.set(encounter.id, requestId)
+      updateCompletionState(patient.id, encounter.id, (current) => ({
+        ...current,
+        saveStatus: 'SAVING',
+        statusMessage: 'Completing screening...'
+      }))
+
+      try {
+        const result = await api.screeningEncounters.complete({
+          encounterId: encounter.id,
+          expectedEncounterVersion: encounter.recordVersion,
+          expectedVitalsVersion: vitalsVersion,
+          expectedLifestyleVersion: lifestyleVersion,
+          expectedFoodVersion: foodVersion,
+          expectedOtcVersion: otcVersion,
+          reviewConfirmed: true,
+          alcoholBaselineReviewConfirmedVersionId:
+            lifestyleDraft.alcoholBaselineReviewConfirmedVersionId,
+          tobaccoBaselineReviewConfirmedVersionId:
+            lifestyleDraft.tobaccoBaselineReviewConfirmedVersionId
+        })
+
+        if (
+          !mountedRef.current ||
+          completionSaveRequestRef.current.get(encounter.id) !== requestId
+        ) {
+          return
+        }
+
+        if (!result.ok) {
+          updateCompletionState(patient.id, encounter.id, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Screening could not be completed. Try again.'
+          }))
+          return
+        }
+
+        if (result.data.status === 'COMPLETED' || result.data.status === 'ALREADY_COMPLETED') {
+          const completedEncounter = result.data.encounter
+          onOpenTabsChange((currentTabs) =>
+            currentTabs.map((currentTab) =>
+              currentTab.patient.id === patient.id && currentTab.encounter.id === encounter.id
+                ? {
+                    ...currentTab,
+                    encounter: completedEncounter,
+                    completionState: {
+                      reviewConfirmed: true,
+                      saveStatus: 'COMPLETED',
+                      statusMessage: 'Screening completed.'
+                    }
+                  }
+                : currentTab
+            )
+          )
+          return
+        }
+
+        const statusMessage =
+          result.data.status === 'INCOMPLETE'
+            ? `${getCompletionSectionLabel(result.data.section)} needs attention before the screening can be completed.`
+            : result.data.status === 'VERSION_CONFLICT'
+              ? 'Screening information changed. Review the latest information and try again.'
+              : result.data.status === 'ENCOUNTER_NOT_EDITABLE'
+                ? 'This screening is no longer editable.'
+                : 'Screening could not be completed. Try again.'
+        updateCompletionState(patient.id, encounter.id, (current) => ({
+          ...current,
+          saveStatus: 'ERROR',
+          statusMessage
+        }))
+      } catch {
+        if (
+          mountedRef.current &&
+          completionSaveRequestRef.current.get(encounter.id) === requestId
+        ) {
+          updateCompletionState(patient.id, encounter.id, (current) => ({
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Screening could not be completed. Try again.'
+          }))
+        }
+      }
+    },
+    [api, mountedRef, onOpenTabsChange, updateCompletionState]
+  )
+
   const reopenLifestyle = useCallback(
     async (patientId: string, encounterId: string, draft: LifestyleDraftState): Promise<void> => {
       if (
@@ -2199,6 +2351,8 @@ export function ScreeningSessionWorkspace({
               onSaveOtcDraft={saveOtcDraft}
               onContinueOtc={continueOtc}
               onUpdateOtcDraft={updateOtcDraft}
+              onCompleteScreening={completeScreening}
+              onUpdateCompletionState={updateCompletionState}
             />
           )}
         </>
@@ -2444,7 +2598,9 @@ function NewScreeningWorkspace({
   onLoadOtcWorkspace,
   onSaveOtcDraft,
   onContinueOtc,
-  onUpdateOtcDraft
+  onUpdateOtcDraft,
+  onCompleteScreening,
+  onUpdateCompletionState
 }: {
   readonly activeTab: PatientScreeningTab | null
   readonly location: PublicScreeningSessionWorkspaceLocation
@@ -2490,6 +2646,12 @@ function NewScreeningWorkspace({
     patientId: string,
     encounterId: string,
     update: (draft: OtcDraftState) => OtcDraftState
+  ): void
+  onCompleteScreening(tab: PatientScreeningTab): void
+  onUpdateCompletionState(
+    patientId: string,
+    encounterId: string,
+    update: (state: ScreeningCompletionState) => ScreeningCompletionState
   ): void
 }): React.JSX.Element {
   return (
@@ -2597,6 +2759,10 @@ function NewScreeningWorkspace({
             }
             onUpdateOtcDraft={(update) =>
               onUpdateOtcDraft(activeTab.patient.id, activeTab.encounter.id, update)
+            }
+            onCompleteScreening={() => onCompleteScreening(activeTab)}
+            onUpdateCompletionState={(update) =>
+              onUpdateCompletionState(activeTab.patient.id, activeTab.encounter.id, update)
             }
           />
         </div>
@@ -2743,7 +2909,9 @@ function CurrentEncounterPanel({
   onLoadOtcWorkspace,
   onSaveOtcDraft,
   onContinueOtc,
-  onUpdateOtcDraft
+  onUpdateOtcDraft,
+  onCompleteScreening,
+  onUpdateCompletionState
 }: {
   readonly location: PublicScreeningSessionWorkspaceLocation
   readonly session: PublicCurrentScreeningSession
@@ -2766,6 +2934,10 @@ function CurrentEncounterPanel({
   onSaveOtcDraft(): void
   onContinueOtc(): void
   onUpdateOtcDraft(update: (draft: OtcDraftState) => OtcDraftState): void
+  onCompleteScreening(): void
+  onUpdateCompletionState(
+    update: (state: ScreeningCompletionState) => ScreeningCompletionState
+  ): void
 }): React.JSX.Element {
   const displayName = formatPatientName(tab.patient)
   const activeStepIndex = getActiveStepIndex(tab.vitalsDraft.activeStep)
@@ -2904,19 +3076,35 @@ function CurrentEncounterPanel({
           lifestyle={tab.lifestyleDraft}
           food={tab.foodDraft}
           otc={tab.otcDraft}
+          encounterStatus={tab.encounter.status}
+          completionState={tab.completionState}
+          onReviewConfirmedChange={(reviewConfirmed) => {
+            onUpdateCompletionState((state) => ({
+              ...state,
+              reviewConfirmed,
+              saveStatus: 'IDLE',
+              statusMessage: null
+            }))
+          }}
+          onComplete={onCompleteScreening}
           onEditVitals={() => {
+            onUpdateCompletionState(resetScreeningCompletionReview)
             onUpdateVitalsDraft((draft) => ({ ...draft, activeStep: 'VITALS' }))
           }}
           onEditLifestyle={() => {
+            onUpdateCompletionState(resetScreeningCompletionReview)
             onUpdateVitalsDraft((draft) => ({ ...draft, activeStep: 'LIFESTYLE' }))
           }}
           onEditFood={() => {
+            onUpdateCompletionState(resetScreeningCompletionReview)
             onUpdateVitalsDraft((draft) => ({ ...draft, activeStep: 'FOOD' }))
           }}
           onEditOtc={() => {
+            onUpdateCompletionState(resetScreeningCompletionReview)
             onUpdateVitalsDraft((draft) => ({ ...draft, activeStep: 'OTC' }))
           }}
           onBackToOtc={() => {
+            onUpdateCompletionState(resetScreeningCompletionReview)
             onUpdateVitalsDraft((draft) => ({ ...draft, activeStep: 'OTC' }))
           }}
         />
@@ -3364,6 +3552,33 @@ function createInitialVitalsDraft(): VitalsDraft {
     ...createReadyEmptyVitalsDraft(),
     loadStatus: 'NOT_LOADED'
   }
+}
+
+function createInitialScreeningCompletionState(): ScreeningCompletionState {
+  return {
+    reviewConfirmed: false,
+    saveStatus: 'IDLE',
+    statusMessage: null
+  }
+}
+
+function resetScreeningCompletionReview(state: ScreeningCompletionState): ScreeningCompletionState {
+  if (state.saveStatus === 'COMPLETED') return state
+  return {
+    reviewConfirmed: false,
+    saveStatus: 'IDLE',
+    statusMessage: null
+  }
+}
+
+function getCompletionSectionLabel(section: ScreeningCompletionSection): string {
+  return section === 'VITALS'
+    ? 'Vitals'
+    : section === 'LIFESTYLE'
+      ? 'Lifestyle'
+      : section === 'FOOD'
+        ? 'Food'
+        : 'OTC'
 }
 
 function createReadyEmptyVitalsDraft(): VitalsDraft {

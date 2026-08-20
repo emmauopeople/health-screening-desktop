@@ -1,4 +1,9 @@
 export { createScreeningEncounterStartService } from './screening-encounter-start-service'
+export { createScreeningCompletionService } from './screening-completion-service'
+export {
+  createProductionScreeningCompletionService,
+  type ProductionScreeningCompletionServiceOptions
+} from './screening-completion-service-composition'
 export {
   createProductionScreeningEncounterStartService,
   type ProductionScreeningEncounterStartServiceOptions
@@ -23,6 +28,15 @@ export {
   createProductionScreeningLifestyleService,
   type ProductionScreeningLifestyleServiceOptions
 } from './screening-lifestyle-service-composition'
+export type {
+  CompleteScreeningRequest,
+  CompleteScreeningResult,
+  CompletedScreeningSummary,
+  ScreeningCompletionControlledStatus,
+  ScreeningCompletionSection,
+  ScreeningCompletionService,
+  ScreeningCompletionServiceDependencies
+} from './screening-completion-service-types'
 export type {
   ScreeningEncounterStartService,
   ScreeningEncounterStartServiceDependencies,

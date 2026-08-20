@@ -1,3 +1,13 @@
+export { createScreeningEncounterCompletionRepository } from './screening-encounter-completion-repository'
+export type {
+  CompleteScreeningEncounterPersistenceInput,
+  CompleteScreeningEncounterPersistenceResult,
+  ScreeningCompletionFoodLogInput,
+  ScreeningCompletionLifestyleLogInput,
+  ScreeningCompletionOtcLogInput,
+  ScreeningCompletionVitalsReadingInput,
+  ScreeningEncounterCompletionRepository
+} from './screening-encounter-completion-types'
 export { createScreeningEncounterOutboxRepository } from './screening-encounter-outbox-repository'
 export type {
   InsertScreeningEncounterOutboxInput,

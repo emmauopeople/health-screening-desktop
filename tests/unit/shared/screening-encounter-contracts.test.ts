@@ -5,12 +5,15 @@ import {
   createScreeningEncounterIpcFailure,
   createScreeningEncounterStartStatusResult,
   ipcChannels,
+  screeningEncounterCompleteRequestSchema,
+  screeningEncounterCompleteResultSchema,
   screeningEncounterStartRequestSchema,
   screeningEncounterStartResultSchema,
   screeningEncounterStartSuccessDataSchema,
   screeningVitalsDraftReadingRequestSchema,
   screeningVitalsDraftReadingSchema,
   type PublicScreeningEncounterStartSummary,
+  type ScreeningEncounterCompleteRequest,
   type ScreeningEncounterStartRequest
 } from '@shared/ipc'
 
@@ -18,6 +21,7 @@ const patientId = '11111111-1111-4111-8111-111111111111'
 const screeningSessionId = '22222222-2222-4222-8222-222222222222'
 const encounterId = '33333333-3333-4333-8333-333333333333'
 const startedAt = '2026-08-06T12:00:00.000Z'
+const completedAt = '2026-08-06T13:00:00.000Z'
 
 const validRequest: ScreeningEncounterStartRequest = {
   patientId,
@@ -33,7 +37,63 @@ const encounter: PublicScreeningEncounterStartSummary = {
   recordVersion: 1
 }
 
+const completeRequest: ScreeningEncounterCompleteRequest = {
+  encounterId,
+  expectedEncounterVersion: 1,
+  expectedVitalsVersion: 2,
+  expectedLifestyleVersion: 3,
+  expectedFoodVersion: 4,
+  expectedOtcVersion: 5,
+  reviewConfirmed: true,
+  alcoholBaselineReviewConfirmedVersionId: null,
+  tobaccoBaselineReviewConfirmedVersionId: null
+}
+
 describe('screening encounter IPC contracts', () => {
+  it('keeps completion explicit, versioned, and free of renderer-authored decisions', () => {
+    expect(screeningEncounterCompleteRequestSchema.parse(completeRequest)).toEqual(completeRequest)
+
+    for (const request of [
+      { ...completeRequest, reviewConfirmed: false },
+      { ...completeRequest, expectedFoodVersion: 0 },
+      { ...completeRequest, referralDecision: 'REFER' },
+      { ...completeRequest, protocolAction: 'COMPLETE' },
+      { ...completeRequest, completedAt },
+      { ...completeRequest, actorId: patientId }
+    ]) {
+      expect(screeningEncounterCompleteRequestSchema.safeParse(request).success).toBe(false)
+    }
+  })
+
+  it('exposes only the completed encounter summary and controlled completion statuses', () => {
+    const completedEncounter = {
+      ...encounter,
+      status: 'COMPLETED' as const,
+      completedAt,
+      recordVersion: 2
+    }
+
+    expect(
+      screeningEncounterCompleteResultSchema.parse(
+        createIpcSuccess({ status: 'COMPLETED', encounter: completedEncounter })
+      )
+    ).toEqual(createIpcSuccess({ status: 'COMPLETED', encounter: completedEncounter }))
+    expect(
+      screeningEncounterCompleteResultSchema.parse(
+        createIpcSuccess({ status: 'INCOMPLETE', section: 'LIFESTYLE' })
+      )
+    ).toEqual(createIpcSuccess({ status: 'INCOMPLETE', section: 'LIFESTYLE' }))
+
+    expect(
+      screeningEncounterCompleteResultSchema.safeParse(
+        createIpcSuccess({
+          status: 'COMPLETED',
+          encounter: { ...completedEncounter, decisionJson: '{}', referralId: patientId }
+        })
+      ).success
+    ).toBe(false)
+  })
+
   it('enforces the Vitals whole-number bounds while allowing blank draft fields', () => {
     const baseReading = {
       id: null,

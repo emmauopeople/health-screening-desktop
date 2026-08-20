@@ -3,6 +3,8 @@ import {
   ipcChannels,
   screeningEncounterStartRequestSchema,
   screeningEncounterStartResultSchema,
+  screeningEncounterCompleteRequestSchema,
+  screeningEncounterCompleteResultSchema,
   screeningVitalsCompleteStepResultSchema,
   screeningVitalsGetDraftRequestSchema,
   screeningVitalsGetDraftResultSchema,
@@ -10,6 +12,8 @@ import {
   screeningVitalsSaveDraftResultSchema,
   type ScreeningEncounterStartRequest,
   type ScreeningEncounterStartResult,
+  type ScreeningEncounterCompleteRequest,
+  type ScreeningEncounterCompleteResult,
   type ScreeningVitalsCompleteStepResult,
   type ScreeningVitalsGetDraftRequest,
   type ScreeningVitalsGetDraftResult,
@@ -25,6 +29,7 @@ import type { IpcInvoke } from './authentication-api'
 
 export interface ScreeningEncounterApi {
   start(request: ScreeningEncounterStartRequest): Promise<ScreeningEncounterStartResult>
+  complete(request: ScreeningEncounterCompleteRequest): Promise<ScreeningEncounterCompleteResult>
   vitals: {
     getDraft(request: ScreeningVitalsGetDraftRequest): Promise<ScreeningVitalsGetDraftResult>
     saveDraft(request: ScreeningVitalsSaveDraftRequest): Promise<ScreeningVitalsSaveDraftResult>
@@ -41,6 +46,8 @@ export function createScreeningEncounterApi(invoke: IpcInvoke): ScreeningEncount
   return Object.freeze({
     start: (request: ScreeningEncounterStartRequest) =>
       invokeScreeningEncounterStart({ invoke, request }),
+    complete: (request: ScreeningEncounterCompleteRequest) =>
+      invokeScreeningEncounterComplete({ invoke, request }),
     vitals: Object.freeze({
       getDraft: (request: ScreeningVitalsGetDraftRequest) =>
         invokeVitalsGetDraft({ invoke, request }),
@@ -53,6 +60,31 @@ export function createScreeningEncounterApi(invoke: IpcInvoke): ScreeningEncount
     food: createScreeningFoodApi(invoke),
     otc: createScreeningOtcApi(invoke)
   })
+
+  async function invokeScreeningEncounterComplete({
+    invoke,
+    request
+  }: {
+    readonly invoke: IpcInvoke
+    readonly request: ScreeningEncounterCompleteRequest
+  }): Promise<ScreeningEncounterCompleteResult> {
+    const requestResult = safeParseIpcValue(screeningEncounterCompleteRequestSchema, request)
+
+    if (!requestResult.success) {
+      return deepFreeze(createIpcSuccess({ status: 'VALIDATION_FAILED' as const }))
+    }
+
+    try {
+      const response = await invoke(ipcChannels.screeningEncounters.complete, requestResult.data)
+      const result = safeParseIpcValue(screeningEncounterCompleteResultSchema, response)
+
+      return deepFreeze(
+        result.success ? result.data : createIpcSuccess({ status: 'UNAVAILABLE' as const })
+      )
+    } catch {
+      return deepFreeze(createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+    }
+  }
 }
 
 async function invokeScreeningEncounterStart({

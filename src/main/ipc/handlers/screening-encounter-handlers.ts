@@ -4,6 +4,8 @@ import type { NavigationPolicy } from '@main/app/navigation-policy'
 import type {
   ScreeningEncounterStartService,
   ScreeningEncounterStartSummary,
+  ScreeningCompletionService,
+  CompleteScreeningResult as InternalCompleteScreeningResult,
   ScreeningVitalsDraftService,
   StartScreeningEncounterResult as InternalStartScreeningEncounterResult,
   VitalsDraftSummary
@@ -18,6 +20,8 @@ import {
   createScreeningVitalsGetDraftLoadedResult,
   ipcChannels,
   publicScreeningVitalsDraftSchema,
+  screeningEncounterCompleteRequestSchema,
+  screeningEncounterCompleteResultSchema,
   screeningEncounterStartRequestSchema,
   screeningEncounterStartResultSchema,
   screeningVitalsCompleteStepResultSchema,
@@ -26,11 +30,14 @@ import {
   screeningVitalsSaveDraftRequestSchema,
   screeningVitalsSaveDraftResultSchema,
   type PublicScreeningEncounterStartSummary,
+  type PublicCompletedScreeningEncounterSummary,
   type PublicScreeningVitalsDraft,
   type ScreeningEncounterIpcChannel,
   type ScreeningEncounterIpcErrorCode,
   type ScreeningEncounterStartRequest,
   type ScreeningEncounterStartResult,
+  type ScreeningEncounterCompleteRequest,
+  type ScreeningEncounterCompleteResult,
   type ScreeningVitalsCompleteStepResult,
   type ScreeningVitalsGetDraftRequest,
   type ScreeningVitalsGetDraftResult,
@@ -46,12 +53,17 @@ export interface ScreeningEncounterIpcOperationalLogger {
 export interface ScreeningEncounterIpcHandlerDependencies {
   readonly navigationPolicy: NavigationPolicy
   readonly screeningEncounterStartService: ScreeningEncounterStartService
+  readonly screeningCompletionService: ScreeningCompletionService
   readonly screeningVitalsDraftService: ScreeningVitalsDraftService
   readonly logger?: ScreeningEncounterIpcOperationalLogger
 }
 
 export interface ScreeningEncounterIpcHandlers {
   start(event: IpcSenderValidationEvent, request: unknown): Promise<ScreeningEncounterStartResult>
+  complete(
+    event: IpcSenderValidationEvent,
+    request: unknown
+  ): Promise<ScreeningEncounterCompleteResult>
   getVitalsDraft(
     event: IpcSenderValidationEvent,
     request: unknown
@@ -69,6 +81,7 @@ export interface ScreeningEncounterIpcHandlers {
 export function createScreeningEncounterIpcHandlers({
   navigationPolicy,
   screeningEncounterStartService,
+  screeningCompletionService,
   screeningVitalsDraftService,
   logger = console
 }: ScreeningEncounterIpcHandlerDependencies): ScreeningEncounterIpcHandlers {
@@ -117,6 +130,50 @@ export function createScreeningEncounterIpcHandlers({
           error
         )
         return freezeIpcResult(createScreeningEncounterStartStatusResult('UNAVAILABLE'))
+      }
+    },
+
+    async complete(
+      event: IpcSenderValidationEvent,
+      request: unknown
+    ): Promise<ScreeningEncounterCompleteResult> {
+      if (!isIpcSenderAllowed(event, navigationPolicy)) {
+        const failure = createScreeningEncounterIpcFailure('IPC_FORBIDDEN')
+        logScreeningEncounterIpcFailure(
+          logger,
+          ipcChannels.screeningEncounters.complete,
+          'IPC_FORBIDDEN'
+        )
+        return freezeIpcResult(failure) as ScreeningEncounterCompleteResult
+      }
+
+      const requestResult = safeParseIpcValue(screeningEncounterCompleteRequestSchema, request)
+      if (!requestResult.success) {
+        return freezeIpcResult(createIpcSuccess({ status: 'VALIDATION_FAILED' as const }))
+      }
+
+      try {
+        const result = mapCompleteScreeningResult(
+          screeningCompletionService.complete(toInternalCompleteRequest(requestResult.data))
+        )
+        const resultEnvelope = safeParseIpcValue(screeningEncounterCompleteResultSchema, result)
+        if (!resultEnvelope.success) {
+          logScreeningEncounterIpcFailure(
+            logger,
+            ipcChannels.screeningEncounters.complete,
+            'INTERNAL_ERROR'
+          )
+          return freezeIpcResult(createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+        }
+        return freezeIpcResult(resultEnvelope.data)
+      } catch (error) {
+        logScreeningEncounterIpcFailure(
+          logger,
+          ipcChannels.screeningEncounters.complete,
+          'INTERNAL_ERROR',
+          error
+        )
+        return freezeIpcResult(createIpcSuccess({ status: 'UNAVAILABLE' as const }))
       }
     },
 
@@ -276,6 +333,24 @@ function toInternalStartRequest(
   })
 }
 
+function toInternalCompleteRequest(
+  request: ScreeningEncounterCompleteRequest
+): Parameters<ScreeningCompletionService['complete']>[0] {
+  return Object.freeze({
+    encounterId: request.encounterId as EntityId,
+    expectedEncounterVersion: request.expectedEncounterVersion,
+    expectedVitalsVersion: request.expectedVitalsVersion,
+    expectedLifestyleVersion: request.expectedLifestyleVersion,
+    expectedFoodVersion: request.expectedFoodVersion,
+    expectedOtcVersion: request.expectedOtcVersion,
+    reviewConfirmed: true,
+    alcoholBaselineReviewConfirmedVersionId:
+      request.alcoholBaselineReviewConfirmedVersionId as EntityId | null,
+    tobaccoBaselineReviewConfirmedVersionId:
+      request.tobaccoBaselineReviewConfirmedVersionId as EntityId | null
+  })
+}
+
 function toInternalGetVitalsRequest(
   request: ScreeningVitalsGetDraftRequest
 ): Parameters<ScreeningVitalsDraftService['getVitalsDraft']>[0] {
@@ -337,6 +412,35 @@ function mapStartResult(
     default:
       throw new Error('Unexpected screening-encounter start result.')
   }
+}
+
+function mapCompleteScreeningResult(
+  result: InternalCompleteScreeningResult
+): ScreeningEncounterCompleteResult {
+  if (result.status === 'COMPLETED' || result.status === 'ALREADY_COMPLETED') {
+    return createIpcSuccess({
+      status: result.status,
+      encounter: toPublicCompletedSummary(result.encounter)
+    }) as ScreeningEncounterCompleteResult
+  }
+  if (result.status === 'INCOMPLETE') {
+    return createIpcSuccess({ status: 'INCOMPLETE', section: result.section })
+  }
+  return createIpcSuccess({ status: result.status }) as ScreeningEncounterCompleteResult
+}
+
+function toPublicCompletedSummary(
+  encounter: Extract<InternalCompleteScreeningResult, { status: 'COMPLETED' }>['encounter']
+): PublicCompletedScreeningEncounterSummary {
+  return Object.freeze({
+    id: encounter.id,
+    patientId: encounter.patientId,
+    screeningSessionId: encounter.screeningSessionId,
+    status: 'COMPLETED',
+    startedAt: encounter.startedAt,
+    completedAt: encounter.completedAt,
+    recordVersion: encounter.recordVersion
+  })
 }
 
 function toPublicStartSummary(

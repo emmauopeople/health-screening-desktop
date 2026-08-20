@@ -20,6 +20,7 @@ import {
   createProductionPatientDemographicAmendmentService,
   createProductionPatientRegistryService,
   createProductionScreeningEncounterStartService,
+  createProductionScreeningCompletionService,
   createProductionScreeningFoodService,
   createProductionScreeningLifestyleService,
   createProductionScreeningOtcService,
@@ -155,6 +156,13 @@ export function startApplicationLifecycle(): void {
         installationLocationService,
         logger: console
       })
+      const screeningCompletionService = createProductionScreeningCompletionService({
+        connection: databaseRuntime.getConnection(),
+        authenticationSessionService,
+        currentScreeningSessionService,
+        installationLocationService,
+        logger: console
+      })
       const locationRepository = createLocationRepository(databaseRuntime.getConnection())
       const authenticationSessionPublisher = createAuthenticationSessionPublisher({
         navigationPolicy,
@@ -194,6 +202,7 @@ export function startApplicationLifecycle(): void {
         screeningEncounters: {
           navigationPolicy,
           screeningEncounterStartService,
+          screeningCompletionService,
           screeningVitalsDraftService,
           logger: console
         },

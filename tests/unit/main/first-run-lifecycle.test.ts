@@ -55,7 +55,7 @@ describe('first-run IPC lifecycle and scope', () => {
     expect(lifecycle).toContain('patientRegistryService,')
     expect(lifecycle).toContain('patientDemographicAmendmentService,')
     expect(lifecycle).toContain('patientAcknowledgmentService,')
-    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(14)
+    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(15)
   })
 
   it('composes screening-session IPC services from the initialized database runtime', () => {
@@ -87,7 +87,7 @@ describe('first-run IPC lifecycle and scope', () => {
     expect(lifecycle).toContain('screeningSessionService,')
     expect(lifecycle).toContain('currentScreeningSessionService,')
     expect(lifecycle).toContain('screeningSessionWorkspaceContextService,')
-    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(14)
+    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(15)
   })
 
   it('composes installation-settings IPC services from the initialized database runtime', () => {
@@ -127,6 +127,7 @@ describe('first-run IPC lifecycle and scope', () => {
     expect(lifecycle).toContain('createProductionScreeningEncounterStartService')
     expect(lifecycle).toContain('createProductionScreeningVitalsDraftService')
     expect(lifecycle).toContain('createProductionScreeningFoodService')
+    expect(lifecycle).toContain('createProductionScreeningCompletionService')
     expect(lifecycle.indexOf('databaseRuntime.initialize()')).toBeLessThan(
       lifecycle.indexOf(serviceStatement)
     )
@@ -142,6 +143,7 @@ describe('first-run IPC lifecycle and scope', () => {
     expect(lifecycle).toContain('authenticationSessionService,')
     expect(lifecycle).toContain('screeningEncounterStartService,')
     expect(lifecycle).toContain('screeningVitalsDraftService,')
+    expect(lifecycle).toContain('screeningCompletionService,')
     expect(lifecycle).toContain('screeningFood: {')
     expect(lifecycle).toContain('screeningFoodService,')
   })

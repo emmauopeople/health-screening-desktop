@@ -3124,6 +3124,12 @@ h1 {
   font-weight: 800;
 }
 
+.review-confirmation {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 @media (max-width: 1100px) {
   .review-grid {
     grid-template-columns: 1fr;

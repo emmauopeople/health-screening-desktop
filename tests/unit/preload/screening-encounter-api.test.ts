@@ -8,6 +8,7 @@ import {
   ipcChannels,
   type PublicScreeningEncounterStartSummary,
   type PublicScreeningVitalsDraft,
+  type ScreeningEncounterCompleteRequest,
   type ScreeningEncounterStartRequest,
   type ScreeningVitalsSaveDraftRequest
 } from '@shared/ipc'
@@ -74,6 +75,17 @@ const vitalsSaveRequest: ScreeningVitalsSaveDraftRequest = {
   waistCm: null,
   notes: null
 }
+const completeRequest: ScreeningEncounterCompleteRequest = {
+  encounterId,
+  expectedEncounterVersion: 1,
+  expectedVitalsVersion: 2,
+  expectedLifestyleVersion: 3,
+  expectedFoodVersion: 4,
+  expectedOtcVersion: 5,
+  reviewConfirmed: true,
+  alcoholBaselineReviewConfirmedVersionId: null,
+  tobaccoBaselineReviewConfirmedVersionId: null
+}
 
 describe('preload screening-encounter API', () => {
   it('exposes exactly the frozen screeningEncounters methods', () => {
@@ -81,6 +93,7 @@ describe('preload screening-encounter API', () => {
 
     expect(Object.keys(api.screeningEncounters)).toEqual([
       'start',
+      'complete',
       'vitals',
       'lifestyle',
       'food',
@@ -128,6 +141,30 @@ describe('preload screening-encounter API', () => {
     expect(invoke).not.toHaveBeenCalledWith('attacker:channel', expect.anything())
     expect(rendererRequest).toEqual(request)
     expect(Object.isFrozen(rendererRequest)).toBe(false)
+  })
+
+  it('invokes completion only after local strict validation', async () => {
+    const response = createIpcSuccess({
+      status: 'COMPLETED' as const,
+      encounter: {
+        ...encounter,
+        status: 'COMPLETED' as const,
+        completedAt: startedAt,
+        recordVersion: 2
+      }
+    })
+    const invoke = vi.fn().mockResolvedValue(response)
+    const api = createHealthScreeningApi(invoke)
+
+    await expect(api.screeningEncounters.complete(completeRequest)).resolves.toEqual(response)
+    expect(invoke).toHaveBeenCalledWith(ipcChannels.screeningEncounters.complete, completeRequest)
+
+    const invalidResult = await api.screeningEncounters.complete({
+      ...completeRequest,
+      reviewConfirmed: false
+    } as unknown as ScreeningEncounterCompleteRequest)
+    expect(invalidResult).toEqual(createIpcSuccess({ status: 'VALIDATION_FAILED' }))
+    expect(invoke).toHaveBeenCalledOnce()
   })
 
   it('rejects invalid and authority-bearing requests locally without IPC invocation', async () => {
