@@ -2887,7 +2887,6 @@ function CurrentEncounterPanel({
         />
       ) : (
         <ReviewStep
-          protocolVersionId={session.protocolVersionId}
           vitals={{
             readings: tab.vitalsDraft.readings.map((reading, index) => ({
               sequenceNumber: index + 1,
@@ -2905,6 +2904,18 @@ function CurrentEncounterPanel({
           lifestyle={tab.lifestyleDraft}
           food={tab.foodDraft}
           otc={tab.otcDraft}
+          onEditVitals={() => {
+            onUpdateVitalsDraft((draft) => ({ ...draft, activeStep: 'VITALS' }))
+          }}
+          onEditLifestyle={() => {
+            onUpdateVitalsDraft((draft) => ({ ...draft, activeStep: 'LIFESTYLE' }))
+          }}
+          onEditFood={() => {
+            onUpdateVitalsDraft((draft) => ({ ...draft, activeStep: 'FOOD' }))
+          }}
+          onEditOtc={() => {
+            onUpdateVitalsDraft((draft) => ({ ...draft, activeStep: 'OTC' }))
+          }}
           onBackToOtc={() => {
             onUpdateVitalsDraft((draft) => ({ ...draft, activeStep: 'OTC' }))
           }}

@@ -28,21 +28,27 @@ export interface ReviewVitals {
 }
 
 export interface ReviewStepProps {
-  readonly protocolVersionId: string
   readonly vitals: ReviewVitals
   readonly lifestyle: LifestyleDraftState
   readonly food: FoodDraftState
   readonly otc: OtcDraftState
   onBackToOtc(): void
+  onEditVitals(): void
+  onEditLifestyle(): void
+  onEditFood(): void
+  onEditOtc(): void
 }
 
 export function ReviewStep({
-  protocolVersionId,
   vitals,
   lifestyle,
   food,
   otc,
-  onBackToOtc
+  onBackToOtc,
+  onEditVitals,
+  onEditLifestyle,
+  onEditFood,
+  onEditOtc
 }: ReviewStepProps): React.JSX.Element {
   const workBaseline =
     lifestyle.workspace === null ? null : getWorkBaselineForInterpretation(lifestyle.workspace)
@@ -62,7 +68,7 @@ export function ReviewStep({
 
       <div className="review-grid">
         <article className="review-card">
-          <h4>Vitals</h4>
+          <ReviewCardHeader title="Vitals" onEdit={onEditVitals} />
           <div className="review-table-wrap">
             <table className="review-table">
               <thead>
@@ -108,28 +114,119 @@ export function ReviewStep({
         </article>
 
         <article className="review-card">
-          <h4>Weekly lifestyle</h4>
+          <ReviewCardHeader title="Weekly lifestyle" onEdit={onEditLifestyle} />
           <ul className="review-summary-list">
             <li>
               <strong>Alcohol:</strong> {getAlcoholCardSummary(lifestyle, true)}
+              {lifestyle.alcohol.weeklyResponse === 'YES' ? (
+                <ul className="review-item-list">
+                  <li>
+                    Past 7 days: {lifestyle.alcohol.drinkingDays} drinking days •{' '}
+                    {lifestyle.alcohol.totalStandardizedDrinks} total drinks
+                  </li>
+                  <li>
+                    Largest day: {lifestyle.alcohol.largestOneDayAmount} drinks •{' '}
+                    {lifestyle.alcohol.daysAtLargestAmount} days at that amount
+                  </li>
+                  <li>
+                    Beverages:{' '}
+                    {formatList(
+                      lifestyle.alcohol.commonBeverageTypes.map((value) =>
+                        value === 'OTHER' && lifestyle.alcohol.otherBeverageDescription
+                          ? lifestyle.alcohol.otherBeverageDescription
+                          : formatReviewValue(value)
+                      )
+                    )}
+                  </li>
+                </ul>
+              ) : null}
             </li>
             <li>
               <strong>Tobacco:</strong> {getTobaccoCardSummary(lifestyle, true)}
+              {lifestyle.tobacco.weeklyResponse === 'YES' ? (
+                <ul className="review-item-list">
+                  {lifestyle.tobacco.products.map((product) => (
+                    <li key={product.clientKey}>
+                      {product.productType === 'OTHER' && product.otherProductDescription
+                        ? product.otherProductDescription
+                        : formatReviewValue(product.productType)}
+                      : {product.daysUsed} days • {product.averageQuantityPerUseDay}{' '}
+                      {product.unit === 'OTHER' && product.otherUnitDescription
+                        ? product.otherUnitDescription
+                        : formatReviewValue(product.unit)}{' '}
+                      per use day • Secondhand exposure:{' '}
+                      {formatBooleanResponse(product.secondhandSmokeExposure)}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </li>
             <li>
               <strong>Exercise:</strong> {physicalActivitySummary(lifestyle.physicalActivity)}
+              {lifestyle.physicalActivity.weeklyResponse === 'YES' ? (
+                <ul className="review-item-list">
+                  {lifestyle.physicalActivity.activities.map((activity) => (
+                    <li key={activity.clientKey}>
+                      {formatReviewValue(activity.activityDomain)}
+                      {activity.description ? ` • ${activity.description}` : ''} •{' '}
+                      {formatReviewValue(activity.intensity)} • {activity.daysInPastSevenDays} days
+                      •{' '}
+                      {formatDuration(
+                        activity.averageHoursPerActiveDay,
+                        activity.averageMinutesPerActiveDay,
+                        'per active day'
+                      )}
+                    </li>
+                  ))}
+                  <li>
+                    Sedentary time:{' '}
+                    {lifestyle.physicalActivity.sedentaryTimeResponse === 'RECORDED'
+                      ? `${lifestyle.physicalActivity.sedentaryMinutesPerDay} minutes per day`
+                      : formatReviewValue(lifestyle.physicalActivity.sedentaryTimeResponse)}
+                  </li>
+                </ul>
+              ) : null}
             </li>
             <li>
               <strong>Job type:</strong> {workSummary(lifestyle.work, workBaseline)}
+              <ul className="review-item-list">
+                <li>Weekly response: {formatReviewValue(lifestyle.work.weeklyResponse)}</li>
+                {lifestyle.workBaselineForm.occupationJobTitle ? (
+                  <li>Occupation: {lifestyle.workBaselineForm.occupationJobTitle}</li>
+                ) : null}
+                {lifestyle.workBaselineForm.usualPhysicalDemand ? (
+                  <li>
+                    Usual demand:{' '}
+                    {formatReviewValue(lifestyle.workBaselineForm.usualPhysicalDemand)}
+                  </li>
+                ) : null}
+              </ul>
             </li>
             <li>
               <strong>Other activity:</strong> {otherActivitySummary(lifestyle.otherActivity)}
+              {lifestyle.otherActivity.weeklyResponse === 'YES' ? (
+                <ul className="review-item-list">
+                  {lifestyle.otherActivity.activities.map((activity) => (
+                    <li key={activity.clientKey}>
+                      {formatReviewValue(activity.category)}
+                      {activity.description ? ` • ${activity.description}` : ''} •{' '}
+                      {formatReviewValue(activity.intensity)} • {activity.daysInPastSevenDays} days
+                      •{' '}
+                      {formatDuration(
+                        activity.averageHoursPerDay,
+                        activity.averageMinutesPerDay,
+                        'per day'
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </li>
           </ul>
         </article>
 
         <article className="review-card">
-          <h4>Food</h4>
+          <ReviewCardHeader title="Food" onEdit={onEditFood} />
           <p>
             <strong>Response:</strong> {formatFoodResponse(food.foodResponse)}
           </p>
@@ -147,7 +244,7 @@ export function ReviewStep({
         </article>
 
         <article className="review-card">
-          <h4>OTC medications</h4>
+          <ReviewCardHeader title="OTC medications" onEdit={onEditOtc} />
           <p>
             <strong>Response:</strong> {formatOtcResponse(otc.otcResponse)}
           </p>
@@ -166,16 +263,6 @@ export function ReviewStep({
         </article>
       </div>
 
-      <div className="review-status" role="status">
-        <div>
-          <strong>Protocol reference:</strong>{' '}
-          <span className="review-protocol-reference">{protocolVersionId}</span>
-        </div>
-        <div>
-          Protocol action, referral decision, and final completion are not performed in this step.
-        </div>
-      </div>
-
       <div className="screening-encounter-actions">
         <button className="button button-secondary" type="button" onClick={onBackToOtc}>
           Previous
@@ -185,6 +272,28 @@ export function ReviewStep({
         </button>
       </div>
     </section>
+  )
+}
+
+function ReviewCardHeader({
+  title,
+  onEdit
+}: {
+  readonly title: string
+  onEdit(): void
+}): React.JSX.Element {
+  return (
+    <div className="review-card-header">
+      <h4>{title}</h4>
+      <button
+        className="button button-secondary review-edit-button"
+        type="button"
+        aria-label={`Edit ${title}`}
+        onClick={onEdit}
+      >
+        Edit
+      </button>
+    </div>
   )
 }
 
@@ -215,10 +324,29 @@ function formatOtcResponse(response: OtcDraftState['otcResponse']): string {
 }
 
 function formatReviewValue(value: string): string {
-  if (value.length === 0) return '—'
+  if (value.length === 0) return 'Not recorded'
   return value
     .toLocaleLowerCase('en-US')
     .split('_')
     .map((part) => part.charAt(0).toLocaleUpperCase('en-US') + part.slice(1))
     .join(' ')
+}
+
+function formatBooleanResponse(value: boolean | null): string {
+  return value === null ? 'Not recorded' : value ? 'Yes' : 'No'
+}
+
+function formatList(values: readonly string[]): string {
+  return values.length === 0 ? 'Not recorded' : values.join(', ')
+}
+
+function formatDuration(hours: string, minutes: string, suffix: string): string {
+  const parts: string[] = []
+  const hoursValue = Number.parseInt(hours, 10)
+  const minutesValue = Number.parseInt(minutes, 10)
+  if (Number.isFinite(hoursValue) && hoursValue > 0)
+    parts.push(`${hoursValue} ${hoursValue === 1 ? 'hour' : 'hours'}`)
+  if (Number.isFinite(minutesValue) && minutesValue > 0)
+    parts.push(`${minutesValue} ${minutesValue === 1 ? 'minute' : 'minutes'}`)
+  return parts.length === 0 ? 'Time not recorded' : `${parts.join(' ')} ${suffix}`
 }
