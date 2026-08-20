@@ -14,6 +14,7 @@ import {
   LocalSessionPasswordChangeRequiredError,
   LocalSessionUnauthenticatedError
 } from '../authentication/session'
+import type { ResolveConfiguredInstallationLocationResult } from '../installation-location'
 import type {
   EncounterManagementControlledStatus,
   ScreeningEncounterManagementService,
@@ -297,7 +298,9 @@ function resolveActor(
   }
 }
 
-function resolveLocation(dependencies: ScreeningEncounterManagementServiceDependencies) {
+function resolveLocation(
+  dependencies: ScreeningEncounterManagementServiceDependencies
+): ResolveConfiguredInstallationLocationResult {
   return dependencies.installationLocationService.resolveConfiguredInstallationLocation()
 }
 function parseSearchRequest(

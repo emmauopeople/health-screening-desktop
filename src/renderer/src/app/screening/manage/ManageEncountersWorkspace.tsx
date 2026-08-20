@@ -46,6 +46,7 @@ export function ManageEncountersWorkspace({
   const [resolvingFlagId, setResolvingFlagId] = useState<string | null>(null)
   const [resolutionNote, setResolutionNote] = useState('')
   const [saving, setSaving] = useState(false)
+  const management = api.screeningEncounters.management
 
   const handleControlledFailure = useCallback(
     (status: string): void => {
@@ -66,7 +67,7 @@ export function ManageEncountersWorkspace({
 
   const loadDetail = useCallback(
     async (encounterId: string): Promise<void> => {
-      const result = await api.screeningEncounters.management.getDetail({ encounterId })
+      const result = await management.getDetail({ encounterId })
       if (!result.ok) {
         setMessage('Encounter information is unavailable.')
         return
@@ -78,14 +79,14 @@ export function ManageEncountersWorkspace({
       setDetail(result.data.detail)
       setSelectedId(encounterId)
     },
-    [api, handleControlledFailure]
+    [handleControlledFailure, management]
   )
 
   const search = useCallback(
     async (nextQuery = query, nextStatus = statusFilter): Promise<void> => {
       setLoadState('LOADING')
       setMessage(null)
-      const result = await api.screeningEncounters.management.search({
+      const result = await management.search({
         query: nextQuery,
         status: nextStatus,
         page: 1,
@@ -113,14 +114,54 @@ export function ManageEncountersWorkspace({
         await loadDetail(nextSelectedId)
       }
     },
-    [handleControlledFailure, loadDetail, query, selectedId, statusFilter]
+    [handleControlledFailure, loadDetail, management, query, selectedId, statusFilter]
   )
 
   useEffect(() => {
-    void search('', 'ALL')
-    // Initial load only; subsequent searches are explicit.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    let active = true
+
+    const loadInitialResults = async (): Promise<void> => {
+      const result = await management.search({ query: '', status: 'ALL', page: 1, pageSize: 50 })
+      if (!active) return
+      if (!result.ok) {
+        setLoadState('ERROR')
+        setMessage('Encounters are unavailable.')
+        return
+      }
+      if (result.data.status !== 'LOADED') {
+        setLoadState('ERROR')
+        handleControlledFailure(result.data.status)
+        return
+      }
+
+      setItems(result.data.items)
+      setLoadState('READY')
+      const firstEncounterId = result.data.items[0]?.id ?? null
+      if (firstEncounterId === null) {
+        setSelectedId(null)
+        setDetail(null)
+        return
+      }
+
+      const detailResult = await management.getDetail({ encounterId: firstEncounterId })
+      if (!active) return
+      if (!detailResult.ok) {
+        setMessage('Encounter information is unavailable.')
+        return
+      }
+      if (detailResult.data.status !== 'LOADED') {
+        handleControlledFailure(detailResult.data.status)
+        return
+      }
+      setDetail(detailResult.data.detail)
+      setSelectedId(firstEncounterId)
+    }
+
+    void loadInitialResults()
+    return () => {
+      active = false
+    }
+  }, [handleControlledFailure, management])
 
   const refresh = async (): Promise<void> => {
     await search()
