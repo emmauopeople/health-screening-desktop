@@ -76,10 +76,16 @@ const vitalsSaveRequest: ScreeningVitalsSaveDraftRequest = {
 }
 
 describe('preload screening-encounter API', () => {
-  it('exposes exactly the frozen screeningEncounters start and vitals methods', () => {
+  it('exposes exactly the frozen screeningEncounters methods', () => {
     const api = createHealthScreeningApi(vi.fn())
 
-    expect(Object.keys(api.screeningEncounters)).toEqual(['start', 'vitals', 'lifestyle', 'food'])
+    expect(Object.keys(api.screeningEncounters)).toEqual([
+      'start',
+      'vitals',
+      'lifestyle',
+      'food',
+      'otc'
+    ])
     expect(Object.keys(api.screeningEncounters.vitals)).toEqual([
       'getDraft',
       'saveDraft',
@@ -90,6 +96,7 @@ describe('preload screening-encounter API', () => {
     expect(Object.isFrozen(api.screeningEncounters.vitals)).toBe(true)
     expect(Object.isFrozen(api.screeningEncounters.lifestyle)).toBe(true)
     expect(Object.isFrozen(api.screeningEncounters.food)).toBe(true)
+    expect(Object.isFrozen(api.screeningEncounters.otc)).toBe(true)
 
     for (const transportName of [
       'invoke',
@@ -105,6 +112,7 @@ describe('preload screening-encounter API', () => {
       expect(transportName in api.screeningEncounters).toBe(false)
       expect(transportName in api.screeningEncounters.vitals).toBe(false)
       expect(transportName in api.screeningEncounters.food).toBe(false)
+      expect(transportName in api.screeningEncounters.otc).toBe(false)
     }
   })
 

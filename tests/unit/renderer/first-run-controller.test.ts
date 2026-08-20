@@ -601,6 +601,10 @@ function createApi({
       food: {
         getWorkspace: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
         saveDraft: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+      },
+      otc: {
+        getWorkspace: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+        saveDraft: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const }))
       }
     },
     installationSettings: {

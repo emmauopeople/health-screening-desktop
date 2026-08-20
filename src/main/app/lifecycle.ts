@@ -22,6 +22,7 @@ import {
   createProductionScreeningEncounterStartService,
   createProductionScreeningFoodService,
   createProductionScreeningLifestyleService,
+  createProductionScreeningOtcService,
   createProductionScreeningVitalsDraftService,
   createProductionScreeningSessionService,
   createProductionScreeningSessionWorkspaceContextService
@@ -147,6 +148,13 @@ export function startApplicationLifecycle(): void {
         installationLocationService,
         logger: console
       })
+      const screeningOtcService = createProductionScreeningOtcService({
+        connection: databaseRuntime.getConnection(),
+        authenticationSessionService,
+        currentScreeningSessionService,
+        installationLocationService,
+        logger: console
+      })
       const locationRepository = createLocationRepository(databaseRuntime.getConnection())
       const authenticationSessionPublisher = createAuthenticationSessionPublisher({
         navigationPolicy,
@@ -197,6 +205,11 @@ export function startApplicationLifecycle(): void {
         screeningFood: {
           navigationPolicy,
           screeningFoodService,
+          logger: console
+        },
+        screeningOtc: {
+          navigationPolicy,
+          screeningOtcService,
           logger: console
         },
         installationSettings: {

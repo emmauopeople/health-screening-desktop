@@ -13,6 +13,7 @@ import {
   registerApplicationIpcHandlers,
   registerScreeningEncounterIpcHandlers,
   registerScreeningFoodIpcHandlers,
+  registerScreeningOtcIpcHandlers,
   registerScreeningLifestyleIpcHandlers,
   registerScreeningSessionIpcHandlers,
   type ApplicationIpcHandlerDependencies,
@@ -30,6 +31,7 @@ import type {
   PatientRegistryService,
   ScreeningEncounterStartService,
   ScreeningFoodService,
+  ScreeningOtcService,
   ScreeningVitalsDraftService,
   ScreeningLifestyleService,
   ScreeningSessionService,
@@ -97,7 +99,9 @@ const applicationOwnedHandlerChannels = Object.freeze([
   ipcChannels.screeningEncounters.lifestyle.complete,
   ipcChannels.screeningEncounters.lifestyle.reopen,
   ipcChannels.screeningEncounters.food.getWorkspace,
-  ipcChannels.screeningEncounters.food.saveDraft
+  ipcChannels.screeningEncounters.food.saveDraft,
+  ipcChannels.screeningEncounters.otc.getWorkspace,
+  ipcChannels.screeningEncounters.otc.saveDraft
 ])
 
 describe('application IPC handlers', () => {
@@ -213,7 +217,7 @@ describe('application IPC handler registration', () => {
 
     const dispose = registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(45)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(47)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
@@ -249,6 +253,8 @@ describe('application IPC handler registration', () => {
       'health-screening:screening-encounters:lifestyle:save-draft',
       'health-screening:screening-encounters:lifestyle:save-tobacco-baseline',
       'health-screening:screening-encounters:lifestyle:save-work-baseline',
+      'health-screening:screening-encounters:otc:get-workspace',
+      'health-screening:screening-encounters:otc:save-draft',
       'health-screening:screening-encounters:start',
       'health-screening:screening-encounters:vitals:complete-step',
       'health-screening:screening-encounters:vitals:get-draft',
@@ -445,6 +451,74 @@ describe('application IPC handler registration', () => {
     dispose()
   })
 
+  it('registers exactly two OTC handlers and disposes only its owned channels', () => {
+    const ipcMain = createMockIpcMain()
+    const unrelatedHandler = vi.fn()
+    ipcMain.handlers.set('unrelated:channel', unrelatedHandler)
+
+    const dispose = registerScreeningOtcIpcHandlers(ipcMain, createDependencies().screeningOtc)
+
+    expect(ipcMain.handle).toHaveBeenCalledTimes(2)
+    expect([...ipcMain.handlers.keys()]).toEqual([
+      'unrelated:channel',
+      ipcChannels.screeningEncounters.otc.getWorkspace,
+      ipcChannels.screeningEncounters.otc.saveDraft
+    ])
+
+    dispose()
+    dispose()
+    expect([...ipcMain.handlers.keys()]).toEqual(['unrelated:channel'])
+    expect(ipcMain.removeHandler.mock.calls.flat()).toEqual([
+      ipcChannels.screeningEncounters.otc.getWorkspace,
+      ipcChannels.screeningEncounters.otc.saveDraft
+    ])
+    expect(ipcMain.handlers.get('unrelated:channel')).toBe(unrelatedHandler)
+  })
+
+  it('rolls back OTC handlers after partial registration failure', () => {
+    const failingChannel = ipcChannels.screeningEncounters.otc.saveDraft
+    const ipcMain = createMockIpcMain({ throwOnHandleChannel: failingChannel })
+    const unrelatedHandler = vi.fn()
+    ipcMain.handlers.set('unrelated:channel', unrelatedHandler)
+
+    expect(() =>
+      registerScreeningOtcIpcHandlers(ipcMain, createDependencies().screeningOtc)
+    ).toThrow(ApplicationIpcRegistrationError)
+    expectOnlyUnrelatedHandler(ipcMain, unrelatedHandler)
+    expect(ipcMain.removeHandler.mock.calls.flat()).toEqual([
+      ipcChannels.screeningEncounters.otc.getWorkspace
+    ])
+  })
+
+  it('rejects duplicate OTC registration without replacing the original handlers', () => {
+    const ipcMain = createMockIpcMain()
+    const firstDispose = registerScreeningOtcIpcHandlers(ipcMain, createDependencies().screeningOtc)
+    const originalHandlers = new Map(ipcMain.handlers)
+
+    expect(() =>
+      registerScreeningOtcIpcHandlers(ipcMain, createDependencies().screeningOtc)
+    ).toThrow(ApplicationIpcRegistrationError)
+    expectHandlerMapsEqual(ipcMain.handlers, originalHandlers)
+
+    firstDispose()
+  })
+
+  it('does not let a stale OTC disposer remove a newer registration', () => {
+    const ipcMain = createMockIpcMain()
+    const firstDispose = registerScreeningOtcIpcHandlers(ipcMain, createDependencies().screeningOtc)
+    firstDispose()
+    const secondDispose = registerScreeningOtcIpcHandlers(
+      ipcMain,
+      createDependencies().screeningOtc
+    )
+    const newerHandlers = new Map(ipcMain.handlers)
+
+    firstDispose()
+    expectHandlerMapsEqual(ipcMain.handlers, newerHandlers)
+
+    secondDispose()
+  })
+
   it('re-registration removes only application-owned handlers before replacement', () => {
     const ipcMain = createMockIpcMain()
     ipcMain.handlers.set('unrelated:channel', vi.fn())
@@ -452,7 +526,7 @@ describe('application IPC handler registration', () => {
     registerApplicationIpcHandlers(ipcMain, createDependencies())
     registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(90)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(94)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getHealth)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
@@ -492,6 +566,8 @@ describe('application IPC handler registration', () => {
       'health-screening:screening-encounters:lifestyle:save-draft',
       'health-screening:screening-encounters:lifestyle:save-tobacco-baseline',
       'health-screening:screening-encounters:lifestyle:save-work-baseline',
+      'health-screening:screening-encounters:otc:get-workspace',
+      'health-screening:screening-encounters:otc:save-draft',
       'health-screening:screening-encounters:start',
       'health-screening:screening-encounters:vitals:complete-step',
       'health-screening:screening-encounters:vitals:get-draft',
@@ -1034,6 +1110,11 @@ function createDependencies(): ApplicationIpcHandlerDependencies {
       screeningFoodService: createScreeningFoodService(),
       logger: createLogger()
     },
+    screeningOtc: {
+      navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
+      screeningOtcService: createScreeningOtcService(),
+      logger: createLogger()
+    },
     installationSettings: {
       navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
       authenticationSessionService: createAuthenticationSessionService(),
@@ -1141,6 +1222,13 @@ function createScreeningLifestyleService(): ScreeningLifestyleService {
 }
 
 function createScreeningFoodService(): ScreeningFoodService {
+  return {
+    getWorkspace: vi.fn(() => ({ status: 'UNAVAILABLE' as const })),
+    saveDraft: vi.fn(() => ({ status: 'UNAVAILABLE' as const }))
+  }
+}
+
+function createScreeningOtcService(): ScreeningOtcService {
   return {
     getWorkspace: vi.fn(() => ({ status: 'UNAVAILABLE' as const })),
     saveDraft: vi.fn(() => ({ status: 'UNAVAILABLE' as const }))

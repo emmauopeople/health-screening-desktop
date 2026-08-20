@@ -60,6 +60,7 @@ import type {
 } from './screening-encounter-contracts'
 import type { ScreeningFoodApi } from './screening-food-contracts'
 import type { ScreeningLifestyleApi } from './screening-lifestyle-contracts'
+import type { ScreeningOtcApi } from './screening-otc-contracts'
 import type {
   ScreeningSessionCloseRequest,
   ScreeningSessionCloseResult,
@@ -173,6 +174,7 @@ export interface HealthScreeningApi {
     }
     lifestyle: ScreeningLifestyleApi
     food: ScreeningFoodApi
+    otc: ScreeningOtcApi
   }
   installationSettings: {
     getConfiguredLocation(): Promise<InstallationSettingsGetConfiguredLocationResult>

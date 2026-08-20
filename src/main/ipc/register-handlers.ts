@@ -14,6 +14,8 @@ import type { ScreeningEncounterIpcHandlerDependencies } from '@main/ipc/handler
 import { createScreeningEncounterIpcHandlers } from '@main/ipc/handlers/screening-encounter-handlers'
 import type { ScreeningFoodIpcHandlerDependencies } from '@main/ipc/handlers/screening-food-handlers'
 import { createScreeningFoodIpcHandlers } from '@main/ipc/handlers/screening-food-handlers'
+import type { ScreeningOtcIpcHandlerDependencies } from '@main/ipc/handlers/screening-otc-handlers'
+import { createScreeningOtcIpcHandlers } from '@main/ipc/handlers/screening-otc-handlers'
 import type { ScreeningLifestyleIpcHandlerDependencies } from '@main/ipc/handlers/screening-lifestyle-handlers'
 import { createScreeningLifestyleIpcHandlers } from '@main/ipc/handlers/screening-lifestyle-handlers'
 import type { ScreeningSessionIpcHandlerDependencies } from '@main/ipc/handlers/screening-session-handlers'
@@ -22,6 +24,7 @@ import {
   ipcChannels,
   type InstallationSettingsIpcChannel,
   type ScreeningFoodIpcChannel,
+  type ScreeningOtcIpcChannel,
   type ScreeningEncounterIpcChannel,
   type ScreeningLifestyleIpcChannel,
   type ScreeningSessionIpcChannel
@@ -44,6 +47,9 @@ interface ScreeningLifestyleRegistrationOwnership {
   readonly id: symbol
 }
 interface ScreeningFoodRegistrationOwnership {
+  readonly id: symbol
+}
+interface ScreeningOtcRegistrationOwnership {
   readonly id: symbol
 }
 
@@ -109,6 +115,14 @@ const activeScreeningFoodRegistrations = new WeakMap<
   ApplicationIpcMain,
   ScreeningFoodRegistrationOwnership
 >()
+const screeningOtcIpcChannels: readonly ScreeningOtcIpcChannel[] = Object.freeze([
+  ipcChannels.screeningEncounters.otc.getWorkspace,
+  ipcChannels.screeningEncounters.otc.saveDraft
+])
+const activeScreeningOtcRegistrations = new WeakMap<
+  ApplicationIpcMain,
+  ScreeningOtcRegistrationOwnership
+>()
 
 export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependencies {
   readonly firstRun: FirstRunIpcHandlerDependencies
@@ -118,6 +132,7 @@ export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependen
   readonly screeningEncounters: ScreeningEncounterIpcHandlerDependencies
   readonly screeningLifestyle: ScreeningLifestyleIpcHandlerDependencies
   readonly screeningFood: ScreeningFoodIpcHandlerDependencies
+  readonly screeningOtc: ScreeningOtcIpcHandlerDependencies
   readonly installationSettings: InstallationSettingsIpcHandlerDependencies
 }
 
@@ -132,6 +147,7 @@ export function registerApplicationIpcHandlers(
   let disposeScreeningEncounterHandlers: ApplicationIpcDisposer | undefined
   let disposeScreeningLifestyleHandlers: ApplicationIpcDisposer | undefined
   let disposeScreeningFoodHandlers: ApplicationIpcDisposer | undefined
+  let disposeScreeningOtcHandlers: ApplicationIpcDisposer | undefined
 
   try {
     const appHandlers = createAppIpcHandlers(dependencies)
@@ -206,7 +222,12 @@ export function registerApplicationIpcHandlers(
       applicationIpcMain,
       dependencies.screeningFood
     )
+    disposeScreeningOtcHandlers = registerScreeningOtcIpcHandlers(
+      applicationIpcMain,
+      dependencies.screeningOtc
+    )
   } catch {
+    disposeScreeningOtcHandlers?.()
     disposeScreeningFoodHandlers?.()
     disposeScreeningLifestyleHandlers?.()
     disposeScreeningEncounterHandlers?.()
@@ -448,6 +469,7 @@ function disposeApplicationOwnedIpcHandlers(applicationIpcMain: ApplicationIpcMa
   disposeScreeningEncounterIpcHandlers(applicationIpcMain)
   disposeScreeningLifestyleIpcHandlers(applicationIpcMain)
   disposeScreeningFoodIpcHandlers(applicationIpcMain)
+  disposeScreeningOtcIpcHandlers(applicationIpcMain)
 }
 
 export function disposeScreeningLifestyleIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
@@ -466,6 +488,51 @@ function disposeScreeningLifestyleRegistration(
 export function disposeScreeningFoodIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
   for (const channel of screeningFoodIpcChannels) applicationIpcMain.removeHandler(channel)
   activeScreeningFoodRegistrations.delete(applicationIpcMain)
+}
+
+export function registerScreeningOtcIpcHandlers(
+  applicationIpcMain: ApplicationIpcMain,
+  dependencies: ScreeningOtcIpcHandlerDependencies
+): ApplicationIpcDisposer {
+  if (activeScreeningOtcRegistrations.has(applicationIpcMain)) {
+    throw new ApplicationIpcRegistrationError()
+  }
+
+  const ownership: ScreeningOtcRegistrationOwnership = Object.freeze({
+    id: Symbol('screening-otc-ipc-registration')
+  })
+  const handlers = createScreeningOtcIpcHandlers(dependencies)
+  const registrations: ReadonlyArray<readonly [ScreeningOtcIpcChannel, ApplicationIpcListener]> = [
+    [ipcChannels.screeningEncounters.otc.getWorkspace, handlers.getWorkspace],
+    [ipcChannels.screeningEncounters.otc.saveDraft, handlers.saveDraft]
+  ]
+  const installedChannels: ScreeningOtcIpcChannel[] = []
+
+  try {
+    for (const [channel, listener] of registrations) {
+      applicationIpcMain.handle(channel, listener)
+      installedChannels.push(channel)
+    }
+  } catch {
+    for (const channel of installedChannels.reverse()) applicationIpcMain.removeHandler(channel)
+    throw new ApplicationIpcRegistrationError()
+  }
+
+  activeScreeningOtcRegistrations.set(applicationIpcMain, ownership)
+  return () => disposeScreeningOtcRegistration(applicationIpcMain, ownership)
+}
+
+export function disposeScreeningOtcIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
+  for (const channel of screeningOtcIpcChannels) applicationIpcMain.removeHandler(channel)
+  activeScreeningOtcRegistrations.delete(applicationIpcMain)
+}
+
+function disposeScreeningOtcRegistration(
+  applicationIpcMain: ApplicationIpcMain,
+  ownership: ScreeningOtcRegistrationOwnership
+): void {
+  if (activeScreeningOtcRegistrations.get(applicationIpcMain) !== ownership) return
+  disposeScreeningOtcIpcHandlers(applicationIpcMain)
 }
 
 function disposeScreeningFoodRegistration(

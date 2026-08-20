@@ -55,6 +55,10 @@ export const ipcChannels = {
     food: {
       getWorkspace: 'health-screening:screening-encounters:food:get-workspace',
       saveDraft: 'health-screening:screening-encounters:food:save-draft'
+    },
+    otc: {
+      getWorkspace: 'health-screening:screening-encounters:otc:get-workspace',
+      saveDraft: 'health-screening:screening-encounters:otc:save-draft'
     }
   },
   installationSettings: {
@@ -74,13 +78,16 @@ export type ScreeningSessionIpcChannel =
 export type ScreeningEncounterIpcChannel =
   | (typeof ipcChannels.screeningEncounters)[Exclude<
       keyof typeof ipcChannels.screeningEncounters,
-      'lifestyle' | 'food'
+      'lifestyle' | 'food' | 'otc'
     >]
   | ScreeningLifestyleIpcChannel
   | ScreeningFoodIpcChannel
+  | ScreeningOtcIpcChannel
 export type ScreeningLifestyleIpcChannel =
   (typeof ipcChannels.screeningEncounters.lifestyle)[keyof typeof ipcChannels.screeningEncounters.lifestyle]
 export type ScreeningFoodIpcChannel =
   (typeof ipcChannels.screeningEncounters.food)[keyof typeof ipcChannels.screeningEncounters.food]
+export type ScreeningOtcIpcChannel =
+  (typeof ipcChannels.screeningEncounters.otc)[keyof typeof ipcChannels.screeningEncounters.otc]
 export type InstallationSettingsIpcChannel =
   (typeof ipcChannels.installationSettings)[keyof typeof ipcChannels.installationSettings]

@@ -18,7 +18,8 @@ import {
 } from '@shared/ipc'
 import { createScreeningFoodApi } from './screening-food-api'
 import { createScreeningLifestyleApi } from './screening-lifestyle-api'
-import type { ScreeningFoodApi, ScreeningLifestyleApi } from '@shared/ipc'
+import { createScreeningOtcApi } from './screening-otc-api'
+import type { ScreeningFoodApi, ScreeningLifestyleApi, ScreeningOtcApi } from '@shared/ipc'
 
 import type { IpcInvoke } from './authentication-api'
 
@@ -33,6 +34,7 @@ export interface ScreeningEncounterApi {
   }
   lifestyle: ScreeningLifestyleApi
   food: ScreeningFoodApi
+  otc: ScreeningOtcApi
 }
 
 export function createScreeningEncounterApi(invoke: IpcInvoke): ScreeningEncounterApi {
@@ -48,7 +50,8 @@ export function createScreeningEncounterApi(invoke: IpcInvoke): ScreeningEncount
         invokeVitalsCompleteStep({ invoke, request })
     }),
     lifestyle: createScreeningLifestyleApi(invoke),
-    food: createScreeningFoodApi(invoke)
+    food: createScreeningFoodApi(invoke),
+    otc: createScreeningOtcApi(invoke)
   })
 }
 

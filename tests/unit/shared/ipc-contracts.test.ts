@@ -122,6 +122,10 @@ describe('shared IPC contracts', () => {
         food: {
           getWorkspace: 'health-screening:screening-encounters:food:get-workspace',
           saveDraft: 'health-screening:screening-encounters:food:save-draft'
+        },
+        otc: {
+          getWorkspace: 'health-screening:screening-encounters:otc:get-workspace',
+          saveDraft: 'health-screening:screening-encounters:otc:save-draft'
         }
       },
       installationSettings: {
@@ -133,12 +137,14 @@ describe('shared IPC contracts', () => {
     })
     const allChannels = flattenChannelStrings(ipcChannels)
 
-    expect(allChannels).toHaveLength(46)
+    expect(allChannels).toHaveLength(48)
     expect(new Set(allChannels).size).toBe(allChannels.length)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.lifestyle.complete)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.lifestyle.reopen)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.food.getWorkspace)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.food.saveDraft)
+    expect(allChannels).toContain(ipcChannels.screeningEncounters.otc.getWorkspace)
+    expect(allChannels).toContain(ipcChannels.screeningEncounters.otc.saveDraft)
   })
 
   it('keeps patient requests strict and main-process-authored', () => {
