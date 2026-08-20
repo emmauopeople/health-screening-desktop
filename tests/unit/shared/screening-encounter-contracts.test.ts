@@ -4,6 +4,10 @@ import {
   createIpcSuccess,
   createScreeningEncounterIpcFailure,
   createScreeningEncounterStartStatusResult,
+  encounterManagementAddAddendumRequestSchema,
+  encounterManagementOpenFlagRequestSchema,
+  encounterManagementResolveFlagRequestSchema,
+  encounterManagementSearchRequestSchema,
   ipcChannels,
   screeningEncounterCompleteRequestSchema,
   screeningEncounterCompleteResultSchema,
@@ -50,6 +54,59 @@ const completeRequest: ScreeningEncounterCompleteRequest = {
 }
 
 describe('screening encounter IPC contracts', () => {
+  it('keeps encounter management requests strict, bounded, and free of edit authority', () => {
+    expect(
+      encounterManagementSearchRequestSchema.parse({
+        query: 'Test Patient',
+        status: 'COMPLETED',
+        page: 1,
+        pageSize: 50
+      })
+    ).toEqual({ query: 'Test Patient', status: 'COMPLETED', page: 1, pageSize: 50 })
+    expect(
+      encounterManagementAddAddendumRequestSchema.parse({
+        encounterId,
+        noteText: 'Record reviewed.'
+      })
+    ).toEqual({ encounterId, noteText: 'Record reviewed.' })
+    expect(
+      encounterManagementOpenFlagRequestSchema.parse({
+        encounterId,
+        category: 'POSSIBLE_DATA_ERROR',
+        description: 'Possible transcription issue.'
+      })
+    ).toMatchObject({ category: 'POSSIBLE_DATA_ERROR' })
+    expect(
+      encounterManagementResolveFlagRequestSchema.parse({
+        encounterId,
+        flagId: patientId,
+        status: 'RESOLVED',
+        resolutionNote: 'Compared with the source record.'
+      })
+    ).toMatchObject({ status: 'RESOLVED' })
+
+    const protoRequest = Object.defineProperty(
+      { encounterId, noteText: 'Record reviewed.' },
+      '__proto__',
+      { value: { role: 'LOCAL_ADMIN' }, enumerable: true }
+    )
+    for (const request of [
+      { encounterId, noteText: 'Record reviewed.', updatedVitals: { systolic: 120 } },
+      { encounterId, noteText: '' },
+      { encounterId, category: 'UNVERIFIED', description: 'Issue' },
+      { encounterId, flagId: patientId, status: 'OPEN', resolutionNote: 'Issue' },
+      protoRequest
+    ]) {
+      const schema =
+        'noteText' in request
+          ? encounterManagementAddAddendumRequestSchema
+          : 'category' in request
+            ? encounterManagementOpenFlagRequestSchema
+            : encounterManagementResolveFlagRequestSchema
+      expect(schema.safeParse(request).success).toBe(false)
+    }
+  })
+
   it('keeps completion explicit, versioned, and free of renderer-authored decisions', () => {
     expect(screeningEncounterCompleteRequestSchema.parse(completeRequest)).toEqual(completeRequest)
 

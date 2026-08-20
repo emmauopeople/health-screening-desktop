@@ -18,6 +18,7 @@ export type ApplicationCommandId =
   | 'SCREENING_TODAYS_SESSION'
   | 'SCREENING_NEW_SCREENING'
   | 'SCREENING_DRAFT_ENCOUNTERS'
+  | 'SCREENING_MANAGE_ENCOUNTERS'
   | 'SCREENING_SESSION_SUMMARY'
   | 'REFERRALS_REFERRAL_WORKLIST'
   | 'REFERRALS_FOLLOW_UP_DUE'
@@ -62,6 +63,10 @@ export type ApplicationWorkspaceRoute =
   | {
       readonly status: 'ADMINISTRATION'
       readonly commandId: 'ADMINISTRATION_LOCATIONS'
+    }
+  | {
+      readonly status: 'MANAGE_ENCOUNTERS'
+      readonly commandId: 'SCREENING_MANAGE_ENCOUNTERS'
     }
   | {
       readonly status: 'PLANNED_MODULE'

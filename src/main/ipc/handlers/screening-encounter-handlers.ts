@@ -5,6 +5,7 @@ import type {
   ScreeningEncounterStartService,
   ScreeningEncounterStartSummary,
   ScreeningCompletionService,
+  ScreeningEncounterManagementService,
   CompleteScreeningResult as InternalCompleteScreeningResult,
   ScreeningVitalsDraftService,
   StartScreeningEncounterResult as InternalStartScreeningEncounterResult,
@@ -15,6 +16,16 @@ import type { EntityId } from '@main/foundation/entity-id'
 import { isIpcSenderAllowed, type IpcSenderValidationEvent } from '@main/ipc/sender-policy'
 import {
   createIpcSuccess,
+  encounterManagementAddAddendumRequestSchema,
+  encounterManagementAddAddendumResultSchema,
+  encounterManagementGetDetailRequestSchema,
+  encounterManagementGetDetailResultSchema,
+  encounterManagementOpenFlagRequestSchema,
+  encounterManagementOpenFlagResultSchema,
+  encounterManagementResolveFlagRequestSchema,
+  encounterManagementResolveFlagResultSchema,
+  encounterManagementSearchRequestSchema,
+  encounterManagementSearchResultSchema,
   createScreeningEncounterIpcFailure,
   createScreeningEncounterStartStatusResult,
   createScreeningVitalsGetDraftLoadedResult,
@@ -30,6 +41,16 @@ import {
   screeningVitalsSaveDraftRequestSchema,
   screeningVitalsSaveDraftResultSchema,
   type PublicScreeningEncounterStartSummary,
+  type EncounterManagementAddAddendumResult,
+  type EncounterManagementAddAddendumRequest,
+  type EncounterManagementGetDetailResult,
+  type EncounterManagementGetDetailRequest,
+  type EncounterManagementOpenFlagResult,
+  type EncounterManagementOpenFlagRequest,
+  type EncounterManagementResolveFlagResult,
+  type EncounterManagementResolveFlagRequest,
+  type EncounterManagementSearchResult,
+  type EncounterManagementSearchRequest,
   type PublicCompletedScreeningEncounterSummary,
   type PublicScreeningVitalsDraft,
   type ScreeningEncounterIpcChannel,
@@ -54,6 +75,7 @@ export interface ScreeningEncounterIpcHandlerDependencies {
   readonly navigationPolicy: NavigationPolicy
   readonly screeningEncounterStartService: ScreeningEncounterStartService
   readonly screeningCompletionService: ScreeningCompletionService
+  readonly screeningEncounterManagementService?: ScreeningEncounterManagementService
   readonly screeningVitalsDraftService: ScreeningVitalsDraftService
   readonly logger?: ScreeningEncounterIpcOperationalLogger
 }
@@ -76,12 +98,33 @@ export interface ScreeningEncounterIpcHandlers {
     event: IpcSenderValidationEvent,
     request: unknown
   ): Promise<ScreeningVitalsCompleteStepResult>
+  searchManagedEncounters(
+    event: IpcSenderValidationEvent,
+    request: unknown
+  ): Promise<EncounterManagementSearchResult>
+  getManagedEncounterDetail(
+    event: IpcSenderValidationEvent,
+    request: unknown
+  ): Promise<EncounterManagementGetDetailResult>
+  addEncounterAddendum(
+    event: IpcSenderValidationEvent,
+    request: unknown
+  ): Promise<EncounterManagementAddAddendumResult>
+  openEncounterReviewFlag(
+    event: IpcSenderValidationEvent,
+    request: unknown
+  ): Promise<EncounterManagementOpenFlagResult>
+  resolveEncounterReviewFlag(
+    event: IpcSenderValidationEvent,
+    request: unknown
+  ): Promise<EncounterManagementResolveFlagResult>
 }
 
 export function createScreeningEncounterIpcHandlers({
   navigationPolicy,
   screeningEncounterStartService,
   screeningCompletionService,
+  screeningEncounterManagementService = unavailableManagementService,
   screeningVitalsDraftService,
   logger = console
 }: ScreeningEncounterIpcHandlerDependencies): ScreeningEncounterIpcHandlers {
@@ -175,6 +218,90 @@ export function createScreeningEncounterIpcHandlers({
         )
         return freezeIpcResult(createIpcSuccess({ status: 'UNAVAILABLE' as const }))
       }
+    },
+
+    async searchManagedEncounters(event: IpcSenderValidationEvent, request: unknown) {
+      return handleManagementRequest(event, request, {
+        channel: ipcChannels.screeningEncounters.management.search,
+        navigationPolicy,
+        requestSchema: encounterManagementSearchRequestSchema,
+        resultSchema: encounterManagementSearchResultSchema,
+        invoke: (data: EncounterManagementSearchRequest) => {
+          const result = screeningEncounterManagementService.search(data)
+          return result.status === 'LOADED'
+            ? createIpcSuccess({ status: 'LOADED' as const, ...result.result })
+            : createIpcSuccess({ status: result.status })
+        },
+        logger
+      }) as Promise<EncounterManagementSearchResult>
+    },
+
+    async getManagedEncounterDetail(event: IpcSenderValidationEvent, request: unknown) {
+      return handleManagementRequest(event, request, {
+        channel: ipcChannels.screeningEncounters.management.getDetail,
+        navigationPolicy,
+        requestSchema: encounterManagementGetDetailRequestSchema,
+        resultSchema: encounterManagementGetDetailResultSchema,
+        invoke: (data: EncounterManagementGetDetailRequest) =>
+          createIpcSuccess(
+            screeningEncounterManagementService.getDetail(data.encounterId as EntityId)
+          ),
+        logger
+      }) as Promise<EncounterManagementGetDetailResult>
+    },
+
+    async addEncounterAddendum(event: IpcSenderValidationEvent, request: unknown) {
+      return handleManagementRequest(event, request, {
+        channel: ipcChannels.screeningEncounters.management.addAddendum,
+        navigationPolicy,
+        requestSchema: encounterManagementAddAddendumRequestSchema,
+        resultSchema: encounterManagementAddAddendumResultSchema,
+        invoke: (data: EncounterManagementAddAddendumRequest) =>
+          createIpcSuccess(
+            screeningEncounterManagementService.addAddendum(
+              data.encounterId as EntityId,
+              data.noteText
+            )
+          ),
+        logger
+      }) as Promise<EncounterManagementAddAddendumResult>
+    },
+
+    async openEncounterReviewFlag(event: IpcSenderValidationEvent, request: unknown) {
+      return handleManagementRequest(event, request, {
+        channel: ipcChannels.screeningEncounters.management.openFlag,
+        navigationPolicy,
+        requestSchema: encounterManagementOpenFlagRequestSchema,
+        resultSchema: encounterManagementOpenFlagResultSchema,
+        invoke: (data: EncounterManagementOpenFlagRequest) =>
+          createIpcSuccess(
+            screeningEncounterManagementService.openFlag(
+              data.encounterId as EntityId,
+              data.category,
+              data.description
+            )
+          ),
+        logger
+      }) as Promise<EncounterManagementOpenFlagResult>
+    },
+
+    async resolveEncounterReviewFlag(event: IpcSenderValidationEvent, request: unknown) {
+      return handleManagementRequest(event, request, {
+        channel: ipcChannels.screeningEncounters.management.resolveFlag,
+        navigationPolicy,
+        requestSchema: encounterManagementResolveFlagRequestSchema,
+        resultSchema: encounterManagementResolveFlagResultSchema,
+        invoke: (data: EncounterManagementResolveFlagRequest) =>
+          createIpcSuccess(
+            screeningEncounterManagementService.resolveFlag(
+              data.encounterId as EntityId,
+              data.flagId as EntityId,
+              data.status,
+              data.resolutionNote
+            )
+          ),
+        logger
+      }) as Promise<EncounterManagementResolveFlagResult>
     },
 
     async getVitalsDraft(
@@ -323,6 +450,14 @@ export function createScreeningEncounterIpcHandlers({
     }
   })
 }
+
+const unavailableManagementService: ScreeningEncounterManagementService = Object.freeze({
+  search: () => ({ status: 'UNAVAILABLE' as const }),
+  getDetail: () => ({ status: 'UNAVAILABLE' as const }),
+  addAddendum: () => ({ status: 'UNAVAILABLE' as const }),
+  openFlag: () => ({ status: 'UNAVAILABLE' as const }),
+  resolveFlag: () => ({ status: 'UNAVAILABLE' as const })
+})
 
 function toInternalStartRequest(
   request: ScreeningEncounterStartRequest
@@ -542,6 +677,40 @@ function deepFreeze(value: unknown, seen: WeakSet<object>): void {
   }
 
   Object.freeze(value)
+}
+
+async function handleManagementRequest<TRequest, TResult>(
+  event: IpcSenderValidationEvent,
+  request: unknown,
+  options: {
+    readonly channel: ScreeningEncounterIpcChannel
+    readonly navigationPolicy: NavigationPolicy
+    readonly requestSchema: IpcSchema<TRequest>
+    readonly resultSchema: IpcSchema<TResult>
+    readonly invoke: (request: TRequest) => unknown
+    readonly logger: ScreeningEncounterIpcOperationalLogger
+  }
+): Promise<TResult> {
+  if (!isIpcSenderAllowed(event, options.navigationPolicy)) {
+    logScreeningEncounterIpcFailure(options.logger, options.channel, 'IPC_FORBIDDEN')
+    return freezeIpcResult(createScreeningEncounterIpcFailure('IPC_FORBIDDEN')) as TResult
+  }
+  const parsedRequest = safeParseIpcValue(options.requestSchema, request)
+  if (!parsedRequest.success) {
+    return freezeIpcResult(createIpcSuccess({ status: 'VALIDATION_FAILED' })) as TResult
+  }
+  try {
+    const result = options.invoke(parsedRequest.data)
+    const parsedResult = safeParseIpcValue(options.resultSchema, result)
+    if (!parsedResult.success) {
+      logScreeningEncounterIpcFailure(options.logger, options.channel, 'INTERNAL_ERROR')
+      return freezeIpcResult(createIpcSuccess({ status: 'UNAVAILABLE' })) as TResult
+    }
+    return freezeIpcResult(parsedResult.data)
+  } catch (error) {
+    logScreeningEncounterIpcFailure(options.logger, options.channel, 'INTERNAL_ERROR', error)
+    return freezeIpcResult(createIpcSuccess({ status: 'UNAVAILABLE' })) as TResult
+  }
 }
 
 function logScreeningEncounterIpcFailure(

@@ -50,6 +50,16 @@ import type {
 } from './patient-contracts'
 import { createIpcResultSchema } from './result'
 import type {
+  EncounterManagementAddAddendumRequest,
+  EncounterManagementAddAddendumResult,
+  EncounterManagementGetDetailRequest,
+  EncounterManagementGetDetailResult,
+  EncounterManagementOpenFlagRequest,
+  EncounterManagementOpenFlagResult,
+  EncounterManagementResolveFlagRequest,
+  EncounterManagementResolveFlagResult,
+  EncounterManagementSearchRequest,
+  EncounterManagementSearchResult,
   ScreeningEncounterCompleteRequest,
   ScreeningEncounterCompleteResult,
   ScreeningEncounterStartRequest,
@@ -168,6 +178,21 @@ export interface HealthScreeningApi {
   screeningEncounters: {
     start(request: ScreeningEncounterStartRequest): Promise<ScreeningEncounterStartResult>
     complete(request: ScreeningEncounterCompleteRequest): Promise<ScreeningEncounterCompleteResult>
+    management: {
+      search(request: EncounterManagementSearchRequest): Promise<EncounterManagementSearchResult>
+      getDetail(
+        request: EncounterManagementGetDetailRequest
+      ): Promise<EncounterManagementGetDetailResult>
+      addAddendum(
+        request: EncounterManagementAddAddendumRequest
+      ): Promise<EncounterManagementAddAddendumResult>
+      openFlag(
+        request: EncounterManagementOpenFlagRequest
+      ): Promise<EncounterManagementOpenFlagResult>
+      resolveFlag(
+        request: EncounterManagementResolveFlagRequest
+      ): Promise<EncounterManagementResolveFlagResult>
+    }
     vitals: {
       getDraft(request: ScreeningVitalsGetDraftRequest): Promise<ScreeningVitalsGetDraftResult>
       saveDraft(request: ScreeningVitalsSaveDraftRequest): Promise<ScreeningVitalsSaveDraftResult>

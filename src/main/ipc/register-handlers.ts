@@ -89,7 +89,12 @@ const screeningEncounterIpcChannels: readonly ScreeningEncounterIpcChannel[] = O
   ipcChannels.screeningEncounters.complete,
   ipcChannels.screeningEncounters.getVitalsDraft,
   ipcChannels.screeningEncounters.saveVitalsDraft,
-  ipcChannels.screeningEncounters.completeVitalsStep
+  ipcChannels.screeningEncounters.completeVitalsStep,
+  ipcChannels.screeningEncounters.management.search,
+  ipcChannels.screeningEncounters.management.getDetail,
+  ipcChannels.screeningEncounters.management.addAddendum,
+  ipcChannels.screeningEncounters.management.openFlag,
+  ipcChannels.screeningEncounters.management.resolveFlag
 ])
 const activeScreeningEncounterRegistrations = new WeakMap<
   ApplicationIpcMain,
@@ -317,6 +322,26 @@ export function registerScreeningEncounterIpcHandlers(
     [ipcChannels.screeningEncounters.complete, screeningEncounterHandlers.complete],
     [ipcChannels.screeningEncounters.getVitalsDraft, screeningEncounterHandlers.getVitalsDraft],
     [ipcChannels.screeningEncounters.saveVitalsDraft, screeningEncounterHandlers.saveVitalsDraft],
+    [
+      ipcChannels.screeningEncounters.management.search,
+      screeningEncounterHandlers.searchManagedEncounters
+    ],
+    [
+      ipcChannels.screeningEncounters.management.getDetail,
+      screeningEncounterHandlers.getManagedEncounterDetail
+    ],
+    [
+      ipcChannels.screeningEncounters.management.addAddendum,
+      screeningEncounterHandlers.addEncounterAddendum
+    ],
+    [
+      ipcChannels.screeningEncounters.management.openFlag,
+      screeningEncounterHandlers.openEncounterReviewFlag
+    ],
+    [
+      ipcChannels.screeningEncounters.management.resolveFlag,
+      screeningEncounterHandlers.resolveEncounterReviewFlag
+    ],
     [
       ipcChannels.screeningEncounters.completeVitalsStep,
       screeningEncounterHandlers.completeVitalsStep

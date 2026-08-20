@@ -10,6 +10,7 @@ import type {
 
 import { InstallationLocationAdministrationWorkspace } from '../administration/InstallationLocationAdministrationWorkspace'
 import { PatientRegistryWorkspace } from '../patients/PatientRegistryWorkspace'
+import { ManageEncountersWorkspace } from '../screening/manage/ManageEncountersWorkspace'
 import {
   ScreeningSessionWorkspace,
   type PatientScreeningTab
@@ -107,6 +108,13 @@ export function ApplicationWorkspace({
           headingId={workspaceHeadingId}
           headingRef={headingRef}
           userRole={user.role}
+          onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
+        />
+      ) : route.status === 'MANAGE_ENCOUNTERS' ? (
+        <ManageEncountersWorkspace
+          api={api}
+          headingId={workspaceHeadingId}
+          headingRef={headingRef}
           onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
         />
       ) : (

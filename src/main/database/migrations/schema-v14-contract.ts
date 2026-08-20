@@ -327,14 +327,14 @@ function isSchemaVersion14Valid(connection: MigrationConnection): boolean {
   }
 }
 
-function hasSchemaVersion14OtcTableSql(connection: MigrationConnection): boolean {
+export function hasSchemaVersion14OtcTableSql(connection: MigrationConnection): boolean {
   return [...canonicalOtcTableSql.entries()].every(
     ([tableName, expectedSql]) =>
       normalizeSchemaSql(readCreateTableSql(connection, tableName)) === expectedSql
   )
 }
 
-function hasSchemaVersion14OtcForeignKeys(connection: MigrationConnection): boolean {
+export function hasSchemaVersion14OtcForeignKeys(connection: MigrationConnection): boolean {
   return [...otcForeignKeyContracts.entries()].every(([tableName, expected]) =>
     foreignKeyContractsMatch(readForeignKeys(connection, tableName), expected)
   )

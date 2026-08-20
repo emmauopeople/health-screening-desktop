@@ -174,6 +174,13 @@ function createRouteForCommand(
     })
   }
 
+  if (definition.id === 'SCREENING_MANAGE_ENCOUNTERS') {
+    return Object.freeze({
+      status: 'MANAGE_ENCOUNTERS',
+      commandId: definition.id
+    })
+  }
+
   return Object.freeze({
     status: 'PLANNED_MODULE',
     commandId: definition.id,

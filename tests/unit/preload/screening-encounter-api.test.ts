@@ -94,6 +94,7 @@ describe('preload screening-encounter API', () => {
     expect(Object.keys(api.screeningEncounters)).toEqual([
       'start',
       'complete',
+      'management',
       'vitals',
       'lifestyle',
       'food',
@@ -106,6 +107,7 @@ describe('preload screening-encounter API', () => {
     ])
     expect(Object.isFrozen(api)).toBe(true)
     expect(Object.isFrozen(api.screeningEncounters)).toBe(true)
+    expect(Object.isFrozen(api.screeningEncounters.management)).toBe(true)
     expect(Object.isFrozen(api.screeningEncounters.vitals)).toBe(true)
     expect(Object.isFrozen(api.screeningEncounters.lifestyle)).toBe(true)
     expect(Object.isFrozen(api.screeningEncounters.food)).toBe(true)

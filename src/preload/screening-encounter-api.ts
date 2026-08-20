@@ -1,5 +1,15 @@
 import {
   createIpcSuccess,
+  encounterManagementAddAddendumRequestSchema,
+  encounterManagementAddAddendumResultSchema,
+  encounterManagementGetDetailRequestSchema,
+  encounterManagementGetDetailResultSchema,
+  encounterManagementOpenFlagRequestSchema,
+  encounterManagementOpenFlagResultSchema,
+  encounterManagementResolveFlagRequestSchema,
+  encounterManagementResolveFlagResultSchema,
+  encounterManagementSearchRequestSchema,
+  encounterManagementSearchResultSchema,
   ipcChannels,
   screeningEncounterStartRequestSchema,
   screeningEncounterStartResultSchema,
@@ -11,6 +21,16 @@ import {
   screeningVitalsSaveDraftRequestSchema,
   screeningVitalsSaveDraftResultSchema,
   type ScreeningEncounterStartRequest,
+  type EncounterManagementAddAddendumRequest,
+  type EncounterManagementAddAddendumResult,
+  type EncounterManagementGetDetailRequest,
+  type EncounterManagementGetDetailResult,
+  type EncounterManagementOpenFlagRequest,
+  type EncounterManagementOpenFlagResult,
+  type EncounterManagementResolveFlagRequest,
+  type EncounterManagementResolveFlagResult,
+  type EncounterManagementSearchRequest,
+  type EncounterManagementSearchResult,
   type ScreeningEncounterStartResult,
   type ScreeningEncounterCompleteRequest,
   type ScreeningEncounterCompleteResult,
@@ -30,6 +50,21 @@ import type { IpcInvoke } from './authentication-api'
 export interface ScreeningEncounterApi {
   start(request: ScreeningEncounterStartRequest): Promise<ScreeningEncounterStartResult>
   complete(request: ScreeningEncounterCompleteRequest): Promise<ScreeningEncounterCompleteResult>
+  management: {
+    search(request: EncounterManagementSearchRequest): Promise<EncounterManagementSearchResult>
+    getDetail(
+      request: EncounterManagementGetDetailRequest
+    ): Promise<EncounterManagementGetDetailResult>
+    addAddendum(
+      request: EncounterManagementAddAddendumRequest
+    ): Promise<EncounterManagementAddAddendumResult>
+    openFlag(
+      request: EncounterManagementOpenFlagRequest
+    ): Promise<EncounterManagementOpenFlagResult>
+    resolveFlag(
+      request: EncounterManagementResolveFlagRequest
+    ): Promise<EncounterManagementResolveFlagResult>
+  }
   vitals: {
     getDraft(request: ScreeningVitalsGetDraftRequest): Promise<ScreeningVitalsGetDraftResult>
     saveDraft(request: ScreeningVitalsSaveDraftRequest): Promise<ScreeningVitalsSaveDraftResult>
@@ -48,6 +83,48 @@ export function createScreeningEncounterApi(invoke: IpcInvoke): ScreeningEncount
       invokeScreeningEncounterStart({ invoke, request }),
     complete: (request: ScreeningEncounterCompleteRequest) =>
       invokeScreeningEncounterComplete({ invoke, request }),
+    management: Object.freeze({
+      search: (request: EncounterManagementSearchRequest) =>
+        invokeManaged<EncounterManagementSearchRequest, EncounterManagementSearchResult>(
+          invoke,
+          ipcChannels.screeningEncounters.management.search,
+          encounterManagementSearchRequestSchema,
+          encounterManagementSearchResultSchema,
+          request
+        ),
+      getDetail: (request: EncounterManagementGetDetailRequest) =>
+        invokeManaged<EncounterManagementGetDetailRequest, EncounterManagementGetDetailResult>(
+          invoke,
+          ipcChannels.screeningEncounters.management.getDetail,
+          encounterManagementGetDetailRequestSchema,
+          encounterManagementGetDetailResultSchema,
+          request
+        ),
+      addAddendum: (request: EncounterManagementAddAddendumRequest) =>
+        invokeManaged<EncounterManagementAddAddendumRequest, EncounterManagementAddAddendumResult>(
+          invoke,
+          ipcChannels.screeningEncounters.management.addAddendum,
+          encounterManagementAddAddendumRequestSchema,
+          encounterManagementAddAddendumResultSchema,
+          request
+        ),
+      openFlag: (request: EncounterManagementOpenFlagRequest) =>
+        invokeManaged<EncounterManagementOpenFlagRequest, EncounterManagementOpenFlagResult>(
+          invoke,
+          ipcChannels.screeningEncounters.management.openFlag,
+          encounterManagementOpenFlagRequestSchema,
+          encounterManagementOpenFlagResultSchema,
+          request
+        ),
+      resolveFlag: (request: EncounterManagementResolveFlagRequest) =>
+        invokeManaged<EncounterManagementResolveFlagRequest, EncounterManagementResolveFlagResult>(
+          invoke,
+          ipcChannels.screeningEncounters.management.resolveFlag,
+          encounterManagementResolveFlagRequestSchema,
+          encounterManagementResolveFlagResultSchema,
+          request
+        )
+    }),
     vitals: Object.freeze({
       getDraft: (request: ScreeningVitalsGetDraftRequest) =>
         invokeVitalsGetDraft({ invoke, request }),
@@ -84,6 +161,27 @@ export function createScreeningEncounterApi(invoke: IpcInvoke): ScreeningEncount
     } catch {
       return deepFreeze(createIpcSuccess({ status: 'UNAVAILABLE' as const }))
     }
+  }
+}
+
+async function invokeManaged<TRequest, TResult>(
+  invoke: IpcInvoke,
+  channel: string,
+  requestSchema: IpcSchema<TRequest>,
+  resultSchema: IpcSchema<TResult>,
+  request: TRequest
+): Promise<TResult> {
+  const parsedRequest = safeParseIpcValue(requestSchema, request)
+  if (!parsedRequest.success)
+    return deepFreeze(createIpcSuccess({ status: 'VALIDATION_FAILED' })) as TResult
+  try {
+    const response = await invoke(channel, parsedRequest.data)
+    const parsedResult = safeParseIpcValue(resultSchema, response)
+    return deepFreeze(
+      parsedResult.success ? parsedResult.data : createIpcSuccess({ status: 'UNAVAILABLE' })
+    ) as TResult
+  } catch {
+    return deepFreeze(createIpcSuccess({ status: 'UNAVAILABLE' })) as TResult
   }
 }
 

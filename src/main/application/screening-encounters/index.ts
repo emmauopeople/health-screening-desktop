@@ -1,5 +1,7 @@
 export { createScreeningEncounterStartService } from './screening-encounter-start-service'
 export { createScreeningCompletionService } from './screening-completion-service'
+export { createScreeningEncounterManagementService } from './screening-encounter-management-service'
+export { createProductionScreeningEncounterManagementService } from './screening-encounter-management-service-composition'
 export {
   createProductionScreeningCompletionService,
   type ProductionScreeningCompletionServiceOptions
@@ -37,6 +39,17 @@ export type {
   ScreeningCompletionService,
   ScreeningCompletionServiceDependencies
 } from './screening-completion-service-types'
+export type {
+  AddEncounterAddendumResult,
+  EncounterManagementControlledStatus,
+  GetManagedEncounterResult,
+  OpenEncounterReviewFlagResult,
+  ResolveEncounterReviewFlagResult,
+  ScreeningEncounterManagementService,
+  ScreeningEncounterManagementServiceDependencies,
+  SearchManagedEncountersRequest,
+  SearchManagedEncountersServiceResult
+} from './screening-encounter-management-service-types'
 export type {
   ScreeningEncounterStartService,
   ScreeningEncounterStartServiceDependencies,

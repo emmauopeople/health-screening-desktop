@@ -138,6 +138,14 @@ const commandDefinitions = [
     plannedOwners.screening
   ),
   command(
+    'SCREENING_MANAGE_ENCOUNTERS',
+    'SCREENING',
+    'Manage Encounters',
+    allRoles,
+    'AVAILABLE',
+    null
+  ),
+  command(
     'SCREENING_SESSION_SUMMARY',
     'SCREENING',
     'Session Summary',

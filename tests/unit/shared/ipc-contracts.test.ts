@@ -109,6 +109,13 @@ describe('shared IPC contracts', () => {
         getVitalsDraft: 'health-screening:screening-encounters:vitals:get-draft',
         saveVitalsDraft: 'health-screening:screening-encounters:vitals:save-draft',
         completeVitalsStep: 'health-screening:screening-encounters:vitals:complete-step',
+        management: {
+          search: 'health-screening:screening-encounters:management:search',
+          getDetail: 'health-screening:screening-encounters:management:get-detail',
+          addAddendum: 'health-screening:screening-encounters:management:add-addendum',
+          openFlag: 'health-screening:screening-encounters:management:open-flag',
+          resolveFlag: 'health-screening:screening-encounters:management:resolve-flag'
+        },
         lifestyle: {
           getWorkspace: 'health-screening:screening-encounters:lifestyle:get-workspace',
           saveAlcoholBaseline:
@@ -138,7 +145,7 @@ describe('shared IPC contracts', () => {
     })
     const allChannels = flattenChannelStrings(ipcChannels)
 
-    expect(allChannels).toHaveLength(49)
+    expect(allChannels).toHaveLength(54)
     expect(new Set(allChannels).size).toBe(allChannels.length)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.lifestyle.complete)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.complete)
@@ -147,6 +154,8 @@ describe('shared IPC contracts', () => {
     expect(allChannels).toContain(ipcChannels.screeningEncounters.food.saveDraft)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.otc.getWorkspace)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.otc.saveDraft)
+    expect(allChannels).toContain(ipcChannels.screeningEncounters.management.search)
+    expect(allChannels).toContain(ipcChannels.screeningEncounters.management.resolveFlag)
   })
 
   it('keeps patient requests strict and main-process-authored', () => {

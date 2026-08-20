@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { createIpcSuccess, createIpcSuccessResultSchema, safeIpcErrorMessages } from './result'
+import { patientLocalDateSchema } from './patient-contracts'
 import {
   VITALS_DIASTOLIC_MAX,
   VITALS_DIASTOLIC_MIN,
@@ -63,6 +64,38 @@ export const screeningEncounterCompleteRequestSchema = exactObject({
   alcoholBaselineReviewConfirmedVersionId: screeningEncounterUuidSchema.nullable(),
   tobaccoBaselineReviewConfirmedVersionId: screeningEncounterUuidSchema.nullable()
 })
+export const encounterManagementFlagCategorySchema = z.enum([
+  'POSSIBLE_DATA_ERROR',
+  'MISSING_INFORMATION',
+  'WRONG_PATIENT',
+  'DUPLICATE_ENCOUNTER',
+  'OTHER'
+])
+export const encounterManagementFlagStatusSchema = z.enum(['OPEN', 'RESOLVED', 'DISMISSED'])
+export const encounterManagementSearchRequestSchema = exactObject({
+  query: z.string().max(120),
+  status: z.union([z.literal('ALL'), screeningEncounterStatusSchema]),
+  page: z.number().int().min(1).safe(),
+  pageSize: z.union([z.literal(25), z.literal(50), z.literal(100)])
+})
+export const encounterManagementGetDetailRequestSchema = exactObject({
+  encounterId: screeningEncounterUuidSchema
+})
+export const encounterManagementAddAddendumRequestSchema = exactObject({
+  encounterId: screeningEncounterUuidSchema,
+  noteText: z.string().trim().min(1).max(2000)
+})
+export const encounterManagementOpenFlagRequestSchema = exactObject({
+  encounterId: screeningEncounterUuidSchema,
+  category: encounterManagementFlagCategorySchema,
+  description: z.string().trim().min(1).max(1000)
+})
+export const encounterManagementResolveFlagRequestSchema = exactObject({
+  encounterId: screeningEncounterUuidSchema,
+  flagId: screeningEncounterUuidSchema,
+  status: z.enum(['RESOLVED', 'DISMISSED']),
+  resolutionNote: z.string().trim().min(1).max(1000)
+})
 export const screeningVitalsGetDraftRequestSchema = exactObject({
   encounterId: screeningEncounterUuidSchema
 })
@@ -106,6 +139,128 @@ export const publicCompletedScreeningEncounterSummarySchema = z
     recordVersion: z.number().int().min(1).safe()
   })
   .strict()
+
+export const publicManagedEncounterSummarySchema = z
+  .object({
+    id: screeningEncounterUuidSchema,
+    patientId: screeningEncounterUuidSchema,
+    patientCode: z.string().min(1).max(80),
+    patientDisplayName: z.string().min(1).max(240),
+    dateOfBirth: patientLocalDateSchema.nullable(),
+    locationName: z.string().min(1).max(240),
+    status: screeningEncounterStatusSchema,
+    startedAt: screeningEncounterUtcTimestampSchema,
+    completedAt: screeningEncounterUtcTimestampSchema.nullable(),
+    noteCount: z.number().int().min(0).safe(),
+    openFlagCount: z.number().int().min(0).safe()
+  })
+  .strict()
+export const publicEncounterAddendumSchema = z
+  .object({
+    id: screeningEncounterUuidSchema,
+    encounterId: screeningEncounterUuidSchema,
+    noteText: z.string().min(1).max(2000),
+    createdBy: screeningEncounterUuidSchema,
+    createdByDisplayName: z.string().min(1).max(240),
+    createdAt: screeningEncounterUtcTimestampSchema
+  })
+  .strict()
+export const publicEncounterReviewFlagSchema = z
+  .object({
+    id: screeningEncounterUuidSchema,
+    encounterId: screeningEncounterUuidSchema,
+    category: encounterManagementFlagCategorySchema,
+    description: z.string().min(1).max(1000),
+    status: encounterManagementFlagStatusSchema,
+    openedBy: screeningEncounterUuidSchema,
+    openedByDisplayName: z.string().min(1).max(240),
+    openedAt: screeningEncounterUtcTimestampSchema,
+    resolvedBy: screeningEncounterUuidSchema.nullable(),
+    resolvedByDisplayName: z.string().min(1).max(240).nullable(),
+    resolvedAt: screeningEncounterUtcTimestampSchema.nullable(),
+    resolutionNote: z.string().min(1).max(1000).nullable()
+  })
+  .strict()
+export const publicManagedEncounterDetailSchema = z
+  .object({
+    encounter: publicManagedEncounterSummarySchema,
+    vitals: z.array(
+      z
+        .object({
+          sequenceNumber: z.number().int().min(1).safe(),
+          systolic: z.number().int().min(1).safe(),
+          diastolic: z.number().int().min(1).safe(),
+          pulse: z.number().int().min(1).safe().nullable(),
+          measuredAt: screeningEncounterUtcTimestampSchema
+        })
+        .strict()
+    ),
+    lifestyle: z.array(
+      z.object({ questionCode: z.string().min(1), responseCode: z.string().min(1) }).strict()
+    ),
+    foods: z.array(
+      z
+        .object({
+          foodName: z.string().min(1),
+          frequencyCode: z.string().min(1),
+          notes: z.string().nullable()
+        })
+        .strict()
+    ),
+    otcMedications: z.array(
+      z
+        .object({
+          productName: z.string().min(1),
+          reasonForUse: z.string().min(1),
+          currentlyTaking: z.boolean().nullable()
+        })
+        .strict()
+    ),
+    addenda: z.array(publicEncounterAddendumSchema),
+    flags: z.array(publicEncounterReviewFlagSchema)
+  })
+  .strict()
+
+const encounterManagementControlledStatusSchemas = [
+  z.object({ status: z.literal('AUTHENTICATION_REQUIRED') }).strict(),
+  z.object({ status: z.literal('FORBIDDEN') }).strict(),
+  z.object({ status: z.literal('VALIDATION_FAILED') }).strict(),
+  z.object({ status: z.literal('LOCATION_NOT_CONFIGURED') }).strict(),
+  z.object({ status: z.literal('LOCATION_NOT_FOUND') }).strict(),
+  z.object({ status: z.literal('LOCATION_INACTIVE') }).strict(),
+  z.object({ status: z.literal('ENCOUNTER_NOT_FOUND') }).strict(),
+  z.object({ status: z.literal('ENCOUNTER_NOT_MANAGEABLE') }).strict(),
+  z.object({ status: z.literal('FLAG_NOT_FOUND') }).strict(),
+  z.object({ status: z.literal('UNAVAILABLE') }).strict()
+] as const
+export const encounterManagementSearchSuccessDataSchema = z.discriminatedUnion('status', [
+  z
+    .object({
+      status: z.literal('LOADED'),
+      items: z.array(publicManagedEncounterSummarySchema),
+      total: z.number().int().min(0).safe(),
+      page: z.number().int().min(1).safe(),
+      pageSize: z.union([z.literal(25), z.literal(50), z.literal(100)])
+    })
+    .strict(),
+  ...encounterManagementControlledStatusSchemas
+])
+export const encounterManagementGetDetailSuccessDataSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('LOADED'), detail: publicManagedEncounterDetailSchema }).strict(),
+  ...encounterManagementControlledStatusSchemas
+])
+export const encounterManagementAddAddendumSuccessDataSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('ADDED'), addendum: publicEncounterAddendumSchema }).strict(),
+  ...encounterManagementControlledStatusSchemas
+])
+export const encounterManagementOpenFlagSuccessDataSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('OPENED'), flag: publicEncounterReviewFlagSchema }).strict(),
+  ...encounterManagementControlledStatusSchemas
+])
+export const encounterManagementResolveFlagSuccessDataSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('UPDATED'), flag: publicEncounterReviewFlagSchema }).strict(),
+  ...encounterManagementControlledStatusSchemas
+])
 
 export const screeningEncounterStartSuccessDataSchema = z.discriminatedUnion('status', [
   z
@@ -276,8 +431,72 @@ export const screeningEncounterCompleteResultSchema = withSafeTransportPreproces
     screeningEncounterFailureSchema
   ])
 )
+export const encounterManagementSearchResultSchema = withSafeTransportPreprocess(
+  z.discriminatedUnion('ok', [
+    createIpcSuccessResultSchema(encounterManagementSearchSuccessDataSchema),
+    screeningEncounterFailureSchema
+  ])
+)
+export const encounterManagementGetDetailResultSchema = withSafeTransportPreprocess(
+  z.discriminatedUnion('ok', [
+    createIpcSuccessResultSchema(encounterManagementGetDetailSuccessDataSchema),
+    screeningEncounterFailureSchema
+  ])
+)
+export const encounterManagementAddAddendumResultSchema = withSafeTransportPreprocess(
+  z.discriminatedUnion('ok', [
+    createIpcSuccessResultSchema(encounterManagementAddAddendumSuccessDataSchema),
+    screeningEncounterFailureSchema
+  ])
+)
+export const encounterManagementOpenFlagResultSchema = withSafeTransportPreprocess(
+  z.discriminatedUnion('ok', [
+    createIpcSuccessResultSchema(encounterManagementOpenFlagSuccessDataSchema),
+    screeningEncounterFailureSchema
+  ])
+)
+export const encounterManagementResolveFlagResultSchema = withSafeTransportPreprocess(
+  z.discriminatedUnion('ok', [
+    createIpcSuccessResultSchema(encounterManagementResolveFlagSuccessDataSchema),
+    screeningEncounterFailureSchema
+  ])
+)
 
 export type ScreeningEncounterStatus = z.infer<typeof screeningEncounterStatusSchema>
+export type EncounterManagementFlagCategory = z.infer<typeof encounterManagementFlagCategorySchema>
+export type EncounterManagementFlagStatus = z.infer<typeof encounterManagementFlagStatusSchema>
+export type EncounterManagementSearchRequest = z.infer<
+  typeof encounterManagementSearchRequestSchema
+>
+export type EncounterManagementGetDetailRequest = z.infer<
+  typeof encounterManagementGetDetailRequestSchema
+>
+export type EncounterManagementAddAddendumRequest = z.infer<
+  typeof encounterManagementAddAddendumRequestSchema
+>
+export type EncounterManagementOpenFlagRequest = z.infer<
+  typeof encounterManagementOpenFlagRequestSchema
+>
+export type EncounterManagementResolveFlagRequest = z.infer<
+  typeof encounterManagementResolveFlagRequestSchema
+>
+export type PublicManagedEncounterSummary = z.infer<typeof publicManagedEncounterSummarySchema>
+export type PublicEncounterAddendum = z.infer<typeof publicEncounterAddendumSchema>
+export type PublicEncounterReviewFlag = z.infer<typeof publicEncounterReviewFlagSchema>
+export type PublicManagedEncounterDetail = z.infer<typeof publicManagedEncounterDetailSchema>
+export type EncounterManagementSearchResult = z.infer<typeof encounterManagementSearchResultSchema>
+export type EncounterManagementGetDetailResult = z.infer<
+  typeof encounterManagementGetDetailResultSchema
+>
+export type EncounterManagementAddAddendumResult = z.infer<
+  typeof encounterManagementAddAddendumResultSchema
+>
+export type EncounterManagementOpenFlagResult = z.infer<
+  typeof encounterManagementOpenFlagResultSchema
+>
+export type EncounterManagementResolveFlagResult = z.infer<
+  typeof encounterManagementResolveFlagResultSchema
+>
 export type ScreeningEncounterStartRequest = z.infer<typeof screeningEncounterStartRequestSchema>
 export type ScreeningCompletionSection = z.infer<typeof screeningCompletionSectionSchema>
 export type ScreeningEncounterCompleteRequest = z.infer<
@@ -467,6 +686,9 @@ function copySafeTransportValue(value: unknown, active = new WeakSet<object>()):
     const copy: Record<string, unknown> = {}
 
     for (const key of Object.getOwnPropertyNames(descriptors)) {
+      if (key === '__proto__') {
+        return unsafeTransportValue
+      }
       const descriptor = descriptors[key]
 
       if (descriptor === undefined || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {

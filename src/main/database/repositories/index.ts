@@ -234,6 +234,25 @@ export {
   type ScreeningEncounterStatus
 } from './screening-encounter'
 export {
+  createScreeningEncounterManagementRepository,
+  type EncounterAddendumRecord,
+  type EncounterReviewFlagCategory,
+  type EncounterReviewFlagRecord,
+  type EncounterReviewFlagStatus,
+  type InsertEncounterAddendumInput,
+  type InsertEncounterReviewFlagInput,
+  type ManagedEncounterDetailRecord,
+  type ManagedEncounterFoodRecord,
+  type ManagedEncounterLifestyleRecord,
+  type ManagedEncounterOtcRecord,
+  type ManagedEncounterSummaryRecord,
+  type ManagedEncounterVitalsRecord,
+  type ResolveEncounterReviewFlagInput,
+  type ScreeningEncounterManagementRepository,
+  type SearchManagedEncountersInput,
+  type SearchManagedEncountersResult
+} from './screening-encounter-management'
+export {
   createScreeningVitalsDraftRepository,
   parseInsertScreeningVitalsDraftInput,
   parseScreeningVitalsDraftRowVersion,

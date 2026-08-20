@@ -4349,3 +4349,157 @@ h1 {
     padding: 5px 16px;
   }
 }
+/* Encounter management uses the established screening card, field, and button styles. */
+.manage-encounters-workspace {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1rem;
+  overflow: hidden;
+}
+
+.manage-encounters-search {
+  display: grid;
+  grid-template-columns: minmax(16rem, 1fr) minmax(10rem, 14rem) auto;
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.manage-encounters-layout {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: minmax(18rem, 0.8fr) minmax(28rem, 1.6fr);
+  gap: 1rem;
+}
+
+.manage-encounters-results,
+.manage-encounter-detail {
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 0.55rem;
+  background: var(--color-panel);
+}
+
+.manage-encounters-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.65rem;
+}
+
+.manage-encounter-result {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.45rem;
+  background: var(--color-panel);
+  color: inherit;
+  text-align: left;
+}
+
+.manage-encounter-result:hover,
+.manage-encounter-result.is-selected {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.manage-encounter-result-heading,
+.manage-encounter-detail-header,
+.encounter-management-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.manage-encounter-detail {
+  padding: 1rem;
+}
+
+.manage-encounter-detail-header {
+  margin-bottom: 1rem;
+}
+
+.manage-encounter-detail-header h2,
+.manage-encounter-detail-header p,
+.screening-review-card h3 {
+  margin: 0;
+}
+
+.manage-encounter-clinical-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.manage-encounter-detail .screening-review-card {
+  margin-bottom: 0.75rem;
+}
+
+.encounter-management-entry {
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.encounter-management-entry:last-of-type {
+  border-bottom: 0;
+}
+
+.encounter-management-form {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.6rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: #e7edf3;
+  color: var(--color-muted);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-completed,
+.status-resolved {
+  background: #e6f4ec;
+  color: #217a4a;
+}
+
+.status-open {
+  background: #fff0dc;
+  color: #8a4b08;
+}
+
+.status-void,
+.status-dismissed {
+  background: #f1f2f4;
+  color: #667085;
+}
+
+@media (max-width: 860px) {
+  .manage-encounters-workspace {
+    overflow: visible;
+  }
+
+  .manage-encounters-search,
+  .manage-encounters-layout,
+  .manage-encounter-clinical-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .manage-encounters-results,
+  .manage-encounter-detail {
+    overflow: visible;
+  }
+}

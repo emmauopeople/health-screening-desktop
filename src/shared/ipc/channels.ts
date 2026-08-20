@@ -44,6 +44,13 @@ export const ipcChannels = {
     getVitalsDraft: 'health-screening:screening-encounters:vitals:get-draft',
     saveVitalsDraft: 'health-screening:screening-encounters:vitals:save-draft',
     completeVitalsStep: 'health-screening:screening-encounters:vitals:complete-step',
+    management: {
+      search: 'health-screening:screening-encounters:management:search',
+      getDetail: 'health-screening:screening-encounters:management:get-detail',
+      addAddendum: 'health-screening:screening-encounters:management:add-addendum',
+      openFlag: 'health-screening:screening-encounters:management:open-flag',
+      resolveFlag: 'health-screening:screening-encounters:management:resolve-flag'
+    },
     lifestyle: {
       getWorkspace: 'health-screening:screening-encounters:lifestyle:get-workspace',
       saveAlcoholBaseline: 'health-screening:screening-encounters:lifestyle:save-alcohol-baseline',
@@ -79,8 +86,9 @@ export type ScreeningSessionIpcChannel =
 export type ScreeningEncounterIpcChannel =
   | (typeof ipcChannels.screeningEncounters)[Exclude<
       keyof typeof ipcChannels.screeningEncounters,
-      'lifestyle' | 'food' | 'otc'
+      'lifestyle' | 'food' | 'otc' | 'management'
     >]
+  | ScreeningEncounterManagementIpcChannel
   | ScreeningLifestyleIpcChannel
   | ScreeningFoodIpcChannel
   | ScreeningOtcIpcChannel
@@ -90,5 +98,7 @@ export type ScreeningFoodIpcChannel =
   (typeof ipcChannels.screeningEncounters.food)[keyof typeof ipcChannels.screeningEncounters.food]
 export type ScreeningOtcIpcChannel =
   (typeof ipcChannels.screeningEncounters.otc)[keyof typeof ipcChannels.screeningEncounters.otc]
+export type ScreeningEncounterManagementIpcChannel =
+  (typeof ipcChannels.screeningEncounters.management)[keyof typeof ipcChannels.screeningEncounters.management]
 export type InstallationSettingsIpcChannel =
   (typeof ipcChannels.installationSettings)[keyof typeof ipcChannels.installationSettings]

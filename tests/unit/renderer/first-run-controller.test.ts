@@ -581,6 +581,13 @@ function createApi({
     screeningEncounters: {
       start: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
       complete: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+      management: {
+        search: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+        getDetail: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+        addAddendum: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+        openFlag: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+        resolveFlag: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+      },
       vitals: {
         getDraft: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
         saveDraft: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
