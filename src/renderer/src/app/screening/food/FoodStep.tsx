@@ -30,6 +30,7 @@ export interface FoodStepProps {
   onRetryLoad(): void
   onReload(): void
   onSaveDraft(): void
+  onContinue(): void
   onUpdate(update: (state: FoodDraftState) => FoodDraftState): void
 }
 
@@ -39,6 +40,7 @@ export function FoodStep({
   onRetryLoad,
   onReload,
   onSaveDraft,
+  onContinue,
   onUpdate
 }: FoodStepProps): React.JSX.Element {
   const controlsDisabled = state.loadStatus !== 'READY' || state.saveStatus === 'SAVING'
@@ -253,7 +255,12 @@ export function FoodStep({
           >
             {state.saveStatus === 'SAVING' ? 'Saving draft...' : 'Save draft'}
           </button>
-          <button className="button button-primary" type="button" disabled>
+          <button
+            className="button button-primary"
+            type="button"
+            disabled={!canSave}
+            onClick={onContinue}
+          >
             Continue
           </button>
         </div>

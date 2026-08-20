@@ -302,6 +302,46 @@ export function validateFoodDraftForSave(
   return errors
 }
 
+export function validateFoodDraftForContinue(
+  state: Pick<FoodDraftState, 'foodResponse' | 'rows' | 'workspace'>
+): readonly FoodValidationError[] {
+  const errors = [...validateFoodDraftForSave(state)]
+  const meaningfulRows = state.rows.filter((row) => !isBlankFoodRow(row))
+
+  if (state.foodResponse === '') {
+    errors.push({
+      fieldId: 'food-response',
+      message: 'Select a Food response before continuing.'
+    })
+  } else if (state.foodResponse === 'REPORTED' && meaningfulRows.length === 0) {
+    errors.push({
+      fieldId: 'food-response',
+      message: 'Add at least one reported food before continuing.'
+    })
+  }
+
+  if (state.foodResponse === 'REPORTED') {
+    for (const row of meaningfulRows) {
+      if (row.foodName.trim().length === 0) continue
+      if (row.catalogCode === null) continue
+      const catalogItem = state.workspace?.catalogItems.find(
+        (item) => item.code === row.catalogCode
+      )
+      if (
+        catalogItem === undefined ||
+        normalizeFoodName(catalogItem.displayName) !== normalizeFoodName(row.foodName)
+      ) {
+        errors.push({
+          fieldId: `${row.localKey}:foodName`,
+          message: 'Select a valid catalog food or enter a custom food name.'
+        })
+      }
+    }
+  }
+
+  return errors
+}
+
 export function getFoodFieldError(
   errors: readonly FoodValidationError[],
   fieldId: string

@@ -8,6 +8,7 @@ import {
   createFoodSaveDraftRequest,
   createInitialFoodDraftState,
   parseFoodFrequencyDraft,
+  validateFoodDraftForContinue,
   updateFoodResponse,
   updateFoodRow
 } from '../../../src/renderer/src/app/screening/food/food-workspace-model'
@@ -142,6 +143,38 @@ describe('Food renderer workspace model', () => {
     expect(updated.rows[0]?.catalogCode).toBe(firstRow.catalogCode)
     expect(updated.rows[0]?.foodName).toBe(firstRow.foodName)
     expect(updated.rows[0]?.preparationNote).toBe(firstRow.preparationNote)
+  })
+
+  it('keeps Save Draft permissive but requires a selected response and reported food for Continue', () => {
+    const blank = { ...createInitialFoodDraftState(), loadStatus: 'READY' as const }
+    expect(createFoodSaveDraftRequest(encounterId, blank).status).toBe('VALID')
+    expect(validateFoodDraftForContinue(blank).map((error) => error.fieldId)).toContain(
+      'food-response'
+    )
+
+    const reported = updateFoodResponse(blank, 'REPORTED')
+    expect(validateFoodDraftForContinue(reported).map((error) => error.fieldId)).toContain(
+      'food-response'
+    )
+  })
+
+  it('accepts valid catalog and custom Food identities for Continue', () => {
+    const workspace = publicFoodWorkspace()
+    const catalogRow = addFoodRow(
+      updateFoodResponse(createFoodDraftStateFromWorkspace(workspace), 'REPORTED')
+    )
+    const catalogKey = catalogRow.rows[0]?.localKey ?? ''
+    const withCatalog = updateFoodRow(catalogRow, catalogKey, (row) =>
+      applyFoodCatalogSelection(row, workspace.catalogItems[0]!)
+    )
+    expect(validateFoodDraftForContinue(withCatalog)).toEqual([])
+
+    const customRow = updateFoodRow(withCatalog, catalogKey, (row) => ({
+      ...row,
+      catalogCode: null,
+      foodName: 'Custom meal'
+    }))
+    expect(validateFoodDraftForContinue(customRow)).toEqual([])
   })
 })
 

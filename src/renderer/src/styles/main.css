@@ -2782,6 +2782,244 @@ h1 {
   background: #fff4f2;
 }
 
+.otc-step {
+  gap: 14px;
+}
+
+.otc-period {
+  margin: 6px 0 0;
+  color: var(--shell-secondary-text);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.otc-response-panel,
+.otc-rows-panel {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.otc-response-panel legend,
+.otc-row legend {
+  color: var(--shell-navy);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.otc-response-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  gap: 8px 12px;
+}
+
+.otc-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  color: #344054;
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.otc-choice input {
+  accent-color: var(--shell-teal);
+}
+
+.otc-rows-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.otc-rows-header h4 {
+  margin: 0;
+  color: var(--shell-navy);
+  font-size: 0.95rem;
+}
+
+.otc-add-button {
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 12px;
+  font-size: 0.82rem;
+}
+
+.otc-row-list {
+  display: grid;
+  gap: 10px;
+}
+
+.otc-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  border: 1px solid #c8d3df;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfdff;
+}
+
+.otc-row legend {
+  grid-column: 1 / -1;
+}
+
+.otc-field {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  color: #344054;
+  font-size: 0.84rem;
+  font-weight: 760;
+}
+
+.otc-field-product-name {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.otc-field-reason {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.otc-field-taking {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.otc-field-dose {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.otc-field-frequency {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.otc-field-duration {
+  grid-column: 3;
+  grid-row: 3;
+}
+
+.otc-field-source {
+  grid-column: 1;
+  grid-row: 4;
+}
+
+.otc-field input,
+.otc-field select {
+  width: 100%;
+  height: 38px;
+  min-height: 0;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--shell-text);
+  background: #ffffff;
+  font: inherit;
+}
+
+.otc-field input:focus-visible,
+.otc-field select:focus-visible {
+  outline: 3px solid rgba(15, 107, 122, 0.34);
+  outline-offset: 1px;
+}
+
+.otc-field input[aria-invalid='true'],
+.otc-field select[aria-invalid='true'] {
+  border-color: #b42318;
+}
+
+.otc-field input[aria-invalid='true']:focus-visible,
+.otc-field select[aria-invalid='true']:focus-visible {
+  outline-color: rgba(180, 35, 24, 0.48);
+}
+
+.otc-field-error {
+  min-height: 1.25em;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #912018;
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.25;
+  visibility: hidden;
+}
+
+.otc-field-error-visible {
+  visibility: visible;
+}
+
+.otc-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.otc-suggestion {
+  min-height: 30px;
+  border: 1px solid #c8d3df;
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #344054;
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.otc-row-actions,
+.otc-action-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.otc-row-actions {
+  grid-column: 2 / 4;
+  grid-row: 4;
+  align-content: start;
+}
+
+.otc-row-actions .button {
+  min-height: 32px;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+}
+
+.otc-step-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #c8d3df;
+  border-radius: 6px;
+  padding: 9px 10px;
+  color: #344054;
+  background: #f8fbfd;
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.otc-step-error {
+  border-color: #f1b5b0;
+  color: #912018;
+  background: #fff4f2;
+}
+
 .screening-vitals-entry {
   display: grid;
   gap: 12px;
@@ -3890,6 +4128,8 @@ h1 {
   .screening-context-metrics,
   .food-response-grid,
   .food-row,
+  .otc-response-grid,
+  .otc-row,
   .lifestyle-activity-row,
   .lifestyle-form-grid,
   .lifestyle-choice-grid {
@@ -3903,6 +4143,18 @@ h1 {
   .lifestyle-activity-field-days,
   .lifestyle-activity-field-hours,
   .lifestyle-activity-field-minutes {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .otc-field-product-name,
+  .otc-field-reason,
+  .otc-field-taking,
+  .otc-field-dose,
+  .otc-field-frequency,
+  .otc-field-duration,
+  .otc-field-source,
+  .otc-row-actions {
     grid-column: 1;
     grid-row: auto;
   }

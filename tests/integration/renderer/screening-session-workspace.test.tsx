@@ -19,6 +19,7 @@ import {
   type PublicScreeningVitalsDraft,
   type ScreeningFoodWorkspace,
   type ScreeningLifestyleWorkspace,
+  type ScreeningOtcWorkspace,
   type ScreeningSessionErrorCode
 } from '@shared/ipc'
 import {
@@ -73,6 +74,14 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
       >
       saveDraft: ReturnType<
         typeof vi.fn<HealthScreeningApi['screeningEncounters']['food']['saveDraft']>
+      >
+    }
+    otc: {
+      getWorkspace: ReturnType<
+        typeof vi.fn<HealthScreeningApi['screeningEncounters']['otc']['getWorkspace']>
+      >
+      saveDraft: ReturnType<
+        typeof vi.fn<HealthScreeningApi['screeningEncounters']['otc']['saveDraft']>
       >
     }
   } & HealthScreeningApi['screeningEncounters']
@@ -772,7 +781,7 @@ describe('screening patient entry workspace', () => {
     expect(api.screeningEncounters.lifestyle.saveDraft.mock.calls[0]?.[0].expectedVersion).toBe(4)
     expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
     expect(api.screeningEncounters.food.getWorkspace).toHaveBeenCalledOnce()
-    expect(buttonByText(mounted, 'Continue').disabled).toBe(true)
+    expect(buttonByText(mounted, 'Continue').disabled).toBe(false)
     await clickButton(mounted, 'Previous')
     expect(text(mounted)).toContain('Editable')
     expect(buttonByText(mounted, 'Save draft').disabled).toBe(false)
@@ -829,7 +838,7 @@ describe('screening patient entry workspace', () => {
 
     expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
     expect(api.screeningEncounters.food.getWorkspace).toHaveBeenCalledWith({ encounterId })
-    expect(buttonByText(mounted, 'Continue').disabled).toBe(true)
+    expect(buttonByText(mounted, 'Continue').disabled).toBe(false)
 
     await changeRadio(mounted, 'food-response', 'REPORTED')
     await clickButton(mounted, 'Add food')
@@ -949,6 +958,475 @@ describe('screening patient entry workspace', () => {
         preparationNote: 'boiled'
       }
     ])
+
+    await mounted.unmount()
+  })
+
+  it('navigates from Food to OTC without locking the draft and preserves OTC rows on return', async () => {
+    const api = createApi()
+    const lifestyleWorkspace = publicCompleteLifestyleWorkspace()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: lifestyleWorkspace })
+    )
+    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValue(
+      createIpcSuccess({ status: 'SAVED', workspace: lifestyleWorkspace })
+    )
+    api.screeningEncounters.food.saveDraft.mockImplementation((request) =>
+      Promise.resolve(
+        createIpcSuccess({ status: 'SAVED', workspace: publicFoodWorkspaceFromRequest(request) })
+      )
+    )
+    api.screeningEncounters.otc.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: publicOtcWorkspace() })
+    )
+    api.screeningEncounters.otc.saveDraft.mockImplementation((request) =>
+      Promise.resolve(
+        createIpcSuccess({ status: 'SAVED', workspace: publicOtcWorkspaceFromRequest(request) })
+      )
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Continue')
+    expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
+    await changeRadio(mounted, 'food-response', 'REPORTED')
+    await clickButton(mounted, 'Add food')
+    await clickButton(mounted, 'Rice')
+    await clickButton(mounted, 'Continue')
+
+    expect(mounted.container.querySelector('#screening-otc-step-title')).not.toBeNull()
+    const responseRadios = Array.from(
+      mounted.container.querySelectorAll<HTMLInputElement>('input[name="otc-response"]')
+    )
+    expect(responseRadios).toHaveLength(6)
+    expect(new Set(responseRadios.map((radio) => radio.id)).size).toBe(6)
+    for (const radio of responseRadios) {
+      expect(mounted.container.querySelector(`label[for="${radio.id}"]`)).not.toBeNull()
+    }
+    expect(mounted.container.querySelectorAll('label button').length).toBe(0)
+    expect(
+      Array.from(mounted.container.querySelectorAll('.screening-stepper li'))
+        .find((item) => item.querySelector('strong')?.textContent?.trim() === 'OTC')
+        ?.getAttribute('data-active')
+    ).toBe('true')
+    expect(buttonByText(mounted, 'Continue').disabled).toBe(true)
+    expect(mounted.container.querySelector('#screening-review-step-title')).toBeNull()
+
+    await changeRadio(mounted, 'otc-response', 'REPORTED')
+    await clickButton(mounted, 'Add medication')
+    await clickButton(mounted, 'Ibuprofen')
+    expect(inputByLabel(mounted, 'Medication name').value).toBe('Ibuprofen')
+    await changeInput(inputByLabel(mounted, 'Reason for use'), 'Headache')
+    await changeSelect(selectByLabel(mounted, 'Currently taking?'), 'YES')
+    await clickButton(mounted, 'Save draft')
+
+    expect(api.screeningEncounters.otc.saveDraft).toHaveBeenCalledWith({
+      encounterId,
+      expectedVersion: 1,
+      otcResponse: 'REPORTED',
+      rows: [
+        expect.objectContaining({
+          id: null,
+          sequenceNumber: 1,
+          productName: 'Ibuprofen',
+          reasonForUse: 'Headache',
+          currentlyTakingResponse: 'YES'
+        })
+      ]
+    })
+    expect(text(mounted)).toContain('Draft saved')
+
+    await clickButton(mounted, 'Previous')
+    expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
+    await clickButton(mounted, 'Continue')
+    expect(mounted.container.querySelector('#screening-otc-step-title')).not.toBeNull()
+    expect(inputByLabel(mounted, 'Medication name').value).toBe('Ibuprofen')
+    expect(inputByLabel(mounted, 'Reason for use').value).toBe('Headache')
+
+    await mounted.unmount()
+  })
+
+  it('keeps Food Continue strict while Save Draft remains permissive', async () => {
+    const api = createApi()
+    const lifestyleWorkspace = publicCompleteLifestyleWorkspace()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: lifestyleWorkspace })
+    )
+    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValue(
+      createIpcSuccess({ status: 'SAVED', workspace: lifestyleWorkspace })
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Continue')
+    await clickButton(mounted, 'Continue')
+
+    expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
+    expect(api.screeningEncounters.food.saveDraft).not.toHaveBeenCalled()
+    expect(text(mounted)).toContain('Cannot continue. Check the highlighted fields.')
+    await flushReact()
+    expect(document.activeElement?.id).toBe('food-food-response')
+
+    await changeRadio(mounted, 'food-response', 'REPORTED')
+    await clickButton(mounted, 'Continue')
+    expect(api.screeningEncounters.food.saveDraft).not.toHaveBeenCalled()
+    expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
+
+    await clickButton(mounted, 'Save draft')
+    expect(api.screeningEncounters.food.saveDraft).toHaveBeenCalledOnce()
+
+    await mounted.unmount()
+  })
+
+  it('resets an abandoned OTC load and ignores its late response after switching patients', async () => {
+    const firstLoad =
+      createDeferred<
+        Awaited<ReturnType<HealthScreeningApi['screeningEncounters']['otc']['getWorkspace']>>
+      >()
+    const api = createApi({
+      patients: [
+        patientSummary({ id: patientId, displayName: 'Ada Lovelace' }),
+        patientSummary({ id: secondPatientId, displayName: 'Grace Hopper' })
+      ]
+    })
+    api.screeningEncounters.start.mockImplementation((request) =>
+      Promise.resolve(
+        createIpcSuccess({
+          status: 'STARTED',
+          encounter: encounterSummary({
+            id: request.patientId === secondPatientId ? secondEncounterId : encounterId,
+            patientId: request.patientId
+          })
+        })
+      )
+    )
+    const completeLifestyle = publicCompleteLifestyleWorkspace({ encounterIdOverride: encounterId })
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: completeLifestyle })
+    )
+    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValue(
+      createIpcSuccess({ status: 'SAVED', workspace: completeLifestyle })
+    )
+    api.screeningEncounters.otc.getWorkspace
+      .mockReturnValueOnce(firstLoad.promise)
+      .mockResolvedValueOnce(
+        createIpcSuccess({ status: 'LOADED', workspace: publicOtcWorkspace() })
+      )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Continue')
+    await changeRadio(mounted, 'food-response', 'REPORTED')
+    await clickButton(mounted, 'Add food')
+    await clickButton(mounted, 'Rice')
+    await clickButton(mounted, 'Continue')
+    expect(text(mounted)).toContain('Loading OTC.')
+
+    await clickButton(mounted, 'Search / open patient')
+    await clickRow(mounted, 'Grace Hopper')
+    expect(text(mounted)).not.toContain('Ibuprofen')
+    await clickButton(mounted, 'Ada Lovelace')
+    await flushReact()
+
+    expect(api.screeningEncounters.otc.getWorkspace).toHaveBeenCalledTimes(2)
+    expect(mounted.container.querySelector('#screening-otc-step-title')).not.toBeNull()
+    expect(text(mounted)).not.toContain('Loading OTC.')
+
+    firstLoad.resolve(createIpcSuccess({ status: 'LOADED', workspace: publicOtcWorkspace() }))
+    await flushReact()
+
+    expect(text(mounted)).not.toContain('Draft saved')
+    expect(mounted.container.querySelector('#screening-otc-step-title')).not.toBeNull()
+    expect(text(mounted)).not.toContain('OTC could not be loaded.')
+
+    await mounted.unmount()
+  })
+
+  it('reconciles a pending OTC save into the originating tab before allowing a retry', async () => {
+    const saveResult =
+      createDeferred<
+        Awaited<ReturnType<HealthScreeningApi['screeningEncounters']['otc']['saveDraft']>>
+      >()
+    const api = createApi({
+      patients: [
+        patientSummary({ id: patientId, displayName: 'Ada Lovelace' }),
+        patientSummary({ id: secondPatientId, displayName: 'Grace Hopper' })
+      ]
+    })
+    api.screeningEncounters.start.mockImplementation((request) =>
+      Promise.resolve(
+        createIpcSuccess({
+          status: 'STARTED',
+          encounter: encounterSummary({
+            id: request.patientId === secondPatientId ? secondEncounterId : encounterId,
+            patientId: request.patientId
+          })
+        })
+      )
+    )
+    const completeLifestyle = publicCompleteLifestyleWorkspace({ encounterIdOverride: encounterId })
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: completeLifestyle })
+    )
+    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValue(
+      createIpcSuccess({ status: 'SAVED', workspace: completeLifestyle })
+    )
+    api.screeningEncounters.otc.saveDraft
+      .mockReturnValueOnce(saveResult.promise)
+      .mockImplementation((request) =>
+        Promise.resolve(
+          createIpcSuccess({ status: 'SAVED', workspace: publicOtcWorkspaceFromRequest(request) })
+        )
+      )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Continue')
+    await changeRadio(mounted, 'food-response', 'REPORTED')
+    await clickButton(mounted, 'Add food')
+    await clickButton(mounted, 'Rice')
+    await clickButton(mounted, 'Continue')
+    await changeRadio(mounted, 'otc-response', 'REPORTED')
+    await clickButton(mounted, 'Add medication')
+    await changeInput(inputByLabel(mounted, 'Medication name'), 'Ibuprofen')
+    await clickButton(mounted, 'Save draft')
+    expect(buttonByText(mounted, 'Saving draft...').disabled).toBe(true)
+
+    await clickButton(mounted, 'Search / open patient')
+    await clickRow(mounted, 'Grace Hopper')
+    await clickButton(mounted, 'Ada Lovelace')
+    expect(buttonByText(mounted, 'Saving draft...').disabled).toBe(true)
+
+    const firstRequest = api.screeningEncounters.otc.saveDraft.mock.calls[0]?.[0]
+    expect(firstRequest?.expectedVersion).toBe(1)
+    saveResult.resolve(
+      createIpcSuccess({ status: 'SAVED', workspace: publicOtcWorkspaceFromRequest(firstRequest!) })
+    )
+    await flushReact()
+    expect(buttonByText(mounted, 'Save draft').disabled).toBe(false)
+    expect(text(mounted)).toContain('Draft saved')
+
+    await changeInput(inputByLabel(mounted, 'Reason for use'), 'Headache')
+    await clickButton(mounted, 'Save draft')
+    expect(api.screeningEncounters.otc.saveDraft).toHaveBeenCalledTimes(2)
+    expect(api.screeningEncounters.otc.saveDraft.mock.calls[1]?.[0].expectedVersion).toBe(2)
+    await flushReact()
+    expect(text(mounted)).toContain('Draft saved')
+    expect(text(mounted)).not.toContain('OTC draft changed elsewhere')
+
+    await mounted.unmount()
+  })
+
+  it('keeps a failed pending OTC save retryable after switching away and back', async () => {
+    const saveResult =
+      createDeferred<
+        Awaited<ReturnType<HealthScreeningApi['screeningEncounters']['otc']['saveDraft']>>
+      >()
+    const api = createApi({
+      patients: [
+        patientSummary({ id: patientId, displayName: 'Ada Lovelace' }),
+        patientSummary({ id: secondPatientId, displayName: 'Grace Hopper' })
+      ]
+    })
+    api.screeningEncounters.start.mockImplementation((request) =>
+      Promise.resolve(
+        createIpcSuccess({
+          status: 'STARTED',
+          encounter: encounterSummary({
+            id: request.patientId === secondPatientId ? secondEncounterId : encounterId,
+            patientId: request.patientId
+          })
+        })
+      )
+    )
+    const completeLifestyle = publicCompleteLifestyleWorkspace({ encounterIdOverride: encounterId })
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: completeLifestyle })
+    )
+    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValue(
+      createIpcSuccess({ status: 'SAVED', workspace: completeLifestyle })
+    )
+    api.screeningEncounters.otc.saveDraft
+      .mockReturnValueOnce(saveResult.promise)
+      .mockResolvedValue(createIpcSuccess({ status: 'SAVED', workspace: publicOtcWorkspace() }))
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Continue')
+    await changeRadio(mounted, 'food-response', 'REPORTED')
+    await clickButton(mounted, 'Add food')
+    await clickButton(mounted, 'Rice')
+    await clickButton(mounted, 'Continue')
+    await changeRadio(mounted, 'otc-response', 'REPORTED')
+    await clickButton(mounted, 'Add medication')
+    await changeInput(inputByLabel(mounted, 'Medication name'), 'Ibuprofen')
+    await clickButton(mounted, 'Save draft')
+
+    await clickButton(mounted, 'Search / open patient')
+    await clickRow(mounted, 'Grace Hopper')
+    await clickButton(mounted, 'Ada Lovelace')
+    expect(buttonByText(mounted, 'Saving draft...').disabled).toBe(true)
+
+    saveResult.resolve(createIpcSuccess({ status: 'UNAVAILABLE' }))
+    await flushReact()
+    expect(buttonByText(mounted, 'Save draft').disabled).toBe(false)
+    expect(text(mounted)).toContain('OTC is unavailable.')
+    expect(inputByLabel(mounted, 'Medication name').value).toBe('Ibuprofen')
+
+    await clickButton(mounted, 'Save draft')
+    expect(api.screeningEncounters.otc.saveDraft).toHaveBeenCalledTimes(2)
+    expect(api.screeningEncounters.otc.saveDraft.mock.calls[1]?.[0].expectedVersion).toBe(1)
+    await flushReact()
+    expect(text(mounted)).toContain('Draft saved')
+
+    await mounted.unmount()
+  })
+
+  it('guards a pending OTC save when its patient tab is closed and reopened', async () => {
+    const saveResult =
+      createDeferred<
+        Awaited<ReturnType<HealthScreeningApi['screeningEncounters']['otc']['saveDraft']>>
+      >()
+    const api = createApi({
+      patients: [patientSummary({ id: patientId, displayName: 'Ada Lovelace' })]
+    })
+    api.screeningEncounters.start.mockResolvedValue(
+      createIpcSuccess({
+        status: 'STARTED',
+        encounter: encounterSummary({ patientId, id: encounterId })
+      })
+    )
+    const completeLifestyle = publicCompleteLifestyleWorkspace({ encounterIdOverride: encounterId })
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValue(
+      createIpcSuccess({ status: 'LOADED', workspace: completeLifestyle })
+    )
+    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValue(
+      createIpcSuccess({ status: 'SAVED', workspace: completeLifestyle })
+    )
+    api.screeningEncounters.otc.saveDraft
+      .mockReturnValueOnce(saveResult.promise)
+      .mockImplementation((request) =>
+        Promise.resolve(
+          createIpcSuccess({ status: 'SAVED', workspace: publicOtcWorkspaceFromRequest(request) })
+        )
+      )
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Continue')
+    await changeRadio(mounted, 'food-response', 'REPORTED')
+    await clickButton(mounted, 'Add food')
+    await clickButton(mounted, 'Rice')
+    await clickButton(mounted, 'Continue')
+    await changeRadio(mounted, 'otc-response', 'REPORTED')
+    await clickButton(mounted, 'Add medication')
+    await changeInput(inputByLabel(mounted, 'Medication name'), 'Ibuprofen')
+    await clickButton(mounted, 'Save draft')
+
+    const firstRequest = api.screeningEncounters.otc.saveDraft.mock.calls[0]?.[0]
+    expect(firstRequest?.expectedVersion).toBe(1)
+    await clickButton(mounted, 'Close Ada Lovelace')
+    await clickButton(mounted, 'Search / open patient')
+    await clickRow(mounted, 'Ada Lovelace')
+    await fillCompleteVitalsReading(mounted, 1)
+    await clickButton(mounted, 'Continue to Lifestyle')
+    await flushReact()
+    await clickButton(mounted, 'Continue')
+    await changeRadio(mounted, 'food-response', 'REPORTED')
+    await clickButton(mounted, 'Add food')
+    await clickButton(mounted, 'Rice')
+    await clickButton(mounted, 'Continue')
+
+    expect(text(mounted)).toContain('Reconnecting to the saved OTC draft...')
+    expect(buttonByText(mounted, 'Saving draft...').disabled).toBe(true)
+    await clickButton(mounted, 'Saving draft...')
+    expect(api.screeningEncounters.otc.saveDraft).toHaveBeenCalledTimes(1)
+
+    const authoritativeWorkspace = publicOtcWorkspaceFromRequest(firstRequest!)
+    api.screeningEncounters.otc.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace: authoritativeWorkspace })
+    )
+    saveResult.resolve(createIpcSuccess({ status: 'SAVED', workspace: authoritativeWorkspace }))
+    await flushReact()
+    await flushReact()
+
+    expect(api.screeningEncounters.otc.getWorkspace).toHaveBeenCalledTimes(2)
+    expect(text(mounted)).not.toContain('Draft saved')
+    expect(text(mounted)).not.toContain('OTC changed while saving')
+    expect(inputByLabel(mounted, 'Medication name').value).toBe('Ibuprofen')
+    expect(buttonByText(mounted, 'Save draft').disabled).toBe(false)
+
+    await clickButton(mounted, 'Save draft')
+    expect(api.screeningEncounters.otc.saveDraft).toHaveBeenCalledTimes(2)
+    expect(api.screeningEncounters.otc.saveDraft.mock.calls[1]?.[0].expectedVersion).toBe(2)
+
+    await mounted.unmount()
+  })
+
+  it('reloads a reopened OTC encounter after a failed pending save and permits retry', async () => {
+    const saveResult =
+      createDeferred<
+        Awaited<ReturnType<HealthScreeningApi['screeningEncounters']['otc']['saveDraft']>>
+      >()
+    const api = createApi({
+      patients: [patientSummary({ id: patientId, displayName: 'Ada Lovelace' })]
+    })
+    api.screeningEncounters.start.mockResolvedValue(
+      createIpcSuccess({
+        status: 'STARTED',
+        encounter: encounterSummary({ patientId, id: encounterId })
+      })
+    )
+    const completeLifestyle = publicCompleteLifestyleWorkspace({ encounterIdOverride: encounterId })
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValue(
+      createIpcSuccess({ status: 'LOADED', workspace: completeLifestyle })
+    )
+    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValue(
+      createIpcSuccess({ status: 'SAVED', workspace: completeLifestyle })
+    )
+    api.screeningEncounters.otc.saveDraft
+      .mockReturnValueOnce(saveResult.promise)
+      .mockResolvedValue(createIpcSuccess({ status: 'SAVED', workspace: publicOtcWorkspace() }))
+    const mounted = await mountWorkspace({ api })
+
+    await openLifestyle(mounted)
+    await clickButton(mounted, 'Continue')
+    await changeRadio(mounted, 'food-response', 'REPORTED')
+    await clickButton(mounted, 'Add food')
+    await clickButton(mounted, 'Rice')
+    await clickButton(mounted, 'Continue')
+    await changeRadio(mounted, 'otc-response', 'REPORTED')
+    await clickButton(mounted, 'Add medication')
+    await changeInput(inputByLabel(mounted, 'Medication name'), 'Ibuprofen')
+    await clickButton(mounted, 'Save draft')
+
+    await clickButton(mounted, 'Close Ada Lovelace')
+    await clickButton(mounted, 'Search / open patient')
+    await clickRow(mounted, 'Ada Lovelace')
+    await fillCompleteVitalsReading(mounted, 1)
+    await clickButton(mounted, 'Continue to Lifestyle')
+    await flushReact()
+    await clickButton(mounted, 'Continue')
+    await changeRadio(mounted, 'food-response', 'REPORTED')
+    await clickButton(mounted, 'Add food')
+    await clickButton(mounted, 'Rice')
+    await clickButton(mounted, 'Continue')
+    expect(text(mounted)).toContain('Reconnecting to the saved OTC draft...')
+
+    saveResult.resolve(createIpcSuccess({ status: 'UNAVAILABLE' }))
+    await flushReact()
+    await flushReact()
+
+    expect(api.screeningEncounters.otc.getWorkspace).toHaveBeenCalledTimes(2)
+    expect(buttonByText(mounted, 'Save draft').disabled).toBe(false)
+    expect(text(mounted)).not.toContain('Reconnecting to the saved OTC draft...')
+    expect(inputByLabel(mounted, 'Medication name').value).toBe('Ibuprofen')
+    await clickButton(mounted, 'Save draft')
+    expect(api.screeningEncounters.otc.saveDraft).toHaveBeenCalledTimes(2)
+    expect(api.screeningEncounters.otc.saveDraft.mock.calls[1]?.[0].expectedVersion).toBe(1)
+    expect(api.screeningEncounters.otc.saveDraft.mock.calls[1]?.[0].rows[0]?.productName).toBe(
+      'Ibuprofen'
+    )
 
     await mounted.unmount()
   })
@@ -3115,6 +3593,14 @@ function createApi({
         saveDraft: vi.fn(() =>
           Promise.resolve(createIpcSuccess({ status: 'SAVED', workspace: publicFoodWorkspace() }))
         )
+      },
+      otc: {
+        getWorkspace: vi.fn(() =>
+          Promise.resolve(createIpcSuccess({ status: 'LOADED', workspace: publicOtcWorkspace() }))
+        ),
+        saveDraft: vi.fn(() =>
+          Promise.resolve(createIpcSuccess({ status: 'SAVED', workspace: publicOtcWorkspace() }))
+        )
       }
     },
     screeningSessions: {
@@ -3283,6 +3769,58 @@ function publicFoodWorkspaceFromRequest(
         foodNameNormalized: row.foodName.trim().toLocaleLowerCase('en-US'),
         frequencyCode: row.frequencyCode,
         preparationNote: row.preparationNote,
+        updatedAt: baseTimestamp
+      })),
+      updatedAt: baseTimestamp
+    }
+  })
+}
+
+function publicOtcWorkspace(overrides: Partial<ScreeningOtcWorkspace> = {}): ScreeningOtcWorkspace {
+  return {
+    encounterId,
+    draft: {
+      id: '67676767-6767-4676-8676-676767676767',
+      encounterId,
+      otcResponse: null,
+      rowVersion: 1,
+      periodStart: '2026-07-31',
+      periodEnd: operationalDate,
+      rows: [],
+      updatedAt: baseTimestamp
+    },
+    recentMedications: [
+      {
+        productNameSnapshot: 'Ibuprofen'
+      }
+    ],
+    ...overrides
+  }
+}
+
+function publicOtcWorkspaceFromRequest(
+  request: Parameters<HealthScreeningApi['screeningEncounters']['otc']['saveDraft']>[0]
+): ScreeningOtcWorkspace {
+  return publicOtcWorkspace({
+    encounterId: request.encounterId,
+    draft: {
+      id: '67676767-6767-4676-8676-676767676767',
+      encounterId: request.encounterId,
+      otcResponse: request.otcResponse,
+      rowVersion: (request.expectedVersion ?? 0) + 1,
+      periodStart: '2026-07-31',
+      periodEnd: operationalDate,
+      rows: request.rows.map((row, index) => ({
+        id: row.id ?? `78787878-7878-4787-8787-78787878787${index}`,
+        sequenceNumber: row.sequenceNumber,
+        productNameSnapshot: row.productName,
+        productNameNormalized: row.productName?.trim().toLocaleLowerCase('en-US') ?? null,
+        reasonForUse: row.reasonForUse,
+        doseText: row.doseText,
+        frequencyText: row.frequencyText,
+        durationText: row.durationText,
+        sourceOfMedication: row.sourceOfMedication,
+        currentlyTakingResponse: row.currentlyTakingResponse,
         updatedAt: baseTimestamp
       })),
       updatedAt: baseTimestamp
