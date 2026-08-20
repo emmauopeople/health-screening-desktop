@@ -27,6 +27,7 @@ export interface OtcStepProps {
   onRetryLoad(): void
   onReload(): void
   onSaveDraft(): void
+  onContinue(): void
   onUpdate(update: (state: OtcDraftState) => OtcDraftState): void
 }
 
@@ -36,6 +37,7 @@ export function OtcStep({
   onRetryLoad,
   onReload,
   onSaveDraft,
+  onContinue,
   onUpdate
 }: OtcStepProps): React.JSX.Element {
   const controlsDisabled = state.loadStatus !== 'READY' || state.saveStatus === 'SAVING'
@@ -245,7 +247,12 @@ export function OtcStep({
           >
             {state.saveStatus === 'SAVING' ? 'Saving draft...' : 'Save draft'}
           </button>
-          <button className="button button-primary" type="button" disabled>
+          <button
+            className="button button-primary"
+            type="button"
+            disabled={!canSave}
+            onClick={onContinue}
+          >
             Continue
           </button>
         </div>

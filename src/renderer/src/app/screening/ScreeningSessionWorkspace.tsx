@@ -58,6 +58,7 @@ import {
 } from './food/food-workspace-model'
 import { LifestyleStep } from './lifestyle/LifestyleStep'
 import { OtcStep } from './otc/OtcStep'
+import { ReviewStep } from './review/ReviewStep'
 import {
   createInitialOtcDraftState,
   createOtcDraftStateFromWorkspace,
@@ -65,6 +66,7 @@ import {
   getOtcFailureMessage,
   getOtcStatusMessage,
   mergeOtcSaveWorkspace,
+  validateOtcDraftForContinue,
   type OtcDraftState
 } from './otc/otc-workspace-model'
 import {
@@ -152,7 +154,7 @@ type WorkspaceMessage = {
 }
 
 type ScreeningWorkspaceTab = 'PATIENTS' | 'NEW_SCREENING'
-type ScreeningWorkflowStep = 'VITALS' | 'LIFESTYLE' | 'FOOD' | 'OTC'
+type ScreeningWorkflowStep = 'VITALS' | 'LIFESTYLE' | 'FOOD' | 'OTC' | 'REVIEW'
 type VitalsMeasurementSite = 'RIGHT_ARM' | 'LEFT_ARM' | 'LEFT_LEG' | 'RIGHT_LEG'
 type VitalsPosition = 'LYING' | 'STANDING' | 'SITTING'
 type VitalsDraftLoadStatus = 'NOT_LOADED' | 'LOADING' | 'READY' | 'ERROR'
@@ -1757,7 +1759,12 @@ export function ScreeningSessionWorkspace({
   )
 
   const saveOtcDraft = useCallback(
-    async (patientId: string, encounterId: string, draft: OtcDraftState): Promise<void> => {
+    async (
+      patientId: string,
+      encounterId: string,
+      draft: OtcDraftState,
+      advanceToReview = false
+    ): Promise<void> => {
       if (
         draft.loadStatus !== 'READY' ||
         draft.saveStatus === 'SAVING' ||
@@ -1854,16 +1861,29 @@ export function ScreeningSessionWorkspace({
         }
         const pendingSave = otcPendingSaveRef.current.get(encounterId)
         if (pendingSave?.requestId === requestId) pendingSave.outcome = 'SUCCEEDED'
-        updateOtcDraft(patientId, encounterId, (current) => {
-          if (current.instanceToken !== originInstanceToken) return current
-          if (current.localRevision !== submittedLocalRevision)
+        onOpenTabsChange((currentTabs) =>
+          currentTabs.map((tab) => {
+            if (tab.patient.id !== patientId || tab.encounter.id !== encounterId) return tab
+            const current = tab.otcDraft
+            if (current.instanceToken !== originInstanceToken) return tab
+            if (current.localRevision !== submittedLocalRevision)
+              return {
+                ...tab,
+                otcDraft: {
+                  ...current,
+                  saveStatus: 'ERROR',
+                  statusMessage: 'OTC changed while saving. Reload before trying again.'
+                }
+              }
             return {
-              ...current,
-              saveStatus: 'ERROR',
-              statusMessage: 'OTC changed while saving. Reload before trying again.'
+              ...tab,
+              otcDraft: mergeOtcSaveWorkspace(current, workspace, validation.reconciliation),
+              vitalsDraft: advanceToReview
+                ? { ...tab.vitalsDraft, activeStep: 'REVIEW' }
+                : tab.vitalsDraft
             }
-          return mergeOtcSaveWorkspace(current, workspace, validation.reconciliation)
-        })
+          })
+        )
       } catch {
         const pendingSave = otcPendingSaveRef.current.get(encounterId)
         if (pendingSave?.requestId === requestId) pendingSave.outcome = 'FAILED'
@@ -1887,7 +1907,32 @@ export function ScreeningSessionWorkspace({
         }
       }
     },
-    [api, mountedRef, requestOtcValidationFocus, updateOtcDraft]
+    [api, mountedRef, onOpenTabsChange, requestOtcValidationFocus, updateOtcDraft]
+  )
+
+  const continueOtc = useCallback(
+    async (patientId: string, encounterId: string, draft: OtcDraftState): Promise<void> => {
+      if (
+        draft.loadStatus !== 'READY' ||
+        draft.saveStatus === 'SAVING' ||
+        otcPendingSaveRef.current.has(encounterId)
+      )
+        return
+      const errors = validateOtcDraftForContinue(draft)
+      if (errors.length > 0) {
+        updateOtcDraft(patientId, encounterId, (current) =>
+          requestOtcValidationFocus(encounterId, {
+            ...current,
+            saveStatus: 'ERROR',
+            statusMessage: 'Cannot continue. Check the highlighted OTC fields.',
+            validationErrors: errors
+          })
+        )
+        return
+      }
+      await saveOtcDraft(patientId, encounterId, draft, true)
+    },
+    [requestOtcValidationFocus, saveOtcDraft, updateOtcDraft]
   )
 
   const reopenLifestyle = useCallback(
@@ -2152,6 +2197,7 @@ export function ScreeningSessionWorkspace({
               onUpdateFoodDraft={updateFoodDraft}
               onLoadOtcWorkspace={loadOtcWorkspace}
               onSaveOtcDraft={saveOtcDraft}
+              onContinueOtc={continueOtc}
               onUpdateOtcDraft={updateOtcDraft}
             />
           )}
@@ -2397,6 +2443,7 @@ function NewScreeningWorkspace({
   onUpdateFoodDraft,
   onLoadOtcWorkspace,
   onSaveOtcDraft,
+  onContinueOtc,
   onUpdateOtcDraft
 }: {
   readonly activeTab: PatientScreeningTab | null
@@ -2438,6 +2485,7 @@ function NewScreeningWorkspace({
   onUpdateFoodDraft(patientId: string, update: (draft: FoodDraftState) => FoodDraftState): void
   onLoadOtcWorkspace(patientId: string, encounterId: string): void
   onSaveOtcDraft(patientId: string, encounterId: string, draft: OtcDraftState): void
+  onContinueOtc(patientId: string, encounterId: string, draft: OtcDraftState): void
   onUpdateOtcDraft(
     patientId: string,
     encounterId: string,
@@ -2543,6 +2591,9 @@ function NewScreeningWorkspace({
             }
             onSaveOtcDraft={() =>
               onSaveOtcDraft(activeTab.patient.id, activeTab.encounter.id, activeTab.otcDraft)
+            }
+            onContinueOtc={() =>
+              onContinueOtc(activeTab.patient.id, activeTab.encounter.id, activeTab.otcDraft)
             }
             onUpdateOtcDraft={(update) =>
               onUpdateOtcDraft(activeTab.patient.id, activeTab.encounter.id, update)
@@ -2691,6 +2742,7 @@ function CurrentEncounterPanel({
   onUpdateFoodDraft,
   onLoadOtcWorkspace,
   onSaveOtcDraft,
+  onContinueOtc,
   onUpdateOtcDraft
 }: {
   readonly location: PublicScreeningSessionWorkspaceLocation
@@ -2712,6 +2764,7 @@ function CurrentEncounterPanel({
   onUpdateFoodDraft(update: (draft: FoodDraftState) => FoodDraftState): void
   onLoadOtcWorkspace(): void
   onSaveOtcDraft(): void
+  onContinueOtc(): void
   onUpdateOtcDraft(update: (draft: OtcDraftState) => OtcDraftState): void
 }): React.JSX.Element {
   const displayName = formatPatientName(tab.patient)
@@ -2810,7 +2863,7 @@ function CurrentEncounterPanel({
           onContinue={onContinueFood}
           onUpdate={onUpdateFoodDraft}
         />
-      ) : (
+      ) : tab.vitalsDraft.activeStep === 'OTC' ? (
         <OtcStep
           state={tab.otcDraft}
           onBackToFood={() => {
@@ -2829,7 +2882,32 @@ function CurrentEncounterPanel({
             onLoadOtcWorkspace()
           }}
           onSaveDraft={onSaveOtcDraft}
+          onContinue={onContinueOtc}
           onUpdate={onUpdateOtcDraft}
+        />
+      ) : (
+        <ReviewStep
+          protocolVersionId={session.protocolVersionId}
+          vitals={{
+            readings: tab.vitalsDraft.readings.map((reading, index) => ({
+              sequenceNumber: index + 1,
+              systolic: reading.systolic,
+              diastolic: reading.diastolic,
+              pulse: reading.pulse,
+              site: reading.site,
+              position: reading.position,
+              time: reading.time
+            })),
+            weightKg: tab.vitalsDraft.weightKg,
+            waist: tab.vitalsDraft.waist,
+            notes: tab.vitalsDraft.notes
+          }}
+          lifestyle={tab.lifestyleDraft}
+          food={tab.foodDraft}
+          otc={tab.otcDraft}
+          onBackToOtc={() => {
+            onUpdateVitalsDraft((draft) => ({ ...draft, activeStep: 'OTC' }))
+          }}
         />
       )}
     </section>
@@ -3723,6 +3801,8 @@ function getActiveStepIndex(step: ScreeningWorkflowStep): number {
       return 2
     case 'OTC':
       return 3
+    case 'REVIEW':
+      return 4
   }
 }
 

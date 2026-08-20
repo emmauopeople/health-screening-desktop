@@ -1009,8 +1009,13 @@ describe('screening patient entry workspace', () => {
         .find((item) => item.querySelector('strong')?.textContent?.trim() === 'OTC')
         ?.getAttribute('data-active')
     ).toBe('true')
-    expect(buttonByText(mounted, 'Continue').disabled).toBe(true)
+    expect(buttonByText(mounted, 'Continue').disabled).toBe(false)
     expect(mounted.container.querySelector('#screening-review-step-title')).toBeNull()
+    await clickButton(mounted, 'Continue')
+    expect(api.screeningEncounters.otc.saveDraft).not.toHaveBeenCalled()
+    expect(text(mounted)).toContain('Cannot continue. Check the highlighted OTC fields.')
+    await flushReact()
+    expect(document.activeElement?.id).toBe('otc-otc-response-UNFINISHED')
 
     await changeRadio(mounted, 'otc-response', 'REPORTED')
     await clickButton(mounted, 'Add medication')
@@ -1042,6 +1047,22 @@ describe('screening patient entry workspace', () => {
     expect(mounted.container.querySelector('#screening-otc-step-title')).not.toBeNull()
     expect(inputByLabel(mounted, 'Medication name').value).toBe('Ibuprofen')
     expect(inputByLabel(mounted, 'Reason for use').value).toBe('Headache')
+
+    await clickButton(mounted, 'Continue')
+    expect(mounted.container.querySelector('#screening-review-step-title')).not.toBeNull()
+    expect(
+      Array.from(mounted.container.querySelectorAll('.screening-stepper li'))
+        .find((item) => item.querySelector('strong')?.textContent?.trim() === 'Review')
+        ?.getAttribute('data-active')
+    ).toBe('true')
+    expect(text(mounted)).toContain('150 / 92')
+    expect(text(mounted)).toContain('Ibuprofen')
+    expect(text(mounted)).toContain('Headache')
+    expect(buttonByText(mounted, 'Complete screening').disabled).toBe(true)
+
+    await clickButton(mounted, 'Previous')
+    expect(mounted.container.querySelector('#screening-otc-step-title')).not.toBeNull()
+    expect(inputByLabel(mounted, 'Medication name').value).toBe('Ibuprofen')
 
     await mounted.unmount()
   })

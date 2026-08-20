@@ -11,7 +11,8 @@ import {
   moveOtcRow,
   removeOtcRow,
   updateOtcResponse,
-  updateOtcRow
+  updateOtcRow,
+  validateOtcDraftForContinue
 } from '../../../src/renderer/src/app/screening/otc/otc-workspace-model'
 
 const encounterId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
@@ -273,6 +274,93 @@ describe('OTC renderer workspace model', () => {
     expect(updated.validationErrors).toEqual([
       { fieldId: 'local-otc-row-10:productName', message: 'tenth' }
     ])
+  })
+
+  it('keeps Save Draft permissive while Continue requires a response', () => {
+    const state = { ...createInitialOtcDraftState(), loadStatus: 'READY' as const }
+
+    expect(createOtcSaveDraftRequest(encounterId, state).status).toBe('VALID')
+    expect(validateOtcDraftForContinue(state)).toEqual([
+      {
+        fieldId: 'otc-response',
+        message: 'Select an OTC response before continuing.'
+      }
+    ])
+  })
+
+  it('requires a complete reported medication before Continue', () => {
+    const initial = addOtcRow(
+      updateOtcResponse({ ...createInitialOtcDraftState(), loadStatus: 'READY' }, 'REPORTED')
+    )
+    const key = initial.rows[0]?.localKey ?? ''
+    const partial = updateOtcRow(initial, key, (row) => ({ ...row, doseText: '200 mg' }))
+
+    expect(validateOtcDraftForContinue(partial)).toEqual([
+      { fieldId: `${key}:productName`, message: 'Enter the medication name.' },
+      { fieldId: `${key}:reasonForUse`, message: 'Enter the reason for use.' },
+      {
+        fieldId: `${key}:currentlyTakingResponse`,
+        message: 'Select whether the patient is currently taking this medication.'
+      }
+    ])
+  })
+
+  it('rejects duplicate normalized medication names on Continue', () => {
+    const first = {
+      ...createBlankOtcRow(),
+      productName: ' Ibuprofen ',
+      reasonForUse: 'Pain',
+      currentlyTakingResponse: 'YES' as const
+    }
+    const second = {
+      ...createBlankOtcRow(),
+      productName: 'ibuprofen',
+      reasonForUse: 'Headache',
+      currentlyTakingResponse: 'NO' as const
+    }
+    const state = {
+      ...createInitialOtcDraftState(),
+      loadStatus: 'READY' as const,
+      otcResponse: 'REPORTED' as const,
+      rows: [first, second]
+    }
+
+    expect(validateOtcDraftForContinue(state)).toEqual([
+      {
+        fieldId: `${second.localKey}:productName`,
+        message: 'Each medication may be reported only once.'
+      }
+    ])
+  })
+
+  it.each(['NONE_REPORTED', 'UNKNOWN', 'DECLINED', 'PREFER_NOT_TO_ANSWER'] as const)(
+    'accepts the explicit %s response for Continue',
+    (otcResponse) => {
+      const state = {
+        ...createInitialOtcDraftState(),
+        loadStatus: 'READY' as const,
+        otcResponse
+      }
+
+      expect(validateOtcDraftForContinue(state)).toEqual([])
+    }
+  )
+
+  it('accepts a complete unique reported medication for Continue', () => {
+    const row = {
+      ...createBlankOtcRow(),
+      productName: 'Ibuprofen',
+      reasonForUse: 'Headache',
+      currentlyTakingResponse: 'YES' as const
+    }
+    const state = {
+      ...createInitialOtcDraftState(),
+      loadStatus: 'READY' as const,
+      otcResponse: 'REPORTED' as const,
+      rows: [row]
+    }
+
+    expect(validateOtcDraftForContinue(state)).toEqual([])
   })
 })
 
