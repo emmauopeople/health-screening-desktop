@@ -44,7 +44,7 @@ describe('manage encounters workspace', () => {
           items: [encounter],
           total: 1,
           page: 1,
-          pageSize: 50 as const
+          pageSize: 25 as const
         })
       )
     )
@@ -107,7 +107,7 @@ describe('manage encounters workspace', () => {
       await Promise.resolve()
     })
 
-    expect(search).toHaveBeenCalledWith({ query: '', status: 'ALL', page: 1, pageSize: 50 })
+    expect(search).toHaveBeenCalledWith({ query: '', status: 'ALL', page: 1, pageSize: 25 })
     expect(getDetail).toHaveBeenCalledWith({ encounterId: encounter.id })
     expect(container.querySelector('.manage-encounters-layout')).not.toBeNull()
     expect(container.querySelector('.manage-encounters-results')).not.toBeNull()
@@ -134,7 +134,7 @@ describe('manage encounters workspace', () => {
           items: [],
           total: 0,
           page: 1,
-          pageSize: 50 as const
+          pageSize: 25 as const
         })
       )
     )
@@ -168,6 +168,7 @@ describe('manage encounters workspace', () => {
     await act(async () => vi.runOnlyPendingTimersAsync())
     expect(search).toHaveBeenCalledTimes(1)
     expect(button(container, 'Search')).toBeNull()
+    expect(container.textContent).toContain('All active')
 
     const queryInput = container.querySelector<HTMLInputElement>('#manage-encounters-query')!
     await act(async () => changeInput(queryInput, 'Te'))
@@ -182,7 +183,7 @@ describe('manage encounters workspace', () => {
       query: 'Tes',
       status: 'ALL',
       page: 1,
-      pageSize: 50
+      pageSize: 25
     })
 
     const status = container.querySelector<HTMLSelectElement>('#manage-encounters-status')!
@@ -192,8 +193,89 @@ describe('manage encounters workspace', () => {
       query: 'Tes',
       status: 'DRAFT',
       page: 1,
-      pageSize: 50
+      pageSize: 25
     })
+
+    await act(async () => root.unmount())
+  })
+
+  it('paginates encounter results without changing the active search criteria', async () => {
+    vi.useFakeTimers()
+    const search = vi.fn((input: { page: number }) =>
+      Promise.resolve(
+        createIpcSuccess({
+          status: 'LOADED' as const,
+          items: [encounter],
+          total: 52,
+          page: input.page,
+          pageSize: 25 as const
+        })
+      )
+    )
+    const getDetail = vi.fn(() =>
+      Promise.resolve(
+        createIpcSuccess({
+          status: 'LOADED' as const,
+          detail: {
+            encounter,
+            vitals: [],
+            lifestyle: [],
+            foods: [],
+            otcMedications: [],
+            addenda: [],
+            flags: []
+          }
+        })
+      )
+    )
+    const api = {
+      screeningEncounters: {
+        management: {
+          search,
+          getDetail,
+          addAddendum: vi.fn(),
+          openFlag: vi.fn(),
+          resolveFlag: vi.fn(),
+          voidEmptyDraft: vi.fn()
+        }
+      }
+    } as unknown as HealthScreeningApi
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(
+        createElement(ManageEncountersWorkspace, {
+          api,
+          headingId: 'manage-heading',
+          headingRef: createRef<HTMLHeadingElement>(),
+          onAuthenticationFailure: vi.fn(),
+          onResumeDraft: vi.fn(() => true)
+        })
+      )
+    })
+    await act(async () => vi.runOnlyPendingTimersAsync())
+
+    expect(container.textContent).toContain('1–25 of 52')
+    expect(container.textContent).toContain('Page 1 of 3')
+    expect(button(container, 'Previous')?.disabled).toBe(true)
+    expect(button(container, 'Next')?.disabled).toBe(false)
+
+    await act(async () => {
+      button(container, 'Next')?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(search).toHaveBeenLastCalledWith({
+      query: '',
+      status: 'ALL',
+      page: 2,
+      pageSize: 25
+    })
+    expect(container.textContent).toContain('26–50 of 52')
+    expect(container.textContent).toContain('Page 2 of 3')
 
     await act(async () => root.unmount())
   })
@@ -212,7 +294,7 @@ describe('manage encounters workspace', () => {
           items: [draftEncounter],
           total: 1,
           page: 1,
-          pageSize: 50 as const
+          pageSize: 25 as const
         })
       )
     )
@@ -292,7 +374,7 @@ describe('manage encounters workspace', () => {
       items: [emptyDraft],
       total: 1,
       page: 1,
-      pageSize: 50 as const
+      pageSize: 25 as const
     })
     const voidEmptyDraft = vi.fn(() =>
       Promise.resolve(createIpcSuccess({ status: 'VOIDED' as const, recordVersion: 2 }))
