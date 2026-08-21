@@ -656,6 +656,31 @@ describe('screening patient entry workspace', () => {
     await mounted.unmount()
   })
 
+  it('saves a resumed Lifestyle draft after the screening workspace is remounted', async () => {
+    const api = createApi()
+    const workspace = publicLifestyleWorkspaceWithTobacco()
+    api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
+      createIpcSuccess({ status: 'LOADED', workspace })
+    )
+    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValue(
+      createIpcSuccess({ status: 'SAVED', workspace })
+    )
+    const mounted = await mountWorkspaceWithReactTabState({ api })
+
+    await openLifestyle(mounted)
+    await mounted.hideWorkspace()
+    await mounted.showWorkspace('SCREENING_NEW_SCREENING')
+
+    expect(buttonByText(mounted, 'Save draft').disabled).toBe(false)
+    await clickButton(mounted, 'Save draft')
+
+    expect(api.screeningEncounters.lifestyle.saveDraft).toHaveBeenCalledOnce()
+    expect(text(mounted)).toContain('Draft saved')
+    expect(text(mounted)).not.toContain('Saving draft...')
+
+    await mounted.unmount()
+  })
+
   it('closes nested baseline panels when switching or collapsing cards', async () => {
     const api = createApi()
     const workspace = publicLifestyleWorkspaceWithTobacco()
@@ -3042,7 +3067,7 @@ describe('screening patient entry workspace', () => {
     await mounted.unmount()
   })
 
-  it('drops a Lifestyle response that resolves after leaving and re-entering the tab', async () => {
+  it('reloads Lifestyle after a stale response resolves after leaving and re-entering the tab', async () => {
     const workspaceResult =
       createDeferred<
         Awaited<ReturnType<HealthScreeningApi['screeningEncounters']['lifestyle']['getWorkspace']>>
@@ -3058,13 +3083,17 @@ describe('screening patient entry workspace', () => {
 
     await mounted.setCommandId('SCREENING_TODAYS_SESSION')
     await mounted.setCommandId('SCREENING_NEW_SCREENING')
+
+    expect(api.screeningEncounters.lifestyle.getWorkspace).toHaveBeenCalledTimes(2)
+    expect(text(mounted)).not.toContain('Loading Lifestyle.')
+    expect(mounted.container.querySelectorAll('.lifestyle-card')).toHaveLength(5)
+
     workspaceResult.resolve(
       createIpcSuccess({ status: 'LOADED', workspace: publicLifestyleWorkspaceWithAlcohol() })
     )
     await flushReact()
 
-    expect(text(mounted)).toContain('Loading Lifestyle.')
-    expect(mounted.container.querySelector('#alcohol-drinking-days')).toBeNull()
+    expect(mounted.container.querySelectorAll('.lifestyle-card')).toHaveLength(5)
 
     await mounted.unmount()
   })
