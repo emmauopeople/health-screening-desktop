@@ -4387,7 +4387,6 @@ h1 {
 .manage-encounters-results,
 .manage-encounter-detail {
   min-height: 0;
-  overflow-y: auto;
   border: 1px solid var(--color-border);
   border-radius: 0.55rem;
   background: var(--color-panel);
@@ -4397,9 +4396,43 @@ h1 {
 
 .manage-encounters-results {
   display: flex;
+  overflow: hidden;
+  flex-direction: column;
+}
+
+.manage-encounters-results-list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
   flex-direction: column;
   gap: 0.5rem;
+  overflow-y: auto;
   padding: 0.65rem;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.manage-encounters-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-panel);
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.manage-encounters-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.manage-encounters-pagination .button {
+  min-height: 2rem;
+  padding: 0.35rem 0.65rem;
 }
 
 .manage-encounter-result {
@@ -4431,6 +4464,7 @@ h1 {
 }
 
 .manage-encounter-detail {
+  overflow-y: auto;
   padding: 1rem;
 }
 
@@ -4531,8 +4565,18 @@ h1 {
   }
 
   .manage-encounters-results,
-  .manage-encounter-detail {
+  .manage-encounter-detail,
+  .manage-encounters-results-list {
     overflow: visible;
+  }
+
+  .manage-encounters-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .manage-encounters-pagination > div {
+    justify-content: space-between;
   }
 
   .manage-encounters-search {
