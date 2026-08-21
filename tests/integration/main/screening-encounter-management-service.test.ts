@@ -190,6 +190,19 @@ describe('screening encounter management service integration', () => {
           .get('SCREENING_ENCOUNTER_VOIDED')
       })
       expect(voidMetadata).not.toContain('Created in error')
+
+      expect(
+        service.search({ query: 'draft', status: 'ALL', page: 1, pageSize: 25 })
+      ).toMatchObject({
+        status: 'LOADED',
+        result: { total: 0, items: [] }
+      })
+      expect(
+        service.search({ query: 'draft', status: 'VOID', page: 1, pageSize: 25 })
+      ).toMatchObject({
+        status: 'LOADED',
+        result: { total: 1, items: [{ id: ids.draftEncounter, status: 'VOID' }] }
+      })
     })
   })
 })
