@@ -22,6 +22,8 @@ interface Props {
 
 type LoadState = 'LOADING' | 'READY' | 'ERROR'
 
+const PAGE_SIZE = 25 as const
+
 const flagCategories: readonly { value: EncounterManagementFlagCategory; label: string }[] = [
   { value: 'POSSIBLE_DATA_ERROR', label: 'Possible data error' },
   { value: 'MISSING_INFORMATION', label: 'Missing information' },
@@ -42,6 +44,8 @@ export function ManageEncountersWorkspace({
     'ALL'
   )
   const [items, setItems] = useState<readonly PublicManagedEncounterSummary[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<PublicManagedEncounterDetail | null>(null)
   const [loadState, setLoadState] = useState<LoadState>('LOADING')
@@ -105,7 +109,8 @@ export function ManageEncountersWorkspace({
   const search = useCallback(
     async (
       nextQuery: string,
-      nextStatus: 'ALL' | PublicManagedEncounterSummary['status']
+      nextStatus: 'ALL' | PublicManagedEncounterSummary['status'],
+      nextPage: number
     ): Promise<void> => {
       const requestId = searchRequestRef.current + 1
       searchRequestRef.current = requestId
@@ -114,8 +119,8 @@ export function ManageEncountersWorkspace({
       const result = await management.search({
         query: nextQuery,
         status: nextStatus,
-        page: 1,
-        pageSize: 50
+        page: nextPage,
+        pageSize: PAGE_SIZE
       })
       if (searchRequestRef.current !== requestId) return
       if (!result.ok) {
@@ -129,6 +134,8 @@ export function ManageEncountersWorkspace({
         return
       }
       setItems(result.data.items)
+      setTotal(result.data.total)
+      setPage(result.data.page)
       setLoadState('READY')
       const currentSelectedId = selectedIdRef.current
       const nextSelectedId = result.data.items.some((item) => item.id === currentSelectedId)
@@ -164,13 +171,13 @@ export function ManageEncountersWorkspace({
     const effectiveQuery = normalizedQuery.length >= 3 ? normalizedQuery : ''
     const delay = previous.initialized && queryChanged && !statusChanged ? 300 : 0
     const timer = window.setTimeout(() => {
-      void search(effectiveQuery, statusFilter)
+      void search(effectiveQuery, statusFilter, 1)
     }, delay)
     return () => window.clearTimeout(timer)
   }, [query, search, statusFilter])
 
   const refresh = async (): Promise<void> => {
-    await search(query.trim().length >= 3 ? query.trim() : '', statusFilter)
+    await search(query.trim().length >= 3 ? query.trim() : '', statusFilter, page)
   }
 
   const resumeDraft = async (): Promise<void> => {
@@ -216,7 +223,8 @@ export function ManageEncountersWorkspace({
     }
     setVoidReason('')
     setShowVoidForm(false)
-    await search(query.trim().length >= 3 ? query.trim() : '', statusFilter)
+    const nextPage = statusFilter !== 'VOID' && items.length === 1 && page > 1 ? page - 1 : page
+    await search(query.trim().length >= 3 ? query.trim() : '', statusFilter, nextPage)
     setMessage('Empty draft voided')
   }
 
@@ -280,6 +288,10 @@ export function ManageEncountersWorkspace({
 
   const manageable =
     detail?.encounter.status === 'COMPLETED' || detail?.encounter.status === 'AMENDED'
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const firstResultNumber = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
+  const lastResultNumber = Math.min(page * PAGE_SIZE, total)
+  const effectiveQuery = query.trim().length >= 3 ? query.trim() : ''
 
   return (
     <section className="manage-encounters-workspace" aria-labelledby={headingId}>
@@ -311,7 +323,7 @@ export function ManageEncountersWorkspace({
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.currentTarget.value as typeof statusFilter)}
           >
-            <option value="ALL">All statuses</option>
+            <option value="ALL">All active</option>
             <option value="DRAFT">Draft</option>
             <option value="COMPLETED">Completed</option>
             <option value="AMENDED">Amended</option>
@@ -328,38 +340,66 @@ export function ManageEncountersWorkspace({
 
       <div className="manage-encounters-layout">
         <section className="manage-encounters-results" aria-label="Encounter results">
-          {loadState === 'LOADING' ? <p>Loading encounters...</p> : null}
-          {loadState === 'READY' && items.length === 0 ? <p>No encounters found.</p> : null}
-          {items.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`manage-encounter-result${selectedId === item.id ? ' is-selected' : ''}`}
-              onClick={() => void loadDetail(item.id)}
-            >
-              <span className="manage-encounter-result-heading">
-                <strong>{item.patientDisplayName}</strong>
-                <span className={`status-pill status-${item.status.toLowerCase()}`}>
-                  {formatStatus(item.status)}
+          <div className="manage-encounters-results-list">
+            {loadState === 'LOADING' ? <p>Loading encounters...</p> : null}
+            {loadState === 'READY' && items.length === 0 ? <p>No encounters found.</p> : null}
+            {items.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`manage-encounter-result${selectedId === item.id ? ' is-selected' : ''}`}
+                onClick={() => void loadDetail(item.id)}
+              >
+                <span className="manage-encounter-result-heading">
+                  <strong>{item.patientDisplayName}</strong>
+                  <span className={`status-pill status-${item.status.toLowerCase()}`}>
+                    {formatStatus(item.status)}
+                  </span>
                 </span>
-              </span>
-              <span>
-                {item.patientCode} · {formatDate(item.completedAt ?? item.startedAt)}
-              </span>
-              <span>{item.locationName}</span>
-              {item.status === 'DRAFT' ? (
                 <span>
-                  {item.hasRecordedData ? 'Draft data saved' : 'No screening data recorded'}
+                  {item.patientCode} · {formatDate(item.completedAt ?? item.startedAt)}
                 </span>
-              ) : null}
+                <span>{item.locationName}</span>
+                {item.status === 'DRAFT' ? (
+                  <span>
+                    {item.hasRecordedData ? 'Draft data saved' : 'No screening data recorded'}
+                  </span>
+                ) : null}
+                <span>
+                  {item.openFlagCount > 0
+                    ? `${item.openFlagCount} review concern${item.openFlagCount === 1 ? '' : 's'}`
+                    : 'No open concerns'}{' '}
+                  · {item.noteCount} note{item.noteCount === 1 ? '' : 's'}
+                </span>
+              </button>
+            ))}
+          </div>
+          <nav className="manage-encounters-pagination" aria-label="Encounter results pages">
+            <span>
+              {firstResultNumber}–{lastResultNumber} of {total}
+            </span>
+            <div>
+              <button
+                className="button button-secondary"
+                type="button"
+                disabled={loadState === 'LOADING' || page <= 1}
+                onClick={() => void search(effectiveQuery, statusFilter, page - 1)}
+              >
+                Previous
+              </button>
               <span>
-                {item.openFlagCount > 0
-                  ? `${item.openFlagCount} review concern${item.openFlagCount === 1 ? '' : 's'}`
-                  : 'No open concerns'}{' '}
-                · {item.noteCount} note{item.noteCount === 1 ? '' : 's'}
+                Page {page} of {pageCount}
               </span>
-            </button>
-          ))}
+              <button
+                className="button button-secondary"
+                type="button"
+                disabled={loadState === 'LOADING' || page >= pageCount}
+                onClick={() => void search(effectiveQuery, statusFilter, page + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </nav>
         </section>
 
         <section className="manage-encounter-detail" aria-label="Encounter details">
