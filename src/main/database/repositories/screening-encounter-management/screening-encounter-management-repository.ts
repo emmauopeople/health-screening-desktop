@@ -74,7 +74,7 @@ const encounterSummaryColumns = `
 
 const searchWhere = `
 WHERE encounter.location_id = @locationId
-  AND (@status = 'ALL' OR encounter.status = @status)
+  AND ((@status = 'ALL' AND encounter.status <> 'VOID') OR encounter.status = @status)
   AND (
     @query = ''
     OR lower(patient.display_name) LIKE @likeQuery ESCAPE '\\'
