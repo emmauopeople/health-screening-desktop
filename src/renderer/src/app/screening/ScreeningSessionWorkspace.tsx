@@ -704,6 +704,36 @@ export function ScreeningSessionWorkspace({
     [onOpenTabsChange]
   )
 
+  const resetLifestyleTransientState = useCallback(
+    (encounterId: string): void => {
+      onOpenTabsChange((currentTabs) => {
+        let changed = false
+        const nextTabs = currentTabs.map((tab) => {
+          if (tab.encounter.id !== encounterId) return tab
+          const draft = tab.lifestyleDraft
+          if (draft.loadStatus !== 'LOADING' && draft.saveStatus !== 'SAVING') return tab
+          changed = true
+          return {
+            ...tab,
+            lifestyleDraft: {
+              ...draft,
+              loadStatus: 'NOT_LOADED' as const,
+              saveStatus: 'IDLE' as const,
+              statusMessage: null,
+              validationErrors: [],
+              tobaccoValidationErrors: [],
+              physicalActivityValidationErrors: [],
+              workValidationErrors: [],
+              otherActivityValidationErrors: []
+            }
+          }
+        })
+        return changed ? nextTabs : currentTabs
+      })
+    },
+    [onOpenTabsChange]
+  )
+
   const updateFoodDraft = useCallback(
     (patientId: string, update: (draft: FoodDraftState) => FoodDraftState): void => {
       onOpenTabsChange((currentTabs) =>
@@ -2190,11 +2220,21 @@ export function ScreeningSessionWorkspace({
   }, [activeTab, activeWorkspaceTab, loadVitalsDraft])
 
   useEffect(() => {
-    const encounterId = activeWorkspaceTab === 'NEW_SCREENING' ? activeEncounterId : null
+    const encounterId =
+      activeWorkspaceTab === 'NEW_SCREENING' && hasReadySession ? activeEncounterId : null
     const patientId =
-      activeWorkspaceTab === 'NEW_SCREENING' ? (activeTab?.patient.id ?? null) : null
+      activeWorkspaceTab === 'NEW_SCREENING' && hasReadySession
+        ? (activeTab?.patient.id ?? null)
+        : null
+    const previousLifestyleEncounterId = lifestyleActiveEncounterRef.current
     const previousPatientId = otcActivePatientRef.current
     const previousEncounterId = otcActiveEncounterRef.current
+    if (previousLifestyleEncounterId !== null && previousLifestyleEncounterId !== encounterId) {
+      resetLifestyleTransientState(previousLifestyleEncounterId)
+    }
+    if (encounterId !== null) {
+      resetLifestyleTransientState(encounterId)
+    }
     if (
       previousPatientId !== null &&
       previousEncounterId !== null &&
@@ -2209,7 +2249,14 @@ export function ScreeningSessionWorkspace({
     otcContextEpochRef.current += 1
     otcActivePatientRef.current = patientId
     otcActiveEncounterRef.current = encounterId
-  }, [activeEncounterId, activeTab?.patient.id, activeWorkspaceTab, resetOtcTransientState])
+  }, [
+    activeEncounterId,
+    activeTab?.patient.id,
+    activeWorkspaceTab,
+    hasReadySession,
+    resetLifestyleTransientState,
+    resetOtcTransientState
+  ])
 
   useEffect(() => {
     if (
