@@ -34,7 +34,7 @@ jobs:
         run: pnpm format:check && pnpm lint && pnpm typecheck
 
       - name: Build Windows installer
-        run: pnpm build:win
+        run: pnpm build:win -- --publish never
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
