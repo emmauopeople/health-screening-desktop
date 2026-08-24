@@ -40,6 +40,7 @@ export interface ReviewStepProps {
     readonly statusMessage: string | null
   }
   onBackToOtc(): void
+  onBackToScreening(): void
   onComplete(): void
   onEditVitals(): void
   onEditLifestyle(): void
@@ -56,6 +57,7 @@ export function ReviewStep({
   encounterStatus,
   completionState,
   onBackToOtc,
+  onBackToScreening,
   onComplete,
   onEditVitals,
   onEditLifestyle,
@@ -304,6 +306,12 @@ export function ReviewStep({
         />
         <span>I confirm the screening information has been reviewed.</span>
       </label>
+
+      {completed ? (
+        <button className="button button-secondary" type="button" onClick={onBackToScreening}>
+          Back to screening
+        </button>
+      ) : null}
 
       <div className="screening-encounter-actions">
         <button

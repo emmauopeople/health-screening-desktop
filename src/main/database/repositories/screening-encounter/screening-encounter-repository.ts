@@ -99,6 +99,19 @@ FROM screening_encounters
 WHERE patient_id = ?
   AND screening_session_id = ?
   AND amendment_of_encounter_id IS NULL
+ORDER BY started_at DESC, id DESC
+LIMIT 1;
+`
+
+const selectActiveDraftByPatientAndSessionSql = `
+SELECT
+${screeningEncounterColumns}
+FROM screening_encounters
+WHERE patient_id = ?
+  AND screening_session_id = ?
+  AND amendment_of_encounter_id IS NULL
+  AND status = 'DRAFT'
+ORDER BY started_at DESC, id DESC
 LIMIT 1;
 `
 
@@ -117,6 +130,18 @@ SELECT EXISTS(
   SELECT 1
   FROM screening_encounters
   WHERE status = 'DRAFT'
+  LIMIT 1
+) AS has_any;
+`
+
+const selectHasCompletedRootByPatientAndSessionSql = `
+SELECT EXISTS(
+  SELECT 1
+  FROM screening_encounters
+  WHERE patient_id = ?
+    AND screening_session_id = ?
+    AND amendment_of_encounter_id IS NULL
+    AND status IN ('COMPLETED', 'AMENDED')
   LIMIT 1
 ) AS has_any;
 `
@@ -244,6 +269,94 @@ export function createScreeningEncounterRepository(
           selectCanonicalRootByPatientAndSessionSql,
           [parseReadEntityId(patientId), parseReadEntityId(screeningSessionId)],
           (error) => new RepositoryReadError(error)
+        )
+      } catch (error) {
+        if (error instanceof DatabaseTransactionStateError) {
+          throw new DatabaseTransactionStateError(error.errorType)
+        }
+
+        if (error instanceof RepositoryValidationError) {
+          throw new RepositoryValidationError(error.errorType)
+        }
+
+        if (error instanceof RepositoryDataIntegrityError) {
+          throw new RepositoryDataIntegrityError(error.errorType)
+        }
+
+        throw new RepositoryReadError(getRepositoryErrorType(error))
+      }
+    },
+
+    findActiveDraftByPatientAndSession(
+      patientId: ScreeningEncounterRecord['patientId'],
+      screeningSessionId: ScreeningEncounterRecord['screeningSessionId']
+    ): ScreeningEncounterRecord | null {
+      const parsedPatientId = parseReadEntityId(patientId)
+      const parsedSessionId = parseReadEntityId(screeningSessionId)
+
+      try {
+        return readScreeningEncounter(
+          connection,
+          selectActiveDraftByPatientAndSessionSql,
+          [parsedPatientId, parsedSessionId],
+          (error) => new RepositoryReadError(error)
+        )
+      } catch (error) {
+        if (error instanceof RepositoryValidationError) {
+          throw new RepositoryValidationError(error.errorType)
+        }
+
+        if (error instanceof RepositoryDataIntegrityError) {
+          throw new RepositoryDataIntegrityError(error.errorType)
+        }
+
+        throw new RepositoryReadError(getRepositoryErrorType(error))
+      }
+    },
+
+    findActiveDraftByPatientAndSessionForWrite(
+      scopedConnection: DatabaseTransactionConnection,
+      patientId: ScreeningEncounterRecord['patientId'],
+      screeningSessionId: ScreeningEncounterRecord['screeningSessionId']
+    ): ScreeningEncounterRecord | null {
+      assertActiveDatabaseTransactionConnection(scopedConnection)
+
+      try {
+        return readScreeningEncounter(
+          scopedConnection,
+          selectActiveDraftByPatientAndSessionSql,
+          [parseReadEntityId(patientId), parseReadEntityId(screeningSessionId)],
+          (error) => new RepositoryReadError(error)
+        )
+      } catch (error) {
+        if (error instanceof DatabaseTransactionStateError) {
+          throw new DatabaseTransactionStateError(error.errorType)
+        }
+
+        if (error instanceof RepositoryValidationError) {
+          throw new RepositoryValidationError(error.errorType)
+        }
+
+        if (error instanceof RepositoryDataIntegrityError) {
+          throw new RepositoryDataIntegrityError(error.errorType)
+        }
+
+        throw new RepositoryReadError(getRepositoryErrorType(error))
+      }
+    },
+
+    hasCompletedRootByPatientAndSessionForWrite(
+      scopedConnection: DatabaseTransactionConnection,
+      patientId: ScreeningEncounterRecord['patientId'],
+      screeningSessionId: ScreeningEncounterRecord['screeningSessionId']
+    ): boolean {
+      assertActiveDatabaseTransactionConnection(scopedConnection)
+
+      try {
+        return decodeExistsRow(
+          scopedConnection
+            .prepare<[string, string]>(selectHasCompletedRootByPatientAndSessionSql)
+            .get(parseReadEntityId(patientId), parseReadEntityId(screeningSessionId))
         )
       } catch (error) {
         if (error instanceof DatabaseTransactionStateError) {

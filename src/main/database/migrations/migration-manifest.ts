@@ -15,8 +15,9 @@ import optionalOtherActivityDescriptionSql from './sql/0012-optional-other-activ
 import foodDraftFoundationSql from './sql/0013-food-draft-foundation.sql?raw'
 import otcDraftFoundationSql from './sql/0014-otc-draft-foundation.sql?raw'
 import encounterManagementSql from './sql/0015-encounter-management.sql?raw'
+import repeatScreeningEncountersSql from './sql/0016-repeat-screening-encounters.sql?raw'
 
-export const targetSchemaVersion = 15
+export const targetSchemaVersion = 16
 
 const initialSchemaMigration = Object.freeze({
   version: 1,
@@ -110,6 +111,12 @@ const encounterManagementMigration = Object.freeze({
   sql: encounterManagementSql
 } satisfies DatabaseMigration)
 
+const repeatScreeningEncountersMigration = Object.freeze({
+  version: 16,
+  name: 'repeat-screening-encounters',
+  sql: repeatScreeningEncountersSql
+} satisfies DatabaseMigration)
+
 export const databaseMigrations = Object.freeze([
   initialSchemaMigration,
   patientRegistryManagementMigration,
@@ -125,7 +132,8 @@ export const databaseMigrations = Object.freeze([
   optionalOtherActivityDescriptionMigration,
   foodDraftFoundationMigration,
   otcDraftFoundationMigration,
-  encounterManagementMigration
+  encounterManagementMigration,
+  repeatScreeningEncountersMigration
 ] as const)
 
 export function resolveDatabaseMigrations(

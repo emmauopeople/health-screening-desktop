@@ -57,8 +57,8 @@ describe('local user repository', () => {
       expect(repository.hasAny()).toBe(false)
       expect(hasAny()).toBe(false)
       expect(readTableCount(connection, 'users')).toBe(0)
-      expect(readUserVersion(connection)).toBe(15)
-      expect(readLedgerCount(connection)).toBe(15)
+      expect(readUserVersion(connection)).toBe(16)
+      expect(readLedgerCount(connection)).toBe(16)
     })
   })
 

@@ -289,6 +289,7 @@ describe('preload screening-encounter API', () => {
       createIpcSuccess({ status: 'FORBIDDEN' as const }),
       createIpcSuccess({ status: 'VALIDATION_FAILED' as const }),
       createIpcSuccess({ status: 'AUTHENTICATION_REQUIRED' as const }),
+      createIpcSuccess({ status: 'REPEAT_CONFIRMATION_REQUIRED' as const }),
       createIpcSuccess({ status: 'UNAVAILABLE' as const }),
       createScreeningEncounterIpcFailure('IPC_FORBIDDEN')
     ]

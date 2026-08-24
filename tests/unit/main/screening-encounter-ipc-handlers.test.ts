@@ -135,7 +135,7 @@ describe('screening encounter IPC handlers', () => {
     await expect(harness.handlers.start(createAllowedEvent(), request)).resolves.toEqual(
       createIpcSuccess({ status: 'STARTED', encounter })
     )
-    expect(harness.start).toHaveBeenCalledWith(request)
+    expect(harness.start).toHaveBeenCalledWith({ ...request, repeatConfirmed: false })
     expect(harness.start.mock.calls[0]).toHaveLength(1)
     expect(Object.isFrozen(await harness.handlers.start(createAllowedEvent(), request))).toBe(true)
   })
@@ -208,7 +208,8 @@ describe('screening encounter IPC handlers', () => {
       { ...request, status: 'DRAFT' },
       { ...request, sessionDate: '2026-08-06' },
       { ...request, systolic: 120 },
-      { ...request, referralId: patientId }
+      { ...request, referralId: patientId },
+      { ...request, repeatConfirmed: 'yes' }
     ]) {
       const harness = createHarness()
 
@@ -231,6 +232,7 @@ describe('screening encounter IPC handlers', () => {
       'FORBIDDEN',
       'VALIDATION_FAILED',
       'AUTHENTICATION_REQUIRED',
+      'REPEAT_CONFIRMATION_REQUIRED',
       'UNAVAILABLE'
     ] as const) {
       await expect(

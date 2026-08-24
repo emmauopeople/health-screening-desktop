@@ -283,7 +283,8 @@ describe('screening patient entry workspace', () => {
     expect(api.screeningEncounters.start).toHaveBeenCalledOnce()
     expect(api.screeningEncounters.start).toHaveBeenCalledWith({
       patientId,
-      screeningSessionId: sessionId
+      screeningSessionId: sessionId,
+      repeatConfirmed: false
     })
     expect(api.screeningEncounters.start.mock.calls[0]?.[0]).not.toHaveProperty('locationId')
     expect(api.screeningEncounters.start.mock.calls[0]?.[0]).not.toHaveProperty('role')
@@ -423,13 +424,17 @@ describe('screening patient entry workspace', () => {
     await mounted.unmount()
   })
 
-  it('enforces Vitals field bounds with inline association and invalid-field focus', async () => {
+  it('enforces Vitals field bounds without stealing focus for validation messages', async () => {
     const api = createApi()
     const mounted = await mountWorkspace({ api })
 
     await clickRow(mounted, 'Ada Lovelace')
     const systolic = inputByLabel(mounted, 'Reading 1 systolic')
     await changeInput(systolic, '301')
+    const notes = mounted.container.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="Vitals notes"]'
+    )!
+    notes.focus()
     await clickButton(mounted, 'Save draft')
 
     expect(api.screeningEncounters.vitals.saveDraft).not.toHaveBeenCalled()
@@ -445,21 +450,23 @@ describe('screening patient entry workspace', () => {
         .querySelector('.screening-vitals-validation')
         ?.classList.contains('screening-vitals-validation-error')
     ).toBe(true)
-    expect(document.activeElement).toBe(systolic)
+    expect(document.activeElement).toBe(notes)
 
     await changeInput(systolic, '300')
     const diastolic = inputByLabel(mounted, 'Reading 1 diastolic')
     await changeInput(diastolic, '121')
+    notes.focus()
     await clickButton(mounted, 'Save draft')
     expect(text(mounted)).toContain('Diastolic blood pressure cannot be more than 120.')
-    expect(document.activeElement).toBe(diastolic)
+    expect(document.activeElement).toBe(notes)
 
     await changeInput(diastolic, '120')
     const pulse = inputByLabel(mounted, 'Reading 1 pulse')
     await changeInput(pulse, '301')
+    notes.focus()
     await clickButton(mounted, 'Save draft')
     expect(text(mounted)).toContain('Pulse cannot be more than 300.')
-    expect(document.activeElement).toBe(pulse)
+    expect(document.activeElement).toBe(notes)
 
     await changeInput(pulse, '300')
     expect(buttonByText(mounted, 'Save draft').disabled).toBe(false)
@@ -988,7 +995,28 @@ describe('screening patient entry workspace', () => {
   })
 
   it('navigates from Food to OTC without locking the draft and preserves OTC rows on return', async () => {
-    const api = createApi()
+    const api = createApi({
+      patients: [
+        patientSummary(),
+        patientSummary({
+          id: secondPatientId,
+          displayName: 'Grace Hopper',
+          patientCode: 'PT-000002'
+        })
+      ]
+    })
+    api.screeningEncounters.start.mockImplementation((request) =>
+      Promise.resolve(
+        createIpcSuccess({
+          status: 'STARTED',
+          encounter: encounterSummary({
+            id: request.patientId === secondPatientId ? secondEncounterId : encounterId,
+            patientId: request.patientId,
+            screeningSessionId: request.screeningSessionId
+          })
+        })
+      )
+    )
     const lifestyleWorkspace = publicCompleteLifestyleWorkspace()
     api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
       createIpcSuccess({ status: 'LOADED', workspace: lifestyleWorkspace })
@@ -1134,6 +1162,19 @@ describe('screening patient entry workspace', () => {
     expect(buttonByText(mounted, 'Screening complete').disabled).toBe(true)
     expect(buttonByText(mounted, 'Previous').disabled).toBe(true)
     expect(buttonByText(mounted, 'Edit Vitals').disabled).toBe(true)
+    expect(buttonByText(mounted, 'Back to screening').disabled).toBe(false)
+
+    await clickButton(mounted, 'Search / open patient')
+    await clickRow(mounted, 'Grace Hopper')
+    await clickButton(mounted, 'Ada Lovelace')
+    await clickButton(mounted, 'Back to screening')
+
+    expect(tabButtons(mounted).map((button) => button.textContent?.trim())).toEqual([
+      'Grace Hopper'
+    ])
+    expect(
+      mounted.container.querySelector('[aria-label="Current screening encounter for Grace Hopper"]')
+    ).not.toBeNull()
 
     await mounted.unmount()
   })
@@ -3191,6 +3232,56 @@ describe('screening patient entry workspace', () => {
     ).toHaveLength(1)
     expectWorkspaceHeading(mounted, 'New Screening')
     expect(text(mounted)).toContain('Current screening encounter')
+
+    await mounted.unmount()
+  })
+
+  it('requires Yes or No before starting another screening for a completed patient', async () => {
+    const api = createApi()
+    api.screeningEncounters.start.mockImplementation((request) =>
+      Promise.resolve(
+        request.repeatConfirmed === true
+          ? createIpcSuccess({
+              status: 'STARTED',
+              encounter: encounterSummary({
+                id: secondEncounterId,
+                patientId: request.patientId,
+                screeningSessionId: request.screeningSessionId
+              })
+            })
+          : createScreeningEncounterStartStatusResult('REPEAT_CONFIRMATION_REQUIRED')
+      )
+    )
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+    expect(text(mounted)).toContain(
+      'Ada Lovelace just completed screening. Do you want to start a new screening for this patient?'
+    )
+    expect(buttonByText(mounted, 'Yes').disabled).toBe(false)
+    expect(buttonByText(mounted, 'No').disabled).toBe(false)
+    expect(api.screeningEncounters.start.mock.calls[0]?.[0]).toEqual({
+      patientId,
+      screeningSessionId: sessionId,
+      repeatConfirmed: false
+    })
+
+    await clickButton(mounted, 'No')
+    expect(text(mounted)).not.toContain('Do you want to start a new screening')
+    expectWorkspaceHeading(mounted, 'Patients')
+
+    await clickRow(mounted, 'Ada Lovelace')
+    await clickButton(mounted, 'Yes')
+
+    expect(api.screeningEncounters.start.mock.calls[2]?.[0]).toEqual({
+      patientId,
+      screeningSessionId: sessionId,
+      repeatConfirmed: true
+    })
+    expectWorkspaceHeading(mounted, 'New Screening')
+    expect(tabButtons(mounted).map((button) => button.textContent?.trim())).toEqual([
+      'Ada Lovelace'
+    ])
 
     await mounted.unmount()
   })

@@ -74,6 +74,7 @@ const encounterSummaryColumns = `
 
 const searchWhere = `
 WHERE encounter.location_id = @locationId
+  AND (encounter.status <> 'DRAFT' OR encounter.screening_session_id = @resumableSessionId)
   AND ((@status = 'ALL' AND encounter.status <> 'VOID') OR encounter.status = @status)
   AND (
     @query = ''
@@ -107,7 +108,9 @@ SELECT ${encounterSummaryColumns}
 FROM screening_encounters encounter
 JOIN patients patient ON patient.id = encounter.patient_id
 JOIN locations location ON location.id = encounter.location_id
-WHERE encounter.id = ? AND encounter.location_id = ?;
+WHERE encounter.id = ?
+  AND encounter.location_id = ?
+  AND (encounter.status <> 'DRAFT' OR encounter.screening_session_id = ?);
 `
 
 const addendumColumns = `
@@ -143,6 +146,7 @@ export function createScreeningEncounterManagementRepository(
       try {
         const parameters = {
           locationId: parsed.locationId,
+          resumableSessionId: parsed.resumableSessionId,
           query: parsed.query,
           likeQuery: `%${escapeLike(parsed.query)}%`,
           status: parsed.status,
@@ -167,13 +171,20 @@ export function createScreeningEncounterManagementRepository(
       }
     },
 
-    getDetail(encounterId: EntityId, locationId: EntityId): ManagedEncounterDetailRecord | null {
+    getDetail(
+      encounterId: EntityId,
+      locationId: EntityId,
+      resumableSessionId: EntityId | null
+    ): ManagedEncounterDetailRecord | null {
       const parsedEncounterId = parseEntityId(encounterId)
       const parsedLocationId = parseEntityId(locationId)
+      const parsedResumableSessionId =
+        resumableSessionId === null ? null : parseEntityId(resumableSessionId)
       try {
         const row = connection
           .prepare(detailSummarySql)
-          .get(parsedEncounterId, parsedLocationId) as Record<string, unknown> | undefined
+          .get(parsedEncounterId, parsedLocationId, parsedResumableSessionId) as
+          Record<string, unknown> | undefined
         if (row === undefined) return null
 
         return Object.freeze({
@@ -480,7 +491,13 @@ function parseSearchInput(input: SearchManagedEncountersInput): SearchManagedEnc
     throw new RepositoryValidationError()
   if (input.status !== 'ALL' && !encounterStatuses.has(input.status))
     throw new RepositoryValidationError()
-  return Object.freeze({ ...input, locationId: parseEntityId(input.locationId), query })
+  return Object.freeze({
+    ...input,
+    locationId: parseEntityId(input.locationId),
+    resumableSessionId:
+      input.resumableSessionId === null ? null : parseEntityId(input.resumableSessionId),
+    query
+  })
 }
 function parseFlagCategory(value: unknown): EncounterReviewFlagCategory {
   if (typeof value !== 'string' || !flagCategories.has(value as EncounterReviewFlagCategory))

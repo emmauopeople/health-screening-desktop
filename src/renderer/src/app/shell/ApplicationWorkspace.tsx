@@ -127,9 +127,18 @@ export function ApplicationWorkspace({
               onSelectCommand('SCREENING_NEW_SCREENING')
               return true
             }
-            if (openScreeningPatientTabs.length >= screeningPatientTabLimit) return false
+            const replacesCompletedPatient = openScreeningPatientTabs.some(
+              (tab) => tab.patient.id === patient.id && tab.encounter.status !== 'DRAFT'
+            )
+            if (
+              !replacesCompletedPatient &&
+              openScreeningPatientTabs.length >= screeningPatientTabLimit
+            )
+              return false
             setOpenScreeningPatientTabs((currentTabs) => [
-              ...currentTabs,
+              ...currentTabs.filter(
+                (tab) => tab.patient.id !== patient.id || tab.encounter.status === 'DRAFT'
+              ),
               createPatientScreeningTab(patient, encounter)
             ])
             setActiveScreeningPatientId(patient.id)

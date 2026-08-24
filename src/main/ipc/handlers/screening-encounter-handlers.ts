@@ -491,7 +491,8 @@ function toInternalStartRequest(
 ): Parameters<ScreeningEncounterStartService['start']>[0] {
   return Object.freeze({
     patientId: request.patientId as EntityId,
-    screeningSessionId: request.screeningSessionId as EntityId
+    screeningSessionId: request.screeningSessionId as EntityId,
+    repeatConfirmed: request.repeatConfirmed ?? false
   })
 }
 
@@ -558,6 +559,7 @@ function mapStartResult(
         encounter: toPublicStartSummary(result.encounter)
       }) as ScreeningEncounterStartResult
     case 'PATIENT_NOT_FOUND':
+    case 'REPEAT_CONFIRMATION_REQUIRED':
     case 'PATIENT_INELIGIBLE':
     case 'SESSION_NOT_FOUND':
     case 'SESSION_CLOSED':

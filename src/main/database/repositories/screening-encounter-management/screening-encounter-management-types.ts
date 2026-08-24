@@ -85,6 +85,7 @@ export interface ManagedEncounterDetailRecord {
 
 export interface SearchManagedEncountersInput {
   readonly locationId: EntityId
+  readonly resumableSessionId: EntityId | null
   readonly query: string
   readonly status: ScreeningEncounterStatus | 'ALL'
   readonly page: number
@@ -126,7 +127,11 @@ export interface ResolveEncounterReviewFlagInput {
 
 export interface ScreeningEncounterManagementRepository {
   search(input: SearchManagedEncountersInput): SearchManagedEncountersResult
-  getDetail(encounterId: EntityId, locationId: EntityId): ManagedEncounterDetailRecord | null
+  getDetail(
+    encounterId: EntityId,
+    locationId: EntityId,
+    resumableSessionId: EntityId | null
+  ): ManagedEncounterDetailRecord | null
   insertAddendum(
     connection: DatabaseTransactionConnection,
     input: InsertEncounterAddendumInput

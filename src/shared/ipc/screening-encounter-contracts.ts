@@ -50,7 +50,8 @@ export const publicScreeningVitalsReadingValueSchema = z.number().int().min(1).s
 
 export const screeningEncounterStartRequestSchema = exactObject({
   patientId: screeningEncounterUuidSchema,
-  screeningSessionId: screeningEncounterUuidSchema
+  screeningSessionId: screeningEncounterUuidSchema,
+  repeatConfirmed: z.boolean().optional()
 })
 export const screeningCompletionSectionSchema = z.enum(['VITALS', 'LIFESTYLE', 'FOOD', 'OTC'])
 export const screeningEncounterCompleteRequestSchema = exactObject({
@@ -294,6 +295,7 @@ export const screeningEncounterStartSuccessDataSchema = z.discriminatedUnion('st
       encounter: publicScreeningEncounterStartSummarySchema
     })
     .strict(),
+  z.object({ status: z.literal('REPEAT_CONFIRMATION_REQUIRED') }).strict(),
   z.object({ status: z.literal('PATIENT_NOT_FOUND') }).strict(),
   z.object({ status: z.literal('PATIENT_INELIGIBLE') }).strict(),
   z.object({ status: z.literal('SESSION_NOT_FOUND') }).strict(),

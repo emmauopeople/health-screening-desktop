@@ -16,6 +16,7 @@ import type { DatabaseTransactionExecutor } from '@main/database/transaction'
 import type { EntityId } from '@main/foundation/entity-id'
 import type { LocalAuthenticationSessionService } from '../authentication/session'
 import type { InstallationLocationService } from '../installation-location'
+import type { CurrentScreeningSessionService } from '../screening-sessions'
 
 export type EncounterManagementControlledStatus =
   | 'AUTHENTICATION_REQUIRED'
@@ -86,6 +87,7 @@ export interface ScreeningEncounterManagementService {
 export interface ScreeningEncounterManagementServiceDependencies {
   readonly authenticationSessionService: LocalAuthenticationSessionService
   readonly installationLocationService: InstallationLocationService
+  readonly currentScreeningSessionService: CurrentScreeningSessionService
   readonly installationRepository: InstallationRepository
   readonly screeningEncounterRepository: ScreeningEncounterRepository
   readonly managementRepository: ScreeningEncounterManagementRepository

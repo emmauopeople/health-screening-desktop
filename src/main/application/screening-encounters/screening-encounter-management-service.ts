@@ -45,12 +45,14 @@ export function createScreeningEncounterManagementService(
       if (actor.status !== 'VALID') return { status: actor.statusCode }
       const location = resolveLocation(dependencies)
       if (location.status !== 'RESOLVED') return { status: location.status }
+      const resumableSessionId = resolveResumableSessionId(dependencies)
       try {
         return Object.freeze({
           status: 'LOADED' as const,
           result: dependencies.managementRepository.search({
             ...parseSearchRequest(request),
-            locationId: location.location.id
+            locationId: location.location.id,
+            resumableSessionId
           })
         })
       } catch (error) {
@@ -65,10 +67,12 @@ export function createScreeningEncounterManagementService(
       if (actor.status !== 'VALID') return { status: actor.statusCode }
       const location = resolveLocation(dependencies)
       if (location.status !== 'RESOLVED') return { status: location.status }
+      const resumableSessionId = resolveResumableSessionId(dependencies)
       try {
         const detail = dependencies.managementRepository.getDetail(
           parseEntityId(encounterId),
-          location.location.id
+          location.location.id,
+          resumableSessionId
         )
         return detail === null ? { status: 'ENCOUNTER_NOT_FOUND' } : { status: 'LOADED', detail }
       } catch {
@@ -276,6 +280,17 @@ export function createScreeningEncounterManagementService(
     }
   }
   return Object.freeze(service)
+}
+
+function resolveResumableSessionId(
+  dependencies: ScreeningEncounterManagementServiceDependencies
+): EntityId | null {
+  try {
+    const result = dependencies.currentScreeningSessionService.findCurrentScreeningSession()
+    return result.status === 'FOUND' ? result.session.id : null
+  } catch {
+    return null
+  }
 }
 
 function validateManageableEncounter(

@@ -11,6 +11,7 @@ import {
 import { createSystemEntityIdGenerator, createSystemUtcClock } from '@main/foundation'
 import type { LocalAuthenticationSessionService } from '../authentication/session'
 import type { InstallationLocationService } from '../installation-location'
+import type { CurrentScreeningSessionService } from '../screening-sessions'
 import { createScreeningEncounterManagementService } from './screening-encounter-management-service'
 import type { ScreeningEncounterManagementService } from './screening-encounter-management-service-types'
 
@@ -18,12 +19,20 @@ export function createProductionScreeningEncounterManagementService(options: {
   readonly connection: Database.Database
   readonly authenticationSessionService: LocalAuthenticationSessionService
   readonly installationLocationService: InstallationLocationService
+  readonly currentScreeningSessionService: CurrentScreeningSessionService
   readonly logger?: DatabaseTransactionLogger
 }): ScreeningEncounterManagementService {
-  const { connection, authenticationSessionService, installationLocationService, logger } = options
+  const {
+    connection,
+    authenticationSessionService,
+    installationLocationService,
+    currentScreeningSessionService,
+    logger
+  } = options
   return createScreeningEncounterManagementService({
     authenticationSessionService,
     installationLocationService,
+    currentScreeningSessionService,
     installationRepository: createInstallationRepository(connection),
     screeningEncounterRepository: createScreeningEncounterRepository(connection),
     managementRepository: createScreeningEncounterManagementRepository(connection),
