@@ -1494,6 +1494,25 @@ h1 {
   background: #fff1ed;
 }
 
+.screening-message[role='dialog'] {
+  display: grid;
+  gap: 12px;
+}
+
+.screening-message[role='dialog'] p {
+  margin: 0;
+}
+
+.screening-message[role='dialog'] > label {
+  display: grid;
+  gap: 6px;
+}
+
+.screening-message[role='dialog'] select,
+.screening-message[role='dialog'] textarea {
+  width: min(100%, 620px);
+}
+
 .screening-layout {
   display: grid;
   grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
@@ -2091,6 +2110,13 @@ h1 {
   font-size: 0.84rem;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.screening-current-encounter-header > div {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .screening-stepper {

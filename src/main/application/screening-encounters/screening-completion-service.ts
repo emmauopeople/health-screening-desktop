@@ -21,6 +21,7 @@ import {
 } from '@main/database'
 import { parseEntityId, type EntityId } from '@main/foundation/entity-id'
 import { parseUtcTimestamp, type UtcTimestamp } from '@main/foundation/utc-clock'
+import { evaluateScreeningBloodPressure } from '@shared/screening-bp-protocol'
 
 import {
   LocalSessionAuthorizationError,
@@ -131,6 +132,19 @@ export function createScreeningCompletionService(
             return incompleteOrConflict(vitals?.rowVersion, command.expectedVitalsVersion, 'VITALS')
           }
           if (!isCompleteVitals(vitals)) return incompleteResult('VITALS')
+          const bloodPressureDecision = evaluateScreeningBloodPressure(
+            vitals.readings.map((reading) => ({
+              sequenceNumber: reading.sequenceNumber,
+              systolic: reading.systolic!,
+              diastolic: reading.diastolic!,
+              pulse: reading.pulse!
+            }))
+          )
+          if (
+            bloodPressureDecision === null ||
+            bloodPressureDecision.nextAction === 'REPEAT_REQUIRED'
+          )
+            return incompleteResult('VITALS')
 
           const lifestyle = dependencies.lifestyleRepository.findDraftByEncounterForWrite(
             context.connection,
@@ -189,6 +203,14 @@ export function createScreeningCompletionService(
             expectedRecordVersion: command.expectedEncounterVersion,
             actorId: actorResult.actorId,
             completedAt,
+            summarySystolic: bloodPressureDecision.summarySystolic,
+            summaryDiastolic: bloodPressureDecision.summaryDiastolic,
+            summaryPulse: bloodPressureDecision.summaryPulse,
+            nextActionCategory: bloodPressureDecision.nextAction,
+            decisionJson: createBloodPressureDecisionJson(
+              encounter.protocolVersionId,
+              bloodPressureDecision
+            ),
             vitalsReadings: vitals.readings.map((reading) => ({
               id: reading.id,
               sequenceNumber: reading.sequenceNumber,
@@ -715,6 +737,31 @@ function createCompletionMetadata(
     lifestyle_section_count: 5,
     food_row_count: foodRowCount,
     otc_row_count: otcRowCount
+  })
+}
+
+function createBloodPressureDecisionJson(
+  encounterProtocolVersionId: EntityId,
+  decision: NonNullable<ReturnType<typeof evaluateScreeningBloodPressure>>
+): string {
+  return JSON.stringify({
+    encounter_protocol_version_id: encounterProtocolVersionId,
+    ruleset_key: decision.evidence.protocolKey,
+    ruleset_version: decision.evidence.protocolVersion,
+    next_action_category: decision.nextAction,
+    summary: {
+      systolic: decision.summarySystolic,
+      diastolic: decision.summaryDiastolic,
+      pulse: decision.summaryPulse
+    },
+    evidence: {
+      calculation_method: decision.evidence.calculationMethod,
+      reading_sequence_numbers: decision.evidence.readingSequenceNumbers,
+      repeat_systolic_threshold: decision.evidence.repeatSystolicThreshold,
+      repeat_diastolic_threshold: decision.evidence.repeatDiastolicThreshold,
+      urgent_systolic_threshold: decision.evidence.urgentSystolicThreshold,
+      urgent_diastolic_threshold: decision.evidence.urgentDiastolicThreshold
+    }
   })
 }
 

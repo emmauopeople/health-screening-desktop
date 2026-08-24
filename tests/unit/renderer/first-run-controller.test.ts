@@ -587,7 +587,8 @@ function createApi({
         addAddendum: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
         openFlag: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
         resolveFlag: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
-        voidEmptyDraft: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+        voidEmptyDraft: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+        cancelDraft: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const }))
       },
       vitals: {
         getDraft: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),

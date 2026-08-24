@@ -15,8 +15,10 @@ import optionalOtherActivityDescriptionSql from './sql/0012-optional-other-activ
 import foodDraftFoundationSql from './sql/0013-food-draft-foundation.sql?raw'
 import otcDraftFoundationSql from './sql/0014-otc-draft-foundation.sql?raw'
 import encounterManagementSql from './sql/0015-encounter-management.sql?raw'
+import repeatScreeningEncountersSql from './sql/0016-repeat-screening-encounters.sql?raw'
+import bpScreeningProtocolSql from './sql/0017-bp-screening-protocol.sql?raw'
 
-export const targetSchemaVersion = 15
+export const targetSchemaVersion = 17
 
 const initialSchemaMigration = Object.freeze({
   version: 1,
@@ -110,6 +112,18 @@ const encounterManagementMigration = Object.freeze({
   sql: encounterManagementSql
 } satisfies DatabaseMigration)
 
+const repeatScreeningEncountersMigration = Object.freeze({
+  version: 16,
+  name: 'repeat-screening-encounters',
+  sql: repeatScreeningEncountersSql
+} satisfies DatabaseMigration)
+
+const bpScreeningProtocolMigration = Object.freeze({
+  version: 17,
+  name: 'bp-screening-protocol',
+  sql: bpScreeningProtocolSql
+} satisfies DatabaseMigration)
+
 export const databaseMigrations = Object.freeze([
   initialSchemaMigration,
   patientRegistryManagementMigration,
@@ -125,7 +139,9 @@ export const databaseMigrations = Object.freeze([
   optionalOtherActivityDescriptionMigration,
   foodDraftFoundationMigration,
   otcDraftFoundationMigration,
-  encounterManagementMigration
+  encounterManagementMigration,
+  repeatScreeningEncountersMigration,
+  bpScreeningProtocolMigration
 ] as const)
 
 export function resolveDatabaseMigrations(

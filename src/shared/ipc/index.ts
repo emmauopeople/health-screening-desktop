@@ -220,8 +220,12 @@ export {
   type PublicPatientSummary
 } from './patient-contracts'
 export {
+  encounterCancellationReasonCodeSchema,
   encounterManagementAddAddendumRequestSchema,
   encounterManagementAddAddendumResultSchema,
+  encounterManagementCancelDraftRequestSchema,
+  encounterManagementCancelDraftResultSchema,
+  encounterManagementCancelDraftSuccessDataSchema,
   encounterManagementFlagCategorySchema,
   encounterManagementFlagStatusSchema,
   encounterManagementGetDetailRequestSchema,
@@ -278,8 +282,11 @@ export {
   type PublicScreeningEncounterStartSummary,
   type PublicCompletedScreeningEncounterSummary,
   type PublicScreeningVitalsDraft,
+  type EncounterCancellationReasonCode,
   type EncounterManagementAddAddendumRequest,
   type EncounterManagementAddAddendumResult,
+  type EncounterManagementCancelDraftRequest,
+  type EncounterManagementCancelDraftResult,
   type EncounterManagementFlagCategory,
   type EncounterManagementFlagStatus,
   type EncounterManagementGetDetailRequest,

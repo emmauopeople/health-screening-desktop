@@ -19,6 +19,7 @@ import {
 import { parseEntityId, type EntityId } from '@main/foundation/entity-id'
 import type { UtcTimestamp } from '@main/foundation/utc-clock'
 import { VITALS_DIASTOLIC_MAX, VITALS_PULSE_MAX, VITALS_SYSTOLIC_MAX } from '@shared/vitals-bounds'
+import { evaluateScreeningBloodPressure } from '@shared/screening-bp-protocol'
 
 import {
   LocalSessionAuthorizationError,
@@ -263,6 +264,13 @@ function saveOrCompleteVitalsDraft({
     return statusResult('VALIDATION_FAILED')
   }
 
+  if (
+    targetStatus === 'VITALS_COMPLETE' &&
+    evaluateCompletedVitals(commandResult.command.readings)?.nextAction === 'REPEAT_REQUIRED'
+  ) {
+    return statusResult('REPEAT_REQUIRED')
+  }
+
   const locationResult = installationLocationService.resolveConfiguredInstallationLocation()
 
   if (locationResult.status !== 'RESOLVED') {
@@ -394,6 +402,20 @@ function saveOrCompleteVitalsDraft({
   } catch {
     return statusResult('UNAVAILABLE')
   }
+}
+
+function evaluateCompletedVitals(
+  readings: readonly ParsedSaveVitalsDraftReadingInput[]
+): ReturnType<typeof evaluateScreeningBloodPressure> {
+  if (!isCompleteVitals(readings)) return null
+  return evaluateScreeningBloodPressure(
+    readings.map((reading) => ({
+      sequenceNumber: reading.sequenceNumber,
+      systolic: reading.systolic!,
+      diastolic: reading.diastolic!,
+      pulse: reading.pulse!
+    }))
+  )
 }
 
 function updateExistingDraft({

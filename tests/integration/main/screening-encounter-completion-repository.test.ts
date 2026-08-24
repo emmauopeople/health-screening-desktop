@@ -42,6 +42,11 @@ describe('screening encounter completion repository', () => {
           expectedRecordVersion: 1,
           actorId: parseEntityId(ids.user),
           completedAt: now,
+          summarySystolic: 120,
+          summaryDiastolic: 80,
+          summaryPulse: 70,
+          nextActionCategory: 'ROUTINE',
+          decisionJson: '{"protocol":"community-bp-screening","version":"1"}',
           vitalsReadings: [
             {
               id: parseEntityId(ids.bloodPressure),
@@ -91,10 +96,19 @@ describe('screening encounter completion repository', () => {
       expect(
         connection
           .prepare(
-            'SELECT status, completed_at, record_version FROM screening_encounters WHERE id = ?'
+            'SELECT status, completed_at, record_version, summary_systolic, summary_diastolic, summary_pulse, next_action_category, decision_json FROM screening_encounters WHERE id = ?'
           )
           .get(ids.encounter)
-      ).toEqual({ status: 'COMPLETED', completed_at: now, record_version: 2 })
+      ).toEqual({
+        status: 'COMPLETED',
+        completed_at: now,
+        record_version: 2,
+        summary_systolic: 120,
+        summary_diastolic: 80,
+        summary_pulse: 70,
+        next_action_category: 'ROUTINE',
+        decision_json: '{"protocol":"community-bp-screening","version":"1"}'
+      })
       expect(
         connection
           .prepare(
@@ -130,6 +144,11 @@ describe('screening encounter completion repository', () => {
           expectedRecordVersion: 2,
           actorId: parseEntityId(ids.user),
           completedAt: now,
+          summarySystolic: 120,
+          summaryDiastolic: 80,
+          summaryPulse: 70,
+          nextActionCategory: 'ROUTINE',
+          decisionJson: '{"protocol":"community-bp-screening","version":"1"}',
           vitalsReadings: [
             {
               id: parseEntityId(ids.bloodPressure),

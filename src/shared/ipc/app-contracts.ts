@@ -52,6 +52,8 @@ import { createIpcResultSchema } from './result'
 import type {
   EncounterManagementAddAddendumRequest,
   EncounterManagementAddAddendumResult,
+  EncounterManagementCancelDraftRequest,
+  EncounterManagementCancelDraftResult,
   EncounterManagementGetDetailRequest,
   EncounterManagementGetDetailResult,
   EncounterManagementOpenFlagRequest,
@@ -194,6 +196,9 @@ export interface HealthScreeningApi {
       resolveFlag(
         request: EncounterManagementResolveFlagRequest
       ): Promise<EncounterManagementResolveFlagResult>
+      cancelDraft(
+        request: EncounterManagementCancelDraftRequest
+      ): Promise<EncounterManagementCancelDraftResult>
       voidEmptyDraft(
         request: EncounterManagementVoidEmptyDraftRequest
       ): Promise<EncounterManagementVoidEmptyDraftResult>

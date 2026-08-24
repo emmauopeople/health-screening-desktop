@@ -2,6 +2,8 @@ import {
   createIpcSuccess,
   encounterManagementAddAddendumRequestSchema,
   encounterManagementAddAddendumResultSchema,
+  encounterManagementCancelDraftRequestSchema,
+  encounterManagementCancelDraftResultSchema,
   encounterManagementGetDetailRequestSchema,
   encounterManagementGetDetailResultSchema,
   encounterManagementOpenFlagRequestSchema,
@@ -25,6 +27,8 @@ import {
   type ScreeningEncounterStartRequest,
   type EncounterManagementAddAddendumRequest,
   type EncounterManagementAddAddendumResult,
+  type EncounterManagementCancelDraftRequest,
+  type EncounterManagementCancelDraftResult,
   type EncounterManagementGetDetailRequest,
   type EncounterManagementGetDetailResult,
   type EncounterManagementOpenFlagRequest,
@@ -68,6 +72,9 @@ export interface ScreeningEncounterApi {
     resolveFlag(
       request: EncounterManagementResolveFlagRequest
     ): Promise<EncounterManagementResolveFlagResult>
+    cancelDraft(
+      request: EncounterManagementCancelDraftRequest
+    ): Promise<EncounterManagementCancelDraftResult>
     voidEmptyDraft(
       request: EncounterManagementVoidEmptyDraftRequest
     ): Promise<EncounterManagementVoidEmptyDraftResult>
@@ -129,6 +136,14 @@ export function createScreeningEncounterApi(invoke: IpcInvoke): ScreeningEncount
           ipcChannels.screeningEncounters.management.resolveFlag,
           encounterManagementResolveFlagRequestSchema,
           encounterManagementResolveFlagResultSchema,
+          request
+        ),
+      cancelDraft: (request: EncounterManagementCancelDraftRequest) =>
+        invokeManaged<EncounterManagementCancelDraftRequest, EncounterManagementCancelDraftResult>(
+          invoke,
+          ipcChannels.screeningEncounters.management.cancelDraft,
+          encounterManagementCancelDraftRequestSchema,
+          encounterManagementCancelDraftResultSchema,
           request
         ),
       voidEmptyDraft: (request: EncounterManagementVoidEmptyDraftRequest) =>

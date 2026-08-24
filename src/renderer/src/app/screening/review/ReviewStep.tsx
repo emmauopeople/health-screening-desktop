@@ -10,6 +10,11 @@ import {
 } from '../lifestyle/lifestyle-workspace-model'
 import type { OtcDraftState } from '../otc/otc-workspace-model'
 import type { ScreeningEncounterStatus } from '@shared/ipc'
+import {
+  evaluateScreeningBloodPressure,
+  getScreeningBpInstruction,
+  type ScreeningBpDecision
+} from '@shared/screening-bp-protocol'
 
 export interface ReviewVitalsReading {
   readonly sequenceNumber: number
@@ -40,6 +45,7 @@ export interface ReviewStepProps {
     readonly statusMessage: string | null
   }
   onBackToOtc(): void
+  onBackToScreening(): void
   onComplete(): void
   onEditVitals(): void
   onEditLifestyle(): void
@@ -56,6 +62,7 @@ export function ReviewStep({
   encounterStatus,
   completionState,
   onBackToOtc,
+  onBackToScreening,
   onComplete,
   onEditVitals,
   onEditLifestyle,
@@ -68,6 +75,7 @@ export function ReviewStep({
   const completed = encounterStatus === 'COMPLETED' || completionState.saveStatus === 'COMPLETED'
   const saving = completionState.saveStatus === 'SAVING'
   const reviewLocked = completed || saving
+  const bloodPressureDecision = evaluateReviewBloodPressure(vitals)
 
   return (
     <section
@@ -127,6 +135,24 @@ export function ReviewStep({
               <dd>{vitals.notes || '—'}</dd>
             </div>
           </dl>
+          {bloodPressureDecision !== null ? (
+            <div
+              className={`screening-message${
+                bloodPressureDecision.nextAction === 'URGENT_REFERRAL'
+                  ? ' screening-message-alert'
+                  : ''
+              }`}
+              role={bloodPressureDecision.nextAction === 'URGENT_REFERRAL' ? 'alert' : 'status'}
+            >
+              <strong>{formatBpRecommendation(bloodPressureDecision.nextAction)}</strong>
+              <p>
+                Protocol summary: {bloodPressureDecision.summarySystolic}/
+                {bloodPressureDecision.summaryDiastolic} mm Hg; pulse{' '}
+                {bloodPressureDecision.summaryPulse}.
+              </p>
+              <p>{getScreeningBpInstruction(bloodPressureDecision)}</p>
+            </div>
+          ) : null}
         </article>
 
         <article className="review-card">
@@ -305,6 +331,12 @@ export function ReviewStep({
         <span>I confirm the screening information has been reviewed.</span>
       </label>
 
+      {completed ? (
+        <button className="button button-secondary" type="button" onClick={onBackToScreening}>
+          Back to screening
+        </button>
+      ) : null}
+
       <div className="screening-encounter-actions">
         <button
           className="button button-secondary"
@@ -404,4 +436,34 @@ function formatDuration(hours: string, minutes: string, suffix: string): string 
   if (Number.isFinite(minutesValue) && minutesValue > 0)
     parts.push(`${minutesValue} ${minutesValue === 1 ? 'minute' : 'minutes'}`)
   return parts.length === 0 ? 'Time not recorded' : `${parts.join(' ')} ${suffix}`
+}
+
+function evaluateReviewBloodPressure(vitals: ReviewVitals): ScreeningBpDecision | null {
+  return evaluateScreeningBloodPressure(
+    vitals.readings.flatMap((reading) => {
+      if (
+        reading.systolic.trim() === '' ||
+        reading.diastolic.trim() === '' ||
+        reading.pulse.trim() === ''
+      ) {
+        return []
+      }
+      const systolic = Number(reading.systolic)
+      const diastolic = Number(reading.diastolic)
+      const pulse = Number(reading.pulse)
+      return Number.isInteger(systolic) && Number.isInteger(diastolic) && Number.isInteger(pulse)
+        ? [{ sequenceNumber: reading.sequenceNumber, systolic, diastolic, pulse }]
+        : []
+    })
+  )
+}
+
+function formatBpRecommendation(action: ScreeningBpDecision['nextAction']): string {
+  return action === 'URGENT_REFERRAL'
+    ? 'Urgent medical review recommended'
+    : action === 'REFER'
+      ? 'Medical review recommended'
+      : action === 'REPEAT_REQUIRED'
+        ? 'Repeat blood-pressure measurement required'
+        : 'Routine blood-pressure screening result'
 }

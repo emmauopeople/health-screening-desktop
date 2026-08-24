@@ -111,6 +111,7 @@ describe('preload screening-encounter API', () => {
       'addAddendum',
       'openFlag',
       'resolveFlag',
+      'cancelDraft',
       'voidEmptyDraft'
     ])
     expect(Object.isFrozen(api)).toBe(true)
@@ -168,6 +169,24 @@ describe('preload screening-encounter API', () => {
     )
     expect(invoke).toHaveBeenCalledWith(
       ipcChannels.screeningEncounters.management.voidEmptyDraft,
+      request
+    )
+  })
+
+  it('invokes the fixed cancellation channel with an audited reason', async () => {
+    const response = createIpcSuccess({ status: 'VOIDED' as const, recordVersion: 2 })
+    const invoke = vi.fn().mockResolvedValue(response)
+    const api = createHealthScreeningApi(invoke)
+    const request = {
+      encounterId,
+      expectedVersion: 1,
+      reasonCode: 'PATIENT_CHOSE_NOT_TO_CONTINUE' as const,
+      note: null
+    }
+
+    await expect(api.screeningEncounters.management.cancelDraft(request)).resolves.toEqual(response)
+    expect(invoke).toHaveBeenCalledWith(
+      ipcChannels.screeningEncounters.management.cancelDraft,
       request
     )
   })
@@ -289,6 +308,7 @@ describe('preload screening-encounter API', () => {
       createIpcSuccess({ status: 'FORBIDDEN' as const }),
       createIpcSuccess({ status: 'VALIDATION_FAILED' as const }),
       createIpcSuccess({ status: 'AUTHENTICATION_REQUIRED' as const }),
+      createIpcSuccess({ status: 'REPEAT_CONFIRMATION_REQUIRED' as const }),
       createIpcSuccess({ status: 'UNAVAILABLE' as const }),
       createScreeningEncounterIpcFailure('IPC_FORBIDDEN')
     ]

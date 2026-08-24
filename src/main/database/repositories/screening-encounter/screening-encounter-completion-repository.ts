@@ -34,6 +34,11 @@ const completeEncounterSql = `
 UPDATE screening_encounters
 SET status = 'COMPLETED',
     completed_at = ?,
+    summary_systolic = ?,
+    summary_diastolic = ?,
+    summary_pulse = ?,
+    next_action_category = ?,
+    decision_json = ?,
     updated_at = ?,
     record_version = record_version + 1
 WHERE id = ?
@@ -105,9 +110,16 @@ export function createScreeningEncounterCompletionRepository(
         }
 
         const update = scopedConnection
-          .prepare<[string, string, string, number]>(completeEncounterSql)
+          .prepare<[string, number, number, number, string, string, string, string, number]>(
+            completeEncounterSql
+          )
           .run(
             parsed.completedAt,
+            parsed.summarySystolic,
+            parsed.summaryDiastolic,
+            parsed.summaryPulse,
+            parsed.nextActionCategory,
+            parsed.decisionJson,
             parsed.completedAt,
             parsed.encounterId,
             parsed.expectedRecordVersion
@@ -236,6 +248,11 @@ function parseCompletionInput(input: CompleteScreeningEncounterPersistenceInput)
   readonly expectedRecordVersion: number
   readonly actorId: string
   readonly completedAt: string
+  readonly summarySystolic: number
+  readonly summaryDiastolic: number
+  readonly summaryPulse: number
+  readonly nextActionCategory: 'ROUTINE' | 'REFER' | 'URGENT_REFERRAL'
+  readonly decisionJson: string
   readonly vitalsReadings: readonly ScreeningCompletionVitalsReadingInput[]
   readonly lifestyleLogs: readonly ScreeningCompletionLifestyleLogInput[]
   readonly foodLogs: readonly ScreeningCompletionFoodLogInput[]
@@ -245,6 +262,16 @@ function parseCompletionInput(input: CompleteScreeningEncounterPersistenceInput)
     if (!Number.isSafeInteger(input.expectedRecordVersion) || input.expectedRecordVersion < 1)
       throw new RepositoryValidationError()
     if (input.vitalsReadings.length < 1) throw new RepositoryValidationError()
+    for (const value of [input.summarySystolic, input.summaryDiastolic, input.summaryPulse]) {
+      if (!Number.isSafeInteger(value) || value < 1) throw new RepositoryValidationError()
+    }
+    if (!['ROUTINE', 'REFER', 'URGENT_REFERRAL'].includes(input.nextActionCategory))
+      throw new RepositoryValidationError()
+    if (typeof input.decisionJson !== 'string' || input.decisionJson.length > 4000)
+      throw new RepositoryValidationError()
+    const decision = JSON.parse(input.decisionJson) as unknown
+    if (typeof decision !== 'object' || decision === null || Array.isArray(decision))
+      throw new RepositoryValidationError()
 
     input.vitalsReadings.forEach(validateVitalsReading)
     input.lifestyleLogs.forEach((log) => {
@@ -260,6 +287,11 @@ function parseCompletionInput(input: CompleteScreeningEncounterPersistenceInput)
       expectedRecordVersion: input.expectedRecordVersion,
       actorId: parseEntityId(input.actorId),
       completedAt: parseUtcTimestamp(input.completedAt),
+      summarySystolic: input.summarySystolic,
+      summaryDiastolic: input.summaryDiastolic,
+      summaryPulse: input.summaryPulse,
+      nextActionCategory: input.nextActionCategory,
+      decisionJson: input.decisionJson,
       vitalsReadings: input.vitalsReadings,
       lifestyleLogs: input.lifestyleLogs,
       foodLogs: input.foodLogs,

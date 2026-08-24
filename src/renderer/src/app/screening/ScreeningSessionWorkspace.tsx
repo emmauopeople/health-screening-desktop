@@ -1,10 +1,10 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type Dispatch,
+  type FormEvent,
   type MutableRefObject,
   type ReactNode,
   type RefObject,
@@ -13,6 +13,7 @@ import {
 
 import type {
   HealthScreeningApi,
+  EncounterCancellationReasonCode,
   LocalUserRole,
   PatientErrorCode,
   PatientSex,
@@ -45,6 +46,11 @@ import {
   VITALS_SYSTOLIC_MAX,
   VITALS_SYSTOLIC_MIN
 } from '@shared/vitals-bounds'
+import {
+  evaluateScreeningBloodPressure,
+  getScreeningBpInstruction,
+  type ScreeningBpDecision
+} from '@shared/screening-bp-protocol'
 
 import type { WorkspaceNavigationGuard } from '../shell/application-shell-types'
 import { FoodStep } from './food/FoodStep'
@@ -153,6 +159,17 @@ export interface PatientScreeningTab {
 type WorkspaceMessage = {
   readonly tone: 'STATUS' | 'ALERT'
   readonly text: string
+}
+
+interface EncounterCancellationState {
+  readonly patientId: string
+  readonly encounterId: string
+  readonly expectedVersion: number
+  readonly patientName: string
+  readonly reasonCode: EncounterCancellationReasonCode | ''
+  readonly note: string
+  readonly saveStatus: 'IDLE' | 'SAVING' | 'ERROR'
+  readonly statusMessage: string | null
 }
 
 type ScreeningWorkspaceTab = 'PATIENTS' | 'NEW_SCREENING'
@@ -274,6 +291,10 @@ export function ScreeningSessionWorkspace({
   const [patientSearchPage, setPatientSearchPage] = useState(1)
   const [pendingPatientIds, setPendingPatientIds] = useState<ReadonlySet<string>>(() => new Set())
   const [message, setMessage] = useState<WorkspaceMessage | null>(null)
+  const [repeatConfirmationPatient, setRepeatConfirmationPatient] =
+    useState<PublicPatientSummary | null>(null)
+  const [encounterCancellation, setEncounterCancellation] =
+    useState<EncounterCancellationState | null>(null)
 
   const focusMessage = useCallback((): void => {
     queueMicrotask(() => {
@@ -380,9 +401,7 @@ export function ScreeningSessionWorkspace({
         const readySessionId = data.session.id
         onOpenTabsChange((currentTabs) => {
           const currentSessionTabs = currentTabs.filter(
-            (tab) =>
-              tab.encounter.status === 'DRAFT' ||
-              tab.encounter.screeningSessionId === readySessionId
+            (tab) => tab.encounter.screeningSessionId === readySessionId
           )
 
           onActivePatientIdChange((currentActivePatientId) => {
@@ -556,18 +575,9 @@ export function ScreeningSessionWorkspace({
     )
   }, [loadPatients, patientSearchPage, patientSearchQuery, sessionState])
 
-  const activatePatient = useCallback(
-    async (patient: PublicPatientSummary): Promise<void> => {
+  const startPatientEncounter = useCallback(
+    async (patient: PublicPatientSummary, repeatConfirmed: boolean): Promise<void> => {
       if (sessionState.status !== 'READY') {
-        return
-      }
-
-      const existingTab = openTabs.find((tab) => tab.patient.id === patient.id)
-
-      if (existingTab !== undefined) {
-        onActivePatientIdChange(existingTab.patient.id)
-        setMessage(null)
-        selectWorkspaceTab('NEW_SCREENING')
         return
       }
 
@@ -575,11 +585,14 @@ export function ScreeningSessionWorkspace({
         return
       }
 
+      const existingTab = openTabs.find((tab) => tab.patient.id === patient.id)
       const pendingNewCount = Array.from(pendingPatientIdsRef.current).filter((patientId) =>
         openTabs.every((tab) => tab.patient.id !== patientId)
       ).length
+      const replacingCompletedTab =
+        existingTab !== undefined && existingTab.encounter.status !== 'DRAFT'
 
-      if (openTabs.length + pendingNewCount >= screeningPatientTabLimit) {
+      if (!replacingCompletedTab && openTabs.length + pendingNewCount >= screeningPatientTabLimit) {
         setWorkspaceMessage('Close one patient to continue', 'ALERT')
         return
       }
@@ -593,7 +606,8 @@ export function ScreeningSessionWorkspace({
       try {
         const result = await api.screeningEncounters.start({
           patientId: patient.id,
-          screeningSessionId: sessionId
+          screeningSessionId: sessionId,
+          repeatConfirmed
         })
 
         if (
@@ -616,19 +630,33 @@ export function ScreeningSessionWorkspace({
           onOpenTabsChange((currentTabs) => {
             const currentExistingTab = currentTabs.find((tab) => tab.patient.id === patient.id)
 
-            if (currentExistingTab !== undefined) {
+            if (
+              currentExistingTab !== undefined &&
+              currentExistingTab.encounter.status === 'DRAFT'
+            ) {
               return currentTabs
             }
 
-            if (currentTabs.length >= screeningPatientTabLimit) {
+            const tabsWithoutCompletedPatient = currentTabs.filter(
+              (tab) => tab.patient.id !== patient.id || tab.encounter.status === 'DRAFT'
+            )
+
+            if (tabsWithoutCompletedPatient.length >= screeningPatientTabLimit) {
               setWorkspaceMessage('Close one patient to continue', 'ALERT')
               return currentTabs
             }
 
-            return [...currentTabs, createPatientScreeningTab(patient, encounter)]
+            return [...tabsWithoutCompletedPatient, createPatientScreeningTab(patient, encounter)]
           })
+          setRepeatConfirmationPatient(null)
           onActivePatientIdChange(patient.id)
           selectWorkspaceTab('NEW_SCREENING')
+          return
+        }
+
+        if (result.data.status === 'REPEAT_CONFIRMATION_REQUIRED') {
+          setRepeatConfirmationPatient(patient)
+          selectWorkspaceTab('PATIENTS')
           return
         }
 
@@ -653,6 +681,139 @@ export function ScreeningSessionWorkspace({
       openTabs,
       selectWorkspaceTab,
       sessionState,
+      setWorkspaceMessage
+    ]
+  )
+
+  const activatePatient = useCallback(
+    async (patient: PublicPatientSummary): Promise<void> => {
+      const existingDraftTab = openTabs.find(
+        (tab) => tab.patient.id === patient.id && tab.encounter.status === 'DRAFT'
+      )
+
+      if (existingDraftTab !== undefined) {
+        onActivePatientIdChange(existingDraftTab.patient.id)
+        setMessage(null)
+        setRepeatConfirmationPatient(null)
+        selectWorkspaceTab('NEW_SCREENING')
+        return
+      }
+
+      await startPatientEncounter(patient, false)
+    },
+    [onActivePatientIdChange, openTabs, selectWorkspaceTab, startPatientEncounter]
+  )
+
+  const backToScreeningAfterCompletion = useCallback((): void => {
+    onOpenTabsChange((currentTabs) => {
+      const remainingTabs = currentTabs.filter((tab) => tab.encounter.status !== 'COMPLETED')
+
+      onActivePatientIdChange((currentActivePatientId) => {
+        if (
+          currentActivePatientId !== null &&
+          remainingTabs.some((tab) => tab.patient.id === currentActivePatientId)
+        ) {
+          return currentActivePatientId
+        }
+
+        return remainingTabs[0]?.patient.id ?? null
+      })
+
+      return remainingTabs
+    })
+    setMessage(null)
+    setRepeatConfirmationPatient(null)
+    selectWorkspaceTab('NEW_SCREENING')
+  }, [onActivePatientIdChange, onOpenTabsChange, selectWorkspaceTab])
+
+  const requestEncounterCancellation = useCallback((tab: PatientScreeningTab): void => {
+    if (tab.encounter.status !== 'DRAFT') return
+    setEncounterCancellation({
+      patientId: tab.patient.id,
+      encounterId: tab.encounter.id,
+      expectedVersion: tab.encounter.recordVersion,
+      patientName: formatPatientName(tab.patient),
+      reasonCode: '',
+      note: '',
+      saveStatus: 'IDLE',
+      statusMessage: null
+    })
+  }, [])
+
+  const cancelEncounter = useCallback(
+    async (event: FormEvent): Promise<void> => {
+      event.preventDefault()
+      const cancellation = encounterCancellation
+      if (
+        cancellation === null ||
+        cancellation.reasonCode === '' ||
+        cancellation.saveStatus === 'SAVING' ||
+        (cancellation.reasonCode === 'OTHER' && cancellation.note.trim().length === 0)
+      ) {
+        return
+      }
+
+      setEncounterCancellation({
+        ...cancellation,
+        saveStatus: 'SAVING',
+        statusMessage: 'Cancelling screening...'
+      })
+
+      try {
+        const result = await api.screeningEncounters.management.cancelDraft({
+          encounterId: cancellation.encounterId,
+          expectedVersion: cancellation.expectedVersion,
+          reasonCode: cancellation.reasonCode,
+          note: cancellation.note.trim().length === 0 ? null : cancellation.note.trim()
+        })
+
+        if (!mountedRef.current) return
+        if (!result.ok || result.data.status !== 'VOIDED') {
+          const status = result.ok ? result.data.status : result.error.code
+          setEncounterCancellation({
+            ...cancellation,
+            saveStatus: 'ERROR',
+            statusMessage: getEncounterCancellationFailureMessage(status)
+          })
+          if (status === 'AUTHENTICATION_REQUIRED') {
+            onScreeningSessionAuthenticationFailure('AUTH_UNAUTHENTICATED')
+          }
+          return
+        }
+
+        onOpenTabsChange((currentTabs) => {
+          const cancelledIndex = currentTabs.findIndex(
+            (tab) => tab.encounter.id === cancellation.encounterId
+          )
+          const remainingTabs = currentTabs.filter(
+            (tab) => tab.encounter.id !== cancellation.encounterId
+          )
+          const nextTab =
+            remainingTabs[Math.min(cancelledIndex, Math.max(remainingTabs.length - 1, 0))]
+          onActivePatientIdChange(nextTab?.patient.id ?? null)
+          return remainingTabs
+        })
+        setEncounterCancellation(null)
+        setWorkspaceMessage('Screening cancelled. The draft was retained as a voided record.')
+        selectWorkspaceTab('NEW_SCREENING')
+      } catch {
+        if (mountedRef.current) {
+          setEncounterCancellation({
+            ...cancellation,
+            saveStatus: 'ERROR',
+            statusMessage: 'Screening could not be cancelled. Try again.'
+          })
+        }
+      }
+    },
+    [
+      api,
+      encounterCancellation,
+      mountedRef,
+      onActivePatientIdChange,
+      onOpenTabsChange,
+      onScreeningSessionAuthenticationFailure,
+      selectWorkspaceTab,
       setWorkspaceMessage
     ]
   )
@@ -877,7 +1038,7 @@ export function ScreeningSessionWorkspace({
 
       const validation = createVitalsSaveRequest(encounterId, draft, mode)
 
-      if (validation.status !== 'VALID') {
+      if (validation.status === 'INVALID') {
         updateVitalsDraft(patientId, (currentDraft) => ({
           ...currentDraft,
           saveStatus: 'ERROR',
@@ -886,6 +1047,8 @@ export function ScreeningSessionWorkspace({
         }))
         return
       }
+
+      const repeatRequired = validation.status === 'REPEAT_REQUIRED'
 
       const requestId = (vitalsSaveRequestRef.current.get(encounterId) ?? 0) + 1
       vitalsSaveRequestRef.current.set(encounterId, requestId)
@@ -898,7 +1061,7 @@ export function ScreeningSessionWorkspace({
 
       try {
         const result =
-          mode === 'SAVE_DRAFT'
+          mode === 'SAVE_DRAFT' || repeatRequired
             ? await api.screeningEncounters.vitals.saveDraft(validation.request)
             : await api.screeningEncounters.vitals.completeStep(validation.request)
 
@@ -920,13 +1083,16 @@ export function ScreeningSessionWorkspace({
         if (isVitalsDraftSavedData(data)) {
           const persistedDraft = data.draft
 
-          updateVitalsDraft(patientId, () =>
-            createVitalsDraftFromPersisted(persistedDraft, {
+          updateVitalsDraft(patientId, () => {
+            const hydrated = createVitalsDraftFromPersisted(persistedDraft, {
               activeStep: 'VITALS',
               saveStatus: 'SAVED',
-              statusMessage: 'Draft saved'
+              statusMessage: repeatRequired
+                ? getScreeningBpInstruction(validation.decision)
+                : 'Draft saved'
             })
-          )
+            return repeatRequired ? addVitalsReading(hydrated, hydrated.statusMessage) : hydrated
+          })
           return
         }
 
@@ -2334,6 +2500,130 @@ export function ScreeningSessionWorkspace({
         </div>
       ) : null}
 
+      {repeatConfirmationPatient !== null ? (
+        <div className="screening-message" role="dialog" aria-label="Start another screening">
+          <p>
+            {formatPatientName(repeatConfirmationPatient)} just completed screening. Do you want to
+            start a new screening for this patient?
+          </p>
+          <div className="screening-encounter-actions">
+            <button
+              className="button button-primary"
+              type="button"
+              onClick={() => void startPatientEncounter(repeatConfirmationPatient, true)}
+            >
+              Yes
+            </button>
+            <button
+              className="button button-secondary"
+              type="button"
+              onClick={() => {
+                setRepeatConfirmationPatient(null)
+                setMessage(null)
+                selectWorkspaceTab('PATIENTS')
+              }}
+            >
+              No
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {encounterCancellation !== null ? (
+        <form
+          className="screening-message"
+          role="dialog"
+          aria-label="Cancel screening"
+          onSubmit={(event) => void cancelEncounter(event)}
+        >
+          <p>
+            Cancel the current screening for {encounterCancellation.patientName}? Saved draft data
+            will be retained in a voided, auditable record and cannot be resumed.
+          </p>
+          <label>
+            <span>Cancellation reason</span>
+            <select
+              aria-label="Cancellation reason"
+              value={encounterCancellation.reasonCode}
+              disabled={encounterCancellation.saveStatus === 'SAVING'}
+              onChange={(event) => {
+                const reasonCode = event.currentTarget
+                  .value as EncounterCancellationState['reasonCode']
+                setEncounterCancellation((current) =>
+                  current === null
+                    ? null
+                    : {
+                        ...current,
+                        reasonCode,
+                        note: reasonCode === 'OTHER' ? current.note : '',
+                        saveStatus: 'IDLE',
+                        statusMessage: null
+                      }
+                )
+              }}
+            >
+              <option value="">Select a reason</option>
+              <option value="PATIENT_CHOSE_NOT_TO_CONTINUE">Patient chose not to continue</option>
+              <option value="CREATED_IN_ERROR">Screening created in error</option>
+              <option value="UNABLE_TO_COMPLETE_TODAY">Unable to complete today</option>
+              <option value="OTHER">Other</option>
+            </select>
+          </label>
+          {encounterCancellation.reasonCode === 'OTHER' ? (
+            <label>
+              <span>Explanation</span>
+              <textarea
+                aria-label="Cancellation explanation"
+                maxLength={500}
+                required
+                value={encounterCancellation.note}
+                disabled={encounterCancellation.saveStatus === 'SAVING'}
+                onChange={(event) => {
+                  const note = event.currentTarget.value
+                  setEncounterCancellation((current) =>
+                    current === null
+                      ? null
+                      : { ...current, note, saveStatus: 'IDLE', statusMessage: null }
+                  )
+                }}
+              />
+            </label>
+          ) : null}
+          {encounterCancellation.statusMessage !== null ? (
+            <div
+              className={
+                encounterCancellation.saveStatus === 'ERROR' ? 'screening-message-alert' : ''
+              }
+              role={encounterCancellation.saveStatus === 'ERROR' ? 'alert' : 'status'}
+            >
+              {encounterCancellation.statusMessage}
+            </div>
+          ) : null}
+          <div className="screening-encounter-actions">
+            <button
+              className="button button-secondary"
+              type="button"
+              disabled={encounterCancellation.saveStatus === 'SAVING'}
+              onClick={() => setEncounterCancellation(null)}
+            >
+              Keep screening
+            </button>
+            <button
+              className="button button-primary"
+              type="submit"
+              disabled={
+                encounterCancellation.saveStatus === 'SAVING' ||
+                encounterCancellation.reasonCode === '' ||
+                (encounterCancellation.reasonCode === 'OTHER' &&
+                  encounterCancellation.note.trim().length === 0)
+              }
+            >
+              {encounterCancellation.saveStatus === 'SAVING' ? 'Cancelling...' : 'Cancel screening'}
+            </button>
+          </div>
+        </form>
+      ) : null}
+
       {sessionState.status === 'LOADING' ? (
         <SessionGatePanel message="Resolving screening session..." />
       ) : sessionState.status === 'BLOCKED' ? (
@@ -2390,6 +2680,8 @@ export function ScreeningSessionWorkspace({
               onContinueOtc={continueOtc}
               onUpdateOtcDraft={updateOtcDraft}
               onCompleteScreening={completeScreening}
+              onRequestCancellation={requestEncounterCancellation}
+              onBackToScreening={backToScreeningAfterCompletion}
               onUpdateCompletionState={updateCompletionState}
             />
           )}
@@ -2638,6 +2930,8 @@ function NewScreeningWorkspace({
   onContinueOtc,
   onUpdateOtcDraft,
   onCompleteScreening,
+  onRequestCancellation,
+  onBackToScreening,
   onUpdateCompletionState
 }: {
   readonly activeTab: PatientScreeningTab | null
@@ -2686,6 +2980,8 @@ function NewScreeningWorkspace({
     update: (draft: OtcDraftState) => OtcDraftState
   ): void
   onCompleteScreening(tab: PatientScreeningTab): void
+  onRequestCancellation(tab: PatientScreeningTab): void
+  onBackToScreening(): void
   onUpdateCompletionState(
     patientId: string,
     encounterId: string,
@@ -2799,6 +3095,8 @@ function NewScreeningWorkspace({
               onUpdateOtcDraft(activeTab.patient.id, activeTab.encounter.id, update)
             }
             onCompleteScreening={() => onCompleteScreening(activeTab)}
+            onRequestCancellation={() => onRequestCancellation(activeTab)}
+            onBackToScreening={onBackToScreening}
             onUpdateCompletionState={(update) =>
               onUpdateCompletionState(activeTab.patient.id, activeTab.encounter.id, update)
             }
@@ -2949,6 +3247,8 @@ function CurrentEncounterPanel({
   onContinueOtc,
   onUpdateOtcDraft,
   onCompleteScreening,
+  onRequestCancellation,
+  onBackToScreening,
   onUpdateCompletionState
 }: {
   readonly location: PublicScreeningSessionWorkspaceLocation
@@ -2973,6 +3273,8 @@ function CurrentEncounterPanel({
   onContinueOtc(): void
   onUpdateOtcDraft(update: (draft: OtcDraftState) => OtcDraftState): void
   onCompleteScreening(): void
+  onRequestCancellation(): void
+  onBackToScreening(): void
   onUpdateCompletionState(
     update: (state: ScreeningCompletionState) => ScreeningCompletionState
   ): void
@@ -2987,9 +3289,20 @@ function CurrentEncounterPanel({
     >
       <header className="screening-current-encounter-header">
         <h2>Current screening encounter</h2>
-        <span>
-          Session: {session.sessionDate} • {location.name}
-        </span>
+        <div>
+          <span>
+            Session: {session.sessionDate} • {location.name}
+          </span>
+          {tab.encounter.status === 'DRAFT' ? (
+            <button
+              className="button button-secondary"
+              type="button"
+              onClick={onRequestCancellation}
+            >
+              Cancel screening
+            </button>
+          ) : null}
+        </div>
       </header>
 
       <ol className="screening-stepper" aria-label="Screening workflow steps">
@@ -3125,6 +3438,7 @@ function CurrentEncounterPanel({
             }))
           }}
           onComplete={onCompleteScreening}
+          onBackToScreening={onBackToScreening}
           onEditVitals={() => {
             onUpdateCompletionState(resetScreeningCompletionReview)
             onUpdateVitalsDraft((draft) => ({ ...draft, activeStep: 'VITALS' }))
@@ -3167,26 +3481,9 @@ function VitalsStep({
   onUpdateDraft(update: (draft: VitalsDraft) => VitalsDraft): void
 }): React.JSX.Element {
   const controlsDisabled = draft.loadStatus !== 'READY' || draft.saveStatus === 'SAVING'
-
-  useLayoutEffect(() => {
-    const firstError = draft.validationErrors[0]
-
-    if (firstError === undefined) {
-      return
-    }
-
-    const controlId = getVitalsFocusTargetId(firstError.fieldId)
-    const control = controlId === null ? null : document.getElementById(controlId)
-
-    if (control !== null) {
-      control.focus({ preventScroll: true })
-      return
-    }
-
-    document.getElementById(getVitalsErrorElementId(firstError.fieldId))?.focus({
-      preventScroll: true
-    })
-  }, [draft.validationErrors])
+  const protocolDecision = evaluateVitalsDraftBloodPressure(draft)
+  const repeatRequired = protocolDecision?.nextAction === 'REPEAT_REQUIRED'
+  const hasPendingReading = draft.readings.some((reading) => !isCompleteVitalsReadingDraft(reading))
 
   if (draft.loadStatus === 'LOADING' || draft.loadStatus === 'NOT_LOADED') {
     return (
@@ -3439,16 +3736,32 @@ function VitalsStep({
           ) : null
         )}
 
+        {protocolDecision !== null && protocolDecision.nextAction !== 'ROUTINE' ? (
+          <div
+            className={`screening-message${
+              protocolDecision.nextAction === 'URGENT_REFERRAL' ? ' screening-message-alert' : ''
+            }`}
+            role={
+              protocolDecision.nextAction === 'URGENT_REFERRAL' || repeatRequired
+                ? 'alert'
+                : 'status'
+            }
+          >
+            <strong>{formatScreeningBpAction(protocolDecision.nextAction)}</strong>
+            <p>{getScreeningBpInstruction(protocolDecision)}</p>
+          </div>
+        ) : null}
+
         <div className="screening-vitals-table-actions">
           <button
             className="button button-secondary"
             type="button"
-            disabled={controlsDisabled}
+            disabled={controlsDisabled || (repeatRequired && hasPendingReading)}
             onClick={() => {
               onUpdateDraft(addVitalsReading)
             }}
           >
-            Add reading
+            {repeatRequired ? 'Add recheck' : 'Add reading'}
           </button>
           <button
             className="button button-secondary"
@@ -3702,12 +4015,12 @@ function createVitalsReadingDraft(readingNumber: number): VitalsReadingDraft {
   }
 }
 
-function addVitalsReading(draft: VitalsDraft): VitalsDraft {
+function addVitalsReading(draft: VitalsDraft, statusMessage: string | null = null): VitalsDraft {
   return {
     ...draft,
     readings: [...draft.readings, createVitalsReadingDraft(draft.readings.length + 1)],
     saveStatus: 'IDLE',
-    statusMessage: null,
+    statusMessage,
     validationErrors: []
   }
 }
@@ -3761,6 +4074,13 @@ function createVitalsSaveRequest(
       readonly status: 'INVALID'
       readonly message: string
       readonly errors: readonly VitalsValidationError[]
+    }
+  | {
+      readonly status: 'REPEAT_REQUIRED'
+      readonly request: Parameters<
+        HealthScreeningApi['screeningEncounters']['vitals']['saveDraft']
+      >[0]
+      readonly decision: ScreeningBpDecision
     } {
   const errors: VitalsValidationError[] = []
   const readings = draft.readings.map((reading, index) => {
@@ -3794,17 +4114,79 @@ function createVitalsSaveRequest(
     }
   }
 
-  return {
-    status: 'VALID',
-    request: {
-      encounterId,
-      expectedVersion: draft.expectedVersion,
-      readings,
-      weightKg,
-      waistCm,
-      notes: draft.notes.trim().length === 0 ? null : draft.notes
-    }
+  const request = {
+    encounterId,
+    expectedVersion: draft.expectedVersion,
+    readings,
+    weightKg,
+    waistCm,
+    notes: draft.notes.trim().length === 0 ? null : draft.notes
   }
+  const decision = evaluateRequestBloodPressure(readings)
+  if (mode === 'COMPLETE_STEP' && decision?.nextAction === 'REPEAT_REQUIRED') {
+    return { status: 'REPEAT_REQUIRED', request, decision }
+  }
+
+  return { status: 'VALID', request }
+}
+
+function evaluateRequestBloodPressure(
+  readings: Parameters<
+    HealthScreeningApi['screeningEncounters']['vitals']['saveDraft']
+  >[0]['readings']
+): ScreeningBpDecision | null {
+  const completeReadings = readings.flatMap((reading) =>
+    reading.systolic === null || reading.diastolic === null || reading.pulse === null
+      ? []
+      : [
+          {
+            sequenceNumber: reading.sequenceNumber,
+            systolic: reading.systolic,
+            diastolic: reading.diastolic,
+            pulse: reading.pulse
+          }
+        ]
+  )
+  return evaluateScreeningBloodPressure(completeReadings)
+}
+
+function evaluateVitalsDraftBloodPressure(draft: VitalsDraft): ScreeningBpDecision | null {
+  return evaluateScreeningBloodPressure(
+    draft.readings.flatMap((reading, index) => {
+      const systolic = Number(reading.systolic)
+      const diastolic = Number(reading.diastolic)
+      const pulse = Number(reading.pulse)
+      return reading.systolic.length === 0 ||
+        reading.diastolic.length === 0 ||
+        reading.pulse.length === 0 ||
+        !Number.isInteger(systolic) ||
+        !Number.isInteger(diastolic) ||
+        !Number.isInteger(pulse)
+        ? []
+        : [{ sequenceNumber: index + 1, systolic, diastolic, pulse }]
+    })
+  )
+}
+
+function isCompleteVitalsReadingDraft(reading: VitalsReadingDraft): boolean {
+  return (
+    reading.systolic.length > 0 &&
+    reading.diastolic.length > 0 &&
+    reading.pulse.length > 0 &&
+    reading.site !== '' &&
+    reading.position !== '' &&
+    reading.time !== ''
+  )
+}
+
+function formatScreeningBpAction(action: ScreeningBpDecision['nextAction']): string {
+  return action === 'REPEAT_REQUIRED'
+    ? 'Repeat blood-pressure measurement required'
+    : action === 'URGENT_REFERRAL'
+      ? 'Urgent medical review recommended'
+      : action === 'REFER'
+        ? 'Medical review recommended'
+        : 'Routine screening'
 }
 
 function parseVitalsReadingForRequest(
@@ -3964,22 +4346,6 @@ function hasVitalsFieldError(draft: VitalsDraft, readingId: string, fieldName: s
 
 function getVitalsControlId(readingId: string, fieldName: string): string {
   return `vitals-${readingId}-${fieldName}`
-}
-
-function getVitalsFocusTargetId(fieldId: string): string | null {
-  const separatorIndex = fieldId.lastIndexOf(':')
-  if (separatorIndex >= 0) {
-    return getVitalsControlId(fieldId.slice(0, separatorIndex), fieldId.slice(separatorIndex + 1))
-  }
-
-  switch (fieldId) {
-    case 'weight':
-      return getVitalsControlId('top-level', 'weight')
-    case 'waist':
-      return getVitalsControlId('top-level', 'waist')
-    default:
-      return null
-  }
 }
 
 function getVitalsErrorElementId(fieldId: string): string {
@@ -4196,11 +4562,39 @@ function getEncounterTransportFailureMessage(code: ScreeningEncounterIpcErrorCod
   }
 }
 
+function getEncounterCancellationFailureMessage(status: string): string {
+  switch (status) {
+    case 'AUTHENTICATION_REQUIRED':
+      return 'Sign in is required.'
+    case 'FORBIDDEN':
+      return 'The active session is not authorized to cancel screening.'
+    case 'VERSION_CONFLICT':
+      return 'This draft changed elsewhere. Reopen it and try again.'
+    case 'ENCOUNTER_NOT_FOUND':
+    case 'ENCOUNTER_NOT_EDITABLE':
+      return 'This screening encounter is no longer available.'
+    case 'VALIDATION_FAILED':
+      return 'Select a cancellation reason and complete the required details.'
+    case 'LOCATION_NOT_CONFIGURED':
+    case 'LOCATION_NOT_FOUND':
+    case 'LOCATION_INACTIVE':
+      return 'The screening location is unavailable.'
+    case 'IPC_FORBIDDEN':
+    case 'IPC_UNAVAILABLE':
+    case 'INTERNAL_ERROR':
+    case 'UNAVAILABLE':
+    default:
+      return 'Screening could not be cancelled. Try again.'
+  }
+}
+
 function getEncounterStartStatusMessage(data: ScreeningEncounterStartSuccessData): string {
   switch (data.status) {
     case 'STARTED':
     case 'ALREADY_EXISTS':
       return 'New Screening'
+    case 'REPEAT_CONFIRMATION_REQUIRED':
+      return 'Confirm whether to start another screening for this patient.'
     case 'AUTHENTICATION_REQUIRED':
       return 'Sign in is required.'
     case 'FORBIDDEN':
@@ -4233,6 +4627,8 @@ function getVitalsStatusMessage(
     case 'SAVED':
     case 'COMPLETED':
       return 'Draft could not be saved. Try again.'
+    case 'REPEAT_REQUIRED':
+      return 'Add a second blood-pressure reading before continuing.'
     case 'AUTHENTICATION_REQUIRED':
       return 'Sign in is required.'
     case 'FORBIDDEN':

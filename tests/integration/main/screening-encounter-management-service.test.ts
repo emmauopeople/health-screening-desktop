@@ -50,7 +50,15 @@ const ids = Object.freeze({
   resolveOutbox: '52000000-0000-4000-8000-000000000019',
   draftVitals: '52000000-0000-4000-8000-000000000021',
   voidAudit: '52000000-0000-4000-8000-000000000022',
-  voidOutbox: '52000000-0000-4000-8000-000000000023'
+  voidOutbox: '52000000-0000-4000-8000-000000000023',
+  unavailablePatient: '52000000-0000-4000-8000-000000000024',
+  unavailableSession: '52000000-0000-4000-8000-000000000025',
+  unavailableEncounter: '52000000-0000-4000-8000-000000000026',
+  cancelledPatient: '52000000-0000-4000-8000-000000000027',
+  cancelledEncounter: '52000000-0000-4000-8000-000000000028',
+  cancelledVitals: '52000000-0000-4000-8000-000000000029',
+  cancelAudit: '52000000-0000-4000-8000-000000000030',
+  cancelOutbox: '52000000-0000-4000-8000-000000000031'
 })
 
 describe('screening encounter management service integration', () => {
@@ -153,6 +161,12 @@ describe('screening encounter management service integration', () => {
           ]
         }
       })
+      expect(
+        service.search({ query: 'unavailable', status: 'DRAFT', page: 1, pageSize: 25 })
+      ).toMatchObject({ status: 'LOADED', result: { total: 0, items: [] } })
+      expect(service.getDetail(parseEntityId(ids.unavailableEncounter))).toEqual({
+        status: 'ENCOUNTER_NOT_FOUND'
+      })
 
       connection
         .prepare(
@@ -203,6 +217,41 @@ describe('screening encounter management service integration', () => {
         status: 'LOADED',
         result: { total: 1, items: [{ id: ids.draftEncounter, status: 'VOID' }] }
       })
+
+      expect(
+        service.cancelDraft(
+          parseEntityId(ids.cancelledEncounter),
+          1,
+          'PATIENT_CHOSE_NOT_TO_CONTINUE',
+          null
+        )
+      ).toEqual({ status: 'VOIDED', recordVersion: 2 })
+      expect(
+        connection
+          .prepare(
+            'SELECT status, void_reason, record_version FROM screening_encounters WHERE id = ?'
+          )
+          .get(ids.cancelledEncounter)
+      ).toEqual({
+        status: 'VOID',
+        void_reason: 'Patient chose not to continue',
+        record_version: 2
+      })
+      expect(
+        connection
+          .prepare('SELECT notes FROM screening_vitals_drafts WHERE encounter_id = ?')
+          .get(ids.cancelledEncounter)
+      ).toEqual({ notes: 'Saved before cancellation' })
+      const cancellationMetadata = JSON.stringify({
+        audit: connection
+          .prepare('SELECT metadata_json FROM audit_log WHERE id = ?')
+          .get(ids.cancelAudit),
+        outbox: connection
+          .prepare('SELECT payload_json FROM sync_outbox WHERE id = ?')
+          .get(ids.cancelOutbox)
+      })
+      expect(cancellationMetadata).toContain('PATIENT_CHOSE_NOT_TO_CONTINUE')
+      expect(cancellationMetadata).not.toContain('Saved before cancellation')
     })
   })
 })
@@ -237,7 +286,9 @@ async function withService(
           ids.resolveAudit,
           ids.resolveOutbox,
           ids.voidAudit,
-          ids.voidOutbox
+          ids.voidOutbox,
+          ids.cancelAudit,
+          ids.cancelOutbox
         ])
       ),
       clock: createUtcClock(() => later)
@@ -253,6 +304,12 @@ async function withService(
           }
         })
       } as InstallationLocationService,
+      currentScreeningSessionService: {
+        findCurrentScreeningSession: () => ({
+          status: 'FOUND',
+          session: { id: parseEntityId(ids.session) }
+        })
+      } as never,
       installationRepository: createInstallationRepository(connection),
       screeningEncounterRepository: createScreeningEncounterRepository(connection),
       managementRepository: createScreeningEncounterManagementRepository(connection),
@@ -347,6 +404,36 @@ function seedGraph(connection: Database.Database): void {
     )
   connection
     .prepare(
+      'INSERT INTO patients (id, patient_code, display_name, name_normalized, status, created_by, created_at, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    )
+    .run(
+      ids.unavailablePatient,
+      'UNAVAILABLE-1',
+      'Unavailable Draft',
+      'unavailable draft',
+      'ACTIVE',
+      ids.user,
+      now,
+      ids.user,
+      now
+    )
+  connection
+    .prepare(
+      'INSERT INTO patients (id, patient_code, display_name, name_normalized, status, created_by, created_at, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    )
+    .run(
+      ids.cancelledPatient,
+      'CANCELLED-1',
+      'Cancelled Patient',
+      'cancelled patient',
+      'ACTIVE',
+      ids.user,
+      now,
+      ids.user,
+      now
+    )
+  connection
+    .prepare(
       'INSERT INTO screening_sessions (id, location_id, protocol_version_id, session_date, status, opened_by, opened_at, created_by, created_at, updated_by, updated_at, row_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)'
     )
     .run(
@@ -355,6 +442,25 @@ function seedGraph(connection: Database.Database): void {
       protocol,
       '2026-08-20',
       'OPEN',
+      ids.user,
+      now,
+      ids.user,
+      now,
+      ids.user,
+      now
+    )
+  connection
+    .prepare(
+      'INSERT INTO screening_sessions (id, location_id, protocol_version_id, session_date, status, opened_by, opened_at, closed_by, closed_at, created_by, created_at, updated_by, updated_at, row_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2)'
+    )
+    .run(
+      ids.unavailableSession,
+      ids.location,
+      protocol,
+      '2026-08-19',
+      'CLOSED',
+      ids.user,
+      now,
       ids.user,
       now,
       ids.user,
@@ -380,6 +486,20 @@ function seedGraph(connection: Database.Database): void {
     now
   )
   encounterStatement.run(
+    ids.unavailableEncounter,
+    ids.unavailablePatient,
+    ids.unavailableSession,
+    ids.location,
+    protocol,
+    'DRAFT',
+    now,
+    null,
+    'LOCAL',
+    ids.user,
+    now,
+    now
+  )
+  encounterStatement.run(
     ids.draftEncounter,
     ids.draftPatient,
     ids.session,
@@ -393,6 +513,36 @@ function seedGraph(connection: Database.Database): void {
     now,
     now
   )
+  encounterStatement.run(
+    ids.cancelledEncounter,
+    ids.cancelledPatient,
+    ids.session,
+    ids.location,
+    protocol,
+    'DRAFT',
+    now,
+    null,
+    'LOCAL',
+    ids.user,
+    now,
+    now
+  )
+  connection
+    .prepare(
+      `INSERT INTO screening_vitals_drafts
+         (id, encounter_id, status, weight_kg, waist_cm, notes, created_by, created_at,
+          updated_by, updated_at, row_version)
+       VALUES (?, ?, 'DRAFT', NULL, NULL, ?, ?, ?, ?, ?, 1)`
+    )
+    .run(
+      ids.cancelledVitals,
+      ids.cancelledEncounter,
+      'Saved before cancellation',
+      ids.user,
+      now,
+      ids.user,
+      now
+    )
   connection
     .prepare(
       'INSERT INTO blood_pressure_readings (id, encounter_id, sequence_number, systolic, diastolic, pulse, measured_at, status, source_type, recorded_by, recorded_at) VALUES (?, ?, 1, 120, 80, 70, ?, ?, ?, ?, ?)'

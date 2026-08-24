@@ -63,6 +63,20 @@ export interface ScreeningEncounterRepository {
     patientId: EntityId,
     screeningSessionId: EntityId
   ): ScreeningEncounterRecord | null
+  findActiveDraftByPatientAndSession(
+    patientId: EntityId,
+    screeningSessionId: EntityId
+  ): ScreeningEncounterRecord | null
+  findActiveDraftByPatientAndSessionForWrite(
+    connection: DatabaseTransactionConnection,
+    patientId: EntityId,
+    screeningSessionId: EntityId
+  ): ScreeningEncounterRecord | null
+  hasCompletedRootByPatientAndSessionForWrite(
+    connection: DatabaseTransactionConnection,
+    patientId: EntityId,
+    screeningSessionId: EntityId
+  ): boolean
   hasDraftForLocationForWrite(
     connection: DatabaseTransactionConnection,
     locationId: EntityId

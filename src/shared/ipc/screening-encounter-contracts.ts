@@ -50,7 +50,8 @@ export const publicScreeningVitalsReadingValueSchema = z.number().int().min(1).s
 
 export const screeningEncounterStartRequestSchema = exactObject({
   patientId: screeningEncounterUuidSchema,
-  screeningSessionId: screeningEncounterUuidSchema
+  screeningSessionId: screeningEncounterUuidSchema,
+  repeatConfirmed: z.boolean().optional()
 })
 export const screeningCompletionSectionSchema = z.enum(['VITALS', 'LIFESTYLE', 'FOOD', 'OTC'])
 export const screeningEncounterCompleteRequestSchema = exactObject({
@@ -100,6 +101,33 @@ export const encounterManagementVoidEmptyDraftRequestSchema = exactObject({
   encounterId: screeningEncounterUuidSchema,
   expectedVersion: screeningVitalsPositiveIntegerSchema,
   reason: z.string().trim().min(1).max(500)
+})
+export const encounterCancellationReasonCodeSchema = z.enum([
+  'PATIENT_CHOSE_NOT_TO_CONTINUE',
+  'CREATED_IN_ERROR',
+  'UNABLE_TO_COMPLETE_TODAY',
+  'OTHER'
+])
+export const encounterManagementCancelDraftRequestSchema = exactObject({
+  encounterId: screeningEncounterUuidSchema,
+  expectedVersion: screeningVitalsPositiveIntegerSchema,
+  reasonCode: encounterCancellationReasonCodeSchema,
+  note: z.string().trim().max(500).nullable()
+}).superRefine((value, context) => {
+  if (value.reasonCode === 'OTHER' && (value.note === null || value.note.length === 0)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['note'],
+      message: 'A note is required for Other.'
+    })
+  }
+  if (value.reasonCode !== 'OTHER' && value.note !== null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['note'],
+      message: 'A note is only accepted for Other.'
+    })
+  }
 })
 export const screeningVitalsGetDraftRequestSchema = exactObject({
   encounterId: screeningEncounterUuidSchema
@@ -280,6 +308,8 @@ export const encounterManagementVoidEmptyDraftSuccessDataSchema = z.discriminate
     .strict(),
   ...encounterManagementControlledStatusSchemas
 ])
+export const encounterManagementCancelDraftSuccessDataSchema =
+  encounterManagementVoidEmptyDraftSuccessDataSchema
 
 export const screeningEncounterStartSuccessDataSchema = z.discriminatedUnion('status', [
   z
@@ -294,6 +324,7 @@ export const screeningEncounterStartSuccessDataSchema = z.discriminatedUnion('st
       encounter: publicScreeningEncounterStartSummarySchema
     })
     .strict(),
+  z.object({ status: z.literal('REPEAT_CONFIRMATION_REQUIRED') }).strict(),
   z.object({ status: z.literal('PATIENT_NOT_FOUND') }).strict(),
   z.object({ status: z.literal('PATIENT_INELIGIBLE') }).strict(),
   z.object({ status: z.literal('SESSION_NOT_FOUND') }).strict(),
@@ -343,6 +374,7 @@ const screeningVitalsControlledStatusSchemas = [
   z.object({ status: z.literal('SESSION_NOT_FOUND') }).strict(),
   z.object({ status: z.literal('SESSION_CLOSED') }).strict(),
   z.object({ status: z.literal('SESSION_NOT_CURRENT') }).strict(),
+  z.object({ status: z.literal('REPEAT_REQUIRED') }).strict(),
   z.object({ status: z.literal('VERSION_CONFLICT') }).strict(),
   z.object({ status: z.literal('UNAVAILABLE') }).strict()
 ] as const
@@ -486,6 +518,12 @@ export const encounterManagementVoidEmptyDraftResultSchema = withSafeTransportPr
     screeningEncounterFailureSchema
   ])
 )
+export const encounterManagementCancelDraftResultSchema = withSafeTransportPreprocess(
+  z.discriminatedUnion('ok', [
+    createIpcSuccessResultSchema(encounterManagementCancelDraftSuccessDataSchema),
+    screeningEncounterFailureSchema
+  ])
+)
 
 export type ScreeningEncounterStatus = z.infer<typeof screeningEncounterStatusSchema>
 export type EncounterManagementFlagCategory = z.infer<typeof encounterManagementFlagCategorySchema>
@@ -508,6 +546,10 @@ export type EncounterManagementResolveFlagRequest = z.infer<
 export type EncounterManagementVoidEmptyDraftRequest = z.infer<
   typeof encounterManagementVoidEmptyDraftRequestSchema
 >
+export type EncounterCancellationReasonCode = z.infer<typeof encounterCancellationReasonCodeSchema>
+export type EncounterManagementCancelDraftRequest = z.infer<
+  typeof encounterManagementCancelDraftRequestSchema
+>
 export type PublicManagedEncounterSummary = z.infer<typeof publicManagedEncounterSummarySchema>
 export type PublicEncounterAddendum = z.infer<typeof publicEncounterAddendumSchema>
 export type PublicEncounterReviewFlag = z.infer<typeof publicEncounterReviewFlagSchema>
@@ -527,6 +569,9 @@ export type EncounterManagementResolveFlagResult = z.infer<
 >
 export type EncounterManagementVoidEmptyDraftResult = z.infer<
   typeof encounterManagementVoidEmptyDraftResultSchema
+>
+export type EncounterManagementCancelDraftResult = z.infer<
+  typeof encounterManagementCancelDraftResultSchema
 >
 export type ScreeningEncounterStartRequest = z.infer<typeof screeningEncounterStartRequestSchema>
 export type ScreeningCompletionSection = z.infer<typeof screeningCompletionSectionSchema>

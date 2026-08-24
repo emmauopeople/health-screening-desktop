@@ -17,6 +17,7 @@ import type { LocalAuthenticationSessionService } from '../authentication/sessio
 export interface StartScreeningEncounterRequest {
   readonly patientId: EntityId
   readonly screeningSessionId: EntityId
+  readonly repeatConfirmed?: boolean
 }
 
 export interface ScreeningEncounterStartSummary {
@@ -36,6 +37,9 @@ export type StartScreeningEncounterResult =
   | {
       readonly status: 'ALREADY_EXISTS'
       readonly encounter: ScreeningEncounterStartSummary
+    }
+  | {
+      readonly status: 'REPEAT_CONFIRMATION_REQUIRED'
     }
   | {
       readonly status: 'PATIENT_NOT_FOUND'

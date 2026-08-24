@@ -104,7 +104,7 @@ describe('screening encounter IPC integration boundary', () => {
     })
   }, 20000)
 
-  it('returns a VOID root as the canonical existing encounter without replacement writes', async () => {
+  it('starts a fresh draft after a VOID root while preserving the voided history', async () => {
     await withScreeningEncounterIpc(async ({ connection, handlers }) => {
       insertRawEncounter(connection, { id: voidEncounterId, status: 'VOID', voidReason: 'Void' })
 
@@ -116,13 +116,13 @@ describe('screening encounter IPC integration boundary', () => {
       expect(result).toMatchObject({
         ok: true,
         data: {
-          status: 'ALREADY_EXISTS',
-          encounter: { id: voidEncounterId, status: 'VOID' }
+          status: 'STARTED',
+          encounter: { status: 'DRAFT' }
         }
       })
-      expect(readRootEncounterCount(connection)).toBe(1)
-      expect(readEncounterAuditActions(connection)).toEqual([])
-      expect(readEncounterOutboxOperations(connection)).toEqual([])
+      expect(readRootEncounterCount(connection)).toBe(2)
+      expect(readEncounterAuditActions(connection)).toEqual(['SCREENING_ENCOUNTER_STARTED'])
+      expect(readEncounterOutboxOperations(connection)).toEqual(['SCREENING_ENCOUNTER_STARTED'])
     })
   }, 20000)
 

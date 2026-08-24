@@ -319,6 +319,7 @@ describe('screening encounter IPC contracts', () => {
       'FORBIDDEN',
       'VALIDATION_FAILED',
       'AUTHENTICATION_REQUIRED',
+      'REPEAT_CONFIRMATION_REQUIRED',
       'UNAVAILABLE'
     ] as const) {
       expect(

@@ -95,6 +95,7 @@ const screeningEncounterIpcChannels: readonly ScreeningEncounterIpcChannel[] = O
   ipcChannels.screeningEncounters.management.addAddendum,
   ipcChannels.screeningEncounters.management.openFlag,
   ipcChannels.screeningEncounters.management.resolveFlag,
+  ipcChannels.screeningEncounters.management.cancelDraft,
   ipcChannels.screeningEncounters.management.voidEmptyDraft
 ])
 const activeScreeningEncounterRegistrations = new WeakMap<
@@ -342,6 +343,10 @@ export function registerScreeningEncounterIpcHandlers(
     [
       ipcChannels.screeningEncounters.management.resolveFlag,
       screeningEncounterHandlers.resolveEncounterReviewFlag
+    ],
+    [
+      ipcChannels.screeningEncounters.management.cancelDraft,
+      screeningEncounterHandlers.cancelEncounterDraft
     ],
     [
       ipcChannels.screeningEncounters.management.voidEmptyDraft,

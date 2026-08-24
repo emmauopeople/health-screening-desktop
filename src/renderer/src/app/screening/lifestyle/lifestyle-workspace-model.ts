@@ -876,11 +876,17 @@ function emptyAlcoholWeeklyForm(): AlcoholWeeklyForm {
 function baselineToForm(
   baseline: NonNullable<ScreeningLifestyleWorkspace['activeAlcoholBaseline']>
 ): AlcoholBaselineForm {
+  const dependentAnswersApply =
+    baseline.everConsumed === 'YES' || baseline.everConsumed === 'UNKNOWN'
+
   return {
     everConsumed: baseline.everConsumed,
-    consumedPast12Months: baseline.consumedPast12Months,
-    commonBeverageTypes: [...baseline.commonBeverageTypes],
-    otherBeverageDescription: baseline.otherBeverageDescription ?? ''
+    consumedPast12Months: dependentAnswersApply ? baseline.consumedPast12Months : '',
+    commonBeverageTypes: dependentAnswersApply ? [...baseline.commonBeverageTypes] : [],
+    otherBeverageDescription:
+      dependentAnswersApply && baseline.commonBeverageTypes.includes('OTHER')
+        ? (baseline.otherBeverageDescription ?? '')
+        : ''
   }
 }
 
