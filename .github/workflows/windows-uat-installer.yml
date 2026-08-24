@@ -34,7 +34,9 @@ jobs:
         run: pnpm format:check && pnpm lint && pnpm typecheck
 
       - name: Build Windows installer
-        run: pnpm build:win -- --publish never
+        run: |
+          pnpm exec electron-vite build
+          pnpm exec electron-builder --win --publish never
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
