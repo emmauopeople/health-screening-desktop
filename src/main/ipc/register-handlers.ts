@@ -92,6 +92,7 @@ const screeningEncounterIpcChannels: readonly ScreeningEncounterIpcChannel[] = O
   ipcChannels.screeningEncounters.completeVitalsStep,
   ipcChannels.screeningEncounters.management.search,
   ipcChannels.screeningEncounters.management.getDetail,
+  ipcChannels.screeningEncounters.management.getPatientContext,
   ipcChannels.screeningEncounters.management.addAddendum,
   ipcChannels.screeningEncounters.management.openFlag,
   ipcChannels.screeningEncounters.management.resolveFlag,
@@ -331,6 +332,10 @@ export function registerScreeningEncounterIpcHandlers(
     [
       ipcChannels.screeningEncounters.management.getDetail,
       screeningEncounterHandlers.getManagedEncounterDetail
+    ],
+    [
+      ipcChannels.screeningEncounters.management.getPatientContext,
+      screeningEncounterHandlers.getPatientScreeningContext
     ],
     [
       ipcChannels.screeningEncounters.management.addAddendum,

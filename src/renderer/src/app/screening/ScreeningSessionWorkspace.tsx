@@ -18,6 +18,8 @@ import type {
   PatientErrorCode,
   PatientSex,
   PublicCurrentScreeningSession,
+  PublicPatientContextEncounter,
+  PublicPatientScreeningContext,
   PublicPatientSummary,
   PublicScreeningEncounterStartSummary,
   PublicScreeningVitalsDraft,
@@ -149,12 +151,19 @@ type PatientSearchState =
 export interface PatientScreeningTab {
   readonly patient: PublicPatientSummary
   readonly encounter: PublicScreeningEncounterStartSummary
+  readonly patientContext: PatientContextState
   readonly vitalsDraft: VitalsDraft
   readonly lifestyleDraft: LifestyleDraftState
   readonly foodDraft: FoodDraftState
   readonly otcDraft: OtcDraftState
   readonly completionState: ScreeningCompletionState
 }
+
+type PatientContextState =
+  | { readonly status: 'NOT_LOADED' }
+  | { readonly status: 'LOADING' }
+  | { readonly status: 'READY'; readonly context: PublicPatientScreeningContext }
+  | { readonly status: 'ERROR'; readonly message: string }
 
 type WorkspaceMessage = {
   readonly tone: 'STATUS' | 'ALERT'
@@ -261,6 +270,7 @@ export function ScreeningSessionWorkspace({
   const mountedRef = useMountedRef()
   const sessionRequestRef = useRef(0)
   const patientSearchRequestRef = useRef(0)
+  const patientContextLoadRequestRef = useRef<Map<string, number>>(new Map())
   const vitalsLoadRequestRef = useRef<Map<string, number>>(new Map())
   const vitalsSaveRequestRef = useRef<Map<string, number>>(new Map())
   const lifestyleLoadRequestRef = useRef<Map<string, number>>(new Map())
@@ -339,6 +349,7 @@ export function ScreeningSessionWorkspace({
   const clearTransientWorkflowState = useCallback((): void => {
     workspaceEpochRef.current += 1
     patientSearchRequestRef.current += 1
+    patientContextLoadRequestRef.current.clear()
     vitalsLoadRequestRef.current.clear()
     vitalsSaveRequestRef.current.clear()
     lifestyleLoadRequestRef.current.clear()
@@ -526,6 +537,7 @@ export function ScreeningSessionWorkspace({
 
   useEffect(() => {
     const pendingPatientIds = pendingPatientIdsRef.current
+    const patientContextLoadRequests = patientContextLoadRequestRef.current
     const vitalsLoadRequests = vitalsLoadRequestRef.current
     const vitalsSaveRequests = vitalsSaveRequestRef.current
     const lifestyleLoadRequests = lifestyleLoadRequestRef.current
@@ -540,6 +552,7 @@ export function ScreeningSessionWorkspace({
     return () => {
       workspaceEpochRef.current += 1
       patientSearchRequestRef.current += 1
+      patientContextLoadRequests.clear()
       vitalsLoadRequests.clear()
       vitalsSaveRequests.clear()
       lifestyleLoadRequests.clear()
@@ -850,6 +863,62 @@ export function ScreeningSessionWorkspace({
       )
     },
     [onOpenTabsChange]
+  )
+
+  const updatePatientContext = useCallback(
+    (patientId: string, encounterId: string, patientContext: PatientContextState): void => {
+      onOpenTabsChange((currentTabs) =>
+        currentTabs.map((tab) =>
+          tab.patient.id === patientId && tab.encounter.id === encounterId
+            ? { ...tab, patientContext }
+            : tab
+        )
+      )
+    },
+    [onOpenTabsChange]
+  )
+
+  const loadPatientContext = useCallback(
+    async (patientId: string, encounterId: string): Promise<void> => {
+      const requestId = (patientContextLoadRequestRef.current.get(encounterId) ?? 0) + 1
+      patientContextLoadRequestRef.current.set(encounterId, requestId)
+      updatePatientContext(patientId, encounterId, { status: 'LOADING' })
+
+      try {
+        const result = await api.screeningEncounters.management.getPatientContext({ patientId })
+
+        if (
+          !mountedRef.current ||
+          patientContextLoadRequestRef.current.get(encounterId) !== requestId
+        ) {
+          return
+        }
+
+        if (!result.ok || result.data.status !== 'LOADED') {
+          updatePatientContext(patientId, encounterId, {
+            status: 'ERROR',
+            message: 'Patient history unavailable.'
+          })
+          return
+        }
+
+        updatePatientContext(patientId, encounterId, {
+          status: 'READY',
+          context: result.data.context
+        })
+      } catch {
+        if (
+          mountedRef.current &&
+          patientContextLoadRequestRef.current.get(encounterId) === requestId
+        ) {
+          updatePatientContext(patientId, encounterId, {
+            status: 'ERROR',
+            message: 'Patient history unavailable.'
+          })
+        }
+      }
+    },
+    [api, mountedRef, updatePatientContext]
   )
 
   const updateLifestyleDraft = useCallback(
@@ -2233,6 +2302,7 @@ export function ScreeningSessionWorkspace({
                 ? {
                     ...currentTab,
                     encounter: completedEncounter,
+                    patientContext: { status: 'NOT_LOADED' },
                     completionState: {
                       reviewConfirmed: true,
                       saveStatus: 'COMPLETED',
@@ -2372,6 +2442,18 @@ export function ScreeningSessionWorkspace({
   const activeEncounterId = activeTab?.encounter.id ?? null
   const hasReadySession = sessionState.status === 'READY'
   const workspaceHeading = activeWorkspaceTab === 'PATIENTS' ? 'Patients' : 'New Screening'
+
+  useEffect(() => {
+    if (
+      activeWorkspaceTab !== 'NEW_SCREENING' ||
+      activeTab === null ||
+      activeTab.patientContext.status !== 'NOT_LOADED'
+    ) {
+      return
+    }
+
+    void loadPatientContext(activeTab.patient.id, activeTab.encounter.id)
+  }, [activeTab, activeWorkspaceTab, loadPatientContext])
 
   useEffect(() => {
     if (
@@ -2661,6 +2743,11 @@ export function ScreeningSessionWorkspace({
               onActivateTab={onActivePatientIdChange}
               onCloseTab={closePatientTab}
               onOpenPatients={() => selectWorkspaceTab('PATIENTS')}
+              onRetryPatientContext={() => {
+                if (activeTab !== null) {
+                  void loadPatientContext(activeTab.patient.id, activeTab.encounter.id)
+                }
+              }}
               onSaveVitalsDraft={saveVitalsDraft}
               onUpdateVitalsDraft={updateVitalsDraft}
               onLoadLifestyleWorkspace={loadLifestyleWorkspace}
@@ -2911,6 +2998,7 @@ function NewScreeningWorkspace({
   onActivateTab,
   onCloseTab,
   onOpenPatients,
+  onRetryPatientContext,
   onSaveVitalsDraft,
   onUpdateVitalsDraft,
   onLoadLifestyleWorkspace,
@@ -2941,6 +3029,7 @@ function NewScreeningWorkspace({
   onActivateTab(patientId: string): void
   onCloseTab(patientId: string): void
   onOpenPatients(): void
+  onRetryPatientContext(): void
   onSaveVitalsDraft(
     patientId: string,
     encounterId: string,
@@ -3010,7 +3099,7 @@ function NewScreeningWorkspace({
         </div>
       ) : (
         <div className="screening-split-workspace screening-split-workspace-bounded">
-          <PatientContextPanel tab={activeTab} />
+          <PatientContextPanel tab={activeTab} onRetry={onRetryPatientContext} />
           <CurrentEncounterPanel
             location={location}
             session={session}
@@ -3167,9 +3256,23 @@ function OpenPatientTabStrip({
   )
 }
 
-function PatientContextPanel({ tab }: { readonly tab: PatientScreeningTab }): React.JSX.Element {
+function PatientContextPanel({
+  tab,
+  onRetry
+}: {
+  readonly tab: PatientScreeningTab
+  onRetry(): void
+}): React.JSX.Element {
   const displayName = formatPatientName(tab.patient)
   const villageQuarter = formatVillageQuarter(tab.patient)
+  const context = tab.patientContext.status === 'READY' ? tab.patientContext.context : null
+  const recentEncounters = context?.recentEncounters ?? []
+  const historyMessage =
+    tab.patientContext.status === 'LOADING'
+      ? 'Loading screening history...'
+      : tab.patientContext.status === 'ERROR'
+        ? tab.patientContext.message
+        : 'No completed screenings yet.'
 
   return (
     <section className="screening-context-panel" aria-labelledby="screening-patient-context-title">
@@ -3194,33 +3297,223 @@ function PatientContextPanel({ tab }: { readonly tab: PatientScreeningTab }): Re
 
       <section className="screening-context-section" aria-labelledby="screening-history-title">
         <h3 id="screening-history-title">Last three screening readings</h3>
-        <div className="screening-empty-state screening-compact-empty">
-          Screening history unavailable.
-        </div>
+        {recentEncounters.length === 0 ? (
+          <div className="screening-empty-state screening-compact-empty" aria-live="polite">
+            <span>{historyMessage}</span>
+            {tab.patientContext.status === 'ERROR' ? (
+              <button
+                className="button button-secondary button-compact"
+                type="button"
+                onClick={onRetry}
+              >
+                Retry
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <PatientScreeningHistory encounters={recentEncounters.slice(0, 3)} />
+        )}
       </section>
 
       <div className="screening-context-metrics">
         <section aria-labelledby="screening-average-title">
           <h3 id="screening-average-title">30-day average BP</h3>
-          <strong>—</strong>
+          <strong>
+            {context?.thirtyDayAverage === null || context === null
+              ? '—'
+              : `${context.thirtyDayAverage.systolic} / ${context.thirtyDayAverage.diastolic}`}
+          </strong>
+          {context?.thirtyDayAverage !== null && context !== null ? (
+            <span>
+              {context.thirtyDayAverage.encounterCount}{' '}
+              {context.thirtyDayAverage.encounterCount === 1 ? 'screening' : 'screenings'} • mmHg
+            </span>
+          ) : (
+            <span>No readings in the last 30 days</span>
+          )}
         </section>
         <section aria-labelledby="screening-referral-title">
           <h3 id="screening-referral-title">Referral status</h3>
-          <strong>—</strong>
-          <span>Last contact: —</span>
+          <strong className="screening-referral-status">
+            {context?.activeReferral === null || context === null
+              ? 'No open referral'
+              : formatReferralStatus(context.activeReferral.status)}
+          </strong>
+          {context?.activeReferral?.dueDate !== undefined &&
+          context.activeReferral.dueDate !== null ? (
+            <span>Due: {formatLocalDate(context.activeReferral.dueDate)}</span>
+          ) : null}
+          <span>
+            Last contact:{' '}
+            {context?.activeReferral?.lastContactDate === undefined ||
+            context.activeReferral.lastContactDate === null
+              ? '—'
+              : formatLocalDate(context.activeReferral.lastContactDate)}
+          </span>
         </section>
       </div>
 
       <section className="screening-context-section" aria-labelledby="screening-bp-trend-title">
         <h3 id="screening-bp-trend-title">Blood pressure trend</h3>
-        <div className="screening-empty-state screening-compact-empty">Trend unavailable.</div>
+        <BloodPressureTrend encounters={recentEncounters} />
       </section>
 
       <section className="screening-context-section" aria-labelledby="screening-weight-trend-title">
         <h3 id="screening-weight-trend-title">Weight trend</h3>
-        <div className="screening-empty-state screening-compact-empty">Trend unavailable.</div>
+        <WeightTrend encounters={recentEncounters} />
       </section>
     </section>
+  )
+}
+
+function PatientScreeningHistory({
+  encounters
+}: {
+  readonly encounters: readonly PublicPatientContextEncounter[]
+}): React.JSX.Element {
+  return (
+    <div className="screening-context-history-table-wrap">
+      <table className="screening-context-history-table">
+        <thead>
+          <tr>
+            <th scope="col">Date</th>
+            <th scope="col">Sys</th>
+            <th scope="col">Dia</th>
+            <th scope="col">Pulse</th>
+            <th scope="col">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {encounters.map((encounter) => (
+            <tr key={encounter.id}>
+              <td>{formatEncounterContextDate(encounter.completedAt)}</td>
+              <td>{encounter.systolic}</td>
+              <td>{encounter.diastolic}</td>
+              <td>{encounter.pulse}</td>
+              <td>{formatPatientContextAction(encounter.nextAction)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function BloodPressureTrend({
+  encounters
+}: {
+  readonly encounters: readonly PublicPatientContextEncounter[]
+}): React.JSX.Element {
+  if (encounters.length === 0) {
+    return <div className="screening-empty-state screening-compact-empty">No BP readings yet.</div>
+  }
+
+  const chronological = encounters.slice().reverse()
+  const maximum = Math.max(220, ...chronological.flatMap((item) => [item.systolic, item.diastolic]))
+
+  return (
+    <div
+      className="screening-bp-trend"
+      role="img"
+      aria-label={`Blood pressure trend across ${chronological.length} completed ${chronological.length === 1 ? 'screening' : 'screenings'}`}
+    >
+      <div className="screening-trend-legend" aria-hidden="true">
+        <span data-series="systolic">Systolic</span>
+        <span data-series="diastolic">Diastolic</span>
+      </div>
+      <div className="screening-bp-trend-plot" aria-hidden="true">
+        {chronological.map((encounter) => (
+          <div className="screening-bp-trend-group" key={encounter.id}>
+            <div className="screening-bp-trend-bars">
+              <span
+                className="screening-bp-trend-bar screening-bp-trend-bar-systolic"
+                style={{ height: `${Math.max(8, (encounter.systolic / maximum) * 100)}%` }}
+                title={`Systolic ${encounter.systolic}`}
+              >
+                <small>{encounter.systolic}</small>
+              </span>
+              <span
+                className="screening-bp-trend-bar screening-bp-trend-bar-diastolic"
+                style={{ height: `${Math.max(8, (encounter.diastolic / maximum) * 100)}%` }}
+                title={`Diastolic ${encounter.diastolic}`}
+              >
+                <small>{encounter.diastolic}</small>
+              </span>
+            </div>
+            <span>{formatEncounterContextDate(encounter.completedAt)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function WeightTrend({
+  encounters
+}: {
+  readonly encounters: readonly PublicPatientContextEncounter[]
+}): React.JSX.Element {
+  const weightedEncounters = encounters
+    .filter(
+      (encounter): encounter is PublicPatientContextEncounter & { readonly weightKg: number } =>
+        encounter.weightKg !== null
+    )
+    .reverse()
+
+  if (weightedEncounters.length === 0) {
+    return (
+      <div className="screening-empty-state screening-compact-empty">No weight readings yet.</div>
+    )
+  }
+
+  const firstEncounter = weightedEncounters[0]
+  if (firstEncounter === undefined) {
+    return (
+      <div className="screening-empty-state screening-compact-empty">No weight readings yet.</div>
+    )
+  }
+
+  if (weightedEncounters.length === 1) {
+    return (
+      <div className="screening-context-latest-value">
+        <strong>{formatWeight(firstEncounter.weightKg)} kg</strong>
+        <span>{formatEncounterContextDate(firstEncounter.completedAt)}</span>
+      </div>
+    )
+  }
+
+  const values = weightedEncounters.map((encounter) => encounter.weightKg)
+  const minimum = Math.min(...values)
+  const maximum = Math.max(...values)
+  const range = Math.max(maximum - minimum, 1)
+  const points = weightedEncounters.map((encounter, index) => ({
+    encounter,
+    x: 18 + (index * 284) / Math.max(weightedEncounters.length - 1, 1),
+    y: 68 - ((encounter.weightKg - minimum) / range) * 48
+  }))
+
+  return (
+    <div
+      className="screening-weight-trend"
+      role="img"
+      aria-label={`Weight trend from ${formatWeight(firstEncounter.weightKg)} to ${formatWeight(weightedEncounters.at(-1)?.weightKg ?? firstEncounter.weightKg)} kilograms`}
+    >
+      <svg viewBox="0 0 320 92" aria-hidden="true" preserveAspectRatio="none">
+        <line x1="18" y1="68" x2="302" y2="68" />
+        <polyline points={points.map((point) => `${point.x},${point.y}`).join(' ')} />
+        {points.map((point) => (
+          <g key={point.encounter.id}>
+            <circle cx={point.x} cy={point.y} r="4" />
+            <text x={point.x} y={Math.max(12, point.y - 8)} textAnchor="middle">
+              {formatWeight(point.encounter.weightKg)}
+            </text>
+            <text x={point.x} y="86" textAnchor="middle">
+              {formatEncounterContextDate(point.encounter.completedAt)}
+            </text>
+          </g>
+        ))}
+      </svg>
+    </div>
   )
 }
 
@@ -3914,6 +4207,7 @@ export function createPatientScreeningTab(
   return {
     patient,
     encounter,
+    patientContext: { status: 'NOT_LOADED' },
     vitalsDraft: createInitialVitalsDraft(),
     lifestyleDraft: createInitialLifestyleDraftState(),
     foodDraft: createInitialFoodDraftState(),
@@ -4766,6 +5060,55 @@ function formatPatientContextDateOfBirth(patient: PublicPatientSummary): string 
   const [year, month, day] = patient.dateOfBirth.split('-')
 
   return `${month}/${day}/${year}`
+}
+
+function formatEncounterContextDate(timestamp: string): string {
+  const date = new Date(timestamp)
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC'
+  }).format(date)
+}
+
+function formatLocalDate(localDate: string): string {
+  const date = new Date(`${localDate}T00:00:00.000Z`)
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC'
+  }).format(date)
+}
+
+function formatPatientContextAction(action: PublicPatientContextEncounter['nextAction']): string {
+  switch (action) {
+    case 'ROUTINE':
+      return 'Routine'
+    case 'REFER':
+      return 'Refer'
+    case 'URGENT_REFERRAL':
+      return 'Urgent'
+  }
+}
+
+function formatReferralStatus(
+  status: NonNullable<PublicPatientScreeningContext['activeReferral']>['status']
+): string {
+  switch (status) {
+    case 'OPEN':
+      return 'Open'
+    case 'CONTACTED':
+      return 'Contacted'
+    case 'SEEN':
+      return 'Seen'
+    case 'UNABLE_TO_CONFIRM':
+      return 'Unable to confirm'
+  }
+}
+
+function formatWeight(weightKg: number): string {
+  return Number.isInteger(weightKg) ? String(weightKg) : weightKg.toFixed(1)
 }
 
 function formatPatientTabLabel(patient: PublicPatientSummary): string {

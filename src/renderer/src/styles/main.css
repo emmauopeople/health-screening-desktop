@@ -2059,8 +2059,51 @@ h1 {
 }
 
 .screening-compact-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 12px;
   font-size: 0.86rem;
+}
+
+.screening-compact-empty .button-compact {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 5px 10px;
+}
+
+.screening-context-history-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #d8e3ee;
+  border-radius: 8px;
+}
+
+.screening-context-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--shell-navy);
+  font-size: 0.78rem;
+  text-align: left;
+}
+
+.screening-context-history-table th,
+.screening-context-history-table td {
+  padding: 8px 7px;
+  border-bottom: 1px solid #d8e3ee;
+  white-space: nowrap;
+}
+
+.screening-context-history-table th {
+  color: var(--shell-secondary-text);
+  background: #f3f7fa;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.screening-context-history-table tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 .screening-context-metrics {
@@ -2085,9 +2128,155 @@ h1 {
   font-size: 1.4rem;
 }
 
+.screening-context-metrics .screening-referral-status {
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
 .screening-context-metrics span {
   color: var(--shell-secondary-text);
   font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.screening-bp-trend,
+.screening-weight-trend,
+.screening-context-latest-value {
+  min-width: 0;
+  border: 1px solid #d8e3ee;
+  border-radius: 8px;
+  background: #f8fbfd;
+}
+
+.screening-trend-legend {
+  display: flex;
+  gap: 16px;
+  padding: 9px 10px 0;
+  color: var(--shell-secondary-text);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.screening-trend-legend span::before {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border-radius: 2px;
+  background: var(--shell-teal);
+  content: '';
+}
+
+.screening-trend-legend span[data-series='diastolic']::before {
+  background: #7d93ae;
+}
+
+.screening-bp-trend-plot {
+  display: grid;
+  grid-auto-columns: minmax(42px, 1fr);
+  grid-auto-flow: column;
+  align-items: end;
+  min-height: 142px;
+  overflow-x: auto;
+  padding: 22px 10px 9px;
+  border-bottom-right-radius: 8px;
+  border-bottom-left-radius: 8px;
+  background: repeating-linear-gradient(to bottom, transparent 0, transparent 39px, #e2eaf1 40px);
+}
+
+.screening-bp-trend-group {
+  display: grid;
+  grid-template-rows: 96px auto;
+  gap: 6px;
+  min-width: 42px;
+  color: var(--shell-secondary-text);
+  font-size: 0.67rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.screening-bp-trend-bars {
+  display: flex;
+  gap: 3px;
+  align-items: end;
+  justify-content: center;
+  min-height: 0;
+}
+
+.screening-bp-trend-bar {
+  position: relative;
+  width: 13px;
+  min-height: 8px;
+  border-radius: 3px 3px 0 0;
+  background: var(--shell-teal);
+}
+
+.screening-bp-trend-bar-diastolic {
+  background: #7d93ae;
+}
+
+.screening-bp-trend-bar small {
+  position: absolute;
+  top: -15px;
+  left: 50%;
+  color: var(--shell-navy);
+  font-size: 0.62rem;
+  font-weight: 800;
+  transform: translateX(-50%);
+}
+
+.screening-weight-trend {
+  min-height: 118px;
+  padding: 8px;
+}
+
+.screening-weight-trend svg {
+  display: block;
+  width: 100%;
+  height: 104px;
+  overflow: visible;
+}
+
+.screening-weight-trend line {
+  stroke: #c6d4e1;
+  stroke-width: 1;
+}
+
+.screening-weight-trend polyline {
+  fill: none;
+  stroke: var(--shell-teal);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.screening-weight-trend circle {
+  fill: #ffffff;
+  stroke: var(--shell-teal);
+  stroke-width: 3;
+}
+
+.screening-weight-trend text {
+  fill: var(--shell-secondary-text);
+  font-size: 8px;
+  font-weight: 750;
+}
+
+.screening-context-latest-value {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+}
+
+.screening-context-latest-value strong {
+  color: var(--shell-navy);
+}
+
+.screening-context-latest-value span {
+  color: var(--shell-secondary-text);
+  font-size: 0.78rem;
   font-weight: 700;
 }
 

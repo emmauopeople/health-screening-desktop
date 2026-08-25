@@ -5,6 +5,7 @@ import type {
   EncounterReviewFlagRecord,
   EncounterReviewFlagStatus,
   ManagedEncounterDetailRecord,
+  PatientScreeningContextRecord,
   InstallationRepository,
   ScreeningEncounterManagementRepository,
   ScreeningEncounterOutboxRepository,
@@ -14,6 +15,7 @@ import type {
 } from '@main/database'
 import type { DatabaseTransactionExecutor } from '@main/database/transaction'
 import type { EntityId } from '@main/foundation/entity-id'
+import type { UtcClock } from '@main/foundation/utc-clock'
 import type { LocalAuthenticationSessionService } from '../authentication/session'
 import type { InstallationLocationService } from '../installation-location'
 import type { CurrentScreeningSessionService } from '../screening-sessions'
@@ -46,6 +48,10 @@ export type GetManagedEncounterResult =
   | { readonly status: 'LOADED'; readonly detail: ManagedEncounterDetailRecord }
   | { readonly status: EncounterManagementControlledStatus }
 
+export type GetPatientScreeningContextResult =
+  | { readonly status: 'LOADED'; readonly context: PatientScreeningContextRecord }
+  | { readonly status: EncounterManagementControlledStatus }
+
 export type AddEncounterAddendumResult =
   | { readonly status: 'ADDED'; readonly addendum: EncounterAddendumRecord }
   | { readonly status: EncounterManagementControlledStatus }
@@ -72,6 +78,7 @@ export type CancelEncounterDraftResult =
 export interface ScreeningEncounterManagementService {
   search(request: SearchManagedEncountersRequest): SearchManagedEncountersServiceResult
   getDetail(encounterId: EntityId): GetManagedEncounterResult
+  getPatientContext(patientId: EntityId): GetPatientScreeningContextResult
   addAddendum(encounterId: EntityId, noteText: string): AddEncounterAddendumResult
   openFlag(
     encounterId: EntityId,
@@ -107,4 +114,5 @@ export interface ScreeningEncounterManagementServiceDependencies {
   readonly auditEventRepository: AuditEventRepository
   readonly screeningEncounterOutboxRepository: ScreeningEncounterOutboxRepository
   readonly transactionExecutor: DatabaseTransactionExecutor
+  readonly clock: UtcClock
 }

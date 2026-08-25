@@ -108,6 +108,7 @@ describe('preload screening-encounter API', () => {
     expect(Object.keys(api.screeningEncounters.management)).toEqual([
       'search',
       'getDetail',
+      'getPatientContext',
       'addAddendum',
       'openFlag',
       'resolveFlag',

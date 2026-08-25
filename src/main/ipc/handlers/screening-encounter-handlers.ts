@@ -22,6 +22,8 @@ import {
   encounterManagementCancelDraftResultSchema,
   encounterManagementGetDetailRequestSchema,
   encounterManagementGetDetailResultSchema,
+  encounterManagementGetPatientContextRequestSchema,
+  encounterManagementGetPatientContextResultSchema,
   encounterManagementOpenFlagRequestSchema,
   encounterManagementOpenFlagResultSchema,
   encounterManagementResolveFlagRequestSchema,
@@ -51,6 +53,8 @@ import {
   type EncounterManagementCancelDraftRequest,
   type EncounterManagementGetDetailResult,
   type EncounterManagementGetDetailRequest,
+  type EncounterManagementGetPatientContextResult,
+  type EncounterManagementGetPatientContextRequest,
   type EncounterManagementOpenFlagResult,
   type EncounterManagementOpenFlagRequest,
   type EncounterManagementResolveFlagResult,
@@ -114,6 +118,10 @@ export interface ScreeningEncounterIpcHandlers {
     event: IpcSenderValidationEvent,
     request: unknown
   ): Promise<EncounterManagementGetDetailResult>
+  getPatientScreeningContext(
+    event: IpcSenderValidationEvent,
+    request: unknown
+  ): Promise<EncounterManagementGetPatientContextResult>
   addEncounterAddendum(
     event: IpcSenderValidationEvent,
     request: unknown
@@ -264,6 +272,20 @@ export function createScreeningEncounterIpcHandlers({
           ),
         logger
       }) as Promise<EncounterManagementGetDetailResult>
+    },
+
+    async getPatientScreeningContext(event: IpcSenderValidationEvent, request: unknown) {
+      return handleManagementRequest(event, request, {
+        channel: ipcChannels.screeningEncounters.management.getPatientContext,
+        navigationPolicy,
+        requestSchema: encounterManagementGetPatientContextRequestSchema,
+        resultSchema: encounterManagementGetPatientContextResultSchema,
+        invoke: (data: EncounterManagementGetPatientContextRequest) =>
+          createIpcSuccess(
+            screeningEncounterManagementService.getPatientContext(data.patientId as EntityId)
+          ),
+        logger
+      }) as Promise<EncounterManagementGetPatientContextResult>
     },
 
     async addEncounterAddendum(event: IpcSenderValidationEvent, request: unknown) {
@@ -507,6 +529,7 @@ export function createScreeningEncounterIpcHandlers({
 const unavailableManagementService: ScreeningEncounterManagementService = Object.freeze({
   search: () => ({ status: 'UNAVAILABLE' as const }),
   getDetail: () => ({ status: 'UNAVAILABLE' as const }),
+  getPatientContext: () => ({ status: 'UNAVAILABLE' as const }),
   addAddendum: () => ({ status: 'UNAVAILABLE' as const }),
   openFlag: () => ({ status: 'UNAVAILABLE' as const }),
   resolveFlag: () => ({ status: 'UNAVAILABLE' as const }),

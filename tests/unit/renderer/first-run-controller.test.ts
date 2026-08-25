@@ -584,6 +584,7 @@ function createApi({
       management: {
         search: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
         getDetail: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+        getPatientContext: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
         addAddendum: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
         openFlag: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
         resolveFlag: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
