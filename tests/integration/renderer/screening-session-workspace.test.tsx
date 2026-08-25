@@ -501,6 +501,10 @@ describe('screening patient entry workspace', () => {
     await clickRow(mounted, 'Ada Lovelace')
     const systolic = inputByLabel(mounted, 'Reading 1 systolic')
     await changeInput(systolic, '301')
+    const diastolic = inputByLabel(mounted, 'Reading 1 diastolic')
+    const pulse = inputByLabel(mounted, 'Reading 1 pulse')
+    await changeInput(diastolic, '121')
+    await changeInput(pulse, '301')
     const notes = mounted.container.querySelector<HTMLTextAreaElement>(
       'textarea[aria-label="Vitals notes"]'
     )!
@@ -508,7 +512,11 @@ describe('screening patient entry workspace', () => {
     await clickButton(mounted, 'Save draft')
 
     expect(api.screeningEncounters.vitals.saveDraft).not.toHaveBeenCalled()
+    expect(text(mounted)).toContain('Draft could not be saved. Check the highlighted fields.')
     expect(text(mounted)).toContain('Systolic blood pressure cannot be more than 300.')
+    expect(text(mounted)).toContain('Diastolic blood pressure cannot be more than 120.')
+    expect(text(mounted)).toContain('Pulse cannot be more than 300.')
+    expect(text(mounted)).not.toContain('Urgent medical review recommended')
     expect(systolic.getAttribute('aria-invalid')).toBe('true')
     const describedBy = systolic.getAttribute('aria-describedby')
     expect(describedBy).not.toBeNull()
@@ -523,16 +531,12 @@ describe('screening patient entry workspace', () => {
     expect(document.activeElement).toBe(notes)
 
     await changeInput(systolic, '300')
-    const diastolic = inputByLabel(mounted, 'Reading 1 diastolic')
-    await changeInput(diastolic, '121')
     notes.focus()
     await clickButton(mounted, 'Save draft')
     expect(text(mounted)).toContain('Diastolic blood pressure cannot be more than 120.')
     expect(document.activeElement).toBe(notes)
 
     await changeInput(diastolic, '120')
-    const pulse = inputByLabel(mounted, 'Reading 1 pulse')
-    await changeInput(pulse, '301')
     notes.focus()
     await clickButton(mounted, 'Save draft')
     expect(text(mounted)).toContain('Pulse cannot be more than 300.')

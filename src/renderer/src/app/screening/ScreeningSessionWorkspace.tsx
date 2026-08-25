@@ -4153,15 +4153,18 @@ function evaluateRequestBloodPressure(
 function evaluateVitalsDraftBloodPressure(draft: VitalsDraft): ScreeningBpDecision | null {
   return evaluateScreeningBloodPressure(
     draft.readings.flatMap((reading, index) => {
-      const systolic = Number(reading.systolic)
-      const diastolic = Number(reading.diastolic)
-      const pulse = Number(reading.pulse)
-      return reading.systolic.length === 0 ||
-        reading.diastolic.length === 0 ||
-        reading.pulse.length === 0 ||
-        !Number.isInteger(systolic) ||
-        !Number.isInteger(diastolic) ||
-        !Number.isInteger(pulse)
+      const systolic = parseValidVitalsValue(
+        reading.systolic,
+        VITALS_SYSTOLIC_MIN,
+        VITALS_SYSTOLIC_MAX
+      )
+      const diastolic = parseValidVitalsValue(
+        reading.diastolic,
+        VITALS_DIASTOLIC_MIN,
+        VITALS_DIASTOLIC_MAX
+      )
+      const pulse = parseValidVitalsValue(reading.pulse, VITALS_PULSE_MIN, VITALS_PULSE_MAX)
+      return systolic === null || diastolic === null || pulse === null
         ? []
         : [{ sequenceNumber: index + 1, systolic, diastolic, pulse }]
     })

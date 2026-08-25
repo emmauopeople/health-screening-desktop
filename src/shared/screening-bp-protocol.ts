@@ -97,7 +97,7 @@ export function getScreeningBpInstruction(decision: ScreeningBpDecision): string
     case 'REPEAT_REQUIRED':
       return `Ask the patient to sit quietly with back supported, feet flat, and arm supported at heart level. Wait at least ${SCREENING_BP_PROTOCOL_V1.configuration.repeatIntervalMinutes} minute, then add a second blood-pressure reading before continuing.`
     case 'URGENT_REFERRAL':
-      return 'The repeated blood-pressure readings require prompt medical evaluation. If the patient has chest pain, difficulty breathing, weakness, numbness, vision changes, difficulty speaking, or another new concerning symptom, use local emergency services immediately.'
+      return 'Your blood pressure is running high. You need to see a doctor as soon as possible.'
     case 'REFER':
       return 'The repeated blood-pressure readings meet the screening threshold for professional medical review.'
     case 'ROUTINE':

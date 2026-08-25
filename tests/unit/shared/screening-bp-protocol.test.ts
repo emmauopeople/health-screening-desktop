@@ -51,8 +51,8 @@ describe('screening blood-pressure protocol', () => {
       reading(2, 200, 105, 78)
     ])
     expect(decision?.nextAction).toBe('URGENT_REFERRAL')
-    expect(decision === null ? '' : getScreeningBpInstruction(decision)).toContain(
-      'prompt medical evaluation'
+    expect(decision === null ? '' : getScreeningBpInstruction(decision)).toBe(
+      'Your blood pressure is running high. You need to see a doctor as soon as possible.'
     )
   })
 
