@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState, type FormEvent, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent, type RefObject } from 'react'
 import type {
   EncounterManagementFlagCategory,
   HealthScreeningApi,
   PublicManagedEncounterDetail,
   PublicManagedEncounterSummary,
+  PublicPatientDetail,
+  PublicScreeningEncounterStartSummary,
   ScreeningSessionErrorCode
 } from '@shared/ipc'
 
@@ -12,9 +14,15 @@ interface Props {
   readonly headingId: string
   readonly headingRef: RefObject<HTMLHeadingElement | null>
   onAuthenticationFailure(code: ScreeningSessionErrorCode): void
+  onResumeDraft(
+    patient: PublicPatientDetail,
+    encounter: PublicScreeningEncounterStartSummary
+  ): boolean
 }
 
 type LoadState = 'LOADING' | 'READY' | 'ERROR'
+
+const PAGE_SIZE = 25 as const
 
 const flagCategories: readonly { value: EncounterManagementFlagCategory; label: string }[] = [
   { value: 'POSSIBLE_DATA_ERROR', label: 'Possible data error' },
@@ -28,13 +36,16 @@ export function ManageEncountersWorkspace({
   api,
   headingId,
   headingRef,
-  onAuthenticationFailure
+  onAuthenticationFailure,
+  onResumeDraft
 }: Props): React.JSX.Element {
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'ALL' | PublicManagedEncounterSummary['status']>(
     'ALL'
   )
   const [items, setItems] = useState<readonly PublicManagedEncounterSummary[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<PublicManagedEncounterDetail | null>(null)
   const [loadState, setLoadState] = useState<LoadState>('LOADING')
@@ -46,7 +57,14 @@ export function ManageEncountersWorkspace({
   const [resolvingFlagId, setResolvingFlagId] = useState<string | null>(null)
   const [resolutionNote, setResolutionNote] = useState('')
   const [saving, setSaving] = useState(false)
+  const [voidReason, setVoidReason] = useState('')
+  const [showVoidForm, setShowVoidForm] = useState(false)
   const management = api.screeningEncounters.management
+  const selectedIdRef = useRef<string | null>(null)
+  const searchRequestRef = useRef(0)
+  const detailRequestRef = useRef(0)
+  const previousCriteriaRef = useRef({ query: '', status: 'ALL', initialized: false })
+  const noteInputRef = useRef<HTMLTextAreaElement | null>(null)
 
   const handleControlledFailure = useCallback(
     (status: string): void => {
@@ -67,7 +85,10 @@ export function ManageEncountersWorkspace({
 
   const loadDetail = useCallback(
     async (encounterId: string): Promise<void> => {
+      const requestId = detailRequestRef.current + 1
+      detailRequestRef.current = requestId
       const result = await management.getDetail({ encounterId })
+      if (detailRequestRef.current !== requestId) return
       if (!result.ok) {
         setMessage('Encounter information is unavailable.')
         return
@@ -78,20 +99,30 @@ export function ManageEncountersWorkspace({
       }
       setDetail(result.data.detail)
       setSelectedId(encounterId)
+      selectedIdRef.current = encounterId
+      setShowVoidForm(false)
+      setVoidReason('')
     },
     [handleControlledFailure, management]
   )
 
   const search = useCallback(
-    async (nextQuery = query, nextStatus = statusFilter): Promise<void> => {
+    async (
+      nextQuery: string,
+      nextStatus: 'ALL' | PublicManagedEncounterSummary['status'],
+      nextPage: number
+    ): Promise<void> => {
+      const requestId = searchRequestRef.current + 1
+      searchRequestRef.current = requestId
       setLoadState('LOADING')
       setMessage(null)
       const result = await management.search({
         query: nextQuery,
         status: nextStatus,
-        page: 1,
-        pageSize: 50
+        page: nextPage,
+        pageSize: PAGE_SIZE
       })
+      if (searchRequestRef.current !== requestId) return
       if (!result.ok) {
         setLoadState('ERROR')
         setMessage('Encounters are unavailable.')
@@ -103,69 +134,98 @@ export function ManageEncountersWorkspace({
         return
       }
       setItems(result.data.items)
+      setTotal(result.data.total)
+      setPage(result.data.page)
       setLoadState('READY')
-      const nextSelectedId = result.data.items.some((item) => item.id === selectedId)
-        ? selectedId
+      const currentSelectedId = selectedIdRef.current
+      const nextSelectedId = result.data.items.some((item) => item.id === currentSelectedId)
+        ? currentSelectedId
         : (result.data.items[0]?.id ?? null)
       if (nextSelectedId === null) {
         setSelectedId(null)
+        selectedIdRef.current = null
         setDetail(null)
       } else {
         await loadDetail(nextSelectedId)
       }
     },
-    [handleControlledFailure, loadDetail, management, query, selectedId, statusFilter]
+    [handleControlledFailure, loadDetail, management]
   )
 
   useEffect(() => {
-    let active = true
+    const previous = previousCriteriaRef.current
+    const normalizedQuery = query.trim()
+    const queryChanged = previous.query !== query
+    const statusChanged = previous.status !== statusFilter
+    previousCriteriaRef.current = { query, status: statusFilter, initialized: true }
 
-    const loadInitialResults = async (): Promise<void> => {
-      const result = await management.search({ query: '', status: 'ALL', page: 1, pageSize: 50 })
-      if (!active) return
-      if (!result.ok) {
-        setLoadState('ERROR')
-        setMessage('Encounters are unavailable.')
-        return
-      }
-      if (result.data.status !== 'LOADED') {
-        setLoadState('ERROR')
-        handleControlledFailure(result.data.status)
-        return
-      }
+    if (
+      previous.initialized &&
+      queryChanged &&
+      !statusChanged &&
+      normalizedQuery.length > 0 &&
+      normalizedQuery.length < 3
+    )
+      return
 
-      setItems(result.data.items)
-      setLoadState('READY')
-      const firstEncounterId = result.data.items[0]?.id ?? null
-      if (firstEncounterId === null) {
-        setSelectedId(null)
-        setDetail(null)
-        return
-      }
-
-      const detailResult = await management.getDetail({ encounterId: firstEncounterId })
-      if (!active) return
-      if (!detailResult.ok) {
-        setMessage('Encounter information is unavailable.')
-        return
-      }
-      if (detailResult.data.status !== 'LOADED') {
-        handleControlledFailure(detailResult.data.status)
-        return
-      }
-      setDetail(detailResult.data.detail)
-      setSelectedId(firstEncounterId)
-    }
-
-    void loadInitialResults()
-    return () => {
-      active = false
-    }
-  }, [handleControlledFailure, management])
+    const effectiveQuery = normalizedQuery.length >= 3 ? normalizedQuery : ''
+    const delay = previous.initialized && queryChanged && !statusChanged ? 300 : 0
+    const timer = window.setTimeout(() => {
+      void search(effectiveQuery, statusFilter, 1)
+    }, delay)
+    return () => window.clearTimeout(timer)
+  }, [query, search, statusFilter])
 
   const refresh = async (): Promise<void> => {
-    await search()
-    if (selectedId !== null) await loadDetail(selectedId)
+    await search(query.trim().length >= 3 ? query.trim() : '', statusFilter, page)
+  }
+
+  const resumeDraft = async (): Promise<void> => {
+    if (detail === null || detail.encounter.status !== 'DRAFT') return
+    setSaving(true)
+    const patientResult = await api.patient.get({ patientId: detail.encounter.patientId })
+    setSaving(false)
+    if (!patientResult.ok) {
+      setMessage('Patient information is unavailable.')
+      return
+    }
+    const opened = onResumeDraft(patientResult.data, {
+      id: detail.encounter.id,
+      patientId: detail.encounter.patientId,
+      screeningSessionId: detail.encounter.screeningSessionId,
+      status: 'DRAFT',
+      startedAt: detail.encounter.startedAt,
+      recordVersion: detail.encounter.recordVersion
+    })
+    if (!opened) setMessage('Close one patient screening to resume this draft.')
+  }
+
+  const voidEmptyDraft = async (event: FormEvent): Promise<void> => {
+    event.preventDefault()
+    if (detail === null || detail.encounter.status !== 'DRAFT' || voidReason.trim() === '') return
+    setSaving(true)
+    const result = await management.voidEmptyDraft({
+      encounterId: detail.encounter.id,
+      expectedVersion: detail.encounter.recordVersion,
+      reason: voidReason
+    })
+    setSaving(false)
+    if (!result.ok || result.data.status !== 'VOIDED') {
+      const status = result.ok ? result.data.status : 'UNAVAILABLE'
+      setMessage(
+        status === 'ENCOUNTER_NOT_EMPTY'
+          ? 'This draft contains screening data and cannot be voided here.'
+          : status === 'VERSION_CONFLICT'
+            ? 'This encounter changed. Review it and try again.'
+            : 'The draft could not be voided.'
+      )
+      return
+    }
+    setVoidReason('')
+    setShowVoidForm(false)
+    const nextPage = statusFilter !== 'VOID' && items.length === 1 && page > 1 ? page - 1 : page
+    await search(query.trim().length >= 3 ? query.trim() : '', statusFilter, nextPage)
+    setMessage('Empty draft voided')
   }
 
   const addNote = async (event: FormEvent): Promise<void> => {
@@ -182,8 +242,8 @@ export function ManageEncountersWorkspace({
       return
     }
     setNoteText('')
-    setMessage('Note added')
     await refresh()
+    setMessage('Note added')
   }
 
   const openFlag = async (event: FormEvent): Promise<void> => {
@@ -201,8 +261,8 @@ export function ManageEncountersWorkspace({
       return
     }
     setFlagDescription('')
-    setMessage('Concern flagged for review')
     await refresh()
+    setMessage('Concern flagged for review')
   }
 
   const resolveFlag = async (event: FormEvent): Promise<void> => {
@@ -222,12 +282,16 @@ export function ManageEncountersWorkspace({
     }
     setResolvingFlagId(null)
     setResolutionNote('')
-    setMessage('Concern resolved')
     await refresh()
+    setMessage('Concern resolved')
   }
 
   const manageable =
     detail?.encounter.status === 'COMPLETED' || detail?.encounter.status === 'AMENDED'
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const firstResultNumber = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
+  const lastResultNumber = Math.min(page * PAGE_SIZE, total)
+  const effectiveQuery = query.trim().length >= 3 ? query.trim() : ''
 
   return (
     <section className="manage-encounters-workspace" aria-labelledby={headingId}>
@@ -240,13 +304,7 @@ export function ManageEncountersWorkspace({
         </div>
       </div>
 
-      <form
-        className="manage-encounters-search"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void search()
-        }}
-      >
+      <div className="manage-encounters-search" role="search">
         <div className="form-field">
           <label htmlFor="manage-encounters-query">Search encounters</label>
           <input
@@ -254,7 +312,9 @@ export function ManageEncountersWorkspace({
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
             placeholder="Patient name, ID, or date of birth"
+            aria-describedby="manage-encounters-search-hint"
           />
+          <small id="manage-encounters-search-hint">Enter at least 3 characters</small>
         </div>
         <div className="form-field">
           <label htmlFor="manage-encounters-status">Status</label>
@@ -263,17 +323,14 @@ export function ManageEncountersWorkspace({
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.currentTarget.value as typeof statusFilter)}
           >
-            <option value="ALL">All statuses</option>
+            <option value="ALL">All active</option>
             <option value="DRAFT">Draft</option>
             <option value="COMPLETED">Completed</option>
             <option value="AMENDED">Amended</option>
             <option value="VOID">Voided</option>
           </select>
         </div>
-        <button className="button button-primary" type="submit">
-          Search
-        </button>
-      </form>
+      </div>
 
       {message !== null ? (
         <div className="screening-workspace-message" role="status">
@@ -283,33 +340,66 @@ export function ManageEncountersWorkspace({
 
       <div className="manage-encounters-layout">
         <section className="manage-encounters-results" aria-label="Encounter results">
-          {loadState === 'LOADING' ? <p>Loading encounters...</p> : null}
-          {loadState === 'READY' && items.length === 0 ? <p>No encounters found.</p> : null}
-          {items.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`manage-encounter-result${selectedId === item.id ? ' is-selected' : ''}`}
-              onClick={() => void loadDetail(item.id)}
-            >
-              <span className="manage-encounter-result-heading">
-                <strong>{item.patientDisplayName}</strong>
-                <span className={`status-pill status-${item.status.toLowerCase()}`}>
-                  {formatStatus(item.status)}
+          <div className="manage-encounters-results-list">
+            {loadState === 'LOADING' ? <p>Loading encounters...</p> : null}
+            {loadState === 'READY' && items.length === 0 ? <p>No encounters found.</p> : null}
+            {items.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`manage-encounter-result${selectedId === item.id ? ' is-selected' : ''}`}
+                onClick={() => void loadDetail(item.id)}
+              >
+                <span className="manage-encounter-result-heading">
+                  <strong>{item.patientDisplayName}</strong>
+                  <span className={`status-pill status-${item.status.toLowerCase()}`}>
+                    {formatStatus(item.status)}
+                  </span>
                 </span>
-              </span>
+                <span>
+                  {item.patientCode} · {formatDate(item.completedAt ?? item.startedAt)}
+                </span>
+                <span>{item.locationName}</span>
+                {item.status === 'DRAFT' ? (
+                  <span>
+                    {item.hasRecordedData ? 'Draft data saved' : 'No screening data recorded'}
+                  </span>
+                ) : null}
+                <span>
+                  {item.openFlagCount > 0
+                    ? `${item.openFlagCount} review concern${item.openFlagCount === 1 ? '' : 's'}`
+                    : 'No open concerns'}{' '}
+                  · {item.noteCount} note{item.noteCount === 1 ? '' : 's'}
+                </span>
+              </button>
+            ))}
+          </div>
+          <nav className="manage-encounters-pagination" aria-label="Encounter results pages">
+            <span>
+              {firstResultNumber}–{lastResultNumber} of {total}
+            </span>
+            <div>
+              <button
+                className="button button-secondary"
+                type="button"
+                disabled={loadState === 'LOADING' || page <= 1}
+                onClick={() => void search(effectiveQuery, statusFilter, page - 1)}
+              >
+                Previous
+              </button>
               <span>
-                {item.patientCode} · {formatDate(item.completedAt ?? item.startedAt)}
+                Page {page} of {pageCount}
               </span>
-              <span>{item.locationName}</span>
-              <span>
-                {item.openFlagCount > 0
-                  ? `${item.openFlagCount} review concern${item.openFlagCount === 1 ? '' : 's'}`
-                  : 'No open concerns'}{' '}
-                · {item.noteCount} note{item.noteCount === 1 ? '' : 's'}
-              </span>
-            </button>
-          ))}
+              <button
+                className="button button-secondary"
+                type="button"
+                disabled={loadState === 'LOADING' || page >= pageCount}
+                onClick={() => void search(effectiveQuery, statusFilter, page + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </nav>
         </section>
 
         <section className="manage-encounter-detail" aria-label="Encounter details">
@@ -325,60 +415,141 @@ export function ManageEncountersWorkspace({
                     {formatDate(detail.encounter.completedAt ?? detail.encounter.startedAt)}
                   </p>
                 </div>
-                <span className={`status-pill status-${detail.encounter.status.toLowerCase()}`}>
-                  {formatStatus(detail.encounter.status)}
-                </span>
+                <div className="encounter-management-actions">
+                  {detail.encounter.status === 'DRAFT' ? (
+                    <button
+                      className="button button-primary"
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void resumeDraft()}
+                    >
+                      Resume screening
+                    </button>
+                  ) : null}
+                  {detail.encounter.status === 'DRAFT' && !detail.encounter.hasRecordedData ? (
+                    <button
+                      className="button button-secondary"
+                      type="button"
+                      disabled={saving}
+                      onClick={() => setShowVoidForm((visible) => !visible)}
+                    >
+                      Void empty draft
+                    </button>
+                  ) : null}
+                  {manageable ? (
+                    <button
+                      className="button button-secondary"
+                      type="button"
+                      onClick={() => {
+                        noteInputRef.current?.scrollIntoView({ block: 'center' })
+                        noteInputRef.current?.focus()
+                      }}
+                    >
+                      Add note
+                    </button>
+                  ) : null}
+                  <span className={`status-pill status-${detail.encounter.status.toLowerCase()}`}>
+                    {formatStatus(detail.encounter.status)}
+                  </span>
+                </div>
               </header>
 
-              <div className="manage-encounter-clinical-grid">
-                <ReviewCard title="Vitals">
-                  {detail.vitals.length === 0 ? (
-                    <p>Not recorded</p>
-                  ) : (
-                    detail.vitals.map((reading) => (
-                      <p key={reading.sequenceNumber}>
-                        Reading {reading.sequenceNumber}: {reading.systolic}/{reading.diastolic}{' '}
-                        mmHg · HR {reading.pulse ?? '—'}
-                      </p>
-                    ))
-                  )}
+              {showVoidForm &&
+              detail.encounter.status === 'DRAFT' &&
+              !detail.encounter.hasRecordedData ? (
+                <form
+                  className="encounter-management-form manage-encounter-void-form"
+                  onSubmit={voidEmptyDraft}
+                >
+                  <label htmlFor="encounter-void-reason">Reason for voiding this empty draft</label>
+                  <textarea
+                    id="encounter-void-reason"
+                    rows={2}
+                    maxLength={500}
+                    value={voidReason}
+                    onChange={(event) => setVoidReason(event.currentTarget.value)}
+                  />
+                  <div className="encounter-management-actions">
+                    <button
+                      className="button button-secondary"
+                      type="button"
+                      onClick={() => {
+                        setShowVoidForm(false)
+                        setVoidReason('')
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="button button-primary"
+                      type="submit"
+                      disabled={saving || voidReason.trim() === ''}
+                    >
+                      Confirm void
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
+              {detail.encounter.status === 'DRAFT' ? (
+                <ReviewCard title="Screening draft">
+                  <p>
+                    {detail.encounter.hasRecordedData
+                      ? 'Saved screening data is available. Resume the screening to review or complete it.'
+                      : 'No screening data has been recorded. Resume to continue, or void the draft if it was created in error.'}
+                  </p>
                 </ReviewCard>
-                <ReviewCard title="Lifestyle">
-                  {detail.lifestyle.length === 0 ? (
-                    <p>Not recorded</p>
-                  ) : (
-                    detail.lifestyle.map((entry) => (
-                      <p key={`${entry.questionCode}-${entry.responseCode}`}>
-                        {formatCode(entry.questionCode)}: {formatCode(entry.responseCode)}
-                      </p>
-                    ))
-                  )}
-                </ReviewCard>
-                <ReviewCard title="Food">
-                  {detail.foods.length === 0 ? (
-                    <p>None reported</p>
-                  ) : (
-                    detail.foods.map((food, index) => (
-                      <p key={`${food.foodName}-${index}`}>
-                        {food.foodName} · {formatCode(food.frequencyCode)}
-                        {food.notes ? ` · ${food.notes}` : ''}
-                      </p>
-                    ))
-                  )}
-                </ReviewCard>
-                <ReviewCard title="OTC medications">
-                  {detail.otcMedications.length === 0 ? (
-                    <p>None reported</p>
-                  ) : (
-                    detail.otcMedications.map((medication, index) => (
-                      <p key={`${medication.productName}-${index}`}>
-                        {medication.productName} · {medication.reasonForUse} ·{' '}
-                        {formatTaking(medication.currentlyTaking)}
-                      </p>
-                    ))
-                  )}
-                </ReviewCard>
-              </div>
+              ) : (
+                <div className="manage-encounter-clinical-grid">
+                  <ReviewCard title="Vitals">
+                    {detail.vitals.length === 0 ? (
+                      <p>Not recorded</p>
+                    ) : (
+                      detail.vitals.map((reading) => (
+                        <p key={reading.sequenceNumber}>
+                          Reading {reading.sequenceNumber}: {reading.systolic}/{reading.diastolic}{' '}
+                          mmHg · HR {reading.pulse ?? '—'}
+                        </p>
+                      ))
+                    )}
+                  </ReviewCard>
+                  <ReviewCard title="Lifestyle">
+                    {detail.lifestyle.length === 0 ? (
+                      <p>Not recorded</p>
+                    ) : (
+                      detail.lifestyle.map((entry) => (
+                        <p key={`${entry.questionCode}-${entry.responseCode}`}>
+                          {formatCode(entry.questionCode)}: {formatCode(entry.responseCode)}
+                        </p>
+                      ))
+                    )}
+                  </ReviewCard>
+                  <ReviewCard title="Food">
+                    {detail.foods.length === 0 ? (
+                      <p>None reported</p>
+                    ) : (
+                      detail.foods.map((food, index) => (
+                        <p key={`${food.foodName}-${index}`}>
+                          {food.foodName} · {formatCode(food.frequencyCode)}
+                          {food.notes ? ` · ${food.notes}` : ''}
+                        </p>
+                      ))
+                    )}
+                  </ReviewCard>
+                  <ReviewCard title="OTC medications">
+                    {detail.otcMedications.length === 0 ? (
+                      <p>None reported</p>
+                    ) : (
+                      detail.otcMedications.map((medication, index) => (
+                        <p key={`${medication.productName}-${index}`}>
+                          {medication.productName} · {medication.reasonForUse} ·{' '}
+                          {formatTaking(medication.currentlyTaking)}
+                        </p>
+                      ))
+                    )}
+                  </ReviewCard>
+                </div>
+              )}
 
               <ReviewCard title="Notes">
                 {detail.addenda.length === 0 ? (
@@ -398,6 +569,7 @@ export function ManageEncountersWorkspace({
                     <label htmlFor="encounter-addendum">Add note</label>
                     <textarea
                       id="encounter-addendum"
+                      ref={noteInputRef}
                       rows={3}
                       maxLength={2000}
                       value={noteText}

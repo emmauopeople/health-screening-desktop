@@ -77,6 +77,7 @@ export type VitalsDraftControlledStatus =
   | 'SESSION_NOT_FOUND'
   | 'SESSION_CLOSED'
   | 'SESSION_NOT_CURRENT'
+  | 'REPEAT_REQUIRED'
   | 'VERSION_CONFLICT'
   | 'UNAVAILABLE'
 

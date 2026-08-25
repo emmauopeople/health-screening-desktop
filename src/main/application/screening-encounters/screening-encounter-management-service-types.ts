@@ -16,6 +16,7 @@ import type { DatabaseTransactionExecutor } from '@main/database/transaction'
 import type { EntityId } from '@main/foundation/entity-id'
 import type { LocalAuthenticationSessionService } from '../authentication/session'
 import type { InstallationLocationService } from '../installation-location'
+import type { CurrentScreeningSessionService } from '../screening-sessions'
 
 export type EncounterManagementControlledStatus =
   | 'AUTHENTICATION_REQUIRED'
@@ -26,6 +27,8 @@ export type EncounterManagementControlledStatus =
   | 'LOCATION_INACTIVE'
   | 'ENCOUNTER_NOT_FOUND'
   | 'ENCOUNTER_NOT_MANAGEABLE'
+  | 'ENCOUNTER_NOT_EMPTY'
+  | 'VERSION_CONFLICT'
   | 'FLAG_NOT_FOUND'
   | 'UNAVAILABLE'
 
@@ -55,6 +58,17 @@ export type ResolveEncounterReviewFlagResult =
   | { readonly status: 'UPDATED'; readonly flag: EncounterReviewFlagRecord }
   | { readonly status: EncounterManagementControlledStatus }
 
+export type VoidEmptyEncounterDraftResult =
+  | { readonly status: 'VOIDED'; readonly recordVersion: number }
+  | { readonly status: EncounterManagementControlledStatus }
+
+export type EncounterCancellationReasonCode =
+  'PATIENT_CHOSE_NOT_TO_CONTINUE' | 'CREATED_IN_ERROR' | 'UNABLE_TO_COMPLETE_TODAY' | 'OTHER'
+
+export type CancelEncounterDraftResult =
+  | { readonly status: 'VOIDED'; readonly recordVersion: number }
+  | { readonly status: EncounterManagementControlledStatus }
+
 export interface ScreeningEncounterManagementService {
   search(request: SearchManagedEncountersRequest): SearchManagedEncountersServiceResult
   getDetail(encounterId: EntityId): GetManagedEncounterResult
@@ -70,11 +84,23 @@ export interface ScreeningEncounterManagementService {
     status: Extract<EncounterReviewFlagStatus, 'RESOLVED' | 'DISMISSED'>,
     resolutionNote: string
   ): ResolveEncounterReviewFlagResult
+  voidEmptyDraft(
+    encounterId: EntityId,
+    expectedVersion: number,
+    reason: string
+  ): VoidEmptyEncounterDraftResult
+  cancelDraft(
+    encounterId: EntityId,
+    expectedVersion: number,
+    reasonCode: EncounterCancellationReasonCode,
+    note: string | null
+  ): CancelEncounterDraftResult
 }
 
 export interface ScreeningEncounterManagementServiceDependencies {
   readonly authenticationSessionService: LocalAuthenticationSessionService
   readonly installationLocationService: InstallationLocationService
+  readonly currentScreeningSessionService: CurrentScreeningSessionService
   readonly installationRepository: InstallationRepository
   readonly screeningEncounterRepository: ScreeningEncounterRepository
   readonly managementRepository: ScreeningEncounterManagementRepository

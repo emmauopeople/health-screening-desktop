@@ -18,6 +18,7 @@ export type ScreeningEncounterOutboxOperation =
   | 'SCREENING_ENCOUNTER_ADDENDUM_ADDED'
   | 'SCREENING_ENCOUNTER_REVIEW_FLAG_OPENED'
   | 'SCREENING_ENCOUNTER_REVIEW_FLAG_UPDATED'
+  | 'SCREENING_ENCOUNTER_VOIDED'
 export type ScreeningEncounterOutboxPayloadSchemaVersion =
   | 'screening-encounter.start.v1'
   | 'screening-encounter.vitals-draft-saved.v1'
@@ -34,6 +35,7 @@ export type ScreeningEncounterOutboxPayloadSchemaVersion =
   | 'screening-encounter.addendum-added.v1'
   | 'screening-encounter.review-flag-opened.v1'
   | 'screening-encounter.review-flag-updated.v1'
+  | 'screening-encounter.voided.v1'
 
 export type ScreeningEncounterOutboxPayloadScalar = null | boolean | number | string
 export type ScreeningEncounterOutboxPayloadValue =

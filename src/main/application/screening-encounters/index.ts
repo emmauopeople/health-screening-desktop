@@ -41,6 +41,8 @@ export type {
 } from './screening-completion-service-types'
 export type {
   AddEncounterAddendumResult,
+  CancelEncounterDraftResult,
+  EncounterCancellationReasonCode,
   EncounterManagementControlledStatus,
   GetManagedEncounterResult,
   OpenEncounterReviewFlagResult,
@@ -48,7 +50,8 @@ export type {
   ScreeningEncounterManagementService,
   ScreeningEncounterManagementServiceDependencies,
   SearchManagedEncountersRequest,
-  SearchManagedEncountersServiceResult
+  SearchManagedEncountersServiceResult,
+  VoidEmptyEncounterDraftResult
 } from './screening-encounter-management-service-types'
 export type {
   ScreeningEncounterStartService,

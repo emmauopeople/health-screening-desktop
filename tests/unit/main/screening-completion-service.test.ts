@@ -106,6 +106,31 @@ describe('screening completion service', () => {
     expect(harness.outboxRepository.insert).not.toHaveBeenCalled()
   })
 
+  it('blocks final completion when an elevated first blood-pressure reading has no recheck', () => {
+    const harness = createHarness({
+      vitalsReadings: [
+        {
+          id: ids.vitalsReading,
+          sequenceNumber: 1,
+          systolic: 200,
+          diastolic: 105,
+          pulse: 80,
+          measurementSite: 'RIGHT_ARM',
+          patientPosition: 'SITTING',
+          measurementTime: '10:30'
+        }
+      ]
+    })
+
+    expect(harness.service.complete(completeRequest())).toEqual({
+      status: 'INCOMPLETE',
+      section: 'VITALS'
+    })
+    expect(harness.completionRepository.complete).not.toHaveBeenCalled()
+    expect(harness.auditEventRepository.insert).not.toHaveBeenCalled()
+    expect(harness.outboxRepository.insert).not.toHaveBeenCalled()
+  })
+
   it('returns an already-completed encounter without duplicating final records or events', () => {
     const harness = createHarness({ alreadyCompleted: true })
 
@@ -144,10 +169,12 @@ interface ScreeningCompletionHarness {
 
 function createHarness({
   foodResponse = 'UNKNOWN',
-  alreadyCompleted = false
+  alreadyCompleted = false,
+  vitalsReadings
 }: {
   readonly foodResponse?: 'UNKNOWN' | null
   readonly alreadyCompleted?: boolean
+  readonly vitalsReadings?: readonly Record<string, unknown>[]
 } = {}): ScreeningCompletionHarness {
   const connection = {} as DatabaseTransactionConnection
   const draftEncounter = {
@@ -226,7 +253,7 @@ function createHarness({
       getByIdForWrite: encounterLookup
     },
     screeningVitalsDraftRepository: {
-      getByEncounterIdForWrite: vi.fn(() => vitalsDraft())
+      getByEncounterIdForWrite: vi.fn(() => vitalsDraft(vitalsReadings))
     },
     lifestyleRepository,
     foodRepository: {
@@ -289,13 +316,13 @@ function screeningSession(): Record<string, unknown> {
   }
 }
 
-function vitalsDraft(): Record<string, unknown> {
+function vitalsDraft(readings?: readonly Record<string, unknown>[]): Record<string, unknown> {
   return {
     id: ids.vitalsDraft,
     encounterId: ids.encounter,
     status: 'VITALS_COMPLETE',
     rowVersion: 2,
-    readings: [
+    readings: readings ?? [
       {
         id: ids.vitalsReading,
         sequenceNumber: 1,

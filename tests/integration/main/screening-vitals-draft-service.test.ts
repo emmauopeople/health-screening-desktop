@@ -842,6 +842,43 @@ describe('screening vitals draft service integration', () => {
     })
   })
 
+  it('requires a same-encounter recheck for elevated blood pressure before completing Vitals', async () => {
+    await withVitalsService(({ connection, service }) => {
+      seedCoreGraph(connection)
+
+      expect(
+        service.completeVitalsStep(
+          createVitalsRequest({
+            readings: [{ ...completeReading(1), systolic: 200, diastolic: 105 }]
+          })
+        )
+      ).toEqual({ status: 'REPEAT_REQUIRED' })
+      expect(readTableCount(connection, 'screening_vitals_drafts')).toBe(0)
+      expect(readAuditRows(connection)).toEqual([])
+      expect(readOutboxRows(connection)).toEqual([])
+
+      const completed = service.completeVitalsStep(
+        createVitalsRequest({
+          readings: [
+            { ...completeReading(1), systolic: 200, diastolic: 105 },
+            { ...completeReading(2), systolic: 198, diastolic: 104 }
+          ]
+        })
+      )
+
+      expect(completed).toMatchObject({
+        status: 'COMPLETED',
+        draft: {
+          status: 'VITALS_COMPLETE',
+          readings: [{ sequenceNumber: 1 }, { sequenceNumber: 2 }]
+        }
+      })
+      expect(readAuditRows(connection).map((row) => row.action)).toEqual([
+        'SCREENING_VITALS_STEP_COMPLETED'
+      ])
+    })
+  })
+
   it('rejects unauthorized, over-posted, stale, and cross-encounter requests without mutation', async () => {
     await withVitalsService(
       ({ connection, service }) => {

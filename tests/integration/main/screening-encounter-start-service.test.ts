@@ -336,7 +336,7 @@ describe('screening encounter start service integration', () => {
     })
   })
 
-  it('returns existing root encounters idempotently, including VOID roots, without duplicate events', async () => {
+  it('returns active drafts idempotently and starts again after a VOID encounter', async () => {
     await withStartService(({ connection, service }) => {
       seedCoreGraph(connection)
       insertRawEncounter(connection, { id: existingEncounterId })
@@ -362,11 +362,50 @@ describe('screening encounter start service integration', () => {
       insertRawEncounter(connection, { id: voidEncounterId, status: 'VOID', voidReason: 'Void' })
 
       expect(service.start(createRequest())).toMatchObject({
-        status: 'ALREADY_EXISTS',
-        encounter: { id: voidEncounterId, status: 'VOID' }
+        status: 'STARTED',
+        encounter: { id: encounterId, status: 'DRAFT' }
       })
-      expect(readRootEncounterCount(connection)).toBe(1)
+      expect(readRootEncounterCount(connection)).toBe(2)
     })
+  })
+
+  it('requires confirmation before creating a distinct repeat encounter after completion', async () => {
+    await withStartService(
+      ({ connection, service }) => {
+        seedCoreGraph(connection)
+        insertRawEncounter(connection, { id: existingEncounterId, status: 'COMPLETED' })
+        insertRawEncounter(connection, {
+          id: voidEncounterId,
+          status: 'VOID',
+          voidReason: 'Later draft entered in error'
+        })
+
+        expect(service.start(createRequest())).toEqual({
+          status: 'REPEAT_CONFIRMATION_REQUIRED'
+        })
+        expect(readRootEncounterCount(connection)).toBe(2)
+        expect(readTableCount(connection, 'audit_log')).toBe(0)
+        expect(readTableCount(connection, 'sync_outbox')).toBe(0)
+
+        const repeat = service.start(createRequest({ repeatConfirmed: true }))
+        expect(repeat).toMatchObject({
+          status: 'STARTED',
+          encounter: {
+            id: encounterId,
+            patientId,
+            screeningSessionId: sessionId,
+            status: 'DRAFT'
+          }
+        })
+        expect(repeat.status === 'STARTED' && repeat.encounter.id !== existingEncounterId).toBe(
+          true
+        )
+        expect(readRootEncounterCount(connection)).toBe(3)
+        expect(readTableCount(connection, 'audit_log')).toBe(1)
+        expect(readTableCount(connection, 'sync_outbox')).toBe(1)
+      },
+      { timestamps: [now, now] }
+    )
   })
 
   it('resolves an identity-constraint race to the existing encounter without duplicate audit or outbox rows', async () => {
@@ -778,11 +817,13 @@ function createRequest(
   override: {
     readonly patientId?: string
     readonly screeningSessionId?: string
+    readonly repeatConfirmed?: boolean
   } = {}
 ): Parameters<ScreeningEncounterStartService['start']>[0] {
   return {
     patientId: parseEntityId(override.patientId ?? patientId),
-    screeningSessionId: parseEntityId(override.screeningSessionId ?? sessionId)
+    screeningSessionId: parseEntityId(override.screeningSessionId ?? sessionId),
+    ...(override.repeatConfirmed === undefined ? {} : { repeatConfirmed: override.repeatConfirmed })
   }
 }
 
@@ -997,7 +1038,7 @@ function insertRawEncounter(
     readonly id: string
     readonly patientId?: string
     readonly screeningSessionId?: string
-    readonly status?: 'DRAFT' | 'VOID'
+    readonly status?: 'DRAFT' | 'COMPLETED' | 'VOID'
     readonly voidReason?: string | null
   }
 ): void {
@@ -1020,7 +1061,7 @@ function insertRawEncounter(
         record_version,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'LOCAL', ?, NULL, NULL, ?, 1, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'LOCAL', ?, NULL, NULL, ?, 1, ?, ?)`
     )
     .run(
       input.id,
@@ -1030,6 +1071,7 @@ function insertRawEncounter(
       protocolId,
       input.status ?? 'DRAFT',
       now,
+      input.status === 'COMPLETED' ? now : null,
       adminId,
       input.voidReason ?? null,
       now,

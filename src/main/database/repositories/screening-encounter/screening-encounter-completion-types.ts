@@ -45,6 +45,11 @@ export interface CompleteScreeningEncounterPersistenceInput {
   readonly expectedRecordVersion: number
   readonly actorId: EntityId
   readonly completedAt: UtcTimestamp
+  readonly summarySystolic: number
+  readonly summaryDiastolic: number
+  readonly summaryPulse: number
+  readonly nextActionCategory: 'ROUTINE' | 'REFER' | 'URGENT_REFERRAL'
+  readonly decisionJson: string
   readonly vitalsReadings: readonly ScreeningCompletionVitalsReadingInput[]
   readonly lifestyleLogs: readonly ScreeningCompletionLifestyleLogInput[]
   readonly foodLogs: readonly ScreeningCompletionFoodLogInput[]

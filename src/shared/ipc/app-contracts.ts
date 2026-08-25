@@ -52,12 +52,16 @@ import { createIpcResultSchema } from './result'
 import type {
   EncounterManagementAddAddendumRequest,
   EncounterManagementAddAddendumResult,
+  EncounterManagementCancelDraftRequest,
+  EncounterManagementCancelDraftResult,
   EncounterManagementGetDetailRequest,
   EncounterManagementGetDetailResult,
   EncounterManagementOpenFlagRequest,
   EncounterManagementOpenFlagResult,
   EncounterManagementResolveFlagRequest,
   EncounterManagementResolveFlagResult,
+  EncounterManagementVoidEmptyDraftRequest,
+  EncounterManagementVoidEmptyDraftResult,
   EncounterManagementSearchRequest,
   EncounterManagementSearchResult,
   ScreeningEncounterCompleteRequest,
@@ -192,6 +196,12 @@ export interface HealthScreeningApi {
       resolveFlag(
         request: EncounterManagementResolveFlagRequest
       ): Promise<EncounterManagementResolveFlagResult>
+      cancelDraft(
+        request: EncounterManagementCancelDraftRequest
+      ): Promise<EncounterManagementCancelDraftResult>
+      voidEmptyDraft(
+        request: EncounterManagementVoidEmptyDraftRequest
+      ): Promise<EncounterManagementVoidEmptyDraftResult>
     }
     vitals: {
       getDraft(request: ScreeningVitalsGetDraftRequest): Promise<ScreeningVitalsGetDraftResult>

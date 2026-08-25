@@ -49,9 +49,11 @@ describe('migration manifest', () => {
       { version: 12, name: 'optional-other-activity-description', checksumLength: 64 },
       { version: 13, name: 'food-draft-foundation', checksumLength: 64 },
       { version: 14, name: 'otc-draft-foundation', checksumLength: 64 },
-      { version: 15, name: 'encounter-management', checksumLength: 64 }
+      { version: 15, name: 'encounter-management', checksumLength: 64 },
+      { version: 16, name: 'repeat-screening-encounters', checksumLength: 64 },
+      { version: 17, name: 'bp-screening-protocol', checksumLength: 64 }
     ])
-    expect(targetSchemaVersion).toBe(15)
+    expect(targetSchemaVersion).toBe(17)
     expect(resolved[0]?.checksum).toBe(
       '36bb5114185c0a691c8ba8dc1fdfc749a6f5a7069cbcb5efb88a6b55dd6e5fed'
     )

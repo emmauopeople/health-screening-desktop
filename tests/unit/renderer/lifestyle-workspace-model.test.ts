@@ -165,6 +165,19 @@ describe('Lifestyle Alcohol workspace model', () => {
     ).toEqual(expected)
   })
 
+  it('normalizes hidden dependent answers when reopening a saved Never baseline', () => {
+    const state = createLifestyleDraftStateFromWorkspace(
+      workspaceWithDraft({ baselineStatus: 'NEVER' })
+    )
+
+    expect(state.baselineForm).toMatchObject({
+      everConsumed: 'NO',
+      consumedPast12Months: '',
+      commonBeverageTypes: []
+    })
+    expect(validateAlcoholBaseline(state.baselineForm)).toEqual([])
+  })
+
   it('clears quantitative and beverage details when leaving the Yes branch', () => {
     const form = completeWeekly()
     expect(updateAlcoholResponse(form, 'NO')).toEqual({

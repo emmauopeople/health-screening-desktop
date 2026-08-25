@@ -10,6 +10,7 @@ export type EncounterReviewFlagStatus = 'OPEN' | 'RESOLVED' | 'DISMISSED'
 export interface ManagedEncounterSummaryRecord {
   readonly id: EntityId
   readonly patientId: EntityId
+  readonly screeningSessionId: EntityId
   readonly patientCode: string
   readonly patientDisplayName: string
   readonly dateOfBirth: string | null
@@ -19,6 +20,8 @@ export interface ManagedEncounterSummaryRecord {
   readonly completedAt: UtcTimestamp | null
   readonly noteCount: number
   readonly openFlagCount: number
+  readonly recordVersion: number
+  readonly hasRecordedData: boolean
 }
 
 export interface EncounterAddendumRecord {
@@ -82,6 +85,7 @@ export interface ManagedEncounterDetailRecord {
 
 export interface SearchManagedEncountersInput {
   readonly locationId: EntityId
+  readonly resumableSessionId: EntityId | null
   readonly query: string
   readonly status: ScreeningEncounterStatus | 'ALL'
   readonly page: number
@@ -123,7 +127,11 @@ export interface ResolveEncounterReviewFlagInput {
 
 export interface ScreeningEncounterManagementRepository {
   search(input: SearchManagedEncountersInput): SearchManagedEncountersResult
-  getDetail(encounterId: EntityId, locationId: EntityId): ManagedEncounterDetailRecord | null
+  getDetail(
+    encounterId: EntityId,
+    locationId: EntityId,
+    resumableSessionId: EntityId | null
+  ): ManagedEncounterDetailRecord | null
   insertAddendum(
     connection: DatabaseTransactionConnection,
     input: InsertEncounterAddendumInput
@@ -136,4 +144,22 @@ export interface ScreeningEncounterManagementRepository {
     connection: DatabaseTransactionConnection,
     input: ResolveEncounterReviewFlagInput
   ): EncounterReviewFlagRecord | null
+  voidEmptyDraft(
+    connection: DatabaseTransactionConnection,
+    input: {
+      readonly encounterId: EntityId
+      readonly expectedVersion: number
+      readonly reason: string
+      readonly updatedAt: UtcTimestamp
+    }
+  ): 'VOIDED' | 'NOT_FOUND' | 'NOT_DRAFT' | 'VERSION_CONFLICT' | 'NOT_EMPTY'
+  voidDraft(
+    connection: DatabaseTransactionConnection,
+    input: {
+      readonly encounterId: EntityId
+      readonly expectedVersion: number
+      readonly reason: string
+      readonly updatedAt: UtcTimestamp
+    }
+  ): 'VOIDED' | 'NOT_FOUND' | 'NOT_DRAFT' | 'VERSION_CONFLICT'
 }

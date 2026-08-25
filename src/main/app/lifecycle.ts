@@ -169,6 +169,7 @@ export function startApplicationLifecycle(): void {
           connection: databaseRuntime.getConnection(),
           authenticationSessionService,
           installationLocationService,
+          currentScreeningSessionService,
           logger: console
         })
       const locationRepository = createLocationRepository(databaseRuntime.getConnection())

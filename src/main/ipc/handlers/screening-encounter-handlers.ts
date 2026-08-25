@@ -18,12 +18,16 @@ import {
   createIpcSuccess,
   encounterManagementAddAddendumRequestSchema,
   encounterManagementAddAddendumResultSchema,
+  encounterManagementCancelDraftRequestSchema,
+  encounterManagementCancelDraftResultSchema,
   encounterManagementGetDetailRequestSchema,
   encounterManagementGetDetailResultSchema,
   encounterManagementOpenFlagRequestSchema,
   encounterManagementOpenFlagResultSchema,
   encounterManagementResolveFlagRequestSchema,
   encounterManagementResolveFlagResultSchema,
+  encounterManagementVoidEmptyDraftRequestSchema,
+  encounterManagementVoidEmptyDraftResultSchema,
   encounterManagementSearchRequestSchema,
   encounterManagementSearchResultSchema,
   createScreeningEncounterIpcFailure,
@@ -43,12 +47,16 @@ import {
   type PublicScreeningEncounterStartSummary,
   type EncounterManagementAddAddendumResult,
   type EncounterManagementAddAddendumRequest,
+  type EncounterManagementCancelDraftResult,
+  type EncounterManagementCancelDraftRequest,
   type EncounterManagementGetDetailResult,
   type EncounterManagementGetDetailRequest,
   type EncounterManagementOpenFlagResult,
   type EncounterManagementOpenFlagRequest,
   type EncounterManagementResolveFlagResult,
   type EncounterManagementResolveFlagRequest,
+  type EncounterManagementVoidEmptyDraftResult,
+  type EncounterManagementVoidEmptyDraftRequest,
   type EncounterManagementSearchResult,
   type EncounterManagementSearchRequest,
   type PublicCompletedScreeningEncounterSummary,
@@ -118,6 +126,14 @@ export interface ScreeningEncounterIpcHandlers {
     event: IpcSenderValidationEvent,
     request: unknown
   ): Promise<EncounterManagementResolveFlagResult>
+  cancelEncounterDraft(
+    event: IpcSenderValidationEvent,
+    request: unknown
+  ): Promise<EncounterManagementCancelDraftResult>
+  voidEmptyEncounterDraft(
+    event: IpcSenderValidationEvent,
+    request: unknown
+  ): Promise<EncounterManagementVoidEmptyDraftResult>
 }
 
 export function createScreeningEncounterIpcHandlers({
@@ -304,6 +320,43 @@ export function createScreeningEncounterIpcHandlers({
       }) as Promise<EncounterManagementResolveFlagResult>
     },
 
+    async voidEmptyEncounterDraft(event: IpcSenderValidationEvent, request: unknown) {
+      return handleManagementRequest(event, request, {
+        channel: ipcChannels.screeningEncounters.management.voidEmptyDraft,
+        navigationPolicy,
+        requestSchema: encounterManagementVoidEmptyDraftRequestSchema,
+        resultSchema: encounterManagementVoidEmptyDraftResultSchema,
+        invoke: (data: EncounterManagementVoidEmptyDraftRequest) =>
+          createIpcSuccess(
+            screeningEncounterManagementService.voidEmptyDraft(
+              data.encounterId as EntityId,
+              data.expectedVersion,
+              data.reason
+            )
+          ),
+        logger
+      }) as Promise<EncounterManagementVoidEmptyDraftResult>
+    },
+
+    async cancelEncounterDraft(event: IpcSenderValidationEvent, request: unknown) {
+      return handleManagementRequest(event, request, {
+        channel: ipcChannels.screeningEncounters.management.cancelDraft,
+        navigationPolicy,
+        requestSchema: encounterManagementCancelDraftRequestSchema,
+        resultSchema: encounterManagementCancelDraftResultSchema,
+        invoke: (data: EncounterManagementCancelDraftRequest) =>
+          createIpcSuccess(
+            screeningEncounterManagementService.cancelDraft(
+              data.encounterId as EntityId,
+              data.expectedVersion,
+              data.reasonCode,
+              data.note
+            )
+          ),
+        logger
+      }) as Promise<EncounterManagementCancelDraftResult>
+    },
+
     async getVitalsDraft(
       event: IpcSenderValidationEvent,
       request: unknown
@@ -456,7 +509,9 @@ const unavailableManagementService: ScreeningEncounterManagementService = Object
   getDetail: () => ({ status: 'UNAVAILABLE' as const }),
   addAddendum: () => ({ status: 'UNAVAILABLE' as const }),
   openFlag: () => ({ status: 'UNAVAILABLE' as const }),
-  resolveFlag: () => ({ status: 'UNAVAILABLE' as const })
+  resolveFlag: () => ({ status: 'UNAVAILABLE' as const }),
+  cancelDraft: () => ({ status: 'UNAVAILABLE' as const }),
+  voidEmptyDraft: () => ({ status: 'UNAVAILABLE' as const })
 })
 
 function toInternalStartRequest(
@@ -464,7 +519,8 @@ function toInternalStartRequest(
 ): Parameters<ScreeningEncounterStartService['start']>[0] {
   return Object.freeze({
     patientId: request.patientId as EntityId,
-    screeningSessionId: request.screeningSessionId as EntityId
+    screeningSessionId: request.screeningSessionId as EntityId,
+    repeatConfirmed: request.repeatConfirmed ?? false
   })
 }
 
@@ -531,6 +587,7 @@ function mapStartResult(
         encounter: toPublicStartSummary(result.encounter)
       }) as ScreeningEncounterStartResult
     case 'PATIENT_NOT_FOUND':
+    case 'REPEAT_CONFIRMATION_REQUIRED':
     case 'PATIENT_INELIGIBLE':
     case 'SESSION_NOT_FOUND':
     case 'SESSION_CLOSED':

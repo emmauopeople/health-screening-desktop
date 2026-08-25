@@ -38,6 +38,11 @@ const startedAction = parseAuditActionCode('SCREENING_ENCOUNTER_STARTED')
 const screeningEncounterEntityType = parseAuditEntityType('SCREENING_ENCOUNTER')
 const allowedRoles = Object.freeze(['LOCAL_ADMIN', 'NURSE', 'TRAINED_SCREENER'] as const)
 const startRequestKeys = Object.freeze(['patientId', 'screeningSessionId'] as const)
+const repeatStartRequestKeys = Object.freeze([
+  'patientId',
+  'screeningSessionId',
+  'repeatConfirmed'
+] as const)
 
 interface ValidatedActor {
   readonly userId: EntityId
@@ -47,6 +52,7 @@ interface ValidatedActor {
 interface ParsedStartCommand {
   readonly patientId: EntityId
   readonly screeningSessionId: EntityId
+  readonly repeatConfirmed: boolean
 }
 
 export function createScreeningEncounterStartService({
@@ -122,15 +128,25 @@ export function createScreeningEncounterStartService({
             return result('PATIENT_INELIGIBLE')
           }
 
-          const existing =
-            screeningEncounterRepository.findCanonicalRootByPatientAndSessionForWrite(
+          const existing = screeningEncounterRepository.findActiveDraftByPatientAndSessionForWrite(
+            context.connection,
+            commandResult.command.patientId,
+            commandResult.command.screeningSessionId
+          )
+
+          if (existing !== null) {
+            return encounterResult('ALREADY_EXISTS', existing)
+          }
+
+          const hasCompletedRoot =
+            screeningEncounterRepository.hasCompletedRootByPatientAndSessionForWrite(
               context.connection,
               commandResult.command.patientId,
               commandResult.command.screeningSessionId
             )
 
-          if (existing !== null) {
-            return encounterResult('ALREADY_EXISTS', existing)
+          if (hasCompletedRoot && !commandResult.command.repeatConfirmed) {
+            return result('REPEAT_CONFIRMATION_REQUIRED')
           }
 
           const insertResult = screeningEncounterRepository.insertCanonicalRoot(
@@ -148,7 +164,7 @@ export function createScreeningEncounterStartService({
 
           if (insertResult.status === 'IDENTITY_CONFLICT') {
             const resolved =
-              screeningEncounterRepository.findCanonicalRootByPatientAndSessionForWrite(
+              screeningEncounterRepository.findActiveDraftByPatientAndSessionForWrite(
                 context.connection,
                 commandResult.command.patientId,
                 commandResult.command.screeningSessionId
@@ -210,13 +226,26 @@ function parseStartCommand(
   | { readonly status: 'VALID'; readonly command: ParsedStartCommand }
   | { readonly status: 'INVALID'; readonly result: StartScreeningEncounterResult } {
   try {
-    const data = readDataProperties(request, startRequestKeys)
+    let data: Record<string, unknown>
+
+    try {
+      data = readDataProperties(request, startRequestKeys)
+    } catch {
+      data = readDataProperties(request, repeatStartRequestKeys)
+    }
+
+    const repeatConfirmed = data.repeatConfirmed ?? false
+
+    if (typeof repeatConfirmed !== 'boolean') {
+      throw new RepositoryValidationError()
+    }
 
     return {
       status: 'VALID',
       command: Object.freeze({
         patientId: parseEntityId(data.patientId),
-        screeningSessionId: parseEntityId(data.screeningSessionId)
+        screeningSessionId: parseEntityId(data.screeningSessionId),
+        repeatConfirmed
       })
     }
   } catch {

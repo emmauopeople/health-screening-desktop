@@ -8,6 +8,7 @@ import {
   encounterManagementOpenFlagRequestSchema,
   encounterManagementResolveFlagRequestSchema,
   encounterManagementSearchRequestSchema,
+  encounterManagementVoidEmptyDraftRequestSchema,
   ipcChannels,
   screeningEncounterCompleteRequestSchema,
   screeningEncounterCompleteResultSchema,
@@ -84,6 +85,17 @@ describe('screening encounter IPC contracts', () => {
         resolutionNote: 'Compared with the source record.'
       })
     ).toMatchObject({ status: 'RESOLVED' })
+    expect(
+      encounterManagementVoidEmptyDraftRequestSchema.parse({
+        encounterId,
+        expectedVersion: 1,
+        reason: 'Created without screening data.'
+      })
+    ).toEqual({
+      encounterId,
+      expectedVersion: 1,
+      reason: 'Created without screening data.'
+    })
 
     const protoRequest = Object.defineProperty(
       { encounterId, noteText: 'Record reviewed.' },
@@ -95,6 +107,8 @@ describe('screening encounter IPC contracts', () => {
       { encounterId, noteText: '' },
       { encounterId, category: 'UNVERIFIED', description: 'Issue' },
       { encounterId, flagId: patientId, status: 'OPEN', resolutionNote: 'Issue' },
+      { encounterId, expectedVersion: 0, reason: 'Created in error.' },
+      { encounterId, expectedVersion: 1, reason: '', actorId: patientId },
       protoRequest
     ]) {
       const schema =
@@ -102,7 +116,9 @@ describe('screening encounter IPC contracts', () => {
           ? encounterManagementAddAddendumRequestSchema
           : 'category' in request
             ? encounterManagementOpenFlagRequestSchema
-            : encounterManagementResolveFlagRequestSchema
+            : 'expectedVersion' in request
+              ? encounterManagementVoidEmptyDraftRequestSchema
+              : encounterManagementResolveFlagRequestSchema
       expect(schema.safeParse(request).success).toBe(false)
     }
   })
@@ -303,6 +319,7 @@ describe('screening encounter IPC contracts', () => {
       'FORBIDDEN',
       'VALIDATION_FAILED',
       'AUTHENTICATION_REQUIRED',
+      'REPEAT_CONFIRMATION_REQUIRED',
       'UNAVAILABLE'
     ] as const) {
       expect(

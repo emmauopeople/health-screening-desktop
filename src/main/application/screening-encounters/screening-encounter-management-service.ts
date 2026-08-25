@@ -16,6 +16,7 @@ import {
 } from '../authentication/session'
 import type { ResolveConfiguredInstallationLocationResult } from '../installation-location'
 import type {
+  EncounterCancellationReasonCode,
   EncounterManagementControlledStatus,
   ScreeningEncounterManagementService,
   ScreeningEncounterManagementServiceDependencies,
@@ -27,6 +28,13 @@ const entityType = parseAuditEntityType('SCREENING_ENCOUNTER')
 const addendumAction = parseAuditActionCode('SCREENING_ENCOUNTER_ADDENDUM_ADDED')
 const flagOpenedAction = parseAuditActionCode('SCREENING_ENCOUNTER_REVIEW_FLAG_OPENED')
 const flagUpdatedAction = parseAuditActionCode('SCREENING_ENCOUNTER_REVIEW_FLAG_UPDATED')
+const encounterVoidedAction = parseAuditActionCode('SCREENING_ENCOUNTER_VOIDED')
+const cancellationReasonLabels = Object.freeze({
+  PATIENT_CHOSE_NOT_TO_CONTINUE: 'Patient chose not to continue',
+  CREATED_IN_ERROR: 'Screening created in error',
+  UNABLE_TO_COMPLETE_TODAY: 'Unable to complete screening today',
+  OTHER: 'Other cancellation reason'
+} satisfies Record<EncounterCancellationReasonCode, string>)
 const categories = new Set<EncounterReviewFlagCategory>([
   'POSSIBLE_DATA_ERROR',
   'MISSING_INFORMATION',
@@ -44,12 +52,14 @@ export function createScreeningEncounterManagementService(
       if (actor.status !== 'VALID') return { status: actor.statusCode }
       const location = resolveLocation(dependencies)
       if (location.status !== 'RESOLVED') return { status: location.status }
+      const resumableSessionId = resolveResumableSessionId(dependencies)
       try {
         return Object.freeze({
           status: 'LOADED' as const,
           result: dependencies.managementRepository.search({
             ...parseSearchRequest(request),
-            locationId: location.location.id
+            locationId: location.location.id,
+            resumableSessionId
           })
         })
       } catch (error) {
@@ -64,10 +74,12 @@ export function createScreeningEncounterManagementService(
       if (actor.status !== 'VALID') return { status: actor.statusCode }
       const location = resolveLocation(dependencies)
       if (location.status !== 'RESOLVED') return { status: location.status }
+      const resumableSessionId = resolveResumableSessionId(dependencies)
       try {
         const detail = dependencies.managementRepository.getDetail(
           parseEntityId(encounterId),
-          location.location.id
+          location.location.id,
+          resumableSessionId
         )
         return detail === null ? { status: 'ENCOUNTER_NOT_FOUND' } : { status: 'LOADED', detail }
       } catch {
@@ -219,9 +231,138 @@ export function createScreeningEncounterManagementService(
           status: error instanceof RepositoryValidationError ? 'VALIDATION_FAILED' : 'UNAVAILABLE'
         }
       }
+    },
+
+    voidEmptyDraft(encounterId, expectedVersion, reason) {
+      const actor = resolveActor(dependencies)
+      if (actor.status !== 'VALID') return { status: actor.statusCode }
+      const location = resolveLocation(dependencies)
+      if (location.status !== 'RESOLVED') return { status: location.status }
+      try {
+        const parsedEncounterId = parseEntityId(encounterId)
+        const parsedVersion = parsePositiveInteger(expectedVersion)
+        const parsedReason = parseText(reason, 500)
+        return dependencies.transactionExecutor.run((context) => {
+          const encounter = dependencies.screeningEncounterRepository.getByIdForWrite(
+            context.connection,
+            parsedEncounterId
+          )
+          if (encounter === null || encounter.locationId !== location.location.id)
+            return { status: 'ENCOUNTER_NOT_FOUND' as const }
+          if (encounter.status !== 'DRAFT') return { status: 'ENCOUNTER_NOT_MANAGEABLE' as const }
+          if (encounter.recordVersion !== parsedVersion)
+            return { status: 'VERSION_CONFLICT' as const }
+
+          const occurredAt = context.nowUtc()
+          const result = dependencies.managementRepository.voidEmptyDraft(context.connection, {
+            encounterId: parsedEncounterId,
+            expectedVersion: parsedVersion,
+            reason: parsedReason,
+            updatedAt: occurredAt
+          })
+          if (result === 'NOT_EMPTY') return { status: 'ENCOUNTER_NOT_EMPTY' as const }
+          if (result === 'VERSION_CONFLICT') return { status: 'VERSION_CONFLICT' as const }
+          if (result === 'NOT_FOUND') return { status: 'ENCOUNTER_NOT_FOUND' as const }
+          if (result !== 'VOIDED') return { status: 'ENCOUNTER_NOT_MANAGEABLE' as const }
+
+          const resultingVersion = parsedVersion + 1
+          writeEvent(
+            dependencies,
+            context,
+            actor.actorId,
+            parsedEncounterId,
+            occurredAt,
+            encounterVoidedAction,
+            'SCREENING_ENCOUNTER_VOIDED',
+            'screening-encounter.voided.v1',
+            { encounter_id: parsedEncounterId, record_version: resultingVersion }
+          )
+          return Object.freeze({ status: 'VOIDED' as const, recordVersion: resultingVersion })
+        })
+      } catch (error) {
+        return {
+          status: error instanceof RepositoryValidationError ? 'VALIDATION_FAILED' : 'UNAVAILABLE'
+        }
+      }
+    },
+
+    cancelDraft(encounterId, expectedVersion, reasonCode, note) {
+      const actor = resolveActor(dependencies)
+      if (actor.status !== 'VALID') return { status: actor.statusCode }
+      const location = resolveLocation(dependencies)
+      if (location.status !== 'RESOLVED') return { status: location.status }
+      try {
+        const parsedEncounterId = parseEntityId(encounterId)
+        const parsedVersion = parsePositiveInteger(expectedVersion)
+        const parsedReasonCode = parseCancellationReasonCode(reasonCode)
+        const parsedNote = parseOptionalText(note, 500)
+        if (parsedReasonCode === 'OTHER' && parsedNote === null)
+          throw new RepositoryValidationError()
+        if (parsedReasonCode !== 'OTHER' && parsedNote !== null)
+          throw new RepositoryValidationError()
+        const displayReason = `${cancellationReasonLabels[parsedReasonCode]}${
+          parsedNote === null ? '' : `: ${parsedNote}`
+        }`
+
+        return dependencies.transactionExecutor.run((context) => {
+          const encounter = dependencies.screeningEncounterRepository.getByIdForWrite(
+            context.connection,
+            parsedEncounterId
+          )
+          if (encounter === null || encounter.locationId !== location.location.id)
+            return { status: 'ENCOUNTER_NOT_FOUND' as const }
+          if (encounter.status !== 'DRAFT') return { status: 'ENCOUNTER_NOT_MANAGEABLE' as const }
+          if (encounter.recordVersion !== parsedVersion)
+            return { status: 'VERSION_CONFLICT' as const }
+
+          const occurredAt = context.nowUtc()
+          const result = dependencies.managementRepository.voidDraft(context.connection, {
+            encounterId: parsedEncounterId,
+            expectedVersion: parsedVersion,
+            reason: displayReason,
+            updatedAt: occurredAt
+          })
+          if (result === 'VERSION_CONFLICT') return { status: 'VERSION_CONFLICT' as const }
+          if (result === 'NOT_FOUND') return { status: 'ENCOUNTER_NOT_FOUND' as const }
+          if (result !== 'VOIDED') return { status: 'ENCOUNTER_NOT_MANAGEABLE' as const }
+
+          const resultingVersion = parsedVersion + 1
+          writeEvent(
+            dependencies,
+            context,
+            actor.actorId,
+            parsedEncounterId,
+            occurredAt,
+            encounterVoidedAction,
+            'SCREENING_ENCOUNTER_VOIDED',
+            'screening-encounter.voided.v1',
+            {
+              encounter_id: parsedEncounterId,
+              record_version: resultingVersion,
+              reason_code: parsedReasonCode
+            }
+          )
+          return Object.freeze({ status: 'VOIDED' as const, recordVersion: resultingVersion })
+        })
+      } catch (error) {
+        return {
+          status: error instanceof RepositoryValidationError ? 'VALIDATION_FAILED' : 'UNAVAILABLE'
+        }
+      }
     }
   }
   return Object.freeze(service)
+}
+
+function resolveResumableSessionId(
+  dependencies: ScreeningEncounterManagementServiceDependencies
+): EntityId | null {
+  try {
+    const result = dependencies.currentScreeningSessionService.findCurrentScreeningSession()
+    return result.status === 'FOUND' ? result.session.id : null
+  } catch {
+    return null
+  }
 }
 
 function validateManageableEncounter(
@@ -246,11 +387,13 @@ function writeEvent(
   operation:
     | 'SCREENING_ENCOUNTER_ADDENDUM_ADDED'
     | 'SCREENING_ENCOUNTER_REVIEW_FLAG_OPENED'
-    | 'SCREENING_ENCOUNTER_REVIEW_FLAG_UPDATED',
+    | 'SCREENING_ENCOUNTER_REVIEW_FLAG_UPDATED'
+    | 'SCREENING_ENCOUNTER_VOIDED',
   schema:
     | 'screening-encounter.addendum-added.v1'
     | 'screening-encounter.review-flag-opened.v1'
-    | 'screening-encounter.review-flag-updated.v1',
+    | 'screening-encounter.review-flag-updated.v1'
+    | 'screening-encounter.voided.v1',
   metadata: AuditMetadata
 ): void {
   const installation = dependencies.installationRepository.get()
@@ -321,4 +464,22 @@ function parseText(value: unknown, maximum: number): string {
   const text = value.trim()
   if (text.length === 0 || text.length > maximum) throw new RepositoryValidationError()
   return text
+}
+function parseOptionalText(value: unknown, maximum: number): string | null {
+  if (value === null) return null
+  if (typeof value !== 'string') throw new RepositoryValidationError()
+  const text = value.trim()
+  if (text.length === 0) return null
+  if (Array.from(text).length > maximum) throw new RepositoryValidationError()
+  return text
+}
+function parseCancellationReasonCode(value: unknown): EncounterCancellationReasonCode {
+  if (typeof value !== 'string' || !(value in cancellationReasonLabels))
+    throw new RepositoryValidationError()
+  return value as EncounterCancellationReasonCode
+}
+function parsePositiveInteger(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1)
+    throw new RepositoryValidationError()
+  return value
 }
