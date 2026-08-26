@@ -324,7 +324,7 @@ function validateFoodLog(log: ScreeningCompletionFoodLogInput): void {
   if (log.foodCode !== null) validateText(log.foodCode)
   validateText(log.foodName)
   validateText(log.foodNameNormalized)
-  validateText(log.frequencyCode)
+  if (log.frequencyCode !== null) validateText(log.frequencyCode)
   if (log.notes !== null) validateText(log.notes)
 }
 

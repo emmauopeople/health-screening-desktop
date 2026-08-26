@@ -106,6 +106,32 @@ describe('screening completion service', () => {
     expect(harness.outboxRepository.insert).not.toHaveBeenCalled()
   })
 
+  it('completes reported food when optional frequency is not recorded', () => {
+    const harness = createHarness({
+      foodResponse: 'REPORTED',
+      foodRows: [
+        {
+          id: parseEntityId('10000000-0000-4000-8000-000000000016'),
+          sequenceNumber: 1,
+          catalogCode: null,
+          foodNameSnapshot: 'Corn fufu',
+          foodNameNormalized: 'corn fufu',
+          frequencyCode: null,
+          preparationNote: null,
+          sourceType: 'PATIENT_REPORTED'
+        }
+      ]
+    })
+
+    expect(harness.service.complete(completeRequest())).toMatchObject({ status: 'COMPLETED' })
+    expect(harness.completionRepository.complete).toHaveBeenCalledWith(
+      harness.connection,
+      expect.objectContaining({
+        foodLogs: [expect.objectContaining({ foodName: 'Corn fufu', frequencyCode: null })]
+      })
+    )
+  })
+
   it('blocks final completion when an elevated first blood-pressure reading has no recheck', () => {
     const harness = createHarness({
       vitalsReadings: [
@@ -169,10 +195,12 @@ interface ScreeningCompletionHarness {
 
 function createHarness({
   foodResponse = 'UNKNOWN',
+  foodRows = [],
   alreadyCompleted = false,
   vitalsReadings
 }: {
-  readonly foodResponse?: 'UNKNOWN' | null
+  readonly foodResponse?: 'REPORTED' | 'UNKNOWN' | null
+  readonly foodRows?: readonly Record<string, unknown>[]
   readonly alreadyCompleted?: boolean
   readonly vitalsReadings?: readonly Record<string, unknown>[]
 } = {}): ScreeningCompletionHarness {
@@ -264,7 +292,7 @@ function createHarness({
         locationId: ids.location,
         installationId: ids.installation,
         foodResponse,
-        rows: [],
+        rows: foodRows,
         rowVersion: 4
       }))
     },

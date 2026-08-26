@@ -233,7 +233,7 @@ export function createScreeningCompletionService(
                     foodCode: row.catalogCode,
                     foodName: row.foodNameSnapshot,
                     foodNameNormalized: row.foodNameNormalized,
-                    frequencyCode: row.frequencyCode!,
+                    frequencyCode: row.frequencyCode,
                     notes: row.preparationNote
                   }))
                 : [],
@@ -432,7 +432,7 @@ function isCompleteLifestyle(
 function isCompleteFood(draft: FoodDraftRecord): boolean {
   if (draft.foodResponse === null) return false
   if (draft.foodResponse !== 'REPORTED') return draft.rows.length === 0
-  return draft.rows.length > 0 && draft.rows.every((row) => row.frequencyCode !== null)
+  return draft.rows.length > 0
 }
 
 function isCompleteOtc(draft: OtcDraftRecord): boolean {

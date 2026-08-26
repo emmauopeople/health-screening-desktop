@@ -24,7 +24,7 @@ export interface ScreeningCompletionFoodLogInput {
   readonly foodCode: string | null
   readonly foodName: string
   readonly foodNameNormalized: string
-  readonly frequencyCode: string
+  readonly frequencyCode: string | null
   readonly notes: string | null
 }
 
