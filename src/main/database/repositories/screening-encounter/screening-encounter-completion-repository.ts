@@ -177,7 +177,17 @@ export function createScreeningEncounterCompletionRepository(
         for (const log of parsed.foodLogs) {
           scopedConnection
             .prepare<
-              [string, string, string | null, string, string, string, string | null, string, string]
+              [
+                string,
+                string,
+                string | null,
+                string,
+                string,
+                string | null,
+                string | null,
+                string,
+                string
+              ]
             >(insertFoodLogSql)
             .run(
               log.id,
