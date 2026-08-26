@@ -72,7 +72,7 @@ describe('screening encounter completion repository', () => {
               foodCode: 'RICE',
               foodName: 'Rice',
               foodNameNormalized: 'rice',
-              frequencyCode: 'EVERY_DAY',
+              frequencyCode: null,
               notes: null
             }
           ],
@@ -124,6 +124,11 @@ describe('screening encounter completion repository', () => {
       })
       expect(readCount(connection, 'lifestyle_logs')).toBe(1)
       expect(readCount(connection, 'food_logs')).toBe(1)
+      expect(
+        connection
+          .prepare('SELECT frequency_code FROM food_logs WHERE encounter_id = ?')
+          .get(ids.encounter)
+      ).toEqual({ frequency_code: null })
       expect(readCount(connection, 'otc_medication_logs')).toBe(1)
       expect(connection.pragma('foreign_key_check')).toEqual([])
       expect(connection.pragma('integrity_check')).toEqual([{ integrity_check: 'ok' }])

@@ -177,7 +177,17 @@ export function createScreeningEncounterCompletionRepository(
         for (const log of parsed.foodLogs) {
           scopedConnection
             .prepare<
-              [string, string, string | null, string, string, string, string | null, string, string]
+              [
+                string,
+                string,
+                string | null,
+                string,
+                string,
+                string | null,
+                string | null,
+                string,
+                string
+              ]
             >(insertFoodLogSql)
             .run(
               log.id,
@@ -324,7 +334,7 @@ function validateFoodLog(log: ScreeningCompletionFoodLogInput): void {
   if (log.foodCode !== null) validateText(log.foodCode)
   validateText(log.foodName)
   validateText(log.foodNameNormalized)
-  validateText(log.frequencyCode)
+  if (log.frequencyCode !== null) validateText(log.frequencyCode)
   if (log.notes !== null) validateText(log.notes)
 }
 
