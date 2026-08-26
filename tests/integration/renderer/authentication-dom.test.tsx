@@ -230,10 +230,16 @@ describe('renderer authentication DOM integration', () => {
     const mounted = await mountApp(harness.api)
 
     expect(text(mounted)).toContain('Welcome, Admin User')
+    expect(mounted.container.querySelector('.application-brand-logo')).not.toBeNull()
+    expect(text(mounted)).toContain('Community Health Screening')
+    expect(text(mounted)).not.toContain('Health Screening Offline Desktop')
 
     await clickButton(mounted, 'Lock')
 
     expect(text(mounted)).toContain('Session Locked')
+    expect(text(mounted)).toContain('By Admin.User')
+    expect(mounted.container.querySelector('.auth-locked-logo')).not.toBeNull()
+    expect(mounted.container.querySelector('.auth-login-card-joined')).not.toBeNull()
 
     const resetSpy = vi.spyOn(HTMLFormElement.prototype, 'reset')
 

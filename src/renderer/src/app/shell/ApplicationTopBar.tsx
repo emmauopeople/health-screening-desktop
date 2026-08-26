@@ -50,8 +50,13 @@ export function ApplicationTopBar({
       data-shell-slot="top-bar"
       data-shell-focus-zone="TOP_BAR"
     >
-      <div className="application-brand" title={context.applicationName}>
-        <strong>{context.applicationName}</strong>
+      <div className="application-brand" title="Community Health Screening">
+        <span
+          className="application-brand-logo"
+          role="img"
+          aria-label="Community Health Screening logo"
+        />
+        <strong>Community Health Screening</strong>
         <span>Version {context.applicationVersion}</span>
       </div>
       <nav className="application-primary-nav" aria-label="Primary application navigation">

@@ -401,18 +401,27 @@ h1 {
   box-shadow: 0 24px 60px rgba(3, 23, 42, 0.28);
 }
 
-.auth-login-logo {
+.auth-login-logo,
+.auth-locked-logo {
   display: block;
   width: 100%;
-  aspect-ratio: 1070 / 670;
   border: 1px solid rgba(255, 255, 255, 0.62);
   border-bottom: 0;
   border-radius: 16px 16px 0 0;
   background-color: #ffffff;
-  background-image: url('../../../../assests/images/big-logo.png');
   background-position: center;
   background-repeat: no-repeat;
   background-size: contain;
+}
+
+.auth-login-logo {
+  aspect-ratio: 1070 / 670;
+  background-image: url('../../../../assests/images/big-logo.png');
+}
+
+.auth-locked-logo {
+  aspect-ratio: 1090 / 445;
+  background-image: url('../../../../assests/images/small-logo.png');
 }
 
 .auth-login-card {
@@ -764,6 +773,12 @@ h1 {
   min-width: 0;
 }
 
+.application-brand {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
 .application-brand strong,
 .application-brand span,
 .application-account span {
@@ -775,14 +790,26 @@ h1 {
 
 .application-brand strong {
   color: #ffffff;
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 700;
-  line-height: 1;
-  text-transform: uppercase;
+  line-height: 1.15;
 }
 
 .application-brand span {
   display: none;
+}
+
+.application-brand .application-brand-logo {
+  display: block;
+  width: 86px;
+  height: 36px;
+  flex: 0 0 86px;
+  border-radius: 4px;
+  background-color: #ffffff;
+  background-image: url('../../../../assests/images/small-logo.png');
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
 }
 
 .application-primary-nav {
@@ -4279,7 +4306,7 @@ h1 {
   }
 
   .application-brand strong {
-    font-size: 22px;
+    font-size: 17px;
   }
 
   .application-primary-nav {
@@ -4309,7 +4336,7 @@ h1 {
   }
 
   .application-brand strong {
-    font-size: 20px;
+    font-size: 16px;
   }
 }
 
@@ -4320,7 +4347,7 @@ h1 {
   }
 
   .application-brand strong {
-    font-size: 20px;
+    font-size: 16px;
   }
 
   .dashboard-summary {
@@ -4532,7 +4559,13 @@ h1 {
   }
 
   .application-brand strong {
-    font-size: 18px;
+    font-size: 15px;
+  }
+
+  .application-brand .application-brand-logo {
+    width: 70px;
+    height: 30px;
+    flex-basis: 70px;
   }
 
   .application-primary-menu-button {

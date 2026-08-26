@@ -163,62 +163,65 @@ export function LockedSessionScreen({
   return (
     <div className="auth-login-page">
       <div className="auth-login-content">
-        <AuthenticationLayout
-          headingId="auth-locked-heading"
-          heading={authenticationFormCopy.lockedHeading}
-          statement={`By ${route.user.username}`}
-          showEyebrow={false}
-          className="auth-login-card"
-          busy={isSubmitting}
-        >
-          <form
-            className="auth-form"
-            aria-busy={isSubmitting}
-            onSubmit={(event) => {
-              void handleSubmit(event)
-            }}
+        <div className="auth-login-surface auth-locked-surface">
+          <div className="auth-locked-logo" role="img" aria-label="Community Health Screening" />
+          <AuthenticationLayout
+            headingId="auth-locked-heading"
+            heading={authenticationFormCopy.lockedHeading}
+            statement={`By ${route.user.username}`}
+            showEyebrow={false}
+            className="auth-login-card auth-login-card-joined"
+            busy={isSubmitting}
           >
-            {operationState.status === 'ERROR' ? (
-              <div ref={alertRef} className="auth-alert" role="alert" tabIndex={-1}>
-                {operationState.message}
+            <form
+              className="auth-form"
+              aria-busy={isSubmitting}
+              onSubmit={(event) => {
+                void handleSubmit(event)
+              }}
+            >
+              {operationState.status === 'ERROR' ? (
+                <div ref={alertRef} className="auth-alert" role="alert" tabIndex={-1}>
+                  {operationState.message}
+                </div>
+              ) : null}
+              <fieldset className="auth-fieldset" disabled={isSubmitting}>
+                <legend>Unlock session</legend>
+                <div className="auth-field">
+                  <label htmlFor="unlockPassword">
+                    Password <RequiredFieldIndicator />
+                  </label>
+                  <input
+                    id="unlockPassword"
+                    name="password"
+                    type="password"
+                    required
+                    minLength={12}
+                    maxLength={128}
+                    autoComplete="current-password"
+                  />
+                </div>
+              </fieldset>
+              <div className="auth-actions">
+                <button className="button button-primary" type="submit" disabled={isSubmitting}>
+                  {isSubmitting
+                    ? authenticationFormCopy.unlockSubmittingLabel
+                    : authenticationFormCopy.unlockSubmitLabel}
+                </button>
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  onClick={() => {
+                    void handleSignOut()
+                  }}
+                  disabled={isSubmitting}
+                >
+                  {authenticationFormCopy.signOutLabel}
+                </button>
               </div>
-            ) : null}
-            <fieldset className="auth-fieldset" disabled={isSubmitting}>
-              <legend>Unlock session</legend>
-              <div className="auth-field">
-                <label htmlFor="unlockPassword">
-                  Password <RequiredFieldIndicator />
-                </label>
-                <input
-                  id="unlockPassword"
-                  name="password"
-                  type="password"
-                  required
-                  minLength={12}
-                  maxLength={128}
-                  autoComplete="current-password"
-                />
-              </div>
-            </fieldset>
-            <div className="auth-actions">
-              <button className="button button-primary" type="submit" disabled={isSubmitting}>
-                {isSubmitting
-                  ? authenticationFormCopy.unlockSubmittingLabel
-                  : authenticationFormCopy.unlockSubmitLabel}
-              </button>
-              <button
-                className="button button-secondary"
-                type="button"
-                onClick={() => {
-                  void handleSignOut()
-                }}
-                disabled={isSubmitting}
-              >
-                {authenticationFormCopy.signOutLabel}
-              </button>
-            </div>
-          </form>
-        </AuthenticationLayout>
+            </form>
+          </AuthenticationLayout>
+        </div>
       </div>
     </div>
   )

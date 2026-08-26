@@ -124,7 +124,9 @@ describe('authentication renderer experience', () => {
     )
 
     expect(markup).toContain('class="auth-login-page"')
-    expect(markup).toContain('auth-login-card')
+    expect(markup).toContain('class="auth-locked-logo"')
+    expect(markup).toContain('class="auth-login-surface auth-locked-surface"')
+    expect(markup).toContain('auth-login-card-joined')
     expect(markup).toContain('<h1 id="auth-locked-heading" tabindex="-1">Session Locked</h1>')
     expect(markup).toContain('By Admin.User')
     expect(markup).toContain('<legend>Unlock session</legend>')
@@ -156,7 +158,9 @@ describe('authentication renderer experience', () => {
     )
 
     expect(markup).toContain('Welcome, Admin User')
-    expect(markup).toContain('Health Screening Offline Desktop')
+    expect(markup).toContain('class="application-brand-logo"')
+    expect(markup).toContain('Community Health Screening')
+    expect(markup).not.toContain('Health Screening Offline Desktop')
     expect(markup).toContain('Local data ready')
     expect(markup).toContain('Local Deployment')
     expect(markup).toContain('Home')

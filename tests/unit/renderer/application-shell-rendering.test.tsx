@@ -39,6 +39,9 @@ describe('application shell rendering', () => {
     const displayMarkup = markup.replaceAll('&#x27;', "'")
 
     expect(displayMarkup).toContain('Welcome, Admin User')
+    expect(displayMarkup).toContain('class="application-brand-logo"')
+    expect(displayMarkup).toContain('Community Health Screening')
+    expect(displayMarkup).not.toContain('Health Screening Offline Desktop')
     expect(displayMarkup).toContain('Local data ready')
     expect(displayMarkup).toContain('No screening session open')
     expect(displayMarkup).toContain('application-command-panel')
