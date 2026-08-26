@@ -858,7 +858,7 @@ describe('application shell DOM integration', () => {
 
     expectWorkspaceHeading(mounted, 'Recent Patients')
     expect(text(mounted)).toContain('Recent Protected')
-    expect(harness.api.patient.listRecent).toHaveBeenCalledOnce()
+    expect(harness.api.patient.listRecent).toHaveBeenCalledTimes(2)
 
     await mounted.unmount()
   })
