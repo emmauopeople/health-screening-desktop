@@ -1659,6 +1659,10 @@ export function ScreeningSessionWorkspace({
   const continueLifestyle = useCallback(
     async (patientId: string, encounterId: string, draft: LifestyleDraftState): Promise<void> => {
       if (draft.loadStatus !== 'READY' || draft.saveStatus === 'SAVING') return
+      if (draft.workspace?.draft?.status === 'COMPLETE') {
+        updateVitalsDraft(patientId, (current) => ({ ...current, activeStep: 'FOOD' }))
+        return
+      }
       const contextEpoch = lifestyleContextEpochRef.current
       const readiness = validateLifestyleCompletionReadiness(draft)
       if (hasLifestyleCompletionReadinessErrors(readiness)) {
