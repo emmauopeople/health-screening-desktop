@@ -48,7 +48,7 @@ const dashboardQuickActions = Object.freeze([
     label: 'New Screening',
     support: 'Open the Screening patients workspace',
     commandId: 'SCREENING_NEW_SCREENING' as const
-  }),
+  })
 ])
 
 export function getVisibleDashboardQuickActions(

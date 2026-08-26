@@ -84,8 +84,12 @@ export function DashboardWorkspace({
   }, [api])
 
   useEffect(() => {
-    void loadRecent()
+    let active = true
+    void Promise.resolve().then(async () => {
+      if (active) await loadRecent()
+    })
     return () => {
+      active = false
       requestIdRef.current += 1
     }
   }, [loadRecent])
@@ -128,9 +132,7 @@ export function DashboardWorkspace({
         <h1 ref={headingRef} id={headingId} tabIndex={-1}>
           Welcome, {user.displayName}
         </h1>
-        <p>
-          {context.deploymentName}
-        </p>
+        <p>{context.deploymentName}</p>
       </header>
 
       <section
@@ -239,7 +241,9 @@ export function DashboardWorkspace({
               <tbody>
                 {patients.length === 0 ? (
                   <tr>
-                    <td colSpan={5}>{loading ? 'Loading patients...' : 'No patients to display.'}</td>
+                    <td colSpan={5}>
+                      {loading ? 'Loading patients...' : 'No patients to display.'}
+                    </td>
                   </tr>
                 ) : (
                   patients.map((patient) => (

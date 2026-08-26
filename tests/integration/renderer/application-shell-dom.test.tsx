@@ -844,7 +844,7 @@ describe('application shell DOM integration', () => {
 
   it('preserves recent patients across ACTIVE revisions without remounting the recent pane', async () => {
     const harness = createAppApi(activeSession(1))
-    harness.api.patient.listRecent.mockResolvedValueOnce(
+    harness.api.patient.listRecent.mockResolvedValue(
       createIpcSuccess([shellPatientSummary({ displayName: 'Recent Protected' })])
     )
     const mounted = await mountApp(harness.api)
