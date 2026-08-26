@@ -82,6 +82,9 @@ export const encounterManagementSearchRequestSchema = exactObject({
 export const encounterManagementGetDetailRequestSchema = exactObject({
   encounterId: screeningEncounterUuidSchema
 })
+export const encounterManagementGetPatientContextRequestSchema = exactObject({
+  patientId: screeningEncounterUuidSchema
+})
 export const encounterManagementAddAddendumRequestSchema = exactObject({
   encounterId: screeningEncounterUuidSchema,
   noteText: z.string().trim().min(1).max(2000)
@@ -257,6 +260,41 @@ export const publicManagedEncounterDetailSchema = z
   })
   .strict()
 
+export const publicPatientContextEncounterSchema = z
+  .object({
+    id: screeningEncounterUuidSchema,
+    completedAt: screeningEncounterUtcTimestampSchema,
+    systolic: screeningVitalsSystolicSchema,
+    diastolic: screeningVitalsDiastolicSchema,
+    pulse: screeningVitalsPulseSchema,
+    nextAction: z.enum(['ROUTINE', 'REFER', 'URGENT_REFERRAL']),
+    weightKg: screeningVitalsPositiveNumberSchema.nullable()
+  })
+  .strict()
+export const publicPatientContextReferralSchema = z
+  .object({
+    id: screeningEncounterUuidSchema,
+    status: z.enum(['OPEN', 'CONTACTED', 'SEEN', 'UNABLE_TO_CONFIRM']),
+    urgency: z.string().min(1).max(80),
+    dueDate: patientLocalDateSchema.nullable(),
+    lastContactDate: patientLocalDateSchema.nullable()
+  })
+  .strict()
+export const publicPatientScreeningContextSchema = z
+  .object({
+    recentEncounters: z.array(publicPatientContextEncounterSchema).max(6),
+    thirtyDayAverage: z
+      .object({
+        systolic: screeningVitalsSystolicSchema,
+        diastolic: screeningVitalsDiastolicSchema,
+        encounterCount: z.number().int().min(1).safe()
+      })
+      .strict()
+      .nullable(),
+    activeReferral: publicPatientContextReferralSchema.nullable()
+  })
+  .strict()
+
 const encounterManagementControlledStatusSchemas = [
   z.object({ status: z.literal('AUTHENTICATION_REQUIRED') }).strict(),
   z.object({ status: z.literal('FORBIDDEN') }).strict(),
@@ -287,6 +325,15 @@ export const encounterManagementGetDetailSuccessDataSchema = z.discriminatedUnio
   z.object({ status: z.literal('LOADED'), detail: publicManagedEncounterDetailSchema }).strict(),
   ...encounterManagementControlledStatusSchemas
 ])
+export const encounterManagementGetPatientContextSuccessDataSchema = z.discriminatedUnion(
+  'status',
+  [
+    z
+      .object({ status: z.literal('LOADED'), context: publicPatientScreeningContextSchema })
+      .strict(),
+    ...encounterManagementControlledStatusSchemas
+  ]
+)
 export const encounterManagementAddAddendumSuccessDataSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('ADDED'), addendum: publicEncounterAddendumSchema }).strict(),
   ...encounterManagementControlledStatusSchemas
@@ -494,6 +541,12 @@ export const encounterManagementGetDetailResultSchema = withSafeTransportPreproc
     screeningEncounterFailureSchema
   ])
 )
+export const encounterManagementGetPatientContextResultSchema = withSafeTransportPreprocess(
+  z.discriminatedUnion('ok', [
+    createIpcSuccessResultSchema(encounterManagementGetPatientContextSuccessDataSchema),
+    screeningEncounterFailureSchema
+  ])
+)
 export const encounterManagementAddAddendumResultSchema = withSafeTransportPreprocess(
   z.discriminatedUnion('ok', [
     createIpcSuccessResultSchema(encounterManagementAddAddendumSuccessDataSchema),
@@ -534,6 +587,9 @@ export type EncounterManagementSearchRequest = z.infer<
 export type EncounterManagementGetDetailRequest = z.infer<
   typeof encounterManagementGetDetailRequestSchema
 >
+export type EncounterManagementGetPatientContextRequest = z.infer<
+  typeof encounterManagementGetPatientContextRequestSchema
+>
 export type EncounterManagementAddAddendumRequest = z.infer<
   typeof encounterManagementAddAddendumRequestSchema
 >
@@ -554,9 +610,15 @@ export type PublicManagedEncounterSummary = z.infer<typeof publicManagedEncounte
 export type PublicEncounterAddendum = z.infer<typeof publicEncounterAddendumSchema>
 export type PublicEncounterReviewFlag = z.infer<typeof publicEncounterReviewFlagSchema>
 export type PublicManagedEncounterDetail = z.infer<typeof publicManagedEncounterDetailSchema>
+export type PublicPatientContextEncounter = z.infer<typeof publicPatientContextEncounterSchema>
+export type PublicPatientContextReferral = z.infer<typeof publicPatientContextReferralSchema>
+export type PublicPatientScreeningContext = z.infer<typeof publicPatientScreeningContextSchema>
 export type EncounterManagementSearchResult = z.infer<typeof encounterManagementSearchResultSchema>
 export type EncounterManagementGetDetailResult = z.infer<
   typeof encounterManagementGetDetailResultSchema
+>
+export type EncounterManagementGetPatientContextResult = z.infer<
+  typeof encounterManagementGetPatientContextResultSchema
 >
 export type EncounterManagementAddAddendumResult = z.infer<
   typeof encounterManagementAddAddendumResultSchema

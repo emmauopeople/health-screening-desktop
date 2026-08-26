@@ -43,6 +43,7 @@ export function createProductionScreeningEncounterManagementService(options: {
       idGenerator: createSystemEntityIdGenerator(),
       clock: createSystemUtcClock(),
       logger
-    })
+    }),
+    clock: createSystemUtcClock()
   })
 }

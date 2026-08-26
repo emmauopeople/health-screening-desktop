@@ -45,6 +45,7 @@ export type {
   EncounterCancellationReasonCode,
   EncounterManagementControlledStatus,
   GetManagedEncounterResult,
+  GetPatientScreeningContextResult,
   OpenEncounterReviewFlagResult,
   ResolveEncounterReviewFlagResult,
   ScreeningEncounterManagementService,

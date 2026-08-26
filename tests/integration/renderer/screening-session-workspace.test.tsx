@@ -14,6 +14,7 @@ import {
   type HealthScreeningApi,
   type LocalUserRole,
   type PublicCurrentScreeningSession,
+  type PublicPatientScreeningContext,
   type PublicPatientSummary,
   type PublicScreeningEncounterStartSummary,
   type PublicScreeningVitalsDraft,
@@ -35,6 +36,9 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
   screeningEncounters: {
     start: ReturnType<typeof vi.fn<HealthScreeningApi['screeningEncounters']['start']>>
     management: {
+      getPatientContext: ReturnType<
+        typeof vi.fn<HealthScreeningApi['screeningEncounters']['management']['getPatientContext']>
+      >
       cancelDraft: ReturnType<
         typeof vi.fn<HealthScreeningApi['screeningEncounters']['management']['cancelDraft']>
       >
@@ -327,9 +331,78 @@ describe('screening patient entry workspace', () => {
     expect(text(mounted)).toContain('Notes')
     expect(text(mounted)).not.toContain('Additional current measurements')
     expect(text(mounted)).toContain('Screening guidance—not a diagnosis.')
-    expect(text(mounted)).toContain('Screening history unavailable.')
+    expect(text(mounted)).toContain('No completed screenings yet.')
     expect(text(mounted)).not.toContain('151 / 93')
     expect(text(mounted)).not.toContain('158')
+
+    await mounted.unmount()
+  })
+
+  it('loads persisted longitudinal context for the selected patient', async () => {
+    const api = createApi({
+      patientContext: {
+        recentEncounters: [
+          {
+            id: '10101010-1010-4010-8010-101010101010',
+            completedAt: '2026-08-05T09:00:00.000Z',
+            systolic: 146,
+            diastolic: 92,
+            pulse: 78,
+            nextAction: 'REFER',
+            weightKg: 78.5
+          },
+          {
+            id: '20202020-2020-4020-8020-202020202020',
+            completedAt: '2026-07-28T09:00:00.000Z',
+            systolic: 138,
+            diastolic: 86,
+            pulse: 74,
+            nextAction: 'ROUTINE',
+            weightKg: 79
+          },
+          {
+            id: '30303030-3030-4030-8030-303030303030',
+            completedAt: '2026-07-10T09:00:00.000Z',
+            systolic: 142,
+            diastolic: 88,
+            pulse: 76,
+            nextAction: 'ROUTINE',
+            weightKg: 80
+          }
+        ],
+        thirtyDayAverage: { systolic: 142, diastolic: 89, encounterCount: 3 },
+        activeReferral: {
+          id: '40404040-4040-4040-8040-404040404040',
+          status: 'CONTACTED',
+          urgency: 'ROUTINE',
+          dueDate: '2026-08-12',
+          lastContactDate: '2026-08-07'
+        }
+      }
+    })
+    const mounted = await mountWorkspace({ api })
+
+    await clickRow(mounted, 'Ada Lovelace')
+
+    expect(api.screeningEncounters.management.getPatientContext).toHaveBeenCalledWith({
+      patientId
+    })
+    expect(text(mounted)).toContain('Aug 5')
+    expect(text(mounted)).toContain('146')
+    expect(text(mounted)).toContain('Refer')
+    expect(text(mounted)).toContain('142 / 89')
+    expect(text(mounted)).toContain('3 screenings • mmHg')
+    expect(text(mounted)).toContain('Contacted')
+    expect(text(mounted)).toContain('Due: Aug 12, 2026')
+    expect(text(mounted)).toContain('Last contact: Aug 7, 2026')
+    expect(
+      mounted.container.querySelector(
+        '[aria-label="Blood pressure trend across 3 completed screenings"]'
+      )
+    ).not.toBeNull()
+    expect(
+      mounted.container.querySelector('[aria-label="Weight trend from 80 to 78.5 kilograms"]')
+    ).not.toBeNull()
 
     await mounted.unmount()
   })
@@ -3757,11 +3830,13 @@ async function mountWorkspaceWithReactTabState({
 function createApi({
   patients = [patientSummary()],
   session = publicCurrentSession(),
-  vitalsDraft = null
+  vitalsDraft = null,
+  patientContext = emptyPatientContext()
 }: {
   readonly patients?: readonly PublicPatientSummary[]
   readonly session?: PublicCurrentScreeningSession
   readonly vitalsDraft?: PublicScreeningVitalsDraft | null
+  readonly patientContext?: PublicPatientScreeningContext
 } = {}): MockedHealthScreeningApi {
   return {
     patient: {
@@ -3798,6 +3873,9 @@ function createApi({
         )
       ),
       management: {
+        getPatientContext: vi.fn(() =>
+          Promise.resolve(createIpcSuccess({ status: 'LOADED', context: patientContext }))
+        ),
         cancelDraft: vi.fn(() =>
           Promise.resolve(createIpcSuccess({ status: 'VOIDED', recordVersion: 2 }))
         )
@@ -4405,6 +4483,14 @@ function patientSummary(overrides: Partial<PublicPatientSummary> = {}): PublicPa
     rowVersion: 1,
     updatedAt: baseTimestamp,
     ...overrides
+  }
+}
+
+function emptyPatientContext(): PublicPatientScreeningContext {
+  return {
+    recentEncounters: [],
+    thirtyDayAverage: null,
+    activeReferral: null
   }
 }
 

@@ -4,7 +4,7 @@ import { DatabaseTransactionStateError } from '@main/database/transaction'
 import type { DatabaseTransactionConnection } from '@main/database/transaction'
 import { assertActiveDatabaseTransactionConnection } from '@main/database/transaction/transaction-capability'
 import { parseEntityId, type EntityId } from '@main/foundation/entity-id'
-import { parseUtcTimestamp } from '@main/foundation/utc-clock'
+import { parseUtcTimestamp, type UtcTimestamp } from '@main/foundation/utc-clock'
 
 import {
   getRepositoryErrorType,
@@ -24,6 +24,11 @@ import type {
   ManagedEncounterOtcRecord,
   ManagedEncounterSummaryRecord,
   ManagedEncounterVitalsRecord,
+  PatientContextEncounterRecord,
+  PatientContextNextAction,
+  PatientContextReferralRecord,
+  PatientContextReferralStatus,
+  PatientScreeningContextRecord,
   ScreeningEncounterManagementRepository,
   SearchManagedEncountersInput,
   SearchManagedEncountersResult
@@ -44,6 +49,18 @@ const flagCategories = new Set<EncounterReviewFlagCategory>([
   'OTHER'
 ])
 const flagStatuses = new Set<EncounterReviewFlagStatus>(['OPEN', 'RESOLVED', 'DISMISSED'])
+const patientContextNextActions = new Set<PatientContextNextAction>([
+  'ROUTINE',
+  'REFER',
+  'URGENT_REFERRAL'
+])
+const patientContextReferralStatuses = new Set<PatientContextReferralStatus>([
+  'OPEN',
+  'CONTACTED',
+  'SEEN',
+  'UNABLE_TO_CONFIRM'
+])
+const localDatePattern = /^\d{4}-\d{2}-\d{2}$/u
 
 const encounterSummaryColumns = `
   encounter.id,
@@ -111,6 +128,60 @@ JOIN locations location ON location.id = encounter.location_id
 WHERE encounter.id = ?
   AND encounter.location_id = ?
   AND (encounter.status <> 'DRAFT' OR encounter.screening_session_id = ?);
+`
+
+const patientContextRecentEncountersSql = `
+SELECT
+  encounter.id,
+  encounter.completed_at,
+  encounter.summary_systolic,
+  encounter.summary_diastolic,
+  encounter.summary_pulse,
+  encounter.next_action_category,
+  vitals.weight_kg
+FROM screening_encounters encounter
+LEFT JOIN screening_vitals_drafts vitals ON vitals.encounter_id = encounter.id
+WHERE encounter.patient_id = ?
+  AND encounter.status IN ('COMPLETED', 'AMENDED')
+  AND encounter.completed_at IS NOT NULL
+  AND encounter.summary_systolic IS NOT NULL
+  AND encounter.summary_diastolic IS NOT NULL
+  AND encounter.summary_pulse IS NOT NULL
+  AND encounter.next_action_category IN ('ROUTINE', 'REFER', 'URGENT_REFERRAL')
+ORDER BY encounter.completed_at DESC, encounter.id DESC
+LIMIT ?;
+`
+
+const patientContextThirtyDayAverageSql = `
+SELECT
+  ROUND(AVG(encounter.summary_systolic)) AS average_systolic,
+  ROUND(AVG(encounter.summary_diastolic)) AS average_diastolic,
+  COUNT(*) AS encounter_count
+FROM screening_encounters encounter
+WHERE encounter.patient_id = ?
+  AND encounter.status IN ('COMPLETED', 'AMENDED')
+  AND encounter.completed_at IS NOT NULL
+  AND encounter.completed_at >= ?
+  AND encounter.summary_systolic IS NOT NULL
+  AND encounter.summary_diastolic IS NOT NULL;
+`
+
+const patientContextActiveReferralSql = `
+SELECT
+  referral.id,
+  referral.status,
+  referral.urgency,
+  referral.due_date,
+  (
+    SELECT MAX(followup.contact_date)
+    FROM followups followup
+    WHERE followup.referral_id = referral.id
+  ) AS last_contact_date
+FROM referrals referral
+WHERE referral.patient_id = ?
+  AND referral.status <> 'CLOSED'
+ORDER BY referral.created_at DESC, referral.id DESC
+LIMIT 1;
 `
 
 const addendumColumns = `
@@ -253,6 +324,42 @@ export function createScreeningEncounterManagementRepository(
                 .all(parsedEncounterId) as readonly Record<string, unknown>[]
             ).map(readFlag)
           )
+        })
+      } catch (error) {
+        rethrowRead(error)
+      }
+    },
+
+    getPatientContext(
+      patientId: EntityId,
+      thirtyDayCutoff: UtcTimestamp,
+      recentEncounterLimit: number
+    ): PatientScreeningContextRecord {
+      const parsedPatientId = parseEntityId(patientId)
+      const parsedCutoff = parseUtcTimestamp(thirtyDayCutoff)
+      if (
+        !Number.isSafeInteger(recentEncounterLimit) ||
+        recentEncounterLimit < 3 ||
+        recentEncounterLimit > 12
+      ) {
+        throw new RepositoryValidationError()
+      }
+
+      try {
+        const recentRows = connection
+          .prepare(patientContextRecentEncountersSql)
+          .all(parsedPatientId, recentEncounterLimit) as readonly Record<string, unknown>[]
+        const averageRow = connection
+          .prepare(patientContextThirtyDayAverageSql)
+          .get(parsedPatientId, parsedCutoff) as Record<string, unknown> | undefined
+        const referralRow = connection
+          .prepare(patientContextActiveReferralSql)
+          .get(parsedPatientId) as Record<string, unknown> | undefined
+
+        return Object.freeze({
+          recentEncounters: Object.freeze(recentRows.map(readPatientContextEncounter)),
+          thirtyDayAverage: readPatientContextAverage(averageRow),
+          activeReferral: referralRow === undefined ? null : readPatientContextReferral(referralRow)
         })
       } catch (error) {
         rethrowRead(error)
@@ -508,6 +615,49 @@ function readOtc(row: Record<string, unknown>): ManagedEncounterOtcRecord {
   })
 }
 
+function readPatientContextEncounter(row: Record<string, unknown>): PatientContextEncounterRecord {
+  const nextAction = row['next_action_category'] as PatientContextNextAction
+  if (!patientContextNextActions.has(nextAction)) throw new RepositoryDataIntegrityError()
+  return Object.freeze({
+    id: parseEntityId(row['id']),
+    completedAt: parseUtcTimestamp(row['completed_at']),
+    systolic: parsePositiveInteger(row['summary_systolic']),
+    diastolic: parsePositiveInteger(row['summary_diastolic']),
+    pulse: parsePositiveInteger(row['summary_pulse']),
+    nextAction,
+    weightKg: parseNullablePositiveNumber(row['weight_kg'])
+  })
+}
+
+function readPatientContextAverage(
+  row: Record<string, unknown> | undefined
+): PatientScreeningContextRecord['thirtyDayAverage'] {
+  if (row === undefined) throw new RepositoryDataIntegrityError()
+  const encounterCount = parseCount(row['encounter_count'])
+  if (encounterCount === 0) {
+    if (row['average_systolic'] !== null || row['average_diastolic'] !== null)
+      throw new RepositoryDataIntegrityError()
+    return null
+  }
+  return Object.freeze({
+    systolic: parsePositiveInteger(row['average_systolic']),
+    diastolic: parsePositiveInteger(row['average_diastolic']),
+    encounterCount
+  })
+}
+
+function readPatientContextReferral(row: Record<string, unknown>): PatientContextReferralRecord {
+  const status = row['status'] as PatientContextReferralStatus
+  if (!patientContextReferralStatuses.has(status)) throw new RepositoryDataIntegrityError()
+  return Object.freeze({
+    id: parseEntityId(row['id']),
+    status,
+    urgency: parseStoredText(row['urgency']),
+    dueDate: parseNullableLocalDate(row['due_date']),
+    lastContactDate: parseNullableLocalDate(row['last_contact_date'])
+  })
+}
+
 function parseSearchInput(input: SearchManagedEncountersInput): SearchManagedEncountersInput {
   const query = typeof input.query === 'string' ? input.query.trim().toLowerCase() : ''
   if (
@@ -544,6 +694,21 @@ function parseStoredText(value: unknown): string {
 }
 function parseNullableText(value: unknown): string | null {
   return value === null ? null : parseStoredText(value)
+}
+function parseNullableLocalDate(value: unknown): string | null {
+  if (value === null) return null
+  if (typeof value !== 'string' || !localDatePattern.test(value))
+    throw new RepositoryDataIntegrityError()
+  const parsed = new Date(`${value}T00:00:00.000Z`)
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value)
+    throw new RepositoryDataIntegrityError()
+  return value
+}
+function parseNullablePositiveNumber(value: unknown): number | null {
+  if (value === null) return null
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)
+    throw new RepositoryDataIntegrityError()
+  return value
 }
 function parseCount(value: unknown): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0)

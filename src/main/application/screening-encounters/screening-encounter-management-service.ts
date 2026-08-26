@@ -87,6 +87,27 @@ export function createScreeningEncounterManagementService(
       }
     },
 
+    getPatientContext(patientId) {
+      const actor = resolveActor(dependencies)
+      if (actor.status !== 'VALID') return { status: actor.statusCode }
+      try {
+        const now = dependencies.clock.now()
+        const cutoff = new Date(new Date(now).getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
+        return Object.freeze({
+          status: 'LOADED' as const,
+          context: dependencies.managementRepository.getPatientContext(
+            parseEntityId(patientId),
+            cutoff as typeof now,
+            6
+          )
+        })
+      } catch (error) {
+        return {
+          status: error instanceof RepositoryValidationError ? 'VALIDATION_FAILED' : 'UNAVAILABLE'
+        }
+      }
+    },
+
     addAddendum(encounterId, noteText) {
       const actor = resolveActor(dependencies)
       if (actor.status !== 'VALID') return { status: actor.statusCode }

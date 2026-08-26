@@ -99,6 +99,39 @@ export interface SearchManagedEncountersResult {
   readonly pageSize: 25 | 50 | 100
 }
 
+export type PatientContextNextAction = 'ROUTINE' | 'REFER' | 'URGENT_REFERRAL'
+export type PatientContextReferralStatus = 'OPEN' | 'CONTACTED' | 'SEEN' | 'UNABLE_TO_CONFIRM'
+
+export interface PatientContextEncounterRecord {
+  readonly id: EntityId
+  readonly completedAt: UtcTimestamp
+  readonly systolic: number
+  readonly diastolic: number
+  readonly pulse: number
+  readonly nextAction: PatientContextNextAction
+  readonly weightKg: number | null
+}
+
+export interface PatientContextThirtyDayAverageRecord {
+  readonly systolic: number
+  readonly diastolic: number
+  readonly encounterCount: number
+}
+
+export interface PatientContextReferralRecord {
+  readonly id: EntityId
+  readonly status: PatientContextReferralStatus
+  readonly urgency: string
+  readonly dueDate: string | null
+  readonly lastContactDate: string | null
+}
+
+export interface PatientScreeningContextRecord {
+  readonly recentEncounters: readonly PatientContextEncounterRecord[]
+  readonly thirtyDayAverage: PatientContextThirtyDayAverageRecord | null
+  readonly activeReferral: PatientContextReferralRecord | null
+}
+
 export interface InsertEncounterAddendumInput {
   readonly id: EntityId
   readonly encounterId: EntityId
@@ -132,6 +165,11 @@ export interface ScreeningEncounterManagementRepository {
     locationId: EntityId,
     resumableSessionId: EntityId | null
   ): ManagedEncounterDetailRecord | null
+  getPatientContext(
+    patientId: EntityId,
+    thirtyDayCutoff: UtcTimestamp,
+    recentEncounterLimit: number
+  ): PatientScreeningContextRecord
   insertAddendum(
     connection: DatabaseTransactionConnection,
     input: InsertEncounterAddendumInput

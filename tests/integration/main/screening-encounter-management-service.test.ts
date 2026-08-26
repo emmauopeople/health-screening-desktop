@@ -58,7 +58,10 @@ const ids = Object.freeze({
   cancelledEncounter: '52000000-0000-4000-8000-000000000028',
   cancelledVitals: '52000000-0000-4000-8000-000000000029',
   cancelAudit: '52000000-0000-4000-8000-000000000030',
-  cancelOutbox: '52000000-0000-4000-8000-000000000031'
+  cancelOutbox: '52000000-0000-4000-8000-000000000031',
+  completedVitals: '52000000-0000-4000-8000-000000000032',
+  referral: '52000000-0000-4000-8000-000000000033',
+  followup: '52000000-0000-4000-8000-000000000034'
 })
 
 describe('screening encounter management service integration', () => {
@@ -68,6 +71,31 @@ describe('screening encounter management service integration', () => {
       expect(search).toMatchObject({
         status: 'LOADED',
         result: { total: 1, items: [{ patientDisplayName: 'Test Patient' }] }
+      })
+
+      expect(service.getPatientContext(parseEntityId(ids.patient))).toEqual({
+        status: 'LOADED',
+        context: {
+          recentEncounters: [
+            {
+              id: ids.encounter,
+              completedAt: now,
+              systolic: 120,
+              diastolic: 80,
+              pulse: 70,
+              nextAction: 'ROUTINE',
+              weightKg: 78.5
+            }
+          ],
+          thirtyDayAverage: { systolic: 120, diastolic: 80, encounterCount: 1 },
+          activeReferral: {
+            id: ids.referral,
+            status: 'CONTACTED',
+            urgency: 'ROUTINE',
+            dueDate: '2026-08-27',
+            lastContactDate: '2026-08-21'
+          }
+        }
       })
 
       const before = service.getDetail(parseEntityId(ids.encounter))
@@ -315,7 +343,8 @@ async function withService(
       managementRepository: createScreeningEncounterManagementRepository(connection),
       auditEventRepository: createAuditEventRepository(connection),
       screeningEncounterOutboxRepository: createScreeningEncounterOutboxRepository(connection),
-      transactionExecutor
+      transactionExecutor,
+      clock: createUtcClock(() => later)
     })
     test({ connection, service })
   } finally {
@@ -485,6 +514,16 @@ function seedGraph(connection: Database.Database): void {
     now,
     now
   )
+  connection
+    .prepare(
+      `UPDATE screening_encounters
+       SET summary_systolic = 120,
+           summary_diastolic = 80,
+           summary_pulse = 70,
+           next_action_category = 'ROUTINE'
+       WHERE id = ?`
+    )
+    .run(ids.encounter)
   encounterStatement.run(
     ids.unavailableEncounter,
     ids.unavailablePatient,
@@ -532,6 +571,14 @@ function seedGraph(connection: Database.Database): void {
       `INSERT INTO screening_vitals_drafts
          (id, encounter_id, status, weight_kg, waist_cm, notes, created_by, created_at,
           updated_by, updated_at, row_version)
+       VALUES (?, ?, 'VITALS_COMPLETE', 78.5, NULL, NULL, ?, ?, ?, ?, 1)`
+    )
+    .run(ids.completedVitals, ids.encounter, ids.user, now, ids.user, now)
+  connection
+    .prepare(
+      `INSERT INTO screening_vitals_drafts
+         (id, encounter_id, status, weight_kg, waist_cm, notes, created_by, created_at,
+          updated_by, updated_at, row_version)
        VALUES (?, ?, 'DRAFT', NULL, NULL, ?, ?, ?, ?, ?, 1)`
     )
     .run(
@@ -543,6 +590,26 @@ function seedGraph(connection: Database.Database): void {
       ids.user,
       now
     )
+  connection
+    .prepare(
+      `INSERT INTO referrals
+         (id, patient_id, encounter_id, protocol_version_id, reason_codes_json, reason_text,
+          urgency, destination_name, due_date, status, created_by, created_at, printed_at,
+          closed_by, closed_at, closure_reason, record_version, updated_at)
+       VALUES (?, ?, ?, ?, '["ELEVATED_BP"]', NULL, 'ROUTINE', NULL, '2026-08-27',
+               'CONTACTED', ?, ?, NULL, NULL, NULL, NULL, 1, ?)`
+    )
+    .run(ids.referral, ids.patient, ids.encounter, protocol, ids.user, now, now)
+  connection
+    .prepare(
+      `INSERT INTO followups
+         (id, referral_id, contact_date, contact_method, information_source, provider_seen,
+          facility_name, date_seen, reported_outcome, reported_medications_or_advice,
+          next_action, next_followup_date, source_type, recorded_by, recorded_at)
+       VALUES (?, ?, '2026-08-21', 'PHONE', 'PATIENT', NULL, NULL, NULL, NULL, NULL,
+               NULL, NULL, 'PATIENT_REPORTED', ?, ?)`
+    )
+    .run(ids.followup, ids.referral, ids.user, now)
   connection
     .prepare(
       'INSERT INTO blood_pressure_readings (id, encounter_id, sequence_number, systolic, diastolic, pulse, measured_at, status, source_type, recorded_by, recorded_at) VALUES (?, ?, 1, 120, 80, 70, ?, ?, ?, ?, ?)'

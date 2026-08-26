@@ -217,7 +217,7 @@ describe('application IPC handler registration', () => {
 
     const dispose = registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(55)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(56)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
@@ -257,6 +257,7 @@ describe('application IPC handler registration', () => {
       'health-screening:screening-encounters:management:add-addendum',
       'health-screening:screening-encounters:management:cancel-draft',
       'health-screening:screening-encounters:management:get-detail',
+      'health-screening:screening-encounters:management:get-patient-context',
       'health-screening:screening-encounters:management:open-flag',
       'health-screening:screening-encounters:management:resolve-flag',
       'health-screening:screening-encounters:management:search',
@@ -534,7 +535,7 @@ describe('application IPC handler registration', () => {
     registerApplicationIpcHandlers(ipcMain, createDependencies())
     registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(110)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(112)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getHealth)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
@@ -578,6 +579,7 @@ describe('application IPC handler registration', () => {
       'health-screening:screening-encounters:management:add-addendum',
       'health-screening:screening-encounters:management:cancel-draft',
       'health-screening:screening-encounters:management:get-detail',
+      'health-screening:screening-encounters:management:get-patient-context',
       'health-screening:screening-encounters:management:open-flag',
       'health-screening:screening-encounters:management:resolve-flag',
       'health-screening:screening-encounters:management:search',
@@ -904,7 +906,7 @@ describe('application IPC handler registration', () => {
     )
     const firstHandlers = new Map(ipcMain.handlers)
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(12)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(13)
     expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.start)).toBe(true)
     expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.complete)).toBe(true)
     expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.getVitalsDraft)).toBe(true)
@@ -912,6 +914,9 @@ describe('application IPC handler registration', () => {
     expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.completeVitalsStep)).toBe(true)
     expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.management.search)).toBe(true)
     expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.management.getDetail)).toBe(true)
+    expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.management.getPatientContext)).toBe(
+      true
+    )
     expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.management.addAddendum)).toBe(true)
     expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.management.openFlag)).toBe(true)
     expect(ipcMain.handlers.has(ipcChannels.screeningEncounters.management.resolveFlag)).toBe(true)
@@ -955,6 +960,7 @@ describe('application IPC handler registration', () => {
       ipcChannels.screeningEncounters.completeVitalsStep,
       ipcChannels.screeningEncounters.management.search,
       ipcChannels.screeningEncounters.management.getDetail,
+      ipcChannels.screeningEncounters.management.getPatientContext,
       ipcChannels.screeningEncounters.management.addAddendum,
       ipcChannels.screeningEncounters.management.openFlag,
       ipcChannels.screeningEncounters.management.resolveFlag,

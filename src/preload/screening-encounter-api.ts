@@ -6,6 +6,8 @@ import {
   encounterManagementCancelDraftResultSchema,
   encounterManagementGetDetailRequestSchema,
   encounterManagementGetDetailResultSchema,
+  encounterManagementGetPatientContextRequestSchema,
+  encounterManagementGetPatientContextResultSchema,
   encounterManagementOpenFlagRequestSchema,
   encounterManagementOpenFlagResultSchema,
   encounterManagementResolveFlagRequestSchema,
@@ -31,6 +33,8 @@ import {
   type EncounterManagementCancelDraftResult,
   type EncounterManagementGetDetailRequest,
   type EncounterManagementGetDetailResult,
+  type EncounterManagementGetPatientContextRequest,
+  type EncounterManagementGetPatientContextResult,
   type EncounterManagementOpenFlagRequest,
   type EncounterManagementOpenFlagResult,
   type EncounterManagementResolveFlagRequest,
@@ -63,6 +67,9 @@ export interface ScreeningEncounterApi {
     getDetail(
       request: EncounterManagementGetDetailRequest
     ): Promise<EncounterManagementGetDetailResult>
+    getPatientContext(
+      request: EncounterManagementGetPatientContextRequest
+    ): Promise<EncounterManagementGetPatientContextResult>
     addAddendum(
       request: EncounterManagementAddAddendumRequest
     ): Promise<EncounterManagementAddAddendumResult>
@@ -112,6 +119,17 @@ export function createScreeningEncounterApi(invoke: IpcInvoke): ScreeningEncount
           ipcChannels.screeningEncounters.management.getDetail,
           encounterManagementGetDetailRequestSchema,
           encounterManagementGetDetailResultSchema,
+          request
+        ),
+      getPatientContext: (request: EncounterManagementGetPatientContextRequest) =>
+        invokeManaged<
+          EncounterManagementGetPatientContextRequest,
+          EncounterManagementGetPatientContextResult
+        >(
+          invoke,
+          ipcChannels.screeningEncounters.management.getPatientContext,
+          encounterManagementGetPatientContextRequestSchema,
+          encounterManagementGetPatientContextResultSchema,
           request
         ),
       addAddendum: (request: EncounterManagementAddAddendumRequest) =>
