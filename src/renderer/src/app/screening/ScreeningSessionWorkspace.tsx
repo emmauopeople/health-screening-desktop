@@ -82,6 +82,7 @@ import {
   createAlcoholBaselineRequest,
   createAlcoholSaveDraftRequest,
   createInitialLifestyleDraftState,
+  createLifestyleCompleteRequest,
   createLifestyleDraftStateFromWorkspace,
   collapseLifestylePanels,
   getAlcoholBaselineForInterpretation,
@@ -1675,7 +1676,7 @@ export function ScreeningSessionWorkspace({
         )
         return
       }
-      const request = createAlcoholSaveDraftRequest(encounterId, draft)
+      const request = createLifestyleCompleteRequest(encounterId, draft)
       const requestId = (lifestyleSaveRequestRef.current.get(encounterId) ?? 0) + 1
       lifestyleSaveRequestRef.current.set(encounterId, requestId)
       updateLifestyleDraft(patientId, (current) => ({
@@ -1689,7 +1690,7 @@ export function ScreeningSessionWorkspace({
         otherActivityValidationErrors: []
       }))
       try {
-        const result = await api.screeningEncounters.lifestyle.saveDraft(request)
+        const result = await api.screeningEncounters.lifestyle.complete(request)
         if (
           !mountedRef.current ||
           lifestyleSaveRequestRef.current.get(encounterId) !== requestId ||
@@ -1705,7 +1706,7 @@ export function ScreeningSessionWorkspace({
           }))
           return
         }
-        if (result.data.status !== 'SAVED' || !hasLifestyleWorkspace(result.data)) {
+        if (result.data.status !== 'COMPLETED' || !hasLifestyleWorkspace(result.data)) {
           updateLifestyleDraft(patientId, (current) => ({
             ...current,
             saveStatus: 'ERROR',

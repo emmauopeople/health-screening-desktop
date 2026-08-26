@@ -913,7 +913,7 @@ describe('screening patient entry workspace', () => {
     await mounted.unmount()
   })
 
-  it('saves a valid Lifestyle workspace on Continue without making the draft read-only', async () => {
+  it('completes a valid Lifestyle workspace on Continue before opening Food', async () => {
     const api = createApi()
     const workBaseline = {
       id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
@@ -947,45 +947,36 @@ describe('screening patient entry workspace', () => {
         }
       })
     )
-    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValue(
-      createIpcSuccess({ status: 'SAVED', workspace: savedWorkspace })
+    const completedWorkspace = {
+      ...savedWorkspace,
+      draft: { ...savedWorkspace.draft!, status: 'COMPLETE' as const }
+    }
+    api.screeningEncounters.lifestyle.complete.mockResolvedValue(
+      createIpcSuccess({ status: 'COMPLETED', workspace: completedWorkspace })
     )
     const mounted = await mountWorkspace({ api })
 
     await openLifestyle(mounted)
     await clickButton(mounted, 'Continue')
 
-    expect(api.screeningEncounters.lifestyle.saveDraft).toHaveBeenCalledOnce()
-    expect(api.screeningEncounters.lifestyle.complete).not.toHaveBeenCalled()
-    expect(api.screeningEncounters.lifestyle.saveDraft.mock.calls[0]?.[0].expectedVersion).toBe(4)
+    expect(api.screeningEncounters.lifestyle.saveDraft).not.toHaveBeenCalled()
+    expect(api.screeningEncounters.lifestyle.complete).toHaveBeenCalledOnce()
+    expect(api.screeningEncounters.lifestyle.complete.mock.calls[0]?.[0].expectedVersion).toBe(4)
     expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
     expect(api.screeningEncounters.food.getWorkspace).toHaveBeenCalledOnce()
     expect(buttonByText(mounted, 'Continue').disabled).toBe(false)
     await clickButton(mounted, 'Previous')
-    expect(text(mounted)).toContain('Editable')
-    expect(buttonByText(mounted, 'Save draft').disabled).toBe(false)
-    expect(buttonByText(mounted, 'Continue').disabled).toBe(false)
+    expect(text(mounted)).toContain('Read only')
+    expect(buttonByText(mounted, 'Save draft').disabled).toBe(true)
+    expect(buttonByText(mounted, 'Continue').disabled).toBe(true)
     expect(text(mounted)).toContain('Lifestyle saved')
     expect(mounted.container.querySelector('#lifestyle-alcohol-content')).toBeNull()
     expect(mounted.container.querySelector('#lifestyle-tobacco-content')).toBeNull()
     expect(mounted.container.querySelector('#lifestyle-physical-content')).toBeNull()
     expect(mounted.container.querySelector('#lifestyle-work-content')).toBeNull()
     expect(mounted.container.querySelector('#lifestyle-other-content')).toBeNull()
-    expect(mounted.container.querySelectorAll('.lifestyle-card-status-ready')).toHaveLength(5)
-    expect(mounted.container.querySelectorAll('.lifestyle-card-status-complete')).toHaveLength(0)
-
-    await clickButton(mounted, 'Alcohol')
-    await changeInput(
-      inputByLabel(mounted, 'On how many of the past 7 days did you drink alcohol?'),
-      '3'
-    )
-    await clickButton(mounted, 'Save draft')
-    expect(api.screeningEncounters.lifestyle.saveDraft).toHaveBeenCalledTimes(2)
-    expect(buttonByText(mounted, 'Continue').disabled).toBe(false)
-    await clickButton(mounted, 'Continue')
-    expect(api.screeningEncounters.lifestyle.saveDraft).toHaveBeenCalledTimes(3)
-    expect(api.screeningEncounters.lifestyle.complete).not.toHaveBeenCalled()
-    expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
+    expect(mounted.container.querySelectorAll('.lifestyle-card-status-ready')).toHaveLength(0)
+    expect(mounted.container.querySelectorAll('.lifestyle-card-status-complete')).toHaveLength(5)
 
     await mounted.unmount()
   })
