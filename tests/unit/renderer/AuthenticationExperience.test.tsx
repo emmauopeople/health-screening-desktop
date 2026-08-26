@@ -62,8 +62,13 @@ describe('authentication renderer experience', () => {
       })
     )
 
-    expect(markup).toContain('Welcome to Community Health Screening')
-    expect(markup).toContain('The One Place to Track Your Health')
+    expect(markup).toContain('class="auth-login-logo"')
+    expect(markup).toContain('aria-label="Community Health Screening"')
+    expect(markup).toContain(
+      'class="foundation-panel auth-panel auth-login-card auth-login-card-joined"'
+    )
+    expect(markup).not.toContain('Welcome to Community Health Screening')
+    expect(markup).not.toContain('The One Place to Track Your Health')
     expect(markup).toContain('<h1 id="auth-login-heading" tabindex="-1">Login</h1>')
     expect(markup).toContain('for="username"')
     expect(markup).toContain('for="password"')

@@ -58,6 +58,11 @@ describe('renderer authentication DOM integration', () => {
     const mounted = await mountApp(harness.api)
 
     expect(text(mounted)).toContain('Login')
+    expect(mounted.container.querySelector('.auth-login-surface')).not.toBeNull()
+    expect(mounted.container.querySelector('.auth-login-logo')).not.toBeNull()
+    expect(mounted.container.querySelector('.auth-login-card-joined')).not.toBeNull()
+    expect(text(mounted)).not.toContain('Welcome to Community Health Screening')
+    expect(text(mounted)).not.toContain('The One Place to Track Your Health')
 
     await submitLogin(mounted, ' Admin.User ', '  ValidPassword1!  ')
 
