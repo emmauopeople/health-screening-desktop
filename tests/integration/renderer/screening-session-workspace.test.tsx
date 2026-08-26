@@ -913,7 +913,7 @@ describe('screening patient entry workspace', () => {
     await mounted.unmount()
   })
 
-  it('saves a valid Lifestyle workspace on Continue without making the draft read-only', async () => {
+  it('completes a valid Lifestyle workspace on Continue before opening Food', async () => {
     const api = createApi()
     const workBaseline = {
       id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
@@ -947,23 +947,27 @@ describe('screening patient entry workspace', () => {
         }
       })
     )
-    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValue(
-      createIpcSuccess({ status: 'SAVED', workspace: savedWorkspace })
+    const completedWorkspace = {
+      ...savedWorkspace,
+      draft: { ...savedWorkspace.draft!, status: 'COMPLETE' as const }
+    }
+    api.screeningEncounters.lifestyle.complete.mockResolvedValue(
+      createIpcSuccess({ status: 'COMPLETED', workspace: completedWorkspace })
     )
     const mounted = await mountWorkspace({ api })
 
     await openLifestyle(mounted)
     await clickButton(mounted, 'Continue')
 
-    expect(api.screeningEncounters.lifestyle.saveDraft).toHaveBeenCalledOnce()
-    expect(api.screeningEncounters.lifestyle.complete).not.toHaveBeenCalled()
-    expect(api.screeningEncounters.lifestyle.saveDraft.mock.calls[0]?.[0].expectedVersion).toBe(4)
+    expect(api.screeningEncounters.lifestyle.saveDraft).not.toHaveBeenCalled()
+    expect(api.screeningEncounters.lifestyle.complete).toHaveBeenCalledOnce()
+    expect(api.screeningEncounters.lifestyle.complete.mock.calls[0]?.[0].expectedVersion).toBe(4)
     expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
     expect(api.screeningEncounters.food.getWorkspace).toHaveBeenCalledOnce()
     expect(buttonByText(mounted, 'Continue').disabled).toBe(false)
     await clickButton(mounted, 'Previous')
-    expect(text(mounted)).toContain('Editable')
-    expect(buttonByText(mounted, 'Save draft').disabled).toBe(false)
+    expect(text(mounted)).toContain('Read only')
+    expect(buttonByText(mounted, 'Save draft').disabled).toBe(true)
     expect(buttonByText(mounted, 'Continue').disabled).toBe(false)
     expect(text(mounted)).toContain('Lifestyle saved')
     expect(mounted.container.querySelector('#lifestyle-alcohol-content')).toBeNull()
@@ -971,21 +975,8 @@ describe('screening patient entry workspace', () => {
     expect(mounted.container.querySelector('#lifestyle-physical-content')).toBeNull()
     expect(mounted.container.querySelector('#lifestyle-work-content')).toBeNull()
     expect(mounted.container.querySelector('#lifestyle-other-content')).toBeNull()
-    expect(mounted.container.querySelectorAll('.lifestyle-card-status-ready')).toHaveLength(5)
-    expect(mounted.container.querySelectorAll('.lifestyle-card-status-complete')).toHaveLength(0)
-
-    await clickButton(mounted, 'Alcohol')
-    await changeInput(
-      inputByLabel(mounted, 'On how many of the past 7 days did you drink alcohol?'),
-      '3'
-    )
-    await clickButton(mounted, 'Save draft')
-    expect(api.screeningEncounters.lifestyle.saveDraft).toHaveBeenCalledTimes(2)
-    expect(buttonByText(mounted, 'Continue').disabled).toBe(false)
-    await clickButton(mounted, 'Continue')
-    expect(api.screeningEncounters.lifestyle.saveDraft).toHaveBeenCalledTimes(3)
-    expect(api.screeningEncounters.lifestyle.complete).not.toHaveBeenCalled()
-    expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
+    expect(mounted.container.querySelectorAll('.lifestyle-card-status-ready')).toHaveLength(0)
+    expect(mounted.container.querySelectorAll('.lifestyle-card-status-complete')).toHaveLength(5)
 
     await mounted.unmount()
   })
@@ -996,8 +987,11 @@ describe('screening patient entry workspace', () => {
     api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
       createIpcSuccess({ status: 'LOADED', workspace: lifestyleWorkspace })
     )
-    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValue(
-      createIpcSuccess({ status: 'SAVED', workspace: lifestyleWorkspace })
+    api.screeningEncounters.lifestyle.complete.mockResolvedValue(
+      createIpcSuccess({
+        status: 'COMPLETED',
+        workspace: publicCompleteLifestyleWorkspace({ draftStatus: 'COMPLETE' })
+      })
     )
     api.screeningEncounters.food.getWorkspace.mockResolvedValueOnce(
       createIpcSuccess({ status: 'LOADED', workspace: publicFoodWorkspace() })
@@ -1062,8 +1056,11 @@ describe('screening patient entry workspace', () => {
     api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
       createIpcSuccess({ status: 'LOADED', workspace: lifestyleWorkspace })
     )
-    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValue(
-      createIpcSuccess({ status: 'SAVED', workspace: lifestyleWorkspace })
+    api.screeningEncounters.lifestyle.complete.mockResolvedValue(
+      createIpcSuccess({
+        status: 'COMPLETED',
+        workspace: publicCompleteLifestyleWorkspace({ draftStatus: 'COMPLETE' })
+      })
     )
     api.screeningEncounters.food.saveDraft.mockImplementation((request) =>
       Promise.resolve(
@@ -1168,8 +1165,11 @@ describe('screening patient entry workspace', () => {
     api.screeningEncounters.lifestyle.getWorkspace.mockResolvedValueOnce(
       createIpcSuccess({ status: 'LOADED', workspace: lifestyleWorkspace })
     )
-    api.screeningEncounters.lifestyle.saveDraft.mockResolvedValue(
-      createIpcSuccess({ status: 'SAVED', workspace: lifestyleWorkspace })
+    api.screeningEncounters.lifestyle.complete.mockResolvedValue(
+      createIpcSuccess({
+        status: 'COMPLETED',
+        workspace: publicCompleteLifestyleWorkspace({ draftStatus: 'COMPLETE' })
+      })
     )
     api.screeningEncounters.food.saveDraft.mockImplementation((request) =>
       Promise.resolve(
@@ -1753,6 +1753,15 @@ describe('screening patient entry workspace', () => {
     api.screeningEncounters.lifestyle.saveDraft.mockResolvedValue(
       createIpcSuccess({ status: 'SAVED', workspace })
     )
+    api.screeningEncounters.lifestyle.complete.mockResolvedValue(
+      createIpcSuccess({
+        status: 'COMPLETED',
+        workspace: publicCompleteLifestyleWorkspace({
+          alcoholBaselineStatus: 'FORMER',
+          draftStatus: 'COMPLETE'
+        })
+      })
+    )
     const mounted = await mountWorkspace({ api })
 
     await openLifestyle(mounted)
@@ -1774,14 +1783,18 @@ describe('screening patient entry workspace', () => {
     expect(mounted.container.querySelectorAll('.lifestyle-card-status-complete')).toHaveLength(0)
 
     await clickButton(mounted, 'Continue')
-    expect(api.screeningEncounters.lifestyle.saveDraft).toHaveBeenCalledTimes(2)
-    expect(api.screeningEncounters.lifestyle.complete).not.toHaveBeenCalled()
+    expect(api.screeningEncounters.lifestyle.saveDraft).toHaveBeenCalledOnce()
+    expect(api.screeningEncounters.lifestyle.complete).toHaveBeenCalledOnce()
+    expect(
+      api.screeningEncounters.lifestyle.complete.mock.calls[0]?.[0]
+        .alcoholBaselineReviewConfirmedVersionId
+    ).toBe(workspace.referencedAlcoholBaseline?.id)
     expect(text(mounted)).not.toContain('Cannot continue')
     expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
     await clickButton(mounted, 'Previous')
     expect(text(mounted)).toContain('Lifestyle saved')
     expect(mounted.container.querySelector('#lifestyle-alcohol-content')).toBeNull()
-    expect(buttonByText(mounted, 'Save draft').disabled).toBe(false)
+    expect(buttonByText(mounted, 'Save draft').disabled).toBe(true)
     expect(buttonByText(mounted, 'Continue').disabled).toBe(false)
 
     await clickButton(mounted, 'Alcohol')
@@ -1942,7 +1955,7 @@ describe('screening patient entry workspace', () => {
     expect(text(mounted)).toContain('Read only')
     expect(text(mounted)).not.toContain('Editable')
     expect(buttonByText(mounted, 'Save draft').disabled).toBe(true)
-    expect(buttonByText(mounted, 'Continue').disabled).toBe(true)
+    expect(buttonByText(mounted, 'Continue').disabled).toBe(false)
     expect(buttonByText(mounted, 'Edit Lifestyle').disabled).toBe(false)
     expect(mounted.container.querySelector('#lifestyle-alcohol-content')).toBeNull()
     expect(mounted.container.querySelector('#lifestyle-tobacco-content')).toBeNull()
@@ -3200,11 +3213,19 @@ describe('screening patient entry workspace', () => {
         })
       )
     )
-    api.screeningEncounters.lifestyle.saveDraft.mockImplementation((request) =>
+    api.screeningEncounters.lifestyle.complete.mockImplementation((request) =>
       Promise.resolve(
         createIpcSuccess({
-          status: 'SAVED',
-          workspace: request.encounterId === secondEncounterId ? workspaceB : workspaceA
+          status: 'COMPLETED',
+          workspace: {
+            ...(request.encounterId === secondEncounterId ? workspaceB : workspaceA),
+            draft: {
+              ...(request.encounterId === secondEncounterId
+                ? workspaceB.draft!
+                : workspaceA.draft!),
+              status: 'COMPLETE'
+            }
+          }
         })
       )
     )
@@ -3213,11 +3234,11 @@ describe('screening patient entry workspace', () => {
     await openLifestyle(mounted)
     await clickButton(mounted, 'Continue')
 
-    expect(api.screeningEncounters.lifestyle.saveDraft).toHaveBeenCalledOnce()
-    expect(api.screeningEncounters.lifestyle.saveDraft.mock.calls[0]?.[0].encounterId).toBe(
+    expect(api.screeningEncounters.lifestyle.complete).toHaveBeenCalledOnce()
+    expect(api.screeningEncounters.lifestyle.complete.mock.calls[0]?.[0].encounterId).toBe(
       encounterId
     )
-    expect(api.screeningEncounters.lifestyle.complete).not.toHaveBeenCalled()
+    expect(api.screeningEncounters.lifestyle.saveDraft).not.toHaveBeenCalled()
     expect(mounted.container.querySelector('#screening-food-step-title')).not.toBeNull()
     expect(text(mounted)).not.toContain('Read only')
 
@@ -3227,7 +3248,7 @@ describe('screening patient entry workspace', () => {
     await clickButton(mounted, 'Continue to Lifestyle')
     await flushReact()
 
-    expect(api.screeningEncounters.lifestyle.saveDraft).toHaveBeenCalledOnce()
+    expect(api.screeningEncounters.lifestyle.complete).toHaveBeenCalledOnce()
     expect(text(mounted)).toContain('Editable')
     expect(text(mounted)).not.toContain('Read only')
     expect(
@@ -3250,7 +3271,7 @@ describe('screening patient entry workspace', () => {
       inputByLabel(mounted, 'On how many of the past 7 days did you drink alcohol?').value
     ).toBe('5')
     expect(text(mounted)).not.toContain('Cannot continue')
-    expect(api.screeningEncounters.lifestyle.saveDraft).toHaveBeenCalledOnce()
+    expect(api.screeningEncounters.lifestyle.complete).toHaveBeenCalledOnce()
 
     await mounted.unmount()
   })

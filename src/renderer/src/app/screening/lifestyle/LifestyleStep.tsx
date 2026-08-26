@@ -391,7 +391,11 @@ export function LifestyleStep({
           <button
             className="button button-primary"
             type="button"
-            disabled={!canSave || lifestyleCompleted}
+            disabled={
+              state.loadStatus !== 'READY' ||
+              encounterStatus !== 'DRAFT' ||
+              state.saveStatus === 'SAVING'
+            }
             onClick={onContinue}
           >
             Continue

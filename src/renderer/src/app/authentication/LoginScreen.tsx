@@ -128,92 +128,91 @@ export function LoginScreen({ api, controller, onExit }: LoginScreenProps): Reac
   return (
     <div className="auth-login-page">
       <div className="auth-login-content">
-        <div className="auth-login-intro">
-          <p className="auth-login-welcome">Welcome to Community Health Screening</p>
-          <p className="auth-login-tagline">The One Place to Track Your Health</p>
-        </div>
-        <AuthenticationLayout
-          headingId="auth-login-heading"
-          heading={authenticationFormCopy.loginHeading}
-          showEyebrow={false}
-          className="auth-login-card"
-          busy={isSubmitting}
-        >
-          <form
-            ref={formRef}
-            className="auth-form"
-            aria-busy={isSubmitting}
-            onSubmit={(event) => {
-              void handleSubmit(event)
-            }}
+        <div className="auth-login-surface">
+          <div className="auth-login-logo" role="img" aria-label="Community Health Screening" />
+          <AuthenticationLayout
+            headingId="auth-login-heading"
+            heading={authenticationFormCopy.loginHeading}
+            showEyebrow={false}
+            className="auth-login-card auth-login-card-joined"
+            busy={isSubmitting}
           >
-            {operationState.status === 'ERROR' ? (
-              <div ref={alertRef} className="auth-alert" role="alert" tabIndex={-1}>
-                {operationState.message}
-              </div>
-            ) : null}
-            <fieldset className="auth-fieldset" disabled={isSubmitting}>
-              <div className="auth-field">
-                <label htmlFor="username">
-                  Username <RequiredFieldIndicator />
-                </label>
-                <input
-                  id="username"
-                  name="username"
-                  type="text"
-                  required
-                  maxLength={128}
-                  autoComplete="username"
-                  spellCheck={false}
-                />
-              </div>
-              <div className="auth-field">
-                <label htmlFor="password">
-                  Password <RequiredFieldIndicator />
-                </label>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  required
-                  minLength={12}
-                  maxLength={128}
-                  autoComplete="current-password"
-                />
-              </div>
-            </fieldset>
-            <div className="auth-recovery">
-              <button
-                className="auth-recovery-action"
-                type="button"
-                onClick={() => setRecoveryMessage(recoveryUnavailableMessage)}
-                disabled={isSubmitting}
-              >
-                Forgot username or password?
-              </button>
-              {recoveryMessage !== null ? (
-                <div className="auth-recovery-message" role="alert" tabIndex={-1}>
-                  {recoveryMessage}
+            <form
+              ref={formRef}
+              className="auth-form"
+              aria-busy={isSubmitting}
+              onSubmit={(event) => {
+                void handleSubmit(event)
+              }}
+            >
+              {operationState.status === 'ERROR' ? (
+                <div ref={alertRef} className="auth-alert" role="alert" tabIndex={-1}>
+                  {operationState.message}
                 </div>
               ) : null}
-            </div>
-            <div className="auth-actions">
-              <button className="button button-primary" type="submit" disabled={isSubmitting}>
-                {isSubmitting
-                  ? authenticationFormCopy.loginSubmittingLabel
-                  : authenticationFormCopy.loginSubmitLabel}
-              </button>
-              <button
-                className="button button-secondary"
-                type="button"
-                onClick={onExit}
-                disabled={isSubmitting}
-              >
-                {authenticationFormCopy.loginExitLabel}
-              </button>
-            </div>
-          </form>
-        </AuthenticationLayout>
+              <fieldset className="auth-fieldset" disabled={isSubmitting}>
+                <div className="auth-field">
+                  <label htmlFor="username">
+                    Username <RequiredFieldIndicator />
+                  </label>
+                  <input
+                    id="username"
+                    name="username"
+                    type="text"
+                    required
+                    maxLength={128}
+                    autoComplete="username"
+                    spellCheck={false}
+                  />
+                </div>
+                <div className="auth-field">
+                  <label htmlFor="password">
+                    Password <RequiredFieldIndicator />
+                  </label>
+                  <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    required
+                    minLength={12}
+                    maxLength={128}
+                    autoComplete="current-password"
+                  />
+                </div>
+              </fieldset>
+              <div className="auth-recovery">
+                <button
+                  className="auth-recovery-action"
+                  type="button"
+                  onClick={() => setRecoveryMessage(recoveryUnavailableMessage)}
+                  disabled={isSubmitting}
+                >
+                  Forgot username or password?
+                </button>
+                {recoveryMessage !== null ? (
+                  <div className="auth-recovery-message" role="alert" tabIndex={-1}>
+                    {recoveryMessage}
+                  </div>
+                ) : null}
+              </div>
+              <div className="auth-actions">
+                <button className="button button-primary" type="submit" disabled={isSubmitting}>
+                  {isSubmitting
+                    ? authenticationFormCopy.loginSubmittingLabel
+                    : authenticationFormCopy.loginSubmitLabel}
+                </button>
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  onClick={onExit}
+                  disabled={isSubmitting}
+                >
+                  {authenticationFormCopy.loginExitLabel}
+                </button>
+              </div>
+            </form>
+          </AuthenticationLayout>
+        </div>
       </div>
     </div>
   )

@@ -392,40 +392,36 @@ h1 {
 .auth-login-content {
   display: grid;
   width: min(430px, 100%);
-  gap: 24px;
 }
 
-.auth-login-intro {
-  color: #ffffff;
-  text-align: center;
-  text-shadow: 0 2px 12px rgba(3, 23, 42, 0.48);
-}
-
-.auth-login-logo {
+.auth-login-surface {
   width: 100%;
-  aspect-ratio: 1070 / 670;
-  margin: 0 0 10px;
-  background-image: url('../../../../assests/images/big-logo.png');
+  overflow: hidden;
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(3, 23, 42, 0.28);
+}
+
+.auth-login-logo,
+.auth-locked-logo {
+  display: block;
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  background-color: #ffffff;
   background-position: center;
   background-repeat: no-repeat;
   background-size: contain;
 }
 
-.auth-login-intro p {
-  margin: 0;
+.auth-login-logo {
+  aspect-ratio: 1070 / 670;
+  background-image: url('../../../../assests/images/big-logo.png');
 }
 
-.auth-login-tagline {
-  font-size: 1.05rem;
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-.auth-login-welcome {
-  margin-top: 6px !important;
-  font-size: 1.55rem;
-  font-weight: 760;
-  line-height: 1.15;
+.auth-locked-logo {
+  aspect-ratio: 1090 / 445;
+  background-image: url('../../../../assests/images/small-logo.png');
 }
 
 .auth-login-card {
@@ -434,6 +430,11 @@ h1 {
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.95);
   box-shadow: 0 24px 60px rgba(3, 23, 42, 0.28);
+}
+
+.auth-login-card-joined {
+  border-radius: 0 0 16px 16px;
+  box-shadow: none;
 }
 
 .auth-login-card h1 {
@@ -772,6 +773,12 @@ h1 {
   min-width: 0;
 }
 
+.application-brand {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
 .application-brand strong,
 .application-brand span,
 .application-account span {
@@ -783,14 +790,26 @@ h1 {
 
 .application-brand strong {
   color: #ffffff;
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 700;
-  line-height: 1;
-  text-transform: uppercase;
+  line-height: 1.15;
 }
 
 .application-brand span {
   display: none;
+}
+
+.application-brand .application-brand-logo {
+  display: block;
+  width: 86px;
+  height: 36px;
+  flex: 0 0 86px;
+  border-radius: 4px;
+  background-color: #ffffff;
+  background-image: url('../../../../assests/images/small-logo.png');
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
 }
 
 .application-primary-nav {
@@ -4287,7 +4306,7 @@ h1 {
   }
 
   .application-brand strong {
-    font-size: 22px;
+    font-size: 17px;
   }
 
   .application-primary-nav {
@@ -4317,7 +4336,7 @@ h1 {
   }
 
   .application-brand strong {
-    font-size: 20px;
+    font-size: 16px;
   }
 }
 
@@ -4328,7 +4347,7 @@ h1 {
   }
 
   .application-brand strong {
-    font-size: 20px;
+    font-size: 16px;
   }
 
   .dashboard-summary {
@@ -4540,7 +4559,13 @@ h1 {
   }
 
   .application-brand strong {
-    font-size: 18px;
+    font-size: 15px;
+  }
+
+  .application-brand .application-brand-logo {
+    width: 70px;
+    height: 30px;
+    flex-basis: 70px;
   }
 
   .application-primary-menu-button {
