@@ -5,6 +5,7 @@ import type {
   InstallationSettingsErrorCode,
   PatientErrorCode,
   PublicPatientDetail,
+  PublicPatientSummary,
   ScreeningSessionErrorCode
 } from '@shared/ipc'
 
@@ -59,6 +60,8 @@ export function ApplicationWorkspace({
     readonly PatientScreeningTab[]
   >([])
   const [activeScreeningPatientId, setActiveScreeningPatientId] = useState<string | null>(null)
+  const [requestedScreeningPatient, setRequestedScreeningPatient] =
+    useState<PublicPatientSummary | null>(null)
 
   return (
     <main
@@ -76,6 +79,20 @@ export function ApplicationWorkspace({
           headingId={workspaceHeadingId}
           headingRef={headingRef}
           onQuickAction={onSelectCommand}
+          onStartScreening={(patient) => {
+            setRequestedScreeningPatient(patient)
+            onSelectCommand('SCREENING_TODAYS_SESSION')
+          }}
+          onViewPatient={(patient) => {
+            void api.patient.get({ patientId: patient.id }).then((result) => {
+              if (!result.ok) {
+                onProtectedWorkspaceAuthenticationFailure(result.error.code)
+                return
+              }
+              setSelectedPatient(result.data)
+              onSelectCommand('PATIENTS_PATIENT_SEARCH')
+            })
+          }}
         />
       ) : route.status === 'PATIENTS' ? (
         <PatientRegistryWorkspace
@@ -99,10 +116,12 @@ export function ApplicationWorkspace({
           headingRef={headingRef}
           openTabs={openScreeningPatientTabs}
           userRole={user.role}
+          requestedPatient={requestedScreeningPatient}
           onActivePatientIdChange={setActiveScreeningPatientId}
           onOpenTabsChange={setOpenScreeningPatientTabs}
           onScreeningSessionAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
           onSelectCommand={onSelectCommand}
+          onRequestedPatientConsumed={() => setRequestedScreeningPatient(null)}
           registerNavigationGuard={registerNavigationGuard}
         />
       ) : route.status === 'ADMINISTRATION' ? (

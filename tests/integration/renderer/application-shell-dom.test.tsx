@@ -89,7 +89,7 @@ describe('application shell DOM integration', () => {
     expect(text(mounted)).toContain('Completed encounters')
     expect(text(mounted)).toContain('Recent patients')
     expect(text(mounted)).toContain('Patient code')
-    expect(text(mounted)).toContain('Showing local patients.')
+    expect(text(mounted)).not.toContain('Showing local patients.')
     expect(text(mounted)).not.toContain('Admin.User')
     expect(text(mounted)).not.toContain('No active location selected')
     expect(text(mounted)).not.toContain('Grace')
@@ -100,7 +100,7 @@ describe('application shell DOM integration', () => {
     expect(summaryCards(mounted)[0]?.textContent).toContain('3')
     expect(summaryCards(mounted)[1]?.textContent).toContain('2')
     expect(harness.api.screeningEncounters.management.search).toHaveBeenCalledTimes(3)
-    expect(harness.api.patient.listRecent).toHaveBeenCalledWith({ limit: 25 })
+    expect(harness.api.patient.search).toHaveBeenCalledWith({ query: '', page: 1, pageSize: 25 })
     expect(mounted.container.querySelector('.dashboard-lower-grid')).not.toBeNull()
     expect(mounted.container.querySelectorAll('.dashboard-lower-grid > section')).toHaveLength(2)
     expect(
@@ -615,7 +615,7 @@ describe('application shell DOM integration', () => {
 
   it('shows authentication unavailable and clears patient identity when patient IPC is forbidden', async () => {
     const harness = createAppApi(activeSession(1))
-    harness.api.patient.search.mockResolvedValueOnce(createPatientFailure('IPC_FORBIDDEN'))
+    queuePatientWorkspaceSearch(harness, createPatientFailure('IPC_FORBIDDEN'))
     const mounted = await mountApp(harness.api)
 
     await clickButton(mounted, 'Patients')
@@ -641,7 +641,8 @@ describe('application shell DOM integration', () => {
     }
   ])('reconciles $code patient failures through the authentication route', async (testCase) => {
     const harness = createAppApi(activeSession(1))
-    harness.api.patient.search.mockResolvedValueOnce(
+    queuePatientWorkspaceSearch(
+      harness,
       createPatientFailure(testCase.code) as Awaited<
         ReturnType<HealthScreeningApi['patient']['search']>
       >
@@ -795,7 +796,8 @@ describe('application shell DOM integration', () => {
 
   it('preserves selected patient details, edit draft, and dirty state across ACTIVE revisions', async () => {
     const harness = createAppApi(activeSession(1))
-    harness.api.patient.search.mockResolvedValueOnce(
+    queuePatientWorkspaceSearch(
+      harness,
       createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
     )
     harness.api.patient.get.mockResolvedValueOnce(createIpcSuccess(shellPatientDetail()))
@@ -820,11 +822,11 @@ describe('application shell DOM integration', () => {
 
   it('preserves patient search query and results across ACTIVE revisions', async () => {
     const harness = createAppApi(activeSession(1))
-    harness.api.patient.search
-      .mockResolvedValueOnce(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
-      .mockResolvedValueOnce(
-        createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
-      )
+    queuePatientWorkspaceSearch(
+      harness,
+      createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }),
+      createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
+    )
     const mounted = await mountApp(harness.api)
 
     await clickButton(mounted, 'Patients')
@@ -837,14 +839,14 @@ describe('application shell DOM integration', () => {
 
     expect(registrySearchInput(mounted).value).toBe('Protected')
     expect(text(mounted)).toContain('Protected Patient')
-    expect(harness.api.patient.search).toHaveBeenCalledTimes(2)
+    expect(harness.api.patient.search).toHaveBeenCalledTimes(3)
 
     await mounted.unmount()
   })
 
   it('preserves recent patients across ACTIVE revisions without remounting the recent pane', async () => {
     const harness = createAppApi(activeSession(1))
-    harness.api.patient.listRecent.mockResolvedValue(
+    harness.api.patient.listRecent.mockResolvedValueOnce(
       createIpcSuccess([shellPatientSummary({ displayName: 'Recent Protected' })])
     )
     const mounted = await mountApp(harness.api)
@@ -858,7 +860,7 @@ describe('application shell DOM integration', () => {
 
     expectWorkspaceHeading(mounted, 'Recent Patients')
     expect(text(mounted)).toContain('Recent Protected')
-    expect(harness.api.patient.listRecent).toHaveBeenCalledTimes(2)
+    expect(harness.api.patient.listRecent).toHaveBeenCalledOnce()
 
     await mounted.unmount()
   })
@@ -918,7 +920,8 @@ describe('application shell DOM integration', () => {
 
   it('preserves version-conflict comparison state across ACTIVE revisions', async () => {
     const harness = createAppApi(activeSession(1))
-    harness.api.patient.search.mockResolvedValueOnce(
+    queuePatientWorkspaceSearch(
+      harness,
       createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
     )
     harness.api.patient.get.mockResolvedValueOnce(
@@ -972,7 +975,8 @@ describe('application shell DOM integration', () => {
     }
   ])('clears volatile patient state when the session becomes $name', async (testCase) => {
     const harness = createAppApi(activeSession(1))
-    harness.api.patient.search.mockResolvedValueOnce(
+    queuePatientWorkspaceSearch(
+      harness,
       createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
     )
     harness.api.patient.get.mockResolvedValueOnce(createIpcSuccess(shellPatientDetail()))
@@ -994,7 +998,8 @@ describe('application shell DOM integration', () => {
 
   it('clears patient state when the authenticated user identity changes', async () => {
     const harness = createAppApi(activeSession(1))
-    harness.api.patient.search.mockResolvedValueOnce(
+    queuePatientWorkspaceSearch(
+      harness,
       createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
     )
     harness.api.patient.get.mockResolvedValueOnce(createIpcSuccess(shellPatientDetail()))
@@ -1022,7 +1027,8 @@ describe('application shell DOM integration', () => {
 
   it('clears patient identity and registration draft when IPC_FORBIDDEN occurs', async () => {
     const harness = createAppApi(activeSession(1))
-    harness.api.patient.search.mockResolvedValueOnce(
+    queuePatientWorkspaceSearch(
+      harness,
       createIpcSuccess({ items: [shellPatientSummary()], page: 1, pageSize: 25, total: 1 })
     )
     harness.api.patient.get.mockResolvedValueOnce(createIpcSuccess(shellPatientDetail()))
@@ -1171,6 +1177,18 @@ interface AppApiHarness {
   readonly api: MockedHealthScreeningApi
   setSessionSilently(session: PublicAuthenticationSession): void
   emitSession(session: PublicAuthenticationSession): void
+}
+
+function queuePatientWorkspaceSearch(
+  harness: AppApiHarness,
+  ...results: readonly Awaited<ReturnType<HealthScreeningApi['patient']['search']>>[]
+): void {
+  harness.api.patient.search.mockResolvedValueOnce(
+    createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 })
+  )
+  for (const result of results) {
+    harness.api.patient.search.mockResolvedValueOnce(result)
+  }
 }
 
 interface MountedApp {

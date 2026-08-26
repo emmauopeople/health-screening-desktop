@@ -15,6 +15,8 @@ interface DashboardWorkspaceProps {
   readonly headingId: string
   readonly headingRef: RefObject<HTMLHeadingElement | null>
   onQuickAction(commandId: ApplicationCommandId): void
+  onStartScreening(patient: PublicPatientSummary): void
+  onViewPatient(patient: PublicPatientSummary): void
 }
 
 export function DashboardWorkspace({
@@ -23,24 +25,23 @@ export function DashboardWorkspace({
   user,
   headingId,
   headingRef,
-  onQuickAction
+  onQuickAction,
+  onStartScreening,
+  onViewPatient
 }: DashboardWorkspaceProps): React.JSX.Element {
   const quickActions = getVisibleDashboardQuickActions(user.role)
-  const summaryNoteId = 'dashboard-summary-note'
-  const worklistGuidanceId = 'dashboard-worklist-guidance'
   const [completedEncounters, setCompletedEncounters] = useState<number | null>(null)
   const [draftEncounters, setDraftEncounters] = useState<number | null>(null)
   const [patients, setPatients] = useState<readonly PublicPatientSummary[]>([])
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState<string | null>(null)
   const requestIdRef = useRef(0)
 
-  const loadRecent = useCallback(async (): Promise<void> => {
-    const requestId = requestIdRef.current + 1
-    requestIdRef.current = requestId
-    setLoading(true)
-    const [completedResult, amendedResult, draftResult, patientResult] = await Promise.all([
+  const loadCounts = useCallback(async (): Promise<void> => {
+    const [completedResult, amendedResult, draftResult] = await Promise.all([
       api.screeningEncounters.management.search({
         query: '',
         status: 'AMENDED',
@@ -58,10 +59,8 @@ export function DashboardWorkspace({
         status: 'DRAFT',
         page: 1,
         pageSize: 25
-      }),
-      api.patient.listRecent({ limit: 25 })
+      })
     ])
-    if (requestIdRef.current !== requestId) return
     setCompletedEncounters(
       completedResult.ok &&
         completedResult.data.status === 'LOADED' &&
@@ -73,50 +72,72 @@ export function DashboardWorkspace({
     setDraftEncounters(
       draftResult.ok && draftResult.data.status === 'LOADED' ? draftResult.data.total : null
     )
-    if (patientResult.ok) {
-      setPatients(patientResult.data)
-      setMessage(null)
-    } else {
-      setPatients([])
-      setMessage('Dashboard data could not be loaded. Try again.')
-    }
-    setLoading(false)
   }, [api])
+
+  const loadPatients = useCallback(
+    async (searchQuery: string, requestedPage: number): Promise<void> => {
+      const requestId = requestIdRef.current + 1
+      requestIdRef.current = requestId
+      setLoading(true)
+      const result = await api.patient.search({
+        query: searchQuery,
+        page: requestedPage,
+        pageSize: 25
+      })
+      if (requestIdRef.current !== requestId) return
+      if (result.ok) {
+        setPatients(result.data.items)
+        setPage(result.data.page)
+        setTotal(result.data.total)
+        setMessage(null)
+      } else {
+        setPatients([])
+        setPage(1)
+        setTotal(0)
+        setMessage('Patient search could not be completed. Try again.')
+      }
+      setLoading(false)
+    },
+    [api]
+  )
 
   useEffect(() => {
     let active = true
     void Promise.resolve().then(async () => {
-      if (active) await loadRecent()
+      if (active) await loadCounts()
     })
     return () => {
       active = false
-      requestIdRef.current += 1
     }
-  }, [loadRecent])
+  }, [loadCounts])
+
+  useEffect(() => {
+    const normalized = query.trim()
+    if (normalized.length > 0 && normalized.length < 3) return
+    const timeoutId = window.setTimeout(() => {
+      void loadPatients(normalized, 1)
+    }, normalized.length === 0 ? 0 : 250)
+    return () => window.clearTimeout(timeoutId)
+  }, [loadPatients, query])
+
+  useEffect(
+    () => () => {
+      requestIdRef.current += 1
+    },
+    []
+  )
 
   const searchPatients = useCallback(
     async (event: FormEvent): Promise<void> => {
       event.preventDefault()
       const normalized = query.trim()
-      if (normalized.length === 0) {
-        await loadRecent()
-        return
-      }
-      const requestId = requestIdRef.current + 1
-      requestIdRef.current = requestId
-      setLoading(true)
-      const result = await api.patient.search({ query: normalized, page: 1, pageSize: 25 })
-      if (requestIdRef.current !== requestId) return
-      if (result.ok) {
-        setPatients(result.data.items)
-        setMessage(result.data.items.length === 0 ? 'No patients matched this search.' : null)
-      } else {
-        setMessage('Patient search could not be completed. Try again.')
-      }
-      setLoading(false)
+      if (normalized.length > 0 && normalized.length < 3) return
+      await loadPatients(normalized, 1)
     },
-    [api, loadRecent, query]
+    [loadPatients, query]
   )
+
+  const totalPages = Math.max(1, Math.ceil(total / 25))
 
   const summaryValues: Readonly<Record<(typeof dashboardSummaryCards)[number]['key'], string>> = {
     completedEncounters: completedEncounters === null ? '\u2014' : String(completedEncounters),
@@ -135,11 +156,7 @@ export function DashboardWorkspace({
         <p>{context.deploymentName}</p>
       </header>
 
-      <section
-        className="dashboard-summary"
-        aria-labelledby="dashboard-summary-title"
-        aria-describedby={summaryNoteId}
-      >
+      <section className="dashboard-summary" aria-labelledby="dashboard-summary-title">
         <h2 id="dashboard-summary-title" className="visually-hidden">
           Operational summary
         </h2>
@@ -156,10 +173,6 @@ export function DashboardWorkspace({
           </article>
         ))}
       </section>
-      <p id={summaryNoteId} className="dashboard-data-note">
-        Completed and draft encounter counts use local data. Referral, sync, and backup summaries
-        are not yet available.
-      </p>
 
       <div className="dashboard-lower-grid">
         <section
@@ -193,40 +206,36 @@ export function DashboardWorkspace({
           </div>
           <form
             className="dashboard-worklist-search-row"
-            aria-describedby={worklistGuidanceId}
             onSubmit={(event) => void searchPatients(event)}
           >
             <label className="visually-hidden" htmlFor="dashboard-patient-search">
               Patient search
             </label>
-            <input
-              id="dashboard-patient-search"
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.currentTarget.value)}
-              placeholder="Search by patient code, name, phone, village..."
-              aria-describedby={worklistGuidanceId}
-            />
-            <button
-              type="submit"
-              className="button button-primary"
-              disabled={loading}
-              aria-describedby={worklistGuidanceId}
-            >
-              Search
-            </button>
+            <div className="dashboard-patient-search-group">
+              <input
+                id="dashboard-patient-search"
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.currentTarget.value)}
+                placeholder="Search by patient code, name, phone, village..."
+              />
+              <button type="submit" className="button button-primary" disabled={loading}>
+                Search
+              </button>
+            </div>
             <button
               type="button"
               className="button button-secondary"
               onClick={() => onQuickAction('PATIENTS_REGISTER_NEW_PATIENT')}
-              aria-describedby={worklistGuidanceId}
             >
               Register patient
             </button>
           </form>
-          <p id={worklistGuidanceId} className="dashboard-data-note">
-            {message ?? (loading ? 'Loading local dashboard data...' : 'Showing local patients.')}
-          </p>
+          {message === null ? null : (
+            <p className="dashboard-data-note" role="alert">
+              {message}
+            </p>
+          )}
           <div className="dashboard-table-scroll">
             <table>
               <thead>
@@ -247,7 +256,19 @@ export function DashboardWorkspace({
                   </tr>
                 ) : (
                   patients.map((patient) => (
-                    <tr key={patient.id}>
+                    <tr
+                      key={patient.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Open a new screening for ${patient.displayName}`}
+                      onClick={() => onStartScreening(patient)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          onStartScreening(patient)
+                        }
+                      }}
+                    >
                       <td>{patient.patientCode}</td>
                       <td>{patient.displayName}</td>
                       <td>{formatPatientAgeSex(patient)}</td>
@@ -256,7 +277,10 @@ export function DashboardWorkspace({
                         <button
                           type="button"
                           className="button button-secondary"
-                          onClick={() => onQuickAction('PATIENTS_PATIENT_SEARCH')}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onViewPatient(patient)
+                          }}
                         >
                           View registry
                         </button>
@@ -266,6 +290,30 @@ export function DashboardWorkspace({
                 )}
               </tbody>
             </table>
+          </div>
+          <div className="screening-pagination" aria-label="Dashboard patient pagination">
+            <span>
+              {total === 0 ? 0 : (page - 1) * 25 + 1}–{Math.min(page * 25, total)} of {total}
+            </span>
+            <button
+              type="button"
+              className="button button-secondary"
+              disabled={loading || page <= 1}
+              onClick={() => void loadPatients(query.trim(), page - 1)}
+            >
+              Previous
+            </button>
+            <span>
+              Page {page} of {totalPages}
+            </span>
+            <button
+              type="button"
+              className="button button-secondary"
+              disabled={loading || page >= totalPages}
+              onClick={() => void loadPatients(query.trim(), page + 1)}
+            >
+              Next
+            </button>
           </div>
         </section>
       </div>
