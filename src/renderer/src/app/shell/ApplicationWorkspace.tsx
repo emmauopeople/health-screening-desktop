@@ -70,6 +70,7 @@ export function ApplicationWorkspace({
     >
       {route.status === 'DASHBOARD' ? (
         <DashboardWorkspace
+          api={api}
           context={context}
           user={user}
           headingId={workspaceHeadingId}

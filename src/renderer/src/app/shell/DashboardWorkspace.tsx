@@ -1,4 +1,5 @@
-import type { RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent, type RefObject } from 'react'
+import type { HealthScreeningApi, PublicPatientSummary } from '@shared/ipc'
 
 import { dashboardSummaryCards, getVisibleDashboardQuickActions } from './dashboard-workspace-model'
 import type {
@@ -8,6 +9,7 @@ import type {
 } from './application-shell-types'
 
 interface DashboardWorkspaceProps {
+  readonly api: HealthScreeningApi
   readonly context: ApplicationShellContext
   readonly user: ApplicationShellUser
   readonly headingId: string
@@ -16,6 +18,7 @@ interface DashboardWorkspaceProps {
 }
 
 export function DashboardWorkspace({
+  api,
   context,
   user,
   headingId,
@@ -25,6 +28,99 @@ export function DashboardWorkspace({
   const quickActions = getVisibleDashboardQuickActions(user.role)
   const summaryNoteId = 'dashboard-summary-note'
   const worklistGuidanceId = 'dashboard-worklist-guidance'
+  const [completedEncounters, setCompletedEncounters] = useState<number | null>(null)
+  const [draftEncounters, setDraftEncounters] = useState<number | null>(null)
+  const [patients, setPatients] = useState<readonly PublicPatientSummary[]>([])
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [message, setMessage] = useState<string | null>(null)
+  const requestIdRef = useRef(0)
+
+  const loadRecent = useCallback(async (): Promise<void> => {
+    const requestId = requestIdRef.current + 1
+    requestIdRef.current = requestId
+    setLoading(true)
+    const [completedResult, amendedResult, draftResult, patientResult] = await Promise.all([
+      api.screeningEncounters.management.search({
+        query: '',
+        status: 'AMENDED',
+        page: 1,
+        pageSize: 25
+      }),
+      api.screeningEncounters.management.search({
+        query: '',
+        status: 'COMPLETED',
+        page: 1,
+        pageSize: 25
+      }),
+      api.screeningEncounters.management.search({
+        query: '',
+        status: 'DRAFT',
+        page: 1,
+        pageSize: 25
+      }),
+      api.patient.listRecent({ limit: 25 })
+    ])
+    if (requestIdRef.current !== requestId) return
+    setCompletedEncounters(
+      completedResult.ok &&
+        completedResult.data.status === 'LOADED' &&
+        amendedResult.ok &&
+        amendedResult.data.status === 'LOADED'
+        ? completedResult.data.total + amendedResult.data.total
+        : null
+    )
+    setDraftEncounters(
+      draftResult.ok && draftResult.data.status === 'LOADED' ? draftResult.data.total : null
+    )
+    if (patientResult.ok) {
+      setPatients(patientResult.data)
+      setMessage(null)
+    } else {
+      setPatients([])
+      setMessage('Dashboard data could not be loaded. Try again.')
+    }
+    setLoading(false)
+  }, [api])
+
+  useEffect(() => {
+    void loadRecent()
+    return () => {
+      requestIdRef.current += 1
+    }
+  }, [loadRecent])
+
+  const searchPatients = useCallback(
+    async (event: FormEvent): Promise<void> => {
+      event.preventDefault()
+      const normalized = query.trim()
+      if (normalized.length === 0) {
+        await loadRecent()
+        return
+      }
+      const requestId = requestIdRef.current + 1
+      requestIdRef.current = requestId
+      setLoading(true)
+      const result = await api.patient.search({ query: normalized, page: 1, pageSize: 25 })
+      if (requestIdRef.current !== requestId) return
+      if (result.ok) {
+        setPatients(result.data.items)
+        setMessage(result.data.items.length === 0 ? 'No patients matched this search.' : null)
+      } else {
+        setMessage('Patient search could not be completed. Try again.')
+      }
+      setLoading(false)
+    },
+    [api, loadRecent, query]
+  )
+
+  const summaryValues: Readonly<Record<(typeof dashboardSummaryCards)[number]['key'], string>> = {
+    completedEncounters: completedEncounters === null ? '\u2014' : String(completedEncounters),
+    draftEncounters: draftEncounters === null ? '\u2014' : String(draftEncounters),
+    openReferrals: '\u2014',
+    pendingSync: '\u2014',
+    lastBackup: '\u2014'
+  }
 
   return (
     <>
@@ -34,8 +130,6 @@ export function DashboardWorkspace({
         </h1>
         <p>
           {context.deploymentName}
-          {' \u2022 '}
-          No screening session open
         </p>
       </header>
 
@@ -51,17 +145,18 @@ export function DashboardWorkspace({
           <article
             key={card.label}
             className="dashboard-summary-card"
-            aria-label={`${card.label}: data unavailable. ${card.support}`}
+            aria-label={`${card.label}: ${summaryValues[card.key]}. ${card.support}`}
             data-summary-accent={card.accent}
             title={card.support}
           >
             <div className="dashboard-summary-label">{card.label}</div>
-            <div className="dashboard-summary-value">{card.value}</div>
+            <div className="dashboard-summary-value">{summaryValues[card.key]}</div>
           </article>
         ))}
       </section>
       <p id={summaryNoteId} className="dashboard-data-note">
-        Dashboard counts are unavailable until their future local data sources are implemented.
+        Completed and draft encounter counts use local data. Referral, sync, and backup summaries
+        are not yet available.
       </p>
 
       <div className="dashboard-lower-grid">
@@ -92,25 +187,28 @@ export function DashboardWorkspace({
 
         <section className="dashboard-worklist" aria-labelledby="dashboard-worklist-title">
           <div className="dashboard-worklist-title-row">
-            <h2 id="dashboard-worklist-title">{"Today's Patient Worklist"}</h2>
+            <h2 id="dashboard-worklist-title">Recent patients</h2>
           </div>
-          <div className="dashboard-worklist-search-row" aria-describedby={worklistGuidanceId}>
+          <form
+            className="dashboard-worklist-search-row"
+            aria-describedby={worklistGuidanceId}
+            onSubmit={(event) => void searchPatients(event)}
+          >
             <label className="visually-hidden" htmlFor="dashboard-patient-search">
               Patient search
             </label>
             <input
               id="dashboard-patient-search"
               type="search"
-              value=""
-              disabled
-              readOnly
+              value={query}
+              onChange={(event) => setQuery(event.currentTarget.value)}
               placeholder="Search by patient code, name, phone, village..."
               aria-describedby={worklistGuidanceId}
             />
             <button
-              type="button"
+              type="submit"
               className="button button-primary"
-              disabled
+              disabled={loading}
               aria-describedby={worklistGuidanceId}
             >
               Search
@@ -118,14 +216,14 @@ export function DashboardWorkspace({
             <button
               type="button"
               className="button button-secondary"
-              disabled
+              onClick={() => onQuickAction('PATIENTS_REGISTER_NEW_PATIENT')}
               aria-describedby={worklistGuidanceId}
             >
               Register patient
             </button>
-          </div>
+          </form>
           <p id={worklistGuidanceId} className="dashboard-data-note">
-            Patient search, registration, and worklist data are unavailable in HSD-024.
+            {message ?? (loading ? 'Loading local dashboard data...' : 'Showing local patients.')}
           </p>
           <div className="dashboard-table-scroll">
             <table>
@@ -134,15 +232,34 @@ export function DashboardWorkspace({
                   <th scope="col">Patient code</th>
                   <th scope="col">Name</th>
                   <th scope="col">Age / sex</th>
-                  <th scope="col">Last screening</th>
                   <th scope="col">Current status</th>
                   <th scope="col">Action</th>
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td colSpan={6}>Patient worklist data is not available in HSD-024.</td>
-                </tr>
+                {patients.length === 0 ? (
+                  <tr>
+                    <td colSpan={5}>{loading ? 'Loading patients...' : 'No patients to display.'}</td>
+                  </tr>
+                ) : (
+                  patients.map((patient) => (
+                    <tr key={patient.id}>
+                      <td>{patient.patientCode}</td>
+                      <td>{patient.displayName}</td>
+                      <td>{formatPatientAgeSex(patient)}</td>
+                      <td>{patient.status === 'ACTIVE' ? 'Active' : 'Inactive'}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="button button-secondary"
+                          onClick={() => onQuickAction('PATIENTS_PATIENT_SEARCH')}
+                        >
+                          View registry
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -150,4 +267,31 @@ export function DashboardWorkspace({
       </div>
     </>
   )
+}
+
+function formatPatientAgeSex(patient: PublicPatientSummary): string {
+  const age = patient.approximateAgeYears ?? ageFromDateOfBirth(patient.dateOfBirth)
+  const sex =
+    patient.sex === 'FEMALE'
+      ? 'Female'
+      : patient.sex === 'MALE'
+        ? 'Male'
+        : patient.sex === 'OTHER'
+          ? 'Other'
+          : 'Unknown'
+  return `${age === null ? '\u2014' : age} / ${sex}`
+}
+
+function ageFromDateOfBirth(dateOfBirth: string | null): number | null {
+  if (dateOfBirth === null) return null
+  const [year, month, day] = dateOfBirth.split('-').map(Number)
+  if (year === undefined || month === undefined || day === undefined) return null
+  const today = new Date()
+  let age = today.getUTCFullYear() - year
+  if (
+    today.getUTCMonth() + 1 < month ||
+    (today.getUTCMonth() + 1 === month && today.getUTCDate() < day)
+  )
+    age -= 1
+  return Math.max(0, age)
 }

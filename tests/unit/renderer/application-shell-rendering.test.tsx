@@ -43,18 +43,13 @@ describe('application shell rendering', () => {
     expect(displayMarkup).toContain('Community Health Screening')
     expect(displayMarkup).not.toContain('Health Screening Offline Desktop')
     expect(displayMarkup).toContain('Local data ready')
-    expect(displayMarkup).toContain('No screening session open')
+    expect(displayMarkup).not.toContain('No screening session open')
     expect(displayMarkup).toContain('application-command-panel')
     expect(displayMarkup).toContain('Dashboard')
-    expect(displayMarkup).toContain("Today's Patient Worklist")
-    expect(displayMarkup).not.toContain('Today' + '\\u2019s patient worklist')
-    expect(displayMarkup).not.toContain(`Today${String.fromCharCode(0x2019)}s patient worklist`)
+    expect(displayMarkup).toContain('Recent patients')
     expect(displayMarkup).toContain('Patient code')
     expect(displayMarkup).toContain('Age / sex')
-    expect(displayMarkup).toContain('Patient worklist data is not available in HSD-024.')
-    expect(displayMarkup).toContain(
-      'Patient search, registration, and worklist data are unavailable in HSD-024.'
-    )
+    expect(displayMarkup).toContain('Loading local dashboard data...')
     expect(displayMarkup).not.toContain('Jane')
     expect(displayMarkup).not.toContain('Grace')
     expect(displayMarkup).not.toContain('BAB-')
@@ -62,13 +57,12 @@ describe('application shell rendering', () => {
     expect(displayMarkup).not.toContain('backup time')
     expect(displayMarkup).not.toContain('Yesterday')
     expect(dashboardSummaryCards.map((card) => card.label)).toEqual([
-      'Screened today',
+      'Completed encounters',
       'Draft encounters',
       'Open referrals',
       'Pending sync',
       'Last backup'
     ])
-    expect(dashboardSummaryCards.every((card) => card.value === '\u2014')).toBe(true)
     expect(displayMarkup.match(/class="dashboard-summary-card"/g)).toHaveLength(5)
     expect(displayMarkup).toContain('class="dashboard-lower-grid"')
     expect(displayMarkup).toContain('class="dashboard-quick-action-number"')
@@ -81,9 +75,7 @@ describe('application shell rendering', () => {
   it('filters dashboard quick actions by role', () => {
     expect(getVisibleDashboardQuickActions('LOCAL_ADMIN').map((action) => action.label)).toEqual([
       'Find or open patient',
-      'New Screening',
-      'Record referral follow-up',
-      'Print session summary'
+      'New Screening'
     ])
     expect(
       getVisibleDashboardQuickActions('TRAINED_SCREENER').map((action) => action.label)

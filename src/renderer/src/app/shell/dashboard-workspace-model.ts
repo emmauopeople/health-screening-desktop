@@ -7,32 +7,32 @@ import {
 
 export const dashboardSummaryCards = Object.freeze([
   Object.freeze({
-    label: 'Screened today',
-    value: '\u2014',
+    key: 'completedEncounters',
+    label: 'Completed encounters',
     accent: 'primary',
-    support: 'Screening totals require the future encounter data source.'
+    support: 'Completed and amended screening encounters at this location.'
   }),
   Object.freeze({
+    key: 'draftEncounters',
     label: 'Draft encounters',
-    value: '\u2014',
     accent: 'warning',
-    support: 'Draft encounter tracking is planned for the screening workspace.'
+    support: 'Resumable drafts in the current local screening session.'
   }),
   Object.freeze({
+    key: 'openReferrals',
     label: 'Open referrals',
-    value: '\u2014',
     accent: 'referral',
     support: 'Referral counts require the future referral workflow data source.'
   }),
   Object.freeze({
+    key: 'pendingSync',
     label: 'Pending sync',
-    value: '\u2014',
     accent: 'sync',
     support: 'Synchronization status is planned and is not monitored here.'
   }),
   Object.freeze({
+    key: 'lastBackup',
     label: 'Last backup',
-    value: '\u2014',
     accent: 'success',
     support: 'Backup history is planned and is not available in this build.'
   })
@@ -41,7 +41,7 @@ export const dashboardSummaryCards = Object.freeze([
 const dashboardQuickActions = Object.freeze([
   Object.freeze({
     label: 'Find or open patient',
-    support: 'Planned patient search and tab workspace',
+    support: 'Search the local patient registry',
     commandId: 'PATIENTS_PATIENT_SEARCH' as const
   }),
   Object.freeze({
@@ -49,16 +49,6 @@ const dashboardQuickActions = Object.freeze([
     support: 'Open the Screening patients workspace',
     commandId: 'SCREENING_NEW_SCREENING' as const
   }),
-  Object.freeze({
-    label: 'Record referral follow-up',
-    support: 'Planned referral follow-up workspace',
-    commandId: 'REFERRALS_FOLLOW_UP_DUE' as const
-  }),
-  Object.freeze({
-    label: 'Print session summary',
-    support: 'Planned session summary output',
-    commandId: 'SCREENING_SESSION_SUMMARY' as const
-  })
 ])
 
 export function getVisibleDashboardQuickActions(
