@@ -68,6 +68,7 @@ describe('screening completion service', () => {
     )
     expect(harness.auditEventRepository.insert).toHaveBeenCalledOnce()
     expect(harness.outboxRepository.insert).toHaveBeenCalledOnce()
+    expect(harness.referralRepository.createAutomaticReferral).not.toHaveBeenCalled()
 
     const auditInput = harness.auditEventRepository.insert.mock.calls[0]?.[1]
     const outboxInput = harness.outboxRepository.insert.mock.calls[0]?.[1]
@@ -157,6 +158,43 @@ describe('screening completion service', () => {
     expect(harness.outboxRepository.insert).not.toHaveBeenCalled()
   })
 
+  it('creates one standard referral from a completed referral-threshold screening', () => {
+    const harness = createHarness({
+      vitalsReadings: [completeVitalsReading(1, 150, 94), completeVitalsReading(2, 148, 92)]
+    })
+
+    expect(harness.service.complete(completeRequest())).toMatchObject({ status: 'COMPLETED' })
+    expect(harness.referralRepository.createAutomaticReferral).toHaveBeenCalledOnce()
+    expect(harness.referralRepository.createAutomaticReferral).toHaveBeenCalledWith(
+      harness.connection,
+      expect.objectContaining({
+        patientId: ids.patient,
+        encounterId: ids.encounter,
+        protocolVersionId: ids.protocol,
+        reasonCode: 'BP_SCREENING_REFERRAL',
+        urgency: 'STANDARD',
+        dueDate: '2026-09-03'
+      })
+    )
+    expect(harness.auditEventRepository.insert).toHaveBeenCalledTimes(2)
+  })
+
+  it('creates a same-day urgent referral from an urgent completed screening', () => {
+    const harness = createHarness({
+      vitalsReadings: [completeVitalsReading(1, 190, 124), completeVitalsReading(2, 188, 122)]
+    })
+
+    expect(harness.service.complete(completeRequest())).toMatchObject({ status: 'COMPLETED' })
+    expect(harness.referralRepository.createAutomaticReferral).toHaveBeenCalledWith(
+      harness.connection,
+      expect.objectContaining({
+        reasonCode: 'BP_SCREENING_URGENT_REFERRAL',
+        urgency: 'URGENT',
+        dueDate: '2026-08-20'
+      })
+    )
+  })
+
   it('returns an already-completed encounter without duplicating final records or events', () => {
     const harness = createHarness({ alreadyCompleted: true })
 
@@ -189,6 +227,7 @@ interface ScreeningCompletionHarness {
   readonly service: ScreeningCompletionService
   readonly completionRepository: { readonly complete: ReturnType<typeof vi.fn> }
   readonly lifestyleRepository: { readonly updateDraft: ReturnType<typeof vi.fn> }
+  readonly referralRepository: { readonly createAutomaticReferral: ReturnType<typeof vi.fn> }
   readonly auditEventRepository: { readonly insert: ReturnType<typeof vi.fn> }
   readonly outboxRepository: { readonly insert: ReturnType<typeof vi.fn> }
 }
@@ -251,6 +290,24 @@ function createHarness({
   }
   const auditEventRepository = { insert: vi.fn() }
   const outboxRepository = { insert: vi.fn() }
+  const referralRepository = {
+    createAutomaticReferral: vi.fn((_connection, input) => ({
+      status: 'CREATED' as const,
+      referral: {
+        id: input.id,
+        patientId: input.patientId,
+        encounterId: input.encounterId,
+        protocolVersionId: input.protocolVersionId,
+        reasonCodes: [input.reasonCode],
+        urgency: input.urgency,
+        dueDate: input.dueDate,
+        status: 'OPEN' as const,
+        createdBy: input.actorId,
+        createdAt: input.createdAt,
+        recordVersion: 1 as const
+      }
+    }))
+  }
   let nextId = 100
   const dependencies = {
     authenticationSessionService: {
@@ -308,6 +365,7 @@ function createHarness({
         rowVersion: 5
       }))
     },
+    referralRepository,
     completionRepository,
     screeningEncounterOutboxRepository: outboxRepository,
     auditEventRepository,
@@ -328,6 +386,7 @@ function createHarness({
     service: createScreeningCompletionService(dependencies),
     completionRepository,
     lifestyleRepository,
+    referralRepository,
     auditEventRepository,
     outboxRepository
   }
@@ -341,6 +400,23 @@ function screeningSession(): Record<string, unknown> {
     sessionDate: '2026-08-20',
     status: 'OPEN',
     rowVersion: 1
+  }
+}
+
+function completeVitalsReading(
+  sequenceNumber: number,
+  systolic: number,
+  diastolic: number
+): Record<string, unknown> {
+  return {
+    id: parseEntityId(`10000000-0000-4000-8000-${String(20 + sequenceNumber).padStart(12, '0')}`),
+    sequenceNumber,
+    systolic,
+    diastolic,
+    pulse: 80,
+    measurementSite: 'RIGHT_ARM',
+    patientPosition: 'SITTING',
+    measurementTime: sequenceNumber === 1 ? '10:30' : '10:35'
   }
 }
 

@@ -14,6 +14,8 @@ import {
   type LifestyleDraftRecord,
   type LifestyleDraftUpdateInput,
   type OtcDraftRecord,
+  type ReferralRecord,
+  type CreateAutomaticReferralResult,
   type ScreeningCompletionLifestyleLogInput,
   type ScreeningEncounterRecord,
   type ScreeningSessionRecord,
@@ -54,6 +56,8 @@ const completeRequestKeys = Object.freeze([
 ] as const)
 const encounterCompletedAction = parseAuditActionCode('SCREENING_ENCOUNTER_COMPLETED')
 const screeningEncounterEntityType = parseAuditEntityType('SCREENING_ENCOUNTER')
+const referralCreatedAction = parseAuditActionCode('REFERRAL_CREATED')
+const referralEntityType = parseAuditEntityType('REFERRAL')
 
 interface ParsedCompleteCommand {
   readonly encounterId: EntityId
@@ -266,6 +270,29 @@ export function createScreeningCompletionService(
           if (completedEncounter === null || completedEncounter.status !== 'COMPLETED')
             return statusResult('UNAVAILABLE')
 
+          const referralResult = createReferralWhenRequired(
+            context.connection,
+            completedEncounter,
+            session.sessionDate,
+            bloodPressureDecision.nextAction,
+            actorResult.actorId,
+            completedAt,
+            context.newEntityId,
+            dependencies
+          )
+          if (referralResult?.status === 'CREATED') {
+            dependencies.auditEventRepository.insert(context.connection, {
+              id: context.newEntityId(),
+              installationId: installation.id,
+              userId: actorResult.actorId,
+              action: referralCreatedAction,
+              entityType: referralEntityType,
+              entityId: referralResult.referral.id,
+              occurredAt: completedAt,
+              metadata: createReferralAuditMetadata(referralResult.referral)
+            })
+          }
+
           const metadata = createCompletionMetadata(
             completedEncounter,
             vitals.readings.length,
@@ -345,6 +372,52 @@ function validateEncounterContext(
     return invalidContext('SESSION_NOT_CURRENT')
   }
   return { status: 'VALID', context: { installation, encounter, session } }
+}
+
+function createReferralWhenRequired(
+  connection: DatabaseTransactionConnection,
+  encounter: ScreeningEncounterRecord,
+  sessionDate: string,
+  nextAction: NonNullable<ReturnType<typeof evaluateScreeningBloodPressure>>['nextAction'],
+  actorId: EntityId,
+  createdAt: UtcTimestamp,
+  newEntityId: () => EntityId,
+  dependencies: Pick<ScreeningCompletionServiceDependencies, 'referralRepository'>
+): CreateAutomaticReferralResult | null {
+  if (nextAction !== 'REFER' && nextAction !== 'URGENT_REFERRAL') return null
+  const urgent = nextAction === 'URGENT_REFERRAL'
+  return dependencies.referralRepository.createAutomaticReferral(connection, {
+    id: newEntityId(),
+    statusHistoryId: newEntityId(),
+    outboxId: newEntityId(),
+    patientId: encounter.patientId,
+    encounterId: encounter.id,
+    protocolVersionId: encounter.protocolVersionId,
+    reasonCode: urgent ? 'BP_SCREENING_URGENT_REFERRAL' : 'BP_SCREENING_REFERRAL',
+    urgency: urgent ? 'URGENT' : 'STANDARD',
+    dueDate: urgent ? sessionDate : addCalendarDays(sessionDate, 14),
+    actorId,
+    createdAt
+  })
+}
+
+function addCalendarDays(value: string, days: number): string {
+  const date = new Date(`${value}T00:00:00.000Z`)
+  if (Number.isNaN(date.getTime())) throw new RepositoryValidationError()
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+function createReferralAuditMetadata(referral: ReferralRecord): AuditMetadata {
+  return Object.freeze({
+    referral_id: referral.id,
+    patient_id: referral.patientId,
+    encounter_id: referral.encounterId,
+    urgency: referral.urgency,
+    due_date: referral.dueDate,
+    status: referral.status,
+    record_version: referral.recordVersion
+  })
 }
 
 function isCompleteVitals(draft: ScreeningVitalsDraftRecord): boolean {
