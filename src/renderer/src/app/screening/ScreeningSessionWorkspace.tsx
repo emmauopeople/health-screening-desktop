@@ -729,8 +729,11 @@ export function ScreeningSessionWorkspace({
       sessionState.status !== 'READY'
     )
       return
-    onRequestedPatientConsumed?.()
-    void activatePatient(requestedPatient)
+    const timeoutId = window.setTimeout(() => {
+      onRequestedPatientConsumed?.()
+      void activatePatient(requestedPatient)
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
   }, [activatePatient, onRequestedPatientConsumed, requestedPatient, sessionState.status])
 
   const backToScreeningAfterCompletion = useCallback((): void => {
