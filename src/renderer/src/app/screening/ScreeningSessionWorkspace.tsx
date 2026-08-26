@@ -115,10 +115,12 @@ interface ScreeningSessionWorkspaceProps {
   readonly openTabs: readonly PatientScreeningTab[]
   readonly activePatientId: string | null
   readonly userRole: LocalUserRole
+  readonly requestedPatient?: PublicPatientSummary | null
   onActivePatientIdChange: Dispatch<SetStateAction<string | null>>
   onOpenTabsChange: Dispatch<SetStateAction<readonly PatientScreeningTab[]>>
   onScreeningSessionAuthenticationFailure(code: ScreeningSessionErrorCode): void
   onSelectCommand(commandId: 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING'): void
+  onRequestedPatientConsumed?(): void
   registerNavigationGuard(guard: WorkspaceNavigationGuard | null): void
 }
 
@@ -262,10 +264,12 @@ export function ScreeningSessionWorkspace({
   headingId,
   headingRef,
   openTabs,
+  requestedPatient,
   onActivePatientIdChange,
   onOpenTabsChange,
   onScreeningSessionAuthenticationFailure,
   onSelectCommand,
+  onRequestedPatientConsumed,
   registerNavigationGuard
 }: ScreeningSessionWorkspaceProps): React.JSX.Element {
   const mountedRef = useMountedRef()
@@ -717,6 +721,20 @@ export function ScreeningSessionWorkspace({
     },
     [onActivePatientIdChange, openTabs, selectWorkspaceTab, startPatientEncounter]
   )
+
+  useEffect(() => {
+    if (
+      requestedPatient === null ||
+      requestedPatient === undefined ||
+      sessionState.status !== 'READY'
+    )
+      return
+    const timeoutId = window.setTimeout(() => {
+      onRequestedPatientConsumed?.()
+      void activatePatient(requestedPatient)
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [activatePatient, onRequestedPatientConsumed, requestedPatient, sessionState.status])
 
   const backToScreeningAfterCompletion = useCallback((): void => {
     onOpenTabsChange((currentTabs) => {
