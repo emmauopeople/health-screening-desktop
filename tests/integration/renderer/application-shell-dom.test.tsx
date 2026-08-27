@@ -99,7 +99,17 @@ describe('application shell DOM integration', () => {
     expect(summaryCards(mounted)).toHaveLength(5)
     expect(summaryCards(mounted)[0]?.textContent).toContain('3')
     expect(summaryCards(mounted)[1]?.textContent).toContain('2')
+    expect(summaryCards(mounted)[2]?.textContent).toContain('0')
     expect(harness.api.screeningEncounters.management.search).toHaveBeenCalledTimes(3)
+    expect(harness.api.referrals.search).toHaveBeenCalledWith({
+      query: '',
+      statuses: ['OPEN', 'CONTACTED', 'SEEN', 'UNABLE_TO_CONFIRM'],
+      urgency: null,
+      dueFrom: null,
+      dueTo: null,
+      page: 1,
+      pageSize: 25
+    })
     expect(harness.api.patient.search).toHaveBeenCalledWith({ query: '', page: 1, pageSize: 25 })
     expect(mounted.container.querySelector('.dashboard-lower-grid')).not.toBeNull()
     expect(mounted.container.querySelectorAll('.dashboard-lower-grid > section')).toHaveLength(2)
@@ -1141,6 +1151,12 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
     findDuplicates: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['findDuplicates']>>
     markNotDuplicate: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['markNotDuplicate']>>
   } & HealthScreeningApi['patient']
+  referrals: {
+    search: ReturnType<typeof vi.fn<HealthScreeningApi['referrals']['search']>>
+    getDetail: ReturnType<typeof vi.fn<HealthScreeningApi['referrals']['getDetail']>>
+    updateStatus: ReturnType<typeof vi.fn<HealthScreeningApi['referrals']['updateStatus']>>
+    recordFollowup: ReturnType<typeof vi.fn<HealthScreeningApi['referrals']['recordFollowup']>>
+  } & HealthScreeningApi['referrals']
   screeningSessions: {
     getWorkspaceContext: ReturnType<
       typeof vi.fn<HealthScreeningApi['screeningSessions']['getWorkspaceContext']>
@@ -1291,6 +1307,26 @@ function createAppApi(initialSession: PublicAuthenticationSession): AppApiHarnes
       listRecent: vi.fn(() => Promise.resolve(createIpcSuccess([]))),
       findDuplicates: vi.fn(() => Promise.resolve(createIpcSuccess({ candidates: [], pairs: [] }))),
       markNotDuplicate: vi.fn(() => Promise.resolve(createPatientFailure('IPC_UNAVAILABLE')))
+    },
+    referrals: {
+      search: vi.fn((request) =>
+        Promise.resolve(
+          createIpcSuccess({
+            status: 'LOADED',
+            items: [],
+            total: 0,
+            page: request.page,
+            pageSize: request.pageSize
+          })
+        )
+      ),
+      getDetail: vi.fn(() => Promise.resolve(createIpcSuccess({ status: 'REFERRAL_NOT_FOUND' }))),
+      updateStatus: vi.fn(() =>
+        Promise.resolve(createIpcSuccess({ status: 'REFERRAL_NOT_FOUND' }))
+      ),
+      recordFollowup: vi.fn(() =>
+        Promise.resolve(createIpcSuccess({ status: 'REFERRAL_NOT_FOUND' }))
+      )
     },
     screeningSessions: {
       getWorkspaceContext: vi.fn(() =>

@@ -181,6 +181,13 @@ function createRouteForCommand(
     })
   }
 
+  if (definition.id === 'HOME_OPEN_REFERRALS' || definition.id === 'REFERRALS_REFERRAL_WORKLIST') {
+    return Object.freeze({
+      status: 'REFERRALS',
+      commandId: definition.id
+    })
+  }
+
   return Object.freeze({
     status: 'PLANNED_MODULE',
     commandId: definition.id,

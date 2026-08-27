@@ -93,6 +93,7 @@ describe('application navigation catalog', () => {
       'HOME_DASHBOARD',
       'HOME_TODAYS_SESSION',
       'HOME_QUICK_PATIENT_SEARCH',
+      'HOME_OPEN_REFERRALS',
       'PATIENTS_PATIENT_SEARCH',
       'PATIENTS_REGISTER_NEW_PATIENT',
       'PATIENTS_RECENT_PATIENTS',
@@ -100,6 +101,7 @@ describe('application navigation catalog', () => {
       'SCREENING_TODAYS_SESSION',
       'SCREENING_NEW_SCREENING',
       'SCREENING_MANAGE_ENCOUNTERS',
+      'REFERRALS_REFERRAL_WORKLIST',
       'ADMINISTRATION_LOCATIONS'
     ])
   })

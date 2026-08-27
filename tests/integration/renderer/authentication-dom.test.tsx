@@ -924,6 +924,19 @@ function createAppApi(
         Promise.resolve(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
       )
     },
+    referrals: {
+      search: vi.fn((request: Parameters<HealthScreeningApi['referrals']['search']>[0]) =>
+        Promise.resolve(
+          createIpcSuccess({
+            status: 'LOADED',
+            items: [],
+            total: 0,
+            page: request.page,
+            pageSize: request.pageSize
+          })
+        )
+      )
+    },
     screeningEncounters: {
       management: {
         search: vi.fn((request) =>

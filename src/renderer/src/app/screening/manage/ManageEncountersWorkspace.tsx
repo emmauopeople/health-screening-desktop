@@ -13,6 +13,8 @@ interface Props {
   readonly api: HealthScreeningApi
   readonly headingId: string
   readonly headingRef: RefObject<HTMLHeadingElement | null>
+  readonly requestedEncounterId?: string | null
+  onRequestedEncounterConsumed?(): void
   onAuthenticationFailure(code: ScreeningSessionErrorCode): void
   onResumeDraft(
     patient: PublicPatientDetail,
@@ -36,6 +38,8 @@ export function ManageEncountersWorkspace({
   api,
   headingId,
   headingRef,
+  requestedEncounterId = null,
+  onRequestedEncounterConsumed,
   onAuthenticationFailure,
   onResumeDraft
 }: Props): React.JSX.Element {
@@ -65,6 +69,7 @@ export function ManageEncountersWorkspace({
   const detailRequestRef = useRef(0)
   const previousCriteriaRef = useRef({ query: '', status: 'ALL', initialized: false })
   const noteInputRef = useRef<HTMLTextAreaElement | null>(null)
+  const requestedEncounterIdRef = useRef(requestedEncounterId)
 
   const handleControlledFailure = useCallback(
     (status: string): void => {
@@ -137,10 +142,15 @@ export function ManageEncountersWorkspace({
       setTotal(result.data.total)
       setPage(result.data.page)
       setLoadState('READY')
+      const requestedId = requestedEncounterIdRef.current
+      requestedEncounterIdRef.current = null
+      if (requestedId !== null) onRequestedEncounterConsumed?.()
       const currentSelectedId = selectedIdRef.current
-      const nextSelectedId = result.data.items.some((item) => item.id === currentSelectedId)
-        ? currentSelectedId
-        : (result.data.items[0]?.id ?? null)
+      const nextSelectedId =
+        requestedId ??
+        (result.data.items.some((item) => item.id === currentSelectedId)
+          ? currentSelectedId
+          : (result.data.items[0]?.id ?? null))
       if (nextSelectedId === null) {
         setSelectedId(null)
         selectedIdRef.current = null
@@ -149,7 +159,7 @@ export function ManageEncountersWorkspace({
         await loadDetail(nextSelectedId)
       }
     },
-    [handleControlledFailure, loadDetail, management]
+    [handleControlledFailure, loadDetail, management, onRequestedEncounterConsumed]
   )
 
   useEffect(() => {
