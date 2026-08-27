@@ -125,6 +125,56 @@ describe('ReferralWorklistWorkspace', () => {
 
     await mounted.unmount()
   })
+
+  it('shows visit actions only after provider seen and submits structured medication data', async () => {
+    const harness = createHarness()
+    const mounted = await mount(harness.api)
+
+    await click(mounted.container, 'Record follow-up')
+    expect(mounted.container.textContent).not.toContain('Visit actions')
+
+    const providerSeen = Array.from(mounted.container.querySelectorAll('label'))
+      .find((label) => label.textContent?.includes('Provider seen'))
+      ?.querySelector('select')
+    if (providerSeen === null || providerSeen === undefined)
+      throw new Error('Missing provider seen control')
+    await change(providerSeen, 'YES')
+    expect(mounted.container.textContent).toContain('Visit actions')
+
+    await check(mounted.container, 'New medication')
+    const medicationInputs = mounted.container.querySelectorAll<HTMLInputElement>(
+      '.referral-medication-row input'
+    )
+    expect(medicationInputs).toHaveLength(3)
+    await input(medicationInputs[0]!, 'Amlodipine')
+    await input(medicationInputs[1]!, '5 mg')
+    await input(medicationInputs[2]!, 'Once daily')
+    const reportedOutcome = Array.from(mounted.container.querySelectorAll('label'))
+      .find((label) => label.textContent?.includes('Reported outcome'))
+      ?.querySelector('textarea')
+    if (reportedOutcome === null || reportedOutcome === undefined)
+      throw new Error('Missing reported outcome control')
+    await input(reportedOutcome, 'Provider initiated blood pressure treatment.')
+
+    await click(mounted.container, 'Save follow-up')
+    expect(harness.recordFollowup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerSeen: true,
+        reportedOutcome: 'Provider initiated blood pressure treatment.',
+        treatmentActions: ['NEW_MEDICATION'],
+        medicationChanges: [
+          {
+            changeType: 'NEW_MEDICATION',
+            medicationName: 'Amlodipine',
+            dosage: '5 mg',
+            frequency: 'Once daily'
+          }
+        ]
+      })
+    )
+
+    await mounted.unmount()
+  })
 })
 
 interface ReferralHarness {
@@ -208,6 +258,35 @@ async function change(element: HTMLSelectElement, value: string): Promise<void> 
     element.dispatchEvent(new Event('change', { bubbles: true }))
     await flush()
   })
+}
+
+async function input(
+  element: HTMLInputElement | HTMLTextAreaElement,
+  value: string
+): Promise<void> {
+  await act(async () => {
+    const prototype =
+      element instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype
+    const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+    setter?.call(element, value)
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+    element.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+  })
+}
+
+async function check(container: HTMLElement, label: string): Promise<void> {
+  const input = Array.from(container.querySelectorAll('label'))
+    .find((candidate) => candidate.textContent?.trim() === label)
+    ?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+  if (input === null || input === undefined) throw new Error(`Missing checkbox ${label}`)
+  await act(async () => {
+    input.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await flush()
+  })
+  await act(flush)
 }
 
 async function click(container: HTMLElement, label: string): Promise<void> {
