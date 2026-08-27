@@ -58,6 +58,8 @@ import type {
   EncounterManagementGetDetailResult,
   EncounterManagementGetPatientContextRequest,
   EncounterManagementGetPatientContextResult,
+  EncounterManagementGetPatientHistoryRequest,
+  EncounterManagementGetPatientHistoryResult,
   EncounterManagementOpenFlagRequest,
   EncounterManagementOpenFlagResult,
   EncounterManagementResolveFlagRequest,
@@ -194,6 +196,9 @@ export interface HealthScreeningApi {
       getPatientContext(
         request: EncounterManagementGetPatientContextRequest
       ): Promise<EncounterManagementGetPatientContextResult>
+      getPatientHistory(
+        request: EncounterManagementGetPatientHistoryRequest
+      ): Promise<EncounterManagementGetPatientHistoryResult>
       addAddendum(
         request: EncounterManagementAddAddendumRequest
       ): Promise<EncounterManagementAddAddendumResult>
