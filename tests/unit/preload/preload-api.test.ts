@@ -129,6 +129,7 @@ describe('preload API factory', () => {
       'firstRun',
       'auth',
       'patient',
+      'referrals',
       'screeningSessions',
       'screeningEncounters',
       'installationSettings'

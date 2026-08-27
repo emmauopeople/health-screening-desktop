@@ -94,6 +94,12 @@ describe('shared IPC contracts', () => {
         findDuplicates: 'health-screening:patient:find-duplicates',
         markNotDuplicate: 'health-screening:patient:mark-not-duplicate'
       },
+      referrals: {
+        search: 'health-screening:referrals:search',
+        getDetail: 'health-screening:referrals:get-detail',
+        updateStatus: 'health-screening:referrals:update-status',
+        recordFollowup: 'health-screening:referrals:record-followup'
+      },
       screeningSessions: {
         getWorkspaceContext: 'health-screening:screening-sessions:get-workspace-context',
         ensureCurrent: 'health-screening:screening-sessions:ensure-current',
@@ -148,7 +154,7 @@ describe('shared IPC contracts', () => {
     })
     const allChannels = flattenChannelStrings(ipcChannels)
 
-    expect(allChannels).toHaveLength(57)
+    expect(allChannels).toHaveLength(61)
     expect(new Set(allChannels).size).toBe(allChannels.length)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.lifestyle.complete)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.complete)

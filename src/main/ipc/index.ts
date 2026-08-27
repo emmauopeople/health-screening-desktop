@@ -2,9 +2,11 @@ export {
   disposeApplicationIpcHandlers,
   disposeScreeningEncounterIpcHandlers,
   disposeScreeningOtcIpcHandlers,
+  disposeReferralIpcHandlers,
   registerApplicationIpcHandlers,
   registerScreeningEncounterIpcHandlers,
   registerScreeningOtcIpcHandlers,
+  registerReferralIpcHandlers,
   type ApplicationIpcDisposer,
   type ApplicationIpcHandlerDependencies,
   type ApplicationIpcMain

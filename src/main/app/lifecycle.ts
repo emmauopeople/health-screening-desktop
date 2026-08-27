@@ -21,6 +21,7 @@ import {
   createProductionPatientRegistryService,
   createProductionScreeningEncounterStartService,
   createProductionScreeningEncounterManagementService,
+  createProductionReferralService,
   createProductionScreeningCompletionService,
   createProductionScreeningFoodService,
   createProductionScreeningLifestyleService,
@@ -172,6 +173,12 @@ export function startApplicationLifecycle(): void {
           currentScreeningSessionService,
           logger: console
         })
+      const referralService = createProductionReferralService({
+        connection: databaseRuntime.getConnection(),
+        authenticationSessionService,
+        installationLocationService,
+        logger: console
+      })
       const locationRepository = createLocationRepository(databaseRuntime.getConnection())
       const authenticationSessionPublisher = createAuthenticationSessionPublisher({
         navigationPolicy,
@@ -198,6 +205,11 @@ export function startApplicationLifecycle(): void {
           patientRegistryService,
           patientDemographicAmendmentService,
           patientAcknowledgmentService,
+          logger: console
+        },
+        referrals: {
+          navigationPolicy,
+          referralService,
           logger: console
         },
         screeningSessions: {
