@@ -65,6 +65,7 @@ interface PatientRegistryWorkspaceProps {
   onSelectedPatientChange(patient: PublicPatientDetail | null): void
   onPatientAuthenticationFailure(code: PatientErrorCode): void
   onSelectCommand(commandId: ApplicationCommandId): void
+  onOpenEncounter(encounterId: string): void
   registerNavigationGuard(guard: PatientWorkspaceNavigationGuard | null): void
 }
 
@@ -133,6 +134,7 @@ export function PatientRegistryWorkspace({
   onSelectedPatientChange,
   onPatientAuthenticationFailure,
   onSelectCommand,
+  onOpenEncounter,
   registerNavigationGuard
 }: PatientRegistryWorkspaceProps): React.JSX.Element {
   const mountedRef = useMountedRef()
@@ -891,6 +893,7 @@ export function PatientRegistryWorkspace({
             securityEpochRef={securityEpochRef}
             registerStateInvalidator={registerPatientStateInvalidator}
             onPatientFailure={handlePatientFailure}
+            onOpenEncounter={onOpenEncounter}
             onSelectTab={selectDetailTab}
             onDraftChange={(nextDraft) => {
               setDemographicDraft(nextDraft)
@@ -2260,6 +2263,7 @@ function PatientDetailPane({
   securityEpochRef,
   registerStateInvalidator,
   onPatientFailure,
+  onOpenEncounter,
   onSelectTab,
   onDraftChange,
   onReasonCodeChange,
@@ -2306,6 +2310,7 @@ function PatientDetailPane({
   readonly securityEpochRef: MutableRefObject<number>
   registerStateInvalidator: RegisterPatientStateInvalidator
   onPatientFailure(code: PatientErrorCode, message: string): boolean
+  onOpenEncounter(encounterId: string): void
   onSelectTab(tab: PatientDetailTab): void
   onDraftChange(draft: PatientDemographicDraft): void
   onReasonCodeChange(reasonCode: PatientDemographicAmendmentReasonSelection): void
@@ -2424,6 +2429,7 @@ function PatientDetailPane({
       securityEpochRef={securityEpochRef}
       registerStateInvalidator={registerStateInvalidator}
       onPatientFailure={onPatientFailure}
+      onOpenEncounter={onOpenEncounter}
       onSelectTab={onSelectTab}
     />
   )

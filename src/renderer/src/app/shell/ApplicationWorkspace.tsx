@@ -108,6 +108,10 @@ export function ApplicationWorkspace({
           selectedPatient={selectedPatient}
           onSelectedPatientChange={setSelectedPatient}
           onPatientAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
+          onOpenEncounter={(encounterId) => {
+            setRequestedManagedEncounterId(encounterId)
+            onSelectCommand('SCREENING_MANAGE_ENCOUNTERS')
+          }}
           onSelectCommand={onSelectCommand}
           registerNavigationGuard={registerNavigationGuard}
         />
