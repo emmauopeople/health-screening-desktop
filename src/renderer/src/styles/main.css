@@ -75,6 +75,53 @@
   font: inherit;
 }
 
+.referral-visit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 0.8rem;
+}
+
+.referral-visit-actions legend {
+  color: var(--color-primary);
+  font-weight: 800;
+}
+
+.referral-visit-actions > label {
+  flex-direction: row;
+  align-items: center;
+  color: var(--color-text);
+  font-size: 0.9rem;
+}
+
+.referral-visit-actions input[type='checkbox'] {
+  min-height: auto;
+}
+
+.referral-medication-changes {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 0.65rem;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.75rem;
+}
+
+.referral-medication-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.7fr) minmax(12rem, 1.5fr) repeat(2, minmax(8rem, 1fr)) auto;
+  align-items: end;
+  gap: 0.5rem;
+}
+
+.referral-history-medications {
+  margin-top: 0.35rem;
+  padding-left: 1.1rem;
+  font-size: 0.78rem;
+}
+
 .referral-search-group {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
