@@ -24,6 +24,8 @@ import {
   encounterManagementGetDetailResultSchema,
   encounterManagementGetPatientContextRequestSchema,
   encounterManagementGetPatientContextResultSchema,
+  encounterManagementGetPatientHistoryRequestSchema,
+  encounterManagementGetPatientHistoryResultSchema,
   encounterManagementOpenFlagRequestSchema,
   encounterManagementOpenFlagResultSchema,
   encounterManagementResolveFlagRequestSchema,
@@ -55,6 +57,8 @@ import {
   type EncounterManagementGetDetailRequest,
   type EncounterManagementGetPatientContextResult,
   type EncounterManagementGetPatientContextRequest,
+  type EncounterManagementGetPatientHistoryResult,
+  type EncounterManagementGetPatientHistoryRequest,
   type EncounterManagementOpenFlagResult,
   type EncounterManagementOpenFlagRequest,
   type EncounterManagementResolveFlagResult,
@@ -122,6 +126,10 @@ export interface ScreeningEncounterIpcHandlers {
     event: IpcSenderValidationEvent,
     request: unknown
   ): Promise<EncounterManagementGetPatientContextResult>
+  getPatientScreeningHistory(
+    event: IpcSenderValidationEvent,
+    request: unknown
+  ): Promise<EncounterManagementGetPatientHistoryResult>
   addEncounterAddendum(
     event: IpcSenderValidationEvent,
     request: unknown
@@ -286,6 +294,24 @@ export function createScreeningEncounterIpcHandlers({
           ),
         logger
       }) as Promise<EncounterManagementGetPatientContextResult>
+    },
+
+    async getPatientScreeningHistory(event: IpcSenderValidationEvent, request: unknown) {
+      return handleManagementRequest(event, request, {
+        channel: ipcChannels.screeningEncounters.management.getPatientHistory,
+        navigationPolicy,
+        requestSchema: encounterManagementGetPatientHistoryRequestSchema,
+        resultSchema: encounterManagementGetPatientHistoryResultSchema,
+        invoke: (data: EncounterManagementGetPatientHistoryRequest) =>
+          createIpcSuccess(
+            screeningEncounterManagementService.getPatientHistory(
+              data.patientId as EntityId,
+              data.page,
+              data.pageSize
+            )
+          ),
+        logger
+      }) as Promise<EncounterManagementGetPatientHistoryResult>
     },
 
     async addEncounterAddendum(event: IpcSenderValidationEvent, request: unknown) {
@@ -530,6 +556,7 @@ const unavailableManagementService: ScreeningEncounterManagementService = Object
   search: () => ({ status: 'UNAVAILABLE' as const }),
   getDetail: () => ({ status: 'UNAVAILABLE' as const }),
   getPatientContext: () => ({ status: 'UNAVAILABLE' as const }),
+  getPatientHistory: () => ({ status: 'UNAVAILABLE' as const }),
   addAddendum: () => ({ status: 'UNAVAILABLE' as const }),
   openFlag: () => ({ status: 'UNAVAILABLE' as const }),
   resolveFlag: () => ({ status: 'UNAVAILABLE' as const }),
