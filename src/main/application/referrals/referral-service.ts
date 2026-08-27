@@ -289,6 +289,24 @@ export function createProductionReferralService({
               auth.actorId,
               occurredAt
             )
+          parsed.data.treatmentActions.forEach((actionCode, index) => {
+            context.connection
+              .prepare(insertFollowupActionSql)
+              .run(context.newEntityId(), followupId, actionCode, index + 1)
+          })
+          parsed.data.medicationChanges.forEach((medication, index) => {
+            context.connection
+              .prepare(insertMedicationChangeSql)
+              .run(
+                context.newEntityId(),
+                followupId,
+                medication.changeType,
+                medication.medicationName,
+                medication.dosage,
+                medication.frequency,
+                index + 1
+              )
+          })
           const nextStatus = parsed.data.newStatus ?? current.status
           context.connection.prepare(updateStatusSql).run({
             id: parsed.data.referralId,
@@ -322,12 +340,14 @@ export function createProductionReferralService({
             occurredAt,
             action: followupRecordedAction,
             operation: 'REFERRAL_FOLLOWUP_RECORDED',
-            schemaVersion: 'referral.followup-recorded.v1',
+            schemaVersion: 'referral.followup-recorded.v2',
             payload: {
               referral_id: parsed.data.referralId,
               followup_id: followupId,
               status: nextStatus,
-              record_version: nextVersion
+              record_version: nextVersion,
+              treatment_action_count: parsed.data.treatmentActions.length,
+              medication_change_count: parsed.data.medicationChanges.length
             }
           })
           return { status: 'UPDATED' as const }
@@ -381,6 +401,11 @@ const insertFollowupSql = `INSERT INTO followups
  (id, referral_id, contact_date, contact_method, information_source, provider_seen, facility_name,
  date_seen, reported_outcome, reported_medications_or_advice, next_action, next_followup_date,
  source_type, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
+const insertFollowupActionSql = `INSERT INTO referral_followup_actions
+ (id, followup_id, action_code, sequence_number) VALUES (?, ?, ?, ?);`
+const insertMedicationChangeSql = `INSERT INTO referral_followup_medication_changes
+ (id, followup_id, change_type, medication_name, dosage, frequency, sequence_number)
+ VALUES (?, ?, ?, ?, ?, ?, ?);`
 
 function readSummary(row: Record<string, unknown>): PublicReferralSummary {
   return {
@@ -434,22 +459,49 @@ function readDetail(
       changedByDisplayName: String(item.changed_by_display_name),
       changedAt: String(item.changed_at)
     })),
-    followups: followups.map((item) => ({
-      id: String(item.id),
-      contactDate: String(item.contact_date),
-      contactMethod: String(item.contact_method),
-      informationSource: String(item.information_source),
-      providerSeen: item.provider_seen === null ? null : item.provider_seen === 1,
-      facilityName: nullable(item.facility_name),
-      dateSeen: nullable(item.date_seen),
-      reportedOutcome: nullable(item.reported_outcome),
-      reportedMedicationsOrAdvice: nullable(item.reported_medications_or_advice),
-      nextAction: nullable(item.next_action),
-      nextFollowupDate: nullable(item.next_followup_date),
-      sourceType: String(item.source_type),
-      recordedByDisplayName: String(item.recorded_by_display_name),
-      recordedAt: String(item.recorded_at)
-    }))
+    followups: followups.map((item) => {
+      const followupId = String(item.id)
+      const actions = connection
+        .prepare(
+          `SELECT action_code FROM referral_followup_actions
+           WHERE followup_id=? ORDER BY sequence_number`
+        )
+        .all(followupId) as {
+        action_code: PublicReferralDetail['followups'][number]['treatmentActions'][number]
+      }[]
+      const medications = connection
+        .prepare(
+          `SELECT id, change_type, medication_name, dosage, frequency
+           FROM referral_followup_medication_changes
+           WHERE followup_id=? ORDER BY sequence_number`
+        )
+        .all(followupId) as Record<string, unknown>[]
+      return {
+        id: followupId,
+        contactDate: String(item.contact_date),
+        contactMethod: String(item.contact_method),
+        informationSource: String(item.information_source),
+        providerSeen: item.provider_seen === null ? null : item.provider_seen === 1,
+        facilityName: nullable(item.facility_name),
+        dateSeen: nullable(item.date_seen),
+        reportedOutcome: nullable(item.reported_outcome),
+        reportedMedicationsOrAdvice: nullable(item.reported_medications_or_advice),
+        nextAction: nullable(item.next_action),
+        nextFollowupDate: nullable(item.next_followup_date),
+        sourceType: String(item.source_type),
+        treatmentActions: actions.map((action) => action.action_code),
+        medicationChanges: medications.map((medication) => ({
+          id: String(medication.id),
+          changeType:
+            medication.change_type as PublicReferralDetail['followups'][number]['medicationChanges'][number]['changeType'],
+          medicationName: String(medication.medication_name),
+          dosage: nullable(medication.dosage),
+          frequency: nullable(medication.frequency)
+        })),
+        recordedByDisplayName: String(item.recorded_by_display_name),
+        recordedAt: String(item.recorded_at)
+      }
+    })
   }
 }
 

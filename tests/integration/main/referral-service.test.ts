@@ -89,26 +89,69 @@ describe('referral service', () => {
         nextAction: 'Call next week',
         nextFollowupDate: '2026-09-03',
         sourceType: 'LOCAL',
+        treatmentActions: [],
+        medicationChanges: [],
         newStatus: 'CLOSED' as const,
         statusReason: null
       }
       expect(service.recordFollowup(base)).toEqual({ status: 'VALIDATION_FAILED' })
       const result = service.recordFollowup({
         ...base,
+        providerSeen: true,
+        treatmentActions: ['TREATMENT_INITIATED', 'TREATMENT_MODIFIED', 'NEW_MEDICATION'],
+        medicationChanges: [
+          {
+            changeType: 'NEW_MEDICATION',
+            medicationName: 'Amlodipine',
+            dosage: '5 mg',
+            frequency: 'Once daily'
+          },
+          {
+            changeType: 'TREATMENT_MODIFIED',
+            medicationName: 'Hydrochlorothiazide',
+            dosage: '25 mg',
+            frequency: null
+          }
+        ],
         newStatus: 'CONTACTED',
         statusReason: 'Reached patient'
       })
       expect(result).toMatchObject({
         status: 'UPDATED',
-        detail: { status: 'CONTACTED', recordVersion: 2 }
+        detail: {
+          status: 'CONTACTED',
+          recordVersion: 2,
+          followups: [
+            {
+              treatmentActions: ['TREATMENT_INITIATED', 'TREATMENT_MODIFIED', 'NEW_MEDICATION'],
+              medicationChanges: [
+                { changeType: 'NEW_MEDICATION', medicationName: 'Amlodipine' },
+                { changeType: 'TREATMENT_MODIFIED', medicationName: 'Hydrochlorothiazide' }
+              ]
+            }
+          ]
+        }
       })
       expect(readCount(connection, 'followups')).toBe(1)
+      expect(readCount(connection, 'referral_followup_actions')).toBe(3)
+      expect(readCount(connection, 'referral_followup_medication_changes')).toBe(2)
       expect(readCount(connection, 'audit_log')).toBe(1)
-      expect(
-        connection
-          .prepare('SELECT operation FROM sync_outbox ORDER BY created_at DESC LIMIT 1')
-          .get()
-      ).toEqual({ operation: 'REFERRAL_FOLLOWUP_RECORDED' })
+      const outbox = connection
+        .prepare(
+          'SELECT operation, payload_schema_version, payload_json FROM sync_outbox ORDER BY created_at DESC LIMIT 1'
+        )
+        .get() as { operation: string; payload_schema_version: string; payload_json: string }
+      expect(outbox).toMatchObject({
+        operation: 'REFERRAL_FOLLOWUP_RECORDED',
+        payload_schema_version: 'referral.followup-recorded.v2'
+      })
+      expect(JSON.parse(outbox.payload_json)).toMatchObject({
+        treatment_action_count: 3,
+        medication_change_count: 2
+      })
+      expect(outbox.payload_json).not.toContain('Amlodipine')
+      expect(outbox.payload_json).not.toContain('Hydrochlorothiazide')
+      expect(outbox.payload_json).not.toContain('5 mg')
     })
   })
 
@@ -133,6 +176,52 @@ describe('referral service', () => {
       expect(readCount(connection, 'referral_status_history')).toBe(1)
       expect(readCount(connection, 'audit_log')).toBe(0)
       expect(readCount(connection, 'sync_outbox')).toBe(0)
+    })
+  })
+
+  it('rolls back the follow-up and structured actions when its outbox write fails', async () => {
+    await withService((service, connection) => {
+      connection.exec(`CREATE TRIGGER fail_followup_outbox BEFORE INSERT ON sync_outbox
+        WHEN NEW.operation = 'REFERRAL_FOLLOWUP_RECORDED'
+        BEGIN SELECT RAISE(ABORT, 'injected failure'); END;`)
+      expect(
+        service.recordFollowup({
+          referralId: ids.referral,
+          expectedVersion: 1,
+          contactDate: '2026-08-27',
+          contactMethod: 'PHONE',
+          informationSource: 'PATIENT',
+          providerSeen: true,
+          facilityName: null,
+          dateSeen: null,
+          reportedOutcome: null,
+          reportedMedicationsOrAdvice: null,
+          nextAction: null,
+          nextFollowupDate: null,
+          sourceType: 'LOCAL',
+          treatmentActions: ['NEW_MEDICATION'],
+          medicationChanges: [
+            {
+              changeType: 'NEW_MEDICATION',
+              medicationName: 'Amlodipine',
+              dosage: null,
+              frequency: null
+            }
+          ],
+          newStatus: 'CONTACTED',
+          statusReason: null
+        })
+      ).toEqual({ status: 'UNAVAILABLE' })
+      expect(readCount(connection, 'followups')).toBe(0)
+      expect(readCount(connection, 'referral_followup_actions')).toBe(0)
+      expect(readCount(connection, 'referral_followup_medication_changes')).toBe(0)
+      expect(readCount(connection, 'audit_log')).toBe(0)
+      expect(readCount(connection, 'sync_outbox')).toBe(0)
+      expect(
+        connection
+          .prepare('SELECT status, record_version FROM referrals WHERE id = ?')
+          .get(ids.referral)
+      ).toEqual({ status: 'OPEN', record_version: 1 })
     })
   })
 })

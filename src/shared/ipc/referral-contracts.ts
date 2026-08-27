@@ -20,6 +20,12 @@ export const referralStatusSchema = z.enum([
 ])
 export const referralUrgencySchema = z.enum(['STANDARD', 'URGENT'])
 export const referralPageSizeSchema = z.union([z.literal(25), z.literal(50), z.literal(100)])
+export const referralTreatmentActionSchema = z.enum([
+  'TREATMENT_INITIATED',
+  'TREATMENT_MODIFIED',
+  'NEW_MEDICATION'
+])
+export const referralMedicationChangeTypeSchema = z.enum(['NEW_MEDICATION', 'TREATMENT_MODIFIED'])
 
 const optionalText = (maximum: number): z.ZodType<string | null> =>
   z.string().trim().min(1).max(maximum).nullable()
@@ -77,6 +83,18 @@ export const publicReferralFollowupSchema = z
     nextAction: optionalText(1000),
     nextFollowupDate: referralDateSchema.nullable(),
     sourceType: z.string().min(1).max(100),
+    treatmentActions: z.array(referralTreatmentActionSchema).max(3),
+    medicationChanges: z.array(
+      z
+        .object({
+          id: referralUuidSchema,
+          changeType: referralMedicationChangeTypeSchema,
+          medicationName: z.string().min(1).max(255),
+          dosage: optionalText(255),
+          frequency: optionalText(255)
+        })
+        .strict()
+    ),
     recordedByDisplayName: z.string().min(1),
     recordedAt: referralUtcTimestampSchema
   })
@@ -129,10 +147,47 @@ export const referralRecordFollowupRequestSchema = z
     nextAction: optionalText(1000),
     nextFollowupDate: referralDateSchema.nullable(),
     sourceType: z.string().trim().min(1).max(100),
+    treatmentActions: z.array(referralTreatmentActionSchema).max(3),
+    medicationChanges: z
+      .array(
+        z
+          .object({
+            changeType: referralMedicationChangeTypeSchema,
+            medicationName: z.string().trim().min(1).max(255),
+            dosage: optionalText(255),
+            frequency: optionalText(255)
+          })
+          .strict()
+      )
+      .max(20),
     newStatus: referralStatusSchema.nullable(),
     statusReason: optionalText(1000)
   })
   .strict()
+  .superRefine((value, context) => {
+    const uniqueActions = new Set(value.treatmentActions)
+    if (uniqueActions.size !== value.treatmentActions.length)
+      context.addIssue({ code: 'custom', path: ['treatmentActions'], message: 'Duplicate action.' })
+    if (
+      value.providerSeen !== true &&
+      (value.treatmentActions.length > 0 || value.medicationChanges.length > 0)
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['providerSeen'],
+        message: 'Provider must be seen.'
+      })
+    for (const changeType of ['NEW_MEDICATION', 'TREATMENT_MODIFIED'] as const) {
+      const hasAction = uniqueActions.has(changeType)
+      const hasRows = value.medicationChanges.some((row) => row.changeType === changeType)
+      if (hasAction !== hasRows)
+        context.addIssue({
+          code: 'custom',
+          path: ['medicationChanges'],
+          message: 'Action and medication rows must match.'
+        })
+    }
+  })
 
 const searchDataSchema = z.union([
   z
@@ -171,6 +226,8 @@ export const referralRecordFollowupResultSchema = referralUpdateStatusResultSche
 
 export type ReferralStatus = z.infer<typeof referralStatusSchema>
 export type ReferralUrgency = z.infer<typeof referralUrgencySchema>
+export type ReferralTreatmentAction = z.infer<typeof referralTreatmentActionSchema>
+export type ReferralMedicationChangeType = z.infer<typeof referralMedicationChangeTypeSchema>
 export type ReferralSearchRequest = z.infer<typeof referralSearchRequestSchema>
 export type ReferralGetDetailRequest = z.infer<typeof referralGetDetailRequestSchema>
 export type ReferralUpdateStatusRequest = z.infer<typeof referralUpdateStatusRequestSchema>
