@@ -10,6 +10,8 @@ import type { InstallationSettingsIpcHandlerDependencies } from '@main/ipc/handl
 import { createInstallationSettingsIpcHandlers } from '@main/ipc/handlers/installation-settings-handlers'
 import type { PatientIpcHandlerDependencies } from '@main/ipc/handlers/patient-handlers'
 import { createPatientIpcHandlers } from '@main/ipc/handlers/patient-handlers'
+import type { ReferralIpcHandlerDependencies } from '@main/ipc/handlers/referral-handlers'
+import { createReferralIpcHandlers } from '@main/ipc/handlers/referral-handlers'
 import type { ScreeningEncounterIpcHandlerDependencies } from '@main/ipc/handlers/screening-encounter-handlers'
 import { createScreeningEncounterIpcHandlers } from '@main/ipc/handlers/screening-encounter-handlers'
 import type { ScreeningFoodIpcHandlerDependencies } from '@main/ipc/handlers/screening-food-handlers'
@@ -23,6 +25,7 @@ import { createScreeningSessionIpcHandlers } from '@main/ipc/handlers/screening-
 import {
   ipcChannels,
   type InstallationSettingsIpcChannel,
+  type ReferralIpcChannel,
   type ScreeningFoodIpcChannel,
   type ScreeningOtcIpcChannel,
   type ScreeningEncounterIpcChannel,
@@ -50,6 +53,9 @@ interface ScreeningFoodRegistrationOwnership {
   readonly id: symbol
 }
 interface ScreeningOtcRegistrationOwnership {
+  readonly id: symbol
+}
+interface ReferralRegistrationOwnership {
   readonly id: symbol
 }
 
@@ -132,11 +138,19 @@ const activeScreeningOtcRegistrations = new WeakMap<
   ApplicationIpcMain,
   ScreeningOtcRegistrationOwnership
 >()
+const referralIpcChannels: readonly ReferralIpcChannel[] = Object.freeze([
+  ipcChannels.referrals.search,
+  ipcChannels.referrals.getDetail,
+  ipcChannels.referrals.updateStatus,
+  ipcChannels.referrals.recordFollowup
+])
+const activeReferralRegistrations = new WeakMap<ApplicationIpcMain, ReferralRegistrationOwnership>()
 
 export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependencies {
   readonly firstRun: FirstRunIpcHandlerDependencies
   readonly auth: AuthenticationIpcHandlerDependencies
   readonly patient: PatientIpcHandlerDependencies
+  readonly referrals?: ReferralIpcHandlerDependencies
   readonly screeningSessions: ScreeningSessionIpcHandlerDependencies
   readonly screeningEncounters: ScreeningEncounterIpcHandlerDependencies
   readonly screeningLifestyle: ScreeningLifestyleIpcHandlerDependencies
@@ -157,6 +171,7 @@ export function registerApplicationIpcHandlers(
   let disposeScreeningLifestyleHandlers: ApplicationIpcDisposer | undefined
   let disposeScreeningFoodHandlers: ApplicationIpcDisposer | undefined
   let disposeScreeningOtcHandlers: ApplicationIpcDisposer | undefined
+  let disposeReferralHandlers: ApplicationIpcDisposer | undefined
 
   try {
     const appHandlers = createAppIpcHandlers(dependencies)
@@ -235,7 +250,13 @@ export function registerApplicationIpcHandlers(
       applicationIpcMain,
       dependencies.screeningOtc
     )
+    if (dependencies.referrals !== undefined)
+      disposeReferralHandlers = registerReferralIpcHandlers(
+        applicationIpcMain,
+        dependencies.referrals
+      )
   } catch {
+    disposeReferralHandlers?.()
     disposeScreeningOtcHandlers?.()
     disposeScreeningFoodHandlers?.()
     disposeScreeningLifestyleHandlers?.()
@@ -258,6 +279,42 @@ export function registerApplicationIpcHandlers(
   return () => {
     disposeApplicationIpcRegistration(applicationIpcMain, ownership)
   }
+}
+
+export function registerReferralIpcHandlers(
+  applicationIpcMain: ApplicationIpcMain,
+  dependencies: ReferralIpcHandlerDependencies
+): ApplicationIpcDisposer {
+  if (activeReferralRegistrations.has(applicationIpcMain))
+    throw new ApplicationIpcRegistrationError()
+  const ownership = Object.freeze({ id: Symbol('referral-ipc-registration') })
+  const handlers = createReferralIpcHandlers(dependencies)
+  const registrations: ReadonlyArray<readonly [ReferralIpcChannel, ApplicationIpcListener]> = [
+    [ipcChannels.referrals.search, handlers.search],
+    [ipcChannels.referrals.getDetail, handlers.getDetail],
+    [ipcChannels.referrals.updateStatus, handlers.updateStatus],
+    [ipcChannels.referrals.recordFollowup, handlers.recordFollowup]
+  ]
+  const installed: ReferralIpcChannel[] = []
+  try {
+    for (const [channel, listener] of registrations) {
+      applicationIpcMain.handle(channel, listener)
+      installed.push(channel)
+    }
+  } catch {
+    for (const channel of installed.reverse()) applicationIpcMain.removeHandler(channel)
+    throw new ApplicationIpcRegistrationError()
+  }
+  activeReferralRegistrations.set(applicationIpcMain, ownership)
+  return () => {
+    if (activeReferralRegistrations.get(applicationIpcMain) !== ownership) return
+    disposeReferralIpcHandlers(applicationIpcMain)
+  }
+}
+
+export function disposeReferralIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
+  for (const channel of referralIpcChannels) applicationIpcMain.removeHandler(channel)
+  activeReferralRegistrations.delete(applicationIpcMain)
 }
 
 export function registerScreeningSessionIpcHandlers(
@@ -512,6 +569,7 @@ function disposeApplicationOwnedIpcHandlers(applicationIpcMain: ApplicationIpcMa
   disposeScreeningLifestyleIpcHandlers(applicationIpcMain)
   disposeScreeningFoodIpcHandlers(applicationIpcMain)
   disposeScreeningOtcIpcHandlers(applicationIpcMain)
+  disposeReferralIpcHandlers(applicationIpcMain)
 }
 
 export function disposeScreeningLifestyleIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {

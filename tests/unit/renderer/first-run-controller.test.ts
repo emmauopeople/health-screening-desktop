@@ -569,6 +569,12 @@ function createApi({
       findDuplicates: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE')),
       markNotDuplicate: vi.fn(async () => createPatientFailure('IPC_UNAVAILABLE'))
     },
+    referrals: {
+      search: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+      getDetail: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+      updateStatus: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
+      recordFollowup: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+    },
     screeningSessions: {
       getWorkspaceContext: vi.fn(async () => createScreeningSessionFailure('IPC_UNAVAILABLE')),
       ensureCurrent: vi.fn(async () => createScreeningSessionFailure('IPC_UNAVAILABLE')),

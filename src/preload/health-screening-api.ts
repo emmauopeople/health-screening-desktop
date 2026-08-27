@@ -21,6 +21,7 @@ import {
 import { createAuthenticationApi, type IpcInvoke, type IpcSubscribe } from './authentication-api'
 import { createInstallationSettingsApi } from './installation-settings-api'
 import { createPatientApi } from './patient-api'
+import { createReferralApi } from './referral-api'
 import { createScreeningEncounterApi } from './screening-encounter-api'
 import { createScreeningSessionApi } from './screening-session-api'
 
@@ -78,6 +79,7 @@ export function createHealthScreeningApi(
     }),
     auth: createAuthenticationApi({ invoke, subscribe }),
     patient: createPatientApi(invoke),
+    referrals: createReferralApi(invoke),
     screeningSessions: createScreeningSessionApi(invoke),
     screeningEncounters: createScreeningEncounterApi(invoke),
     installationSettings: createInstallationSettingsApi(invoke)

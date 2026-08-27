@@ -28,5 +28,6 @@ export {
 export * from './installation-location'
 export * from './authentication'
 export * from './patients'
+export * from './referrals'
 export * from './screening-encounters'
 export * from './screening-sessions'

@@ -79,6 +79,7 @@ import type {
 import type { ScreeningFoodApi } from './screening-food-contracts'
 import type { ScreeningLifestyleApi } from './screening-lifestyle-contracts'
 import type { ScreeningOtcApi } from './screening-otc-contracts'
+import type { ReferralApi } from './referral-contracts'
 import type {
   ScreeningSessionCloseRequest,
   ScreeningSessionCloseResult,
@@ -172,6 +173,7 @@ export interface HealthScreeningApi {
       request: PatientMarkNotDuplicateRequest
     ): Promise<PatientMarkNotDuplicateResult>
   }
+  referrals: ReferralApi
   screeningSessions: {
     getWorkspaceContext(): Promise<ScreeningSessionGetWorkspaceContextResult>
     ensureCurrent(): Promise<ScreeningSessionEnsureCurrentResult>
