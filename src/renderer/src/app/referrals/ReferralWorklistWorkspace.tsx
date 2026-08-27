@@ -12,7 +12,9 @@ import type {
   PatientErrorCode,
   PublicReferralDetail,
   PublicReferralSummary,
+  ReferralMedicationChangeType,
   ReferralStatus,
+  ReferralTreatmentAction,
   ReferralUrgency
 } from '@shared/ipc'
 
@@ -544,6 +546,27 @@ function FollowupForm({
   const [nextAction, setNextAction] = useState('')
   const [nextFollowupDate, setNextFollowupDate] = useState('')
   const [newStatus, setNewStatus] = useState<ReferralStatus | 'NONE'>('CONTACTED')
+  const [treatmentActions, setTreatmentActions] = useState<readonly ReferralTreatmentAction[]>([])
+  const [medicationChanges, setMedicationChanges] = useState<readonly MedicationChangeDraft[]>([])
+  const nextMedicationIdRef = useRef(1)
+
+  const toggleAction = (action: ReferralTreatmentAction, checked: boolean): void => {
+    setTreatmentActions((current) =>
+      checked ? [...current, action] : current.filter((candidate) => candidate !== action)
+    )
+    if (action === 'TREATMENT_INITIATED') return
+    setMedicationChanges((current) => {
+      if (!checked) return current.filter((row) => row.changeType !== action)
+      if (current.some((row) => row.changeType === action)) return current
+      return [...current, newMedicationDraft(action, nextMedicationIdRef.current++)]
+    })
+  }
+
+  const updateMedication = (id: number, values: Partial<MedicationChangeDraft>): void => {
+    setMedicationChanges((current) =>
+      current.map((row) => (row.id === id ? { ...row, ...values } : row))
+    )
+  }
 
   return (
     <form
@@ -562,6 +585,15 @@ function FollowupForm({
           nextAction: nextAction.trim() || null,
           nextFollowupDate: nextFollowupDate || null,
           sourceType: 'DIRECT_FOLLOWUP',
+          treatmentActions: [...treatmentActions],
+          medicationChanges: medicationChanges.map(
+            ({ changeType, medicationName, dosage, frequency }) => ({
+              changeType,
+              medicationName: medicationName.trim(),
+              dosage: dosage.trim() || null,
+              frequency: frequency.trim() || null
+            })
+          ),
           newStatus: newStatus === 'NONE' ? null : newStatus,
           statusReason: null
         })
@@ -604,13 +636,118 @@ function FollowupForm({
         <span>Provider seen</span>
         <select
           value={providerSeen}
-          onChange={(event) => setProviderSeen(event.currentTarget.value)}
+          onChange={(event) => {
+            const value = event.currentTarget.value
+            setProviderSeen(value)
+            if (value !== 'YES') {
+              setTreatmentActions([])
+              setMedicationChanges([])
+            }
+          }}
         >
           <option value="UNKNOWN">Not confirmed</option>
           <option value="YES">Yes</option>
           <option value="NO">No</option>
         </select>
       </label>
+      {providerSeen === 'YES' ? (
+        <fieldset className="referral-visit-actions referral-followup-wide">
+          <legend>Visit actions</legend>
+          {(
+            [
+              ['TREATMENT_INITIATED', 'Treatment initiated'],
+              ['TREATMENT_MODIFIED', 'Treatment modified'],
+              ['NEW_MEDICATION', 'New medication']
+            ] as const
+          ).map(([value, label]) => (
+            <label key={value}>
+              <input
+                type="checkbox"
+                checked={treatmentActions.includes(value)}
+                onChange={(event) => toggleAction(value, event.currentTarget.checked)}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+          {medicationChanges.length === 0 ? null : (
+            <div className="referral-medication-changes">
+              {medicationChanges.map((row) => (
+                <div key={row.id} className="referral-medication-row">
+                  <strong>
+                    {row.changeType === 'NEW_MEDICATION' ? 'New medication' : 'Treatment modified'}
+                  </strong>
+                  <label>
+                    <span>Medication *</span>
+                    <input
+                      required
+                      maxLength={255}
+                      value={row.medicationName}
+                      onChange={(event) =>
+                        updateMedication(row.id, { medicationName: event.currentTarget.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>{row.changeType === 'TREATMENT_MODIFIED' ? 'New dosage' : 'Dosage'}</span>
+                    <input
+                      maxLength={255}
+                      value={row.dosage}
+                      onChange={(event) =>
+                        updateMedication(row.id, { dosage: event.currentTarget.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>
+                      {row.changeType === 'TREATMENT_MODIFIED' ? 'New frequency' : 'Frequency'}
+                    </span>
+                    <input
+                      maxLength={255}
+                      value={row.frequency}
+                      onChange={(event) =>
+                        updateMedication(row.id, { frequency: event.currentTarget.value })
+                      }
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    onClick={() =>
+                      setMedicationChanges((current) =>
+                        current.filter((candidate) => candidate.id !== row.id)
+                      )
+                    }
+                    disabled={
+                      medicationChanges.filter(
+                        (candidate) => candidate.changeType === row.changeType
+                      ).length === 1
+                    }
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              {(['NEW_MEDICATION', 'TREATMENT_MODIFIED'] as const).map((changeType) =>
+                treatmentActions.includes(changeType) ? (
+                  <button
+                    key={changeType}
+                    type="button"
+                    className="button button-secondary"
+                    onClick={() =>
+                      setMedicationChanges((current) => [
+                        ...current,
+                        newMedicationDraft(changeType, nextMedicationIdRef.current++)
+                      ])
+                    }
+                  >
+                    Add {changeType === 'NEW_MEDICATION' ? 'new medication' : 'modified medication'}
+                  </button>
+                ) : null
+              )}
+            </div>
+          )}
+        </fieldset>
+      ) : null}
       <label className="referral-followup-wide">
         <span>Reported outcome</span>
         <textarea
@@ -664,6 +801,21 @@ function FollowupForm({
   )
 }
 
+interface MedicationChangeDraft {
+  readonly id: number
+  readonly changeType: ReferralMedicationChangeType
+  readonly medicationName: string
+  readonly dosage: string
+  readonly frequency: string
+}
+
+function newMedicationDraft(
+  changeType: ReferralMedicationChangeType,
+  id: number
+): MedicationChangeDraft {
+  return { id, changeType, medicationName: '', dosage: '', frequency: '' }
+}
+
 function History({ detail }: { readonly detail: PublicReferralDetail }): React.JSX.Element {
   return (
     <div className="referral-history">
@@ -698,6 +850,20 @@ function History({ detail }: { readonly detail: PublicReferralDetail }): React.J
                 </strong>
                 <span>{entry.recordedByDisplayName}</span>
                 {entry.reportedOutcome === null ? null : <p>{entry.reportedOutcome}</p>}
+                {entry.treatmentActions.length === 0 ? null : (
+                  <p>{entry.treatmentActions.map(formatLabel).join(', ')}</p>
+                )}
+                {entry.medicationChanges.length === 0 ? null : (
+                  <ul className="referral-history-medications">
+                    {entry.medicationChanges.map((medication) => (
+                      <li key={medication.id}>
+                        {formatLabel(medication.changeType)}: {medication.medicationName}
+                        {medication.dosage === null ? '' : ` • ${medication.dosage}`}
+                        {medication.frequency === null ? '' : ` • ${medication.frequency}`}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </li>
             ))}
           </ol>
