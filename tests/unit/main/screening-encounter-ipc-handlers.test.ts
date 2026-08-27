@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createDevelopmentNavigationPolicy } from '@main/app/navigation-policy'
 import type {
   ScreeningCompletionService,
+  ScreeningEncounterManagementService,
   ScreeningEncounterStartService,
   ScreeningVitalsDraftService
 } from '@main/application'
@@ -422,6 +423,48 @@ describe('screening encounter IPC handlers', () => {
     expectLogsAreSafe(malformedHarness.logger)
     expectLogsAreSafe(thrownHarness.logger)
   })
+
+  it('validates and forwards the bounded patient-history request', async () => {
+    const getPatientHistory = vi.fn<ScreeningEncounterManagementService['getPatientHistory']>(
+      () => ({
+        status: 'LOADED',
+        history: {
+          patientId: parseEntityId(patientId),
+          items: [],
+          total: 0,
+          page: 1,
+          pageSize: 25,
+          trendEncounters: [],
+          thirtyDayAverage: null
+        }
+      })
+    )
+    const harness = createHarness({
+      managementService: { getPatientHistory } as unknown as ScreeningEncounterManagementService
+    })
+
+    await expect(
+      harness.handlers.getPatientScreeningHistory(createAllowedEvent(), {
+        patientId,
+        page: 1,
+        pageSize: 25
+      })
+    ).resolves.toEqual(
+      createIpcSuccess({
+        status: 'LOADED',
+        history: {
+          patientId,
+          items: [],
+          total: 0,
+          page: 1,
+          pageSize: 25,
+          trendEncounters: [],
+          thirtyDayAverage: null
+        }
+      })
+    )
+    expect(getPatientHistory).toHaveBeenCalledWith(parseEntityId(patientId), 1, 25)
+  })
 })
 
 interface HandlerHarness {
@@ -443,10 +486,12 @@ interface TestLogger extends ScreeningEncounterIpcOperationalLogger {
 
 function createHarness({
   result = { status: 'STARTED', encounter: internalEncounter },
-  implementation
+  implementation,
+  managementService
 }: {
   readonly result?: ReturnType<ScreeningEncounterStartService['start']>
   readonly implementation?: ScreeningEncounterStartService['start']
+  readonly managementService?: ScreeningEncounterManagementService
 } = {}): HandlerHarness {
   const logger = createLogger()
   const start = vi.fn(implementation ?? (() => result))
@@ -462,6 +507,7 @@ function createHarness({
     screeningEncounterStartService,
     screeningVitalsDraftService: vitals as unknown as ScreeningVitalsDraftService,
     screeningCompletionService: { complete: completion },
+    screeningEncounterManagementService: managementService,
     logger
   })
 
