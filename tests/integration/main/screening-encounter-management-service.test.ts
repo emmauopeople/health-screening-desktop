@@ -61,7 +61,10 @@ const ids = Object.freeze({
   cancelOutbox: '52000000-0000-4000-8000-000000000031',
   completedVitals: '52000000-0000-4000-8000-000000000032',
   referral: '52000000-0000-4000-8000-000000000033',
-  followup: '52000000-0000-4000-8000-000000000034'
+  followup: '52000000-0000-4000-8000-000000000034',
+  followupAction: '52000000-0000-4000-8000-000000000035',
+  medicationChange: '52000000-0000-4000-8000-000000000036',
+  missingPatient: '52000000-0000-4000-8000-000000000037'
 })
 
 describe('screening encounter management service integration', () => {
@@ -91,11 +94,74 @@ describe('screening encounter management service integration', () => {
           activeReferral: {
             id: ids.referral,
             status: 'CONTACTED',
-            urgency: 'ROUTINE',
+            urgency: 'STANDARD',
             dueDate: '2026-08-27',
             lastContactDate: '2026-08-21'
           }
         }
+      })
+
+      expect(service.getPatientHistory(parseEntityId(ids.patient), 1, 25)).toEqual({
+        status: 'LOADED',
+        history: {
+          patientId: ids.patient,
+          items: [
+            {
+              id: ids.encounter,
+              completedAt: now,
+              systolic: 120,
+              diastolic: 80,
+              pulse: 70,
+              nextAction: 'ROUTINE',
+              weightKg: 78.5,
+              referral: {
+                id: ids.referral,
+                status: 'CONTACTED',
+                urgency: 'STANDARD',
+                dueDate: '2026-08-27',
+                closedAt: null,
+                latestFollowup: {
+                  id: ids.followup,
+                  contactDate: '2026-08-21',
+                  providerSeen: true,
+                  reportedOutcome: 'Treatment started',
+                  treatmentActions: ['NEW_MEDICATION'],
+                  medicationChanges: [
+                    {
+                      id: ids.medicationChange,
+                      changeType: 'NEW_MEDICATION',
+                      medicationName: 'Amlodipine',
+                      dosage: '5 mg',
+                      frequency: 'Daily'
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          total: 1,
+          page: 1,
+          pageSize: 25,
+          trendEncounters: [
+            {
+              id: ids.encounter,
+              completedAt: now,
+              systolic: 120,
+              diastolic: 80,
+              pulse: 70,
+              nextAction: 'ROUTINE',
+              weightKg: 78.5
+            }
+          ],
+          thirtyDayAverage: { systolic: 120, diastolic: 80, encounterCount: 1 }
+        }
+      })
+      expect(service.getPatientHistory(parseEntityId(ids.patient), 2, 25)).toMatchObject({
+        status: 'LOADED',
+        history: { items: [], total: 1, page: 2, pageSize: 25 }
+      })
+      expect(service.getPatientHistory(parseEntityId(ids.missingPatient), 1, 25)).toEqual({
+        status: 'PATIENT_NOT_FOUND'
       })
 
       const before = service.getDetail(parseEntityId(ids.encounter))
@@ -596,7 +662,7 @@ function seedGraph(connection: Database.Database): void {
          (id, patient_id, encounter_id, protocol_version_id, reason_codes_json, reason_text,
           urgency, destination_name, due_date, status, created_by, created_at, printed_at,
           closed_by, closed_at, closure_reason, record_version, updated_at)
-       VALUES (?, ?, ?, ?, '["ELEVATED_BP"]', NULL, 'ROUTINE', NULL, '2026-08-27',
+       VALUES (?, ?, ?, ?, '["ELEVATED_BP"]', NULL, 'STANDARD', NULL, '2026-08-27',
                'CONTACTED', ?, ?, NULL, NULL, NULL, NULL, 1, ?)`
     )
     .run(ids.referral, ids.patient, ids.encounter, protocol, ids.user, now, now)
@@ -606,10 +672,23 @@ function seedGraph(connection: Database.Database): void {
          (id, referral_id, contact_date, contact_method, information_source, provider_seen,
           facility_name, date_seen, reported_outcome, reported_medications_or_advice,
           next_action, next_followup_date, source_type, recorded_by, recorded_at)
-       VALUES (?, ?, '2026-08-21', 'PHONE', 'PATIENT', NULL, NULL, NULL, NULL, NULL,
+       VALUES (?, ?, '2026-08-21', 'PHONE', 'PATIENT', 1, NULL, NULL, 'Treatment started', NULL,
                NULL, NULL, 'PATIENT_REPORTED', ?, ?)`
     )
     .run(ids.followup, ids.referral, ids.user, now)
+  connection
+    .prepare(
+      `INSERT INTO referral_followup_actions (id, followup_id, action_code, sequence_number)
+       VALUES (?, ?, 'NEW_MEDICATION', 1)`
+    )
+    .run(ids.followupAction, ids.followup)
+  connection
+    .prepare(
+      `INSERT INTO referral_followup_medication_changes
+         (id, followup_id, change_type, medication_name, dosage, frequency, sequence_number)
+       VALUES (?, ?, 'NEW_MEDICATION', 'Amlodipine', '5 mg', 'Daily', 1)`
+    )
+    .run(ids.medicationChange, ids.followup)
   connection
     .prepare(
       'INSERT INTO blood_pressure_readings (id, encounter_id, sequence_number, systolic, diastolic, pulse, measured_at, status, source_type, recorded_by, recorded_at) VALUES (?, ?, 1, 120, 80, 70, ?, ?, ?, ?, ?)'
