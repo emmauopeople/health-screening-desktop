@@ -28,6 +28,13 @@ import type {
   PatientContextNextAction,
   PatientContextReferralRecord,
   PatientContextReferralStatus,
+  PatientHistoryEncounterRecord,
+  PatientHistoryMedicationChangeRecord,
+  PatientHistoryMedicationChangeType,
+  PatientHistoryReferralFollowupRecord,
+  PatientHistoryReferralRecord,
+  PatientHistoryReferralStatus,
+  PatientHistoryTreatmentAction,
   PatientScreeningContextRecord,
   ScreeningEncounterManagementRepository,
   SearchManagedEncountersInput,
@@ -59,6 +66,19 @@ const patientContextReferralStatuses = new Set<PatientContextReferralStatus>([
   'CONTACTED',
   'SEEN',
   'UNABLE_TO_CONFIRM'
+])
+const patientHistoryReferralStatuses = new Set<PatientHistoryReferralStatus>([
+  ...patientContextReferralStatuses,
+  'CLOSED'
+])
+const patientHistoryTreatmentActions = new Set<PatientHistoryTreatmentAction>([
+  'TREATMENT_INITIATED',
+  'TREATMENT_MODIFIED',
+  'NEW_MEDICATION'
+])
+const patientHistoryMedicationChangeTypes = new Set<PatientHistoryMedicationChangeType>([
+  'TREATMENT_MODIFIED',
+  'NEW_MEDICATION'
 ])
 const localDatePattern = /^\d{4}-\d{2}-\d{2}$/u
 
@@ -164,6 +184,70 @@ WHERE encounter.patient_id = ?
   AND encounter.completed_at >= ?
   AND encounter.summary_systolic IS NOT NULL
   AND encounter.summary_diastolic IS NOT NULL;
+`
+
+const patientHistoryEncountersSql = `
+SELECT
+  encounter.id,
+  encounter.completed_at,
+  encounter.summary_systolic,
+  encounter.summary_diastolic,
+  encounter.summary_pulse,
+  encounter.next_action_category,
+  vitals.weight_kg
+FROM screening_encounters encounter
+LEFT JOIN screening_vitals_drafts vitals ON vitals.encounter_id = encounter.id
+WHERE encounter.patient_id = ?
+  AND encounter.status IN ('COMPLETED', 'AMENDED')
+  AND encounter.completed_at IS NOT NULL
+  AND encounter.summary_systolic IS NOT NULL
+  AND encounter.summary_diastolic IS NOT NULL
+  AND encounter.summary_pulse IS NOT NULL
+  AND encounter.next_action_category IN ('ROUTINE', 'REFER', 'URGENT_REFERRAL')
+ORDER BY encounter.completed_at DESC, encounter.id DESC
+LIMIT ? OFFSET ?;
+`
+
+const patientHistoryCountSql = `
+SELECT COUNT(*) AS total
+FROM screening_encounters encounter
+WHERE encounter.patient_id = ?
+  AND encounter.status IN ('COMPLETED', 'AMENDED')
+  AND encounter.completed_at IS NOT NULL
+  AND encounter.summary_systolic IS NOT NULL
+  AND encounter.summary_diastolic IS NOT NULL
+  AND encounter.summary_pulse IS NOT NULL
+  AND encounter.next_action_category IN ('ROUTINE', 'REFER', 'URGENT_REFERRAL');
+`
+
+const patientHistoryReferralSql = `
+SELECT id, status, urgency, due_date, closed_at
+FROM referrals
+WHERE encounter_id = ?
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+`
+
+const patientHistoryLatestFollowupSql = `
+SELECT id, contact_date, provider_seen, reported_outcome
+FROM followups
+WHERE referral_id = ?
+ORDER BY contact_date DESC, recorded_at DESC, id DESC
+LIMIT 1;
+`
+
+const patientHistoryActionsSql = `
+SELECT action_code
+FROM referral_followup_actions
+WHERE followup_id = ?
+ORDER BY sequence_number, id;
+`
+
+const patientHistoryMedicationChangesSql = `
+SELECT id, change_type, medication_name, dosage, frequency
+FROM referral_followup_medication_changes
+WHERE followup_id = ?
+ORDER BY sequence_number, id;
 `
 
 const patientContextActiveReferralSql = `
@@ -360,6 +444,46 @@ export function createScreeningEncounterManagementRepository(
           recentEncounters: Object.freeze(recentRows.map(readPatientContextEncounter)),
           thirtyDayAverage: readPatientContextAverage(averageRow),
           activeReferral: referralRow === undefined ? null : readPatientContextReferral(referralRow)
+        })
+      } catch (error) {
+        rethrowRead(error)
+      }
+    },
+
+    getPatientHistory(patientId, thirtyDayCutoff, page, pageSize, trendLimit) {
+      const parsedPatientId = parseEntityId(patientId)
+      const parsedCutoff = parseUtcTimestamp(thirtyDayCutoff)
+      if (
+        !Number.isSafeInteger(page) ||
+        page < 1 ||
+        ![25, 50, 100].includes(pageSize) ||
+        !Number.isSafeInteger(trendLimit) ||
+        trendLimit < 3 ||
+        trendLimit > 12
+      )
+        throw new RepositoryValidationError()
+      try {
+        const patient = connection
+          .prepare('SELECT id FROM patients WHERE id = ?')
+          .get(parsedPatientId)
+        if (patient === undefined) return null
+        const rows = connection
+          .prepare(patientHistoryEncountersSql)
+          .all(parsedPatientId, pageSize, (page - 1) * pageSize) as readonly Record<
+          string,
+          unknown
+        >[]
+        const totalRow = connection.prepare(patientHistoryCountSql).get(parsedPatientId) as
+          { total?: unknown } | undefined
+        const context = this.getPatientContext(parsedPatientId, parsedCutoff, trendLimit)
+        return Object.freeze({
+          patientId: parsedPatientId,
+          items: Object.freeze(rows.map((row) => readPatientHistoryEncounter(connection, row))),
+          total: parseCount(totalRow?.total),
+          page,
+          pageSize,
+          trendEncounters: context.recentEncounters,
+          thirtyDayAverage: context.thirtyDayAverage
         })
       } catch (error) {
         rethrowRead(error)
@@ -658,6 +782,82 @@ function readPatientContextReferral(row: Record<string, unknown>): PatientContex
   })
 }
 
+function readPatientHistoryEncounter(
+  connection: Database.Database,
+  row: Record<string, unknown>
+): PatientHistoryEncounterRecord {
+  const base = readPatientContextEncounter(row)
+  const referralRow = connection.prepare(patientHistoryReferralSql).get(base.id) as
+    Record<string, unknown> | undefined
+  return Object.freeze({
+    ...base,
+    referral: referralRow === undefined ? null : readPatientHistoryReferral(connection, referralRow)
+  })
+}
+
+function readPatientHistoryReferral(
+  connection: Database.Database,
+  row: Record<string, unknown>
+): PatientHistoryReferralRecord {
+  const status = row['status'] as PatientHistoryReferralStatus
+  if (!patientHistoryReferralStatuses.has(status)) throw new RepositoryDataIntegrityError()
+  const id = parseEntityId(row['id'])
+  const followupRow = connection.prepare(patientHistoryLatestFollowupSql).get(id) as
+    Record<string, unknown> | undefined
+  return Object.freeze({
+    id,
+    status,
+    urgency: parseStoredText(row['urgency']),
+    dueDate: parseNullableLocalDate(row['due_date']),
+    closedAt: row['closed_at'] === null ? null : parseUtcTimestamp(row['closed_at']),
+    latestFollowup:
+      followupRow === undefined ? null : readPatientHistoryFollowup(connection, followupRow)
+  })
+}
+
+function readPatientHistoryFollowup(
+  connection: Database.Database,
+  row: Record<string, unknown>
+): PatientHistoryReferralFollowupRecord {
+  const providerSeen = row['provider_seen']
+  if (providerSeen !== null && providerSeen !== 0 && providerSeen !== 1)
+    throw new RepositoryDataIntegrityError()
+  const id = parseEntityId(row['id'])
+  const actionRows = connection.prepare(patientHistoryActionsSql).all(id) as readonly {
+    action_code?: unknown
+  }[]
+  const treatmentActions = actionRows.map((actionRow) => {
+    const action = actionRow.action_code as PatientHistoryTreatmentAction
+    if (!patientHistoryTreatmentActions.has(action)) throw new RepositoryDataIntegrityError()
+    return action
+  })
+  const medicationRows = connection
+    .prepare(patientHistoryMedicationChangesSql)
+    .all(id) as readonly Record<string, unknown>[]
+  return Object.freeze({
+    id,
+    contactDate: parseLocalDate(row['contact_date']),
+    providerSeen: providerSeen === null ? null : providerSeen === 1,
+    reportedOutcome: parseNullableText(row['reported_outcome']),
+    treatmentActions: Object.freeze(treatmentActions),
+    medicationChanges: Object.freeze(medicationRows.map(readPatientHistoryMedicationChange))
+  })
+}
+
+function readPatientHistoryMedicationChange(
+  row: Record<string, unknown>
+): PatientHistoryMedicationChangeRecord {
+  const changeType = row['change_type'] as PatientHistoryMedicationChangeType
+  if (!patientHistoryMedicationChangeTypes.has(changeType)) throw new RepositoryDataIntegrityError()
+  return Object.freeze({
+    id: parseEntityId(row['id']),
+    changeType,
+    medicationName: parseStoredText(row['medication_name']),
+    dosage: parseNullableText(row['dosage']),
+    frequency: parseNullableText(row['frequency'])
+  })
+}
+
 function parseSearchInput(input: SearchManagedEncountersInput): SearchManagedEncountersInput {
   const query = typeof input.query === 'string' ? input.query.trim().toLowerCase() : ''
   if (
@@ -703,6 +903,11 @@ function parseNullableLocalDate(value: unknown): string | null {
   if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value)
     throw new RepositoryDataIntegrityError()
   return value
+}
+function parseLocalDate(value: unknown): string {
+  const parsed = parseNullableLocalDate(value)
+  if (parsed === null) throw new RepositoryDataIntegrityError()
+  return parsed
 }
 function parseNullablePositiveNumber(value: unknown): number | null {
   if (value === null) return null
