@@ -109,6 +109,7 @@ describe('preload screening-encounter API', () => {
       'search',
       'getDetail',
       'getPatientContext',
+      'getPatientHistory',
       'addAddendum',
       'openFlag',
       'resolveFlag',
@@ -171,6 +172,32 @@ describe('preload screening-encounter API', () => {
     expect(invoke).toHaveBeenCalledWith(
       ipcChannels.screeningEncounters.management.voidEmptyDraft,
       request
+    )
+  })
+
+  it('invokes the fixed paginated patient-history channel', async () => {
+    const response = createIpcSuccess({
+      status: 'LOADED' as const,
+      history: {
+        patientId,
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize: 25 as const,
+        trendEncounters: [],
+        thirtyDayAverage: null
+      }
+    })
+    const invoke = vi.fn().mockResolvedValue(response)
+    const api = createHealthScreeningApi(invoke)
+    const historyRequest = { patientId, page: 1, pageSize: 25 as const }
+
+    await expect(
+      api.screeningEncounters.management.getPatientHistory(historyRequest)
+    ).resolves.toEqual(response)
+    expect(invoke).toHaveBeenCalledWith(
+      ipcChannels.screeningEncounters.management.getPatientHistory,
+      historyRequest
     )
   })
 

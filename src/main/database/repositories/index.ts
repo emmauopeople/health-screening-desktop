@@ -263,6 +263,7 @@ export {
   type PatientContextReferralStatus,
   type PatientContextThirtyDayAverageRecord,
   type PatientScreeningContextRecord,
+  type PatientScreeningHistoryRecord,
   type ResolveEncounterReviewFlagInput,
   type ScreeningEncounterManagementRepository,
   type SearchManagedEncountersInput,

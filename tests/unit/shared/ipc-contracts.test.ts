@@ -119,6 +119,7 @@ describe('shared IPC contracts', () => {
           search: 'health-screening:screening-encounters:management:search',
           getDetail: 'health-screening:screening-encounters:management:get-detail',
           getPatientContext: 'health-screening:screening-encounters:management:get-patient-context',
+          getPatientHistory: 'health-screening:screening-encounters:management:get-patient-history',
           addAddendum: 'health-screening:screening-encounters:management:add-addendum',
           openFlag: 'health-screening:screening-encounters:management:open-flag',
           resolveFlag: 'health-screening:screening-encounters:management:resolve-flag',
@@ -154,7 +155,7 @@ describe('shared IPC contracts', () => {
     })
     const allChannels = flattenChannelStrings(ipcChannels)
 
-    expect(allChannels).toHaveLength(61)
+    expect(allChannels).toHaveLength(62)
     expect(new Set(allChannels).size).toBe(allChannels.length)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.lifestyle.complete)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.complete)

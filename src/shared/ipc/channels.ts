@@ -54,6 +54,7 @@ export const ipcChannels = {
       search: 'health-screening:screening-encounters:management:search',
       getDetail: 'health-screening:screening-encounters:management:get-detail',
       getPatientContext: 'health-screening:screening-encounters:management:get-patient-context',
+      getPatientHistory: 'health-screening:screening-encounters:management:get-patient-history',
       addAddendum: 'health-screening:screening-encounters:management:add-addendum',
       openFlag: 'health-screening:screening-encounters:management:open-flag',
       resolveFlag: 'health-screening:screening-encounters:management:resolve-flag',

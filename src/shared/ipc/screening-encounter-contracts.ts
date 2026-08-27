@@ -3,6 +3,12 @@ import { z } from 'zod'
 import { createIpcSuccess, createIpcSuccessResultSchema, safeIpcErrorMessages } from './result'
 import { patientLocalDateSchema } from './patient-contracts'
 import {
+  referralMedicationChangeTypeSchema,
+  referralStatusSchema,
+  referralTreatmentActionSchema,
+  referralUrgencySchema
+} from './referral-contracts'
+import {
   VITALS_DIASTOLIC_MAX,
   VITALS_DIASTOLIC_MIN,
   VITALS_PULSE_MAX,
@@ -84,6 +90,11 @@ export const encounterManagementGetDetailRequestSchema = exactObject({
 })
 export const encounterManagementGetPatientContextRequestSchema = exactObject({
   patientId: screeningEncounterUuidSchema
+})
+export const encounterManagementGetPatientHistoryRequestSchema = exactObject({
+  patientId: screeningEncounterUuidSchema,
+  page: z.number().int().min(1).safe(),
+  pageSize: z.union([z.literal(25), z.literal(50), z.literal(100)])
 })
 export const encounterManagementAddAddendumRequestSchema = exactObject({
   encounterId: screeningEncounterUuidSchema,
@@ -295,6 +306,50 @@ export const publicPatientScreeningContextSchema = z
   })
   .strict()
 
+const publicPatientHistoryMedicationChangeSchema = z
+  .object({
+    id: screeningEncounterUuidSchema,
+    changeType: referralMedicationChangeTypeSchema,
+    medicationName: z.string().min(1).max(255),
+    dosage: z.string().min(1).max(255).nullable(),
+    frequency: z.string().min(1).max(255).nullable()
+  })
+  .strict()
+const publicPatientHistoryFollowupSchema = z
+  .object({
+    id: screeningEncounterUuidSchema,
+    contactDate: patientLocalDateSchema,
+    providerSeen: z.boolean().nullable(),
+    reportedOutcome: z.string().min(1).max(2000).nullable(),
+    treatmentActions: z.array(referralTreatmentActionSchema).max(3),
+    medicationChanges: z.array(publicPatientHistoryMedicationChangeSchema).max(20)
+  })
+  .strict()
+const publicPatientHistoryReferralSchema = z
+  .object({
+    id: screeningEncounterUuidSchema,
+    status: referralStatusSchema,
+    urgency: referralUrgencySchema,
+    dueDate: patientLocalDateSchema.nullable(),
+    closedAt: screeningEncounterUtcTimestampSchema.nullable(),
+    latestFollowup: publicPatientHistoryFollowupSchema.nullable()
+  })
+  .strict()
+export const publicPatientHistoryEncounterSchema = publicPatientContextEncounterSchema
+  .extend({ referral: publicPatientHistoryReferralSchema.nullable() })
+  .strict()
+export const publicPatientScreeningHistorySchema = z
+  .object({
+    patientId: screeningEncounterUuidSchema,
+    items: z.array(publicPatientHistoryEncounterSchema).max(100),
+    total: z.number().int().min(0).safe(),
+    page: z.number().int().min(1).safe(),
+    pageSize: z.union([z.literal(25), z.literal(50), z.literal(100)]),
+    trendEncounters: z.array(publicPatientContextEncounterSchema).max(12),
+    thirtyDayAverage: publicPatientScreeningContextSchema.shape.thirtyDayAverage
+  })
+  .strict()
+
 const encounterManagementControlledStatusSchemas = [
   z.object({ status: z.literal('AUTHENTICATION_REQUIRED') }).strict(),
   z.object({ status: z.literal('FORBIDDEN') }).strict(),
@@ -303,6 +358,7 @@ const encounterManagementControlledStatusSchemas = [
   z.object({ status: z.literal('LOCATION_NOT_FOUND') }).strict(),
   z.object({ status: z.literal('LOCATION_INACTIVE') }).strict(),
   z.object({ status: z.literal('ENCOUNTER_NOT_FOUND') }).strict(),
+  z.object({ status: z.literal('PATIENT_NOT_FOUND') }).strict(),
   z.object({ status: z.literal('ENCOUNTER_NOT_MANAGEABLE') }).strict(),
   z.object({ status: z.literal('ENCOUNTER_NOT_EMPTY') }).strict(),
   z.object({ status: z.literal('VERSION_CONFLICT') }).strict(),
@@ -330,6 +386,15 @@ export const encounterManagementGetPatientContextSuccessDataSchema = z.discrimin
   [
     z
       .object({ status: z.literal('LOADED'), context: publicPatientScreeningContextSchema })
+      .strict(),
+    ...encounterManagementControlledStatusSchemas
+  ]
+)
+export const encounterManagementGetPatientHistorySuccessDataSchema = z.discriminatedUnion(
+  'status',
+  [
+    z
+      .object({ status: z.literal('LOADED'), history: publicPatientScreeningHistorySchema })
       .strict(),
     ...encounterManagementControlledStatusSchemas
   ]
@@ -547,6 +612,12 @@ export const encounterManagementGetPatientContextResultSchema = withSafeTranspor
     screeningEncounterFailureSchema
   ])
 )
+export const encounterManagementGetPatientHistoryResultSchema = withSafeTransportPreprocess(
+  z.discriminatedUnion('ok', [
+    createIpcSuccessResultSchema(encounterManagementGetPatientHistorySuccessDataSchema),
+    screeningEncounterFailureSchema
+  ])
+)
 export const encounterManagementAddAddendumResultSchema = withSafeTransportPreprocess(
   z.discriminatedUnion('ok', [
     createIpcSuccessResultSchema(encounterManagementAddAddendumSuccessDataSchema),
@@ -590,6 +661,9 @@ export type EncounterManagementGetDetailRequest = z.infer<
 export type EncounterManagementGetPatientContextRequest = z.infer<
   typeof encounterManagementGetPatientContextRequestSchema
 >
+export type EncounterManagementGetPatientHistoryRequest = z.infer<
+  typeof encounterManagementGetPatientHistoryRequestSchema
+>
 export type EncounterManagementAddAddendumRequest = z.infer<
   typeof encounterManagementAddAddendumRequestSchema
 >
@@ -613,12 +687,17 @@ export type PublicManagedEncounterDetail = z.infer<typeof publicManagedEncounter
 export type PublicPatientContextEncounter = z.infer<typeof publicPatientContextEncounterSchema>
 export type PublicPatientContextReferral = z.infer<typeof publicPatientContextReferralSchema>
 export type PublicPatientScreeningContext = z.infer<typeof publicPatientScreeningContextSchema>
+export type PublicPatientHistoryEncounter = z.infer<typeof publicPatientHistoryEncounterSchema>
+export type PublicPatientScreeningHistory = z.infer<typeof publicPatientScreeningHistorySchema>
 export type EncounterManagementSearchResult = z.infer<typeof encounterManagementSearchResultSchema>
 export type EncounterManagementGetDetailResult = z.infer<
   typeof encounterManagementGetDetailResultSchema
 >
 export type EncounterManagementGetPatientContextResult = z.infer<
   typeof encounterManagementGetPatientContextResultSchema
+>
+export type EncounterManagementGetPatientHistoryResult = z.infer<
+  typeof encounterManagementGetPatientHistoryResultSchema
 >
 export type EncounterManagementAddAddendumResult = z.infer<
   typeof encounterManagementAddAddendumResultSchema

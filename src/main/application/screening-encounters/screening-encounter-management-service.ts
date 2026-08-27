@@ -108,6 +108,29 @@ export function createScreeningEncounterManagementService(
       }
     },
 
+    getPatientHistory(patientId, page, pageSize) {
+      const actor = resolveActor(dependencies)
+      if (actor.status !== 'VALID') return { status: actor.statusCode }
+      try {
+        const now = dependencies.clock.now()
+        const cutoff = new Date(new Date(now).getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
+        const history = dependencies.managementRepository.getPatientHistory(
+          parseEntityId(patientId),
+          cutoff as typeof now,
+          page,
+          pageSize,
+          12
+        )
+        return history === null
+          ? { status: 'PATIENT_NOT_FOUND' as const }
+          : { status: 'LOADED' as const, history }
+      } catch (error) {
+        return {
+          status: error instanceof RepositoryValidationError ? 'VALIDATION_FAILED' : 'UNAVAILABLE'
+        }
+      }
+    },
+
     addAddendum(encounterId, noteText) {
       const actor = resolveActor(dependencies)
       if (actor.status !== 'VALID') return { status: actor.statusCode }
