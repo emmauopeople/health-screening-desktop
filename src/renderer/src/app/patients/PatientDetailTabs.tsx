@@ -6,6 +6,7 @@ import type { HealthScreeningApi, PatientErrorCode, PublicPatientDetail } from '
 import { PatientAcknowledgmentHistoryPanel } from './PatientAcknowledgmentHistoryPanel'
 import { PatientDemographicHistoryPanel } from './PatientDemographicHistoryPanel'
 import { PatientIdentifiersPanel } from './PatientIdentifiersPanel'
+import { PatientScreeningHistoryPanel } from './PatientScreeningHistoryPanel'
 import type {
   AcknowledgmentHistoryItem,
   DemographicHistoryItem,
@@ -14,7 +15,11 @@ import type {
 } from './patient-history-state'
 
 export type PatientDetailTab =
-  'CURRENT_DETAILS' | 'DEMOGRAPHIC_HISTORY' | 'ACKNOWLEDGMENT_HISTORY' | 'IDENTIFIERS'
+  | 'CURRENT_DETAILS'
+  | 'SCREENING_HISTORY'
+  | 'DEMOGRAPHIC_HISTORY'
+  | 'ACKNOWLEDGMENT_HISTORY'
+  | 'IDENTIFIERS'
 
 type PatientStateInvalidator = () => void
 type RegisterPatientStateInvalidator = (invalidator: PatientStateInvalidator) => () => void
@@ -29,6 +34,7 @@ interface PatientDetailTabsProps {
   readonly securityEpochRef: MutableRefObject<number>
   registerStateInvalidator: RegisterPatientStateInvalidator
   onPatientFailure(code: PatientErrorCode, message: string): boolean
+  onOpenEncounter(encounterId: string): void
   onSelectTab(tab: PatientDetailTab): void
 }
 
@@ -41,6 +47,12 @@ const patientDetailTabs = Object.freeze([
     label: 'Current Details',
     tabId: 'patient-detail-tab-current-details',
     panelId: 'patient-detail-panel-current-details'
+  },
+  {
+    id: 'SCREENING_HISTORY',
+    label: 'Screening History',
+    tabId: 'patient-detail-tab-screening-history',
+    panelId: 'patient-detail-panel-screening-history'
   },
   {
     id: 'DEMOGRAPHIC_HISTORY',
@@ -77,6 +89,7 @@ export function PatientDetailTabs({
   securityEpochRef,
   registerStateInvalidator,
   onPatientFailure,
+  onOpenEncounter,
   onSelectTab
 }: PatientDetailTabsProps): React.JSX.Element {
   const mountedRef = useMountedRef()
@@ -407,6 +420,19 @@ export function PatientDetailTabs({
         className="patient-detail-tab-panel"
       >
         {activeTab === 'CURRENT_DETAILS' ? currentDetails : null}
+        {activeTab === 'SCREENING_HISTORY' ? (
+          <PatientScreeningHistoryPanel
+            api={api}
+            patientId={patient.id}
+            onAuthenticationFailure={(status) => {
+              onPatientFailure(
+                status === 'FORBIDDEN' ? 'IPC_FORBIDDEN' : 'AUTH_UNAUTHENTICATED',
+                'Screening history is unavailable.'
+              )
+            }}
+            onOpenEncounter={onOpenEncounter}
+          />
+        ) : null}
         {activeTab === 'DEMOGRAPHIC_HISTORY' ? (
           <PatientDemographicHistoryPanel
             state={demographicHistoryState}

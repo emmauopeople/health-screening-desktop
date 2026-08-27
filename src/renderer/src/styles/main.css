@@ -4596,6 +4596,127 @@ h1 {
   background: #ffffff;
 }
 
+.patient-screening-history {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+}
+
+.patient-screening-history-summary,
+.patient-screening-history-charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.patient-screening-history-summary section,
+.patient-screening-trend,
+.patient-screening-history-detail {
+  min-width: 0;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--shell-background);
+}
+
+.patient-screening-history-summary h3,
+.patient-screening-trend h3,
+.patient-screening-history-detail h4 {
+  margin: 0 0 7px;
+  color: var(--shell-navy);
+  font-size: 13px;
+}
+
+.patient-screening-history-summary strong,
+.patient-screening-history-summary span {
+  display: block;
+}
+
+.patient-screening-history-summary strong {
+  color: var(--shell-navy);
+  font-size: 22px;
+}
+
+.patient-screening-history-summary span,
+.patient-screening-trend p,
+.patient-screening-history-detail p,
+.patient-screening-history-detail li {
+  color: var(--shell-secondary-text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.patient-screening-trend-points {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.patient-screening-trend-points div {
+  display: grid;
+  flex: 0 0 74px;
+  gap: 3px;
+  border-left: 3px solid var(--shell-teal);
+  padding-left: 7px;
+}
+
+.patient-screening-trend-points strong,
+.patient-screening-trend-points span {
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.patient-screening-history-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(220px, 1fr);
+  gap: 12px;
+  min-height: 300px;
+}
+
+.patient-screening-history-list,
+.patient-screening-history-detail {
+  min-width: 0;
+  max-height: 430px;
+  overflow: auto;
+}
+
+.patient-screening-table {
+  min-width: 720px;
+}
+
+.patient-screening-table tbody tr {
+  cursor: pointer;
+}
+
+.patient-screening-table tbody tr[data-selected='true'] td {
+  background: #e6f3f5;
+}
+
+.patient-screening-table tbody tr:focus-visible {
+  outline: 3px solid rgba(19, 111, 126, 0.28);
+  outline-offset: -3px;
+}
+
+.patient-screening-history-detail ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.patient-history-error-state {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+@media (max-width: 1050px) {
+  .patient-screening-history-split,
+  .patient-screening-history-summary,
+  .patient-screening-history-charts {
+    grid-template-columns: 1fr;
+  }
+}
+
 .patient-duplicate-comparison {
   min-width: 0;
 }

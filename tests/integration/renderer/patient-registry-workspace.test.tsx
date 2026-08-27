@@ -2061,6 +2061,7 @@ describe('patient registry workspace mounted regressions', () => {
 
     expect(detailTabs(mounted).map((tab) => normalizedText(tab))).toEqual([
       'Current Details',
+      'Screening History',
       'Demographic History',
       'Acknowledgment History',
       'Identifiers'
@@ -2075,17 +2076,18 @@ describe('patient registry workspace mounted regressions', () => {
     currentTab.focus()
     await dispatchKeyboard(currentTab, 'ArrowRight')
 
-    expect(document.activeElement).toBe(tabByText(mounted, 'Demographic History'))
+    expect(document.activeElement).toBe(tabByText(mounted, 'Screening History'))
     expect(tabByText(mounted, 'Current Details').getAttribute('aria-selected')).toBe('true')
     expect(api.patient.listDemographicAmendmentHistory).not.toHaveBeenCalled()
 
-    await dispatchKeyboard(tabByText(mounted, 'Demographic History'), 'End')
+    await dispatchKeyboard(tabByText(mounted, 'Screening History'), 'End')
     expect(document.activeElement).toBe(tabByText(mounted, 'Identifiers'))
 
     await dispatchKeyboard(tabByText(mounted, 'Identifiers'), 'Home')
     expect(document.activeElement).toBe(tabByText(mounted, 'Current Details'))
 
     await dispatchKeyboard(tabByText(mounted, 'Current Details'), 'ArrowRight')
+    await dispatchKeyboard(tabByText(mounted, 'Screening History'), 'ArrowRight')
     await dispatchKeyboard(tabByText(mounted, 'Demographic History'), 'Enter')
 
     expect(tabByText(mounted, 'Demographic History').getAttribute('aria-selected')).toBe('true')
@@ -4380,6 +4382,7 @@ async function mountWorkspace({
           scheduleRender()
         },
         onPatientAuthenticationFailure: onAuthenticationFailure,
+        onOpenEncounter: vi.fn(),
         onSelectCommand: (nextCommandId) => {
           onSelectCommand(nextCommandId)
 
