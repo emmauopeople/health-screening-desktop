@@ -22,7 +22,7 @@ export const dashboardSummaryCards = Object.freeze([
     key: 'openReferrals',
     label: 'Open referrals',
     accent: 'referral',
-    support: 'Referral counts require the future referral workflow data source.'
+    support: 'Active referrals at this installation location.'
   }),
   Object.freeze({
     key: 'pendingSync',

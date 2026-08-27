@@ -11,6 +11,7 @@ import type {
 
 import { InstallationLocationAdministrationWorkspace } from '../administration/InstallationLocationAdministrationWorkspace'
 import { PatientRegistryWorkspace } from '../patients/PatientRegistryWorkspace'
+import { ReferralWorklistWorkspace } from '../referrals/ReferralWorklistWorkspace'
 import { ManageEncountersWorkspace } from '../screening/manage/ManageEncountersWorkspace'
 import {
   createPatientScreeningTab,
@@ -62,6 +63,9 @@ export function ApplicationWorkspace({
   const [activeScreeningPatientId, setActiveScreeningPatientId] = useState<string | null>(null)
   const [requestedScreeningPatient, setRequestedScreeningPatient] =
     useState<PublicPatientSummary | null>(null)
+  const [requestedManagedEncounterId, setRequestedManagedEncounterId] = useState<string | null>(
+    null
+  )
 
   return (
     <main
@@ -124,6 +128,27 @@ export function ApplicationWorkspace({
           onRequestedPatientConsumed={() => setRequestedScreeningPatient(null)}
           registerNavigationGuard={registerNavigationGuard}
         />
+      ) : route.status === 'REFERRALS' ? (
+        <ReferralWorklistWorkspace
+          api={api}
+          headingId={workspaceHeadingId}
+          headingRef={headingRef}
+          onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
+          onOpenPatient={(patientId) => {
+            void api.patient.get({ patientId }).then((result) => {
+              if (!result.ok) {
+                onProtectedWorkspaceAuthenticationFailure(result.error.code)
+                return
+              }
+              setSelectedPatient(result.data)
+              onSelectCommand('PATIENTS_PATIENT_SEARCH')
+            })
+          }}
+          onOpenEncounter={(encounterId) => {
+            setRequestedManagedEncounterId(encounterId)
+            onSelectCommand('SCREENING_MANAGE_ENCOUNTERS')
+          }}
+        />
       ) : route.status === 'ADMINISTRATION' ? (
         <InstallationLocationAdministrationWorkspace
           api={api}
@@ -137,6 +162,8 @@ export function ApplicationWorkspace({
           api={api}
           headingId={workspaceHeadingId}
           headingRef={headingRef}
+          requestedEncounterId={requestedManagedEncounterId}
+          onRequestedEncounterConsumed={() => setRequestedManagedEncounterId(null)}
           onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
           onResumeDraft={(patient, encounter) => {
             const existingTab = openScreeningPatientTabs.find(

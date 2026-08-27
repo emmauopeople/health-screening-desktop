@@ -72,14 +72,7 @@ const commandDefinitions = [
     'AVAILABLE',
     plannedOwners.hsd025
   ),
-  command(
-    'HOME_OPEN_REFERRALS',
-    'HOME',
-    'Open Referrals',
-    nurseAndAdminRoles,
-    'PLANNED',
-    plannedOwners.referrals
-  ),
+  command('HOME_OPEN_REFERRALS', 'HOME', 'Open Referrals', nurseAndAdminRoles, 'AVAILABLE', null),
   command('HOME_SYNC_CENTER', 'HOME', 'Sync Center', adminOnlyRoles, 'PLANNED', plannedOwners.sync),
   command(
     'PATIENTS_PATIENT_SEARCH',
@@ -158,8 +151,8 @@ const commandDefinitions = [
     'REFERRALS',
     'Referral Worklist',
     allRoles,
-    'PLANNED',
-    plannedOwners.referrals
+    'AVAILABLE',
+    null
   ),
   command(
     'REFERRALS_FOLLOW_UP_DUE',

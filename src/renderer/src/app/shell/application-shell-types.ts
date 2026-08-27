@@ -69,6 +69,10 @@ export type ApplicationWorkspaceRoute =
       readonly commandId: 'SCREENING_MANAGE_ENCOUNTERS'
     }
   | {
+      readonly status: 'REFERRALS'
+      readonly commandId: 'HOME_OPEN_REFERRALS' | 'REFERRALS_REFERRAL_WORKLIST'
+    }
+  | {
       readonly status: 'PLANNED_MODULE'
       readonly commandId: ApplicationCommandId
       readonly heading: string

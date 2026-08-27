@@ -32,6 +32,7 @@ export function DashboardWorkspace({
   const quickActions = getVisibleDashboardQuickActions(user.role)
   const [completedEncounters, setCompletedEncounters] = useState<number | null>(null)
   const [draftEncounters, setDraftEncounters] = useState<number | null>(null)
+  const [openReferrals, setOpenReferrals] = useState<number | null>(null)
   const [patients, setPatients] = useState<readonly PublicPatientSummary[]>([])
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
@@ -41,7 +42,7 @@ export function DashboardWorkspace({
   const requestIdRef = useRef(0)
 
   const loadCounts = useCallback(async (): Promise<void> => {
-    const [completedResult, amendedResult, draftResult] = await Promise.all([
+    const [completedResult, amendedResult, draftResult, referralResult] = await Promise.all([
       api.screeningEncounters.management.search({
         query: '',
         status: 'AMENDED',
@@ -59,6 +60,15 @@ export function DashboardWorkspace({
         status: 'DRAFT',
         page: 1,
         pageSize: 25
+      }),
+      api.referrals.search({
+        query: '',
+        statuses: ['OPEN', 'CONTACTED', 'SEEN', 'UNABLE_TO_CONFIRM'],
+        urgency: null,
+        dueFrom: null,
+        dueTo: null,
+        page: 1,
+        pageSize: 25
       })
     ])
     setCompletedEncounters(
@@ -71,6 +81,11 @@ export function DashboardWorkspace({
     )
     setDraftEncounters(
       draftResult.ok && draftResult.data.status === 'LOADED' ? draftResult.data.total : null
+    )
+    setOpenReferrals(
+      referralResult.ok && referralResult.data.status === 'LOADED'
+        ? referralResult.data.total
+        : null
     )
   }, [api])
 
@@ -145,7 +160,7 @@ export function DashboardWorkspace({
   const summaryValues: Readonly<Record<(typeof dashboardSummaryCards)[number]['key'], string>> = {
     completedEncounters: completedEncounters === null ? '\u2014' : String(completedEncounters),
     draftEncounters: draftEncounters === null ? '\u2014' : String(draftEncounters),
-    openReferrals: '\u2014',
+    openReferrals: openReferrals === null ? '\u2014' : String(openReferrals),
     pendingSync: '\u2014',
     lastBackup: '\u2014'
   }
