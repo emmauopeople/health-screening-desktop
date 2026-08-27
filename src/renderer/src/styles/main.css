@@ -102,6 +102,7 @@
 
 .referral-medication-changes {
   display: flex;
+  min-width: 0;
   width: 100%;
   flex-direction: column;
   gap: 0.65rem;
@@ -111,9 +112,35 @@
 
 .referral-medication-row {
   display: grid;
-  grid-template-columns: minmax(8rem, 0.7fr) minmax(12rem, 1.5fr) repeat(2, minmax(8rem, 1fr)) auto;
+  min-width: 0;
+  width: 100%;
+  grid-template-columns: minmax(0, 1.45fr) repeat(2, minmax(0, 1fr));
   align-items: end;
   gap: 0.5rem;
+}
+
+.referral-medication-row-heading {
+  display: flex;
+  min-width: 0;
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.referral-medication-row > label {
+  min-width: 0;
+}
+
+.referral-medication-row input {
+  min-width: 0;
+  width: 100%;
+}
+
+.referral-medication-remove {
+  min-width: 5.5rem;
+  min-height: 2.15rem;
+  padding: 0.35rem 0.75rem;
 }
 
 .referral-history-medications {
@@ -177,6 +204,11 @@
 .referral-detail-content {
   min-height: 0;
   overflow: auto;
+}
+
+.referral-detail-content {
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .referral-table-scroll {
