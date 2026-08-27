@@ -6,6 +6,7 @@ import type {
   EncounterReviewFlagStatus,
   ManagedEncounterDetailRecord,
   PatientScreeningContextRecord,
+  PatientScreeningHistoryRecord,
   InstallationRepository,
   ScreeningEncounterManagementRepository,
   ScreeningEncounterOutboxRepository,
@@ -28,6 +29,7 @@ export type EncounterManagementControlledStatus =
   | 'LOCATION_NOT_FOUND'
   | 'LOCATION_INACTIVE'
   | 'ENCOUNTER_NOT_FOUND'
+  | 'PATIENT_NOT_FOUND'
   | 'ENCOUNTER_NOT_MANAGEABLE'
   | 'ENCOUNTER_NOT_EMPTY'
   | 'VERSION_CONFLICT'
@@ -50,6 +52,10 @@ export type GetManagedEncounterResult =
 
 export type GetPatientScreeningContextResult =
   | { readonly status: 'LOADED'; readonly context: PatientScreeningContextRecord }
+  | { readonly status: EncounterManagementControlledStatus }
+
+export type GetPatientScreeningHistoryResult =
+  | { readonly status: 'LOADED'; readonly history: PatientScreeningHistoryRecord }
   | { readonly status: EncounterManagementControlledStatus }
 
 export type AddEncounterAddendumResult =
@@ -79,6 +85,11 @@ export interface ScreeningEncounterManagementService {
   search(request: SearchManagedEncountersRequest): SearchManagedEncountersServiceResult
   getDetail(encounterId: EntityId): GetManagedEncounterResult
   getPatientContext(patientId: EntityId): GetPatientScreeningContextResult
+  getPatientHistory(
+    patientId: EntityId,
+    page: number,
+    pageSize: 25 | 50 | 100
+  ): GetPatientScreeningHistoryResult
   addAddendum(encounterId: EntityId, noteText: string): AddEncounterAddendumResult
   openFlag(
     encounterId: EntityId,
