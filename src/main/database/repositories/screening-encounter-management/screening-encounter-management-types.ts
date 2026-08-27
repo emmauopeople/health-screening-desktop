@@ -132,6 +132,51 @@ export interface PatientScreeningContextRecord {
   readonly activeReferral: PatientContextReferralRecord | null
 }
 
+export type PatientHistoryReferralStatus = PatientContextReferralStatus | 'CLOSED'
+export type PatientHistoryTreatmentAction =
+  'TREATMENT_INITIATED' | 'TREATMENT_MODIFIED' | 'NEW_MEDICATION'
+export type PatientHistoryMedicationChangeType = 'TREATMENT_MODIFIED' | 'NEW_MEDICATION'
+
+export interface PatientHistoryMedicationChangeRecord {
+  readonly id: EntityId
+  readonly changeType: PatientHistoryMedicationChangeType
+  readonly medicationName: string
+  readonly dosage: string | null
+  readonly frequency: string | null
+}
+
+export interface PatientHistoryReferralFollowupRecord {
+  readonly id: EntityId
+  readonly contactDate: string
+  readonly providerSeen: boolean | null
+  readonly reportedOutcome: string | null
+  readonly treatmentActions: readonly PatientHistoryTreatmentAction[]
+  readonly medicationChanges: readonly PatientHistoryMedicationChangeRecord[]
+}
+
+export interface PatientHistoryReferralRecord {
+  readonly id: EntityId
+  readonly status: PatientHistoryReferralStatus
+  readonly urgency: string
+  readonly dueDate: string | null
+  readonly closedAt: UtcTimestamp | null
+  readonly latestFollowup: PatientHistoryReferralFollowupRecord | null
+}
+
+export interface PatientHistoryEncounterRecord extends PatientContextEncounterRecord {
+  readonly referral: PatientHistoryReferralRecord | null
+}
+
+export interface PatientScreeningHistoryRecord {
+  readonly patientId: EntityId
+  readonly items: readonly PatientHistoryEncounterRecord[]
+  readonly total: number
+  readonly page: number
+  readonly pageSize: 25 | 50 | 100
+  readonly trendEncounters: readonly PatientContextEncounterRecord[]
+  readonly thirtyDayAverage: PatientContextThirtyDayAverageRecord | null
+}
+
 export interface InsertEncounterAddendumInput {
   readonly id: EntityId
   readonly encounterId: EntityId
@@ -170,6 +215,13 @@ export interface ScreeningEncounterManagementRepository {
     thirtyDayCutoff: UtcTimestamp,
     recentEncounterLimit: number
   ): PatientScreeningContextRecord
+  getPatientHistory(
+    patientId: EntityId,
+    thirtyDayCutoff: UtcTimestamp,
+    page: number,
+    pageSize: 25 | 50 | 100,
+    trendLimit: number
+  ): PatientScreeningHistoryRecord | null
   insertAddendum(
     connection: DatabaseTransactionConnection,
     input: InsertEncounterAddendumInput
