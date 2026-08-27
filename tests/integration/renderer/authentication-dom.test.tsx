@@ -918,6 +918,26 @@ function createAppApi(
           listeners.delete(listener)
         }
       })
+    },
+    patient: {
+      search: vi.fn(() =>
+        Promise.resolve(createIpcSuccess({ items: [], page: 1, pageSize: 25, total: 0 }))
+      )
+    },
+    screeningEncounters: {
+      management: {
+        search: vi.fn((request) =>
+          Promise.resolve(
+            createIpcSuccess({
+              status: 'LOADED',
+              items: [],
+              total: 0,
+              page: request.page,
+              pageSize: request.pageSize
+            })
+          )
+        )
+      }
     }
   } as unknown as MockedHealthScreeningApi
 

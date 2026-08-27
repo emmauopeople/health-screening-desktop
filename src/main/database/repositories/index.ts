@@ -169,6 +169,16 @@ export {
   type UpdatePatientDemographicsRepositoryInput
 } from './patient'
 export {
+  createReferralRepository,
+  type AutomaticReferralReasonCode,
+  type CreateAutomaticReferralInput,
+  type CreateAutomaticReferralResult,
+  type ReferralRecord,
+  type ReferralRepository,
+  type ReferralStatus,
+  type ReferralUrgency
+} from './referral'
+export {
   createScreeningSessionOutboxRepository,
   createScreeningSessionRepository,
   parseCloseScreeningSessionInput,

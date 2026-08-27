@@ -5,6 +5,7 @@ import type {
   LifestyleRepository,
   LocationRepository,
   OtcRepository,
+  ReferralRepository,
   ScreeningEncounterCompletionRepository,
   ScreeningEncounterOutboxRepository,
   ScreeningEncounterRepository,
@@ -80,6 +81,7 @@ export interface ScreeningCompletionServiceDependencies {
   readonly lifestyleRepository: LifestyleRepository
   readonly foodRepository: FoodRepository
   readonly otcRepository: OtcRepository
+  readonly referralRepository: ReferralRepository
   readonly completionRepository: ScreeningEncounterCompletionRepository
   readonly screeningEncounterOutboxRepository: ScreeningEncounterOutboxRepository
   readonly auditEventRepository: AuditEventRepository
