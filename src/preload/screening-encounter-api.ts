@@ -8,6 +8,8 @@ import {
   encounterManagementGetDetailResultSchema,
   encounterManagementGetPatientContextRequestSchema,
   encounterManagementGetPatientContextResultSchema,
+  encounterManagementGetPatientHistoryRequestSchema,
+  encounterManagementGetPatientHistoryResultSchema,
   encounterManagementOpenFlagRequestSchema,
   encounterManagementOpenFlagResultSchema,
   encounterManagementResolveFlagRequestSchema,
@@ -35,6 +37,8 @@ import {
   type EncounterManagementGetDetailResult,
   type EncounterManagementGetPatientContextRequest,
   type EncounterManagementGetPatientContextResult,
+  type EncounterManagementGetPatientHistoryRequest,
+  type EncounterManagementGetPatientHistoryResult,
   type EncounterManagementOpenFlagRequest,
   type EncounterManagementOpenFlagResult,
   type EncounterManagementResolveFlagRequest,
@@ -70,6 +74,9 @@ export interface ScreeningEncounterApi {
     getPatientContext(
       request: EncounterManagementGetPatientContextRequest
     ): Promise<EncounterManagementGetPatientContextResult>
+    getPatientHistory(
+      request: EncounterManagementGetPatientHistoryRequest
+    ): Promise<EncounterManagementGetPatientHistoryResult>
     addAddendum(
       request: EncounterManagementAddAddendumRequest
     ): Promise<EncounterManagementAddAddendumResult>
@@ -130,6 +137,17 @@ export function createScreeningEncounterApi(invoke: IpcInvoke): ScreeningEncount
           ipcChannels.screeningEncounters.management.getPatientContext,
           encounterManagementGetPatientContextRequestSchema,
           encounterManagementGetPatientContextResultSchema,
+          request
+        ),
+      getPatientHistory: (request: EncounterManagementGetPatientHistoryRequest) =>
+        invokeManaged<
+          EncounterManagementGetPatientHistoryRequest,
+          EncounterManagementGetPatientHistoryResult
+        >(
+          invoke,
+          ipcChannels.screeningEncounters.management.getPatientHistory,
+          encounterManagementGetPatientHistoryRequestSchema,
+          encounterManagementGetPatientHistoryResultSchema,
           request
         ),
       addAddendum: (request: EncounterManagementAddAddendumRequest) =>
