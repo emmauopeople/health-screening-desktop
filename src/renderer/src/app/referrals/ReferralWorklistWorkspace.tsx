@@ -673,9 +673,29 @@ function FollowupForm({
             <div className="referral-medication-changes">
               {medicationChanges.map((row) => (
                 <div key={row.id} className="referral-medication-row">
-                  <strong>
-                    {row.changeType === 'NEW_MEDICATION' ? 'New medication' : 'Treatment modified'}
-                  </strong>
+                  <div className="referral-medication-row-heading">
+                    <strong>
+                      {row.changeType === 'NEW_MEDICATION'
+                        ? 'New medication'
+                        : 'Treatment modified'}
+                    </strong>
+                    <button
+                      type="button"
+                      className="button button-secondary referral-medication-remove"
+                      onClick={() =>
+                        setMedicationChanges((current) =>
+                          current.filter((candidate) => candidate.id !== row.id)
+                        )
+                      }
+                      disabled={
+                        medicationChanges.filter(
+                          (candidate) => candidate.changeType === row.changeType
+                        ).length === 1
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
                   <label>
                     <span>Medication *</span>
                     <input
@@ -709,22 +729,6 @@ function FollowupForm({
                       }
                     />
                   </label>
-                  <button
-                    type="button"
-                    className="button button-secondary"
-                    onClick={() =>
-                      setMedicationChanges((current) =>
-                        current.filter((candidate) => candidate.id !== row.id)
-                      )
-                    }
-                    disabled={
-                      medicationChanges.filter(
-                        (candidate) => candidate.changeType === row.changeType
-                      ).length === 1
-                    }
-                  >
-                    Remove
-                  </button>
                 </div>
               ))}
               {(['NEW_MEDICATION', 'TREATMENT_MODIFIED'] as const).map((changeType) =>
