@@ -6,6 +6,7 @@ import {
   createScreeningEncounterStartStatusResult,
   encounterManagementAddAddendumRequestSchema,
   encounterManagementOpenFlagRequestSchema,
+  encounterManagementGetPatientHistoryRequestSchema,
   encounterManagementResolveFlagRequestSchema,
   encounterManagementSearchRequestSchema,
   encounterManagementVoidEmptyDraftRequestSchema,
@@ -64,6 +65,21 @@ describe('screening encounter IPC contracts', () => {
         pageSize: 50
       })
     ).toEqual({ query: 'Test Patient', status: 'COMPLETED', page: 1, pageSize: 50 })
+    expect(
+      encounterManagementGetPatientHistoryRequestSchema.parse({
+        patientId,
+        page: 1,
+        pageSize: 25
+      })
+    ).toEqual({ patientId, page: 1, pageSize: 25 })
+    expect(
+      encounterManagementGetPatientHistoryRequestSchema.safeParse({
+        patientId,
+        page: 1,
+        pageSize: 25,
+        includeDrafts: true
+      }).success
+    ).toBe(false)
     expect(
       encounterManagementAddAddendumRequestSchema.parse({
         encounterId,
