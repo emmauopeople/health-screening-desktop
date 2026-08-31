@@ -307,6 +307,16 @@ describe('authentication renderer experience', () => {
     expect(css).toContain('color: #c53030;')
     expect(css).not.toMatch(/url\(['"]?(?:https?:|data:)/i)
   })
+
+  it('keeps login and locked-session controls within short desktop viewports', () => {
+    const css = readFileSync(join(__dirname, '../../../src/renderer/src/styles/main.css'), 'utf8')
+
+    expect(css).toContain('height: 100dvh;')
+    expect(css).toContain('@media (min-width: 681px) and (max-height: 820px)')
+    expect(css).toContain('height: clamp(128px, 22dvh, 180px);')
+    expect(css).toContain('height: clamp(96px, 17dvh, 140px);')
+    expect(css).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));')
+  })
 })
 
 function createApi(): HealthScreeningApi {
