@@ -1,4 +1,5 @@
 export { createScreeningSessionRepository } from './screening-session-repository'
+export { createScreeningSessionSummaryRepository } from './screening-session-summary-repository'
 export { createScreeningSessionOutboxRepository } from './screening-session-outbox-repository'
 export {
   parseCloseScreeningSessionInput,
@@ -28,6 +29,10 @@ export type {
   ScreeningSessionRepository,
   ScreeningSessionStatus
 } from './screening-session-types'
+export type {
+  ScreeningSessionSummaryRecord,
+  ScreeningSessionSummaryRepository
+} from './screening-session-summary-types'
 export type {
   InsertScreeningSessionOutboxInput,
   ScreeningSessionOutboxOperation,

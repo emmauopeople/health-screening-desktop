@@ -36,6 +36,7 @@ export const ipcChannels = {
     close: 'health-screening:screening-sessions:close',
     reopen: 'health-screening:screening-sessions:reopen',
     getById: 'health-screening:screening-sessions:get-by-id',
+    getSummary: 'health-screening:screening-sessions:get-summary',
     list: 'health-screening:screening-sessions:list'
   },
   referrals: {

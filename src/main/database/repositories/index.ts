@@ -181,6 +181,7 @@ export {
 export {
   createScreeningSessionOutboxRepository,
   createScreeningSessionRepository,
+  createScreeningSessionSummaryRepository,
   parseCloseScreeningSessionInput,
   parseInsertScreeningSessionInput,
   parseReopenScreeningSessionInput,
@@ -210,6 +211,8 @@ export {
   type ScreeningSessionOutboxRepository,
   type ScreeningSessionRecord,
   type ScreeningSessionRepository,
+  type ScreeningSessionSummaryRecord,
+  type ScreeningSessionSummaryRepository,
   type ScreeningSessionStatus,
   type InsertScreeningSessionOutboxInput
 } from './screening-session'

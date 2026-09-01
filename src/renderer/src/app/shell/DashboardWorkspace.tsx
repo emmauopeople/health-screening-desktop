@@ -129,12 +129,20 @@ export function DashboardWorkspace({
   useEffect(() => {
     const normalized = query.trim()
     if (normalized.length > 0 && normalized.length < 3) return
-    const timeoutId = window.setTimeout(
-      () => {
-        void loadPatients(normalized, 1)
-      },
-      normalized.length === 0 ? 0 : 250
-    )
+
+    if (normalized.length === 0) {
+      let active = true
+      void Promise.resolve().then(() => {
+        if (active) void loadPatients(normalized, 1)
+      })
+      return () => {
+        active = false
+      }
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void loadPatients(normalized, 1)
+    }, 250)
     return () => window.clearTimeout(timeoutId)
   }, [loadPatients, query])
 

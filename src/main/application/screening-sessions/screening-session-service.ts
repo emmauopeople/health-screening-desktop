@@ -94,6 +94,7 @@ export function createScreeningSessionService({
   locationRepository,
   protocolVersionRepository,
   screeningSessionRepository,
+  screeningSessionSummaryRepository,
   screeningSessionOutboxRepository,
   auditEventRepository,
   transactionExecutor
@@ -380,6 +381,21 @@ export function createScreeningSessionService({
           pageSize: result.pageSize,
           total: result.total
         })
+      } catch (error) {
+        throw toScreeningSessionServiceBoundaryError(error)
+      }
+    },
+
+    getSummary(request: GetScreeningSessionRequest, actor: ScreeningSessionServiceActor) {
+      try {
+        validateActor(actor)
+        const command = parseGetCommand(request)
+        if (screeningSessionSummaryRepository === undefined)
+          throw new ScreeningSessionServicePersistenceError()
+        const summary = screeningSessionSummaryRepository.getBySessionId(command.id)
+        return summary === null
+          ? Object.freeze({ status: 'NOT_FOUND' as const })
+          : Object.freeze({ status: 'FOUND' as const, summary })
       } catch (error) {
         throw toScreeningSessionServiceBoundaryError(error)
       }

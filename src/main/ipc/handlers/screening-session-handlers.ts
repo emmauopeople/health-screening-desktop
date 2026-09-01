@@ -32,6 +32,8 @@ import {
   screeningSessionEnsureCurrentResultSchema,
   screeningSessionGetByIdRequestSchema,
   screeningSessionGetByIdResultSchema,
+  screeningSessionGetSummaryRequestSchema,
+  screeningSessionGetSummaryResultSchema,
   screeningSessionGetWorkspaceContextRequestSchema,
   screeningSessionGetWorkspaceContextResultSchema,
   screeningSessionListRequestSchema,
@@ -50,6 +52,7 @@ import {
   type ScreeningSessionErrorCode,
   type ScreeningSessionGetByIdRequest,
   type ScreeningSessionGetByIdResult,
+  type ScreeningSessionGetSummaryResult,
   type ScreeningSessionGetWorkspaceContextResult,
   type ScreeningSessionIpcChannel,
   type ScreeningSessionListRequest,
@@ -86,6 +89,10 @@ export interface ScreeningSessionIpcHandlers {
   close(event: IpcSenderValidationEvent, request: unknown): Promise<ScreeningSessionCloseResult>
   reopen(event: IpcSenderValidationEvent, request: unknown): Promise<ScreeningSessionReopenResult>
   getById(event: IpcSenderValidationEvent, request: unknown): Promise<ScreeningSessionGetByIdResult>
+  getSummary(
+    event: IpcSenderValidationEvent,
+    request: unknown
+  ): Promise<ScreeningSessionGetSummaryResult>
   list(event: IpcSenderValidationEvent, request: unknown): Promise<ScreeningSessionListResult>
 }
 
@@ -244,6 +251,29 @@ export function createScreeningSessionIpcHandlers({
         authorize: () => authorization.requireAnyRole(event, allLocalRoles),
         invoke: (data, actor) =>
           mapGetByIdResult(screeningSessionService.getById(toInternalGetByIdRequest(data), actor))
+      })
+    },
+
+    async getSummary(
+      event: IpcSenderValidationEvent,
+      request: unknown
+    ): Promise<ScreeningSessionGetSummaryResult> {
+      return handleScreeningSessionRequest({
+        channel: ipcChannels.screeningSessions.getSummary,
+        request,
+        requestSchema: screeningSessionGetSummaryRequestSchema,
+        resultSchema: screeningSessionGetSummaryResultSchema,
+        logger,
+        authorize: () => authorization.requireAnyRole(event, reopenRoles),
+        invoke: (data, actor) => {
+          const result = screeningSessionService.getSummary(
+            { id: data.sessionId as EntityId },
+            actor
+          )
+          return result.status === 'NOT_FOUND'
+            ? freezeSuccess({ status: 'NOT_FOUND' })
+            : freezeSuccess({ status: 'LOADED', summary: result.summary })
+        }
       })
     },
 

@@ -91,6 +91,7 @@ describe('preload screening-session API', () => {
       'close',
       'reopen',
       'getById',
+      'getSummary',
       'list'
     ])
     expect(Object.isFrozen(api)).toBe(true)
@@ -120,7 +121,38 @@ describe('preload screening-session API', () => {
     expect(typeof api.screeningSessions.close).toBe('function')
     expect(typeof api.screeningSessions.reopen).toBe('function')
     expect(typeof api.screeningSessions.getById).toBe('function')
+    expect(typeof api.screeningSessions.getSummary).toBe('function')
     expect(typeof api.screeningSessions.list).toBe('function')
+  })
+
+  it('invokes the fixed session-summary channel and validates its response', async () => {
+    const response = createIpcSuccess({
+      status: 'LOADED' as const,
+      summary: {
+        id: sessionId,
+        sessionDate: '2026-07-29',
+        status: 'OPEN' as const,
+        location: { id: locationId, name: 'Central Church' },
+        openedAt: timestamp,
+        openedBy: { id: sessionId, displayName: 'Nurse One' },
+        closedAt: null,
+        closedBy: null,
+        operational: {
+          totalEncounters: 3,
+          activeDrafts: 1,
+          emptyDrafts: 0,
+          finalizedEncounters: 2,
+          voidedEncounters: 0
+        },
+        recommendations: { routine: 1, standardReferral: 1, urgentReferral: 0 },
+        referrals: { open: 1, closed: 0 }
+      }
+    })
+    const invoke = vi.fn().mockResolvedValue(response)
+    await expect(
+      createHealthScreeningApi(invoke).screeningSessions.getSummary({ sessionId })
+    ).resolves.toEqual(response)
+    expect(invoke).toHaveBeenCalledWith(ipcChannels.screeningSessions.getSummary, { sessionId })
   })
 
   it('invokes only the exact fixed screening-session channels with parsed requests', async () => {

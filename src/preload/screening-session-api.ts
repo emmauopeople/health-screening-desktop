@@ -9,6 +9,8 @@ import {
   screeningSessionEnsureCurrentResultSchema,
   screeningSessionGetByIdRequestSchema,
   screeningSessionGetByIdResultSchema,
+  screeningSessionGetSummaryRequestSchema,
+  screeningSessionGetSummaryResultSchema,
   screeningSessionGetWorkspaceContextRequestSchema,
   screeningSessionGetWorkspaceContextResultSchema,
   screeningSessionListRequestSchema,
@@ -22,6 +24,8 @@ import {
   type ScreeningSessionEnsureCurrentResult,
   type ScreeningSessionGetByIdRequest,
   type ScreeningSessionGetByIdResult,
+  type ScreeningSessionGetSummaryRequest,
+  type ScreeningSessionGetSummaryResult,
   type ScreeningSessionGetWorkspaceContextResult,
   type ScreeningSessionListRequest,
   type ScreeningSessionListResult,
@@ -38,6 +42,7 @@ export interface ScreeningSessionApi {
   close(request: ScreeningSessionCloseRequest): Promise<ScreeningSessionCloseResult>
   reopen(request: ScreeningSessionReopenRequest): Promise<ScreeningSessionReopenResult>
   getById(request: ScreeningSessionGetByIdRequest): Promise<ScreeningSessionGetByIdResult>
+  getSummary(request: ScreeningSessionGetSummaryRequest): Promise<ScreeningSessionGetSummaryResult>
   list(request: ScreeningSessionListRequest): Promise<ScreeningSessionListResult>
 }
 
@@ -126,6 +131,20 @@ export function createScreeningSessionApi(invoke: IpcInvoke): ScreeningSessionAp
         unavailableFailure: createScreeningSessionFailure(
           'IPC_UNAVAILABLE'
         ) as ScreeningSessionGetByIdResult
+      }),
+    getSummary: (request: ScreeningSessionGetSummaryRequest) =>
+      invokeScreeningSession({
+        invoke,
+        channel: ipcChannels.screeningSessions.getSummary,
+        request,
+        requestSchema: screeningSessionGetSummaryRequestSchema,
+        resultSchema: screeningSessionGetSummaryResultSchema,
+        validationFailure: createScreeningSessionFailure(
+          'VALIDATION_FAILED'
+        ) as ScreeningSessionGetSummaryResult,
+        unavailableFailure: createScreeningSessionFailure(
+          'IPC_UNAVAILABLE'
+        ) as ScreeningSessionGetSummaryResult
       }),
     list: (request: ScreeningSessionListRequest) =>
       invokeScreeningSession({

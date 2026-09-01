@@ -46,6 +46,10 @@ export const screeningSessionGetByIdRequestSchema = exactObject({
   id: screeningSessionUuidSchema
 })
 
+export const screeningSessionGetSummaryRequestSchema = exactObject({
+  sessionId: screeningSessionUuidSchema
+})
+
 export const screeningSessionListRequestSchema = exactObject({
   locationId: screeningSessionUuidSchema.nullable(),
   status: screeningSessionStatusSchema.nullable(),
@@ -211,6 +215,53 @@ export const screeningSessionGetByIdSuccessDataSchema = z.discriminatedUnion('st
   z.object({ status: z.literal('NOT_FOUND') }).strict()
 ])
 
+export const publicScreeningSessionSummarySchema = z
+  .object({
+    id: screeningSessionUuidSchema,
+    sessionDate: screeningSessionLocalDateSchema,
+    status: screeningSessionStatusSchema,
+    location: z
+      .object({ id: screeningSessionUuidSchema, name: z.string().min(1).max(120) })
+      .strict(),
+    openedAt: screeningSessionUtcTimestampSchema,
+    openedBy: z
+      .object({ id: screeningSessionUuidSchema, displayName: z.string().min(1).max(160) })
+      .strict(),
+    closedAt: screeningSessionUtcTimestampSchema.nullable(),
+    closedBy: z
+      .object({ id: screeningSessionUuidSchema, displayName: z.string().min(1).max(160) })
+      .strict()
+      .nullable(),
+    operational: z
+      .object({
+        totalEncounters: z.number().int().min(0).safe(),
+        activeDrafts: z.number().int().min(0).safe(),
+        emptyDrafts: z.number().int().min(0).safe(),
+        finalizedEncounters: z.number().int().min(0).safe(),
+        voidedEncounters: z.number().int().min(0).safe()
+      })
+      .strict(),
+    recommendations: z
+      .object({
+        routine: z.number().int().min(0).safe(),
+        standardReferral: z.number().int().min(0).safe(),
+        urgentReferral: z.number().int().min(0).safe()
+      })
+      .strict(),
+    referrals: z
+      .object({
+        open: z.number().int().min(0).safe(),
+        closed: z.number().int().min(0).safe()
+      })
+      .strict()
+  })
+  .strict()
+
+export const screeningSessionGetSummarySuccessDataSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('LOADED'), summary: publicScreeningSessionSummarySchema }).strict(),
+  z.object({ status: z.literal('NOT_FOUND') }).strict()
+])
+
 export const screeningSessionListSuccessDataSchema = z
   .object({
     status: z.literal('LISTED'),
@@ -297,6 +348,12 @@ export const screeningSessionGetByIdResultSchema = withSafeTransportPreprocess(
     screeningSessionFailureSchema
   ])
 )
+export const screeningSessionGetSummaryResultSchema = withSafeTransportPreprocess(
+  z.discriminatedUnion('ok', [
+    createIpcSuccessResultSchema(screeningSessionGetSummarySuccessDataSchema),
+    screeningSessionFailureSchema
+  ])
+)
 export const screeningSessionListResultSchema = withSafeTransportPreprocess(
   z.discriminatedUnion('ok', [
     createIpcSuccessResultSchema(screeningSessionListSuccessDataSchema),
@@ -327,6 +384,9 @@ export type ScreeningSessionCreateRequest = z.infer<typeof screeningSessionCreat
 export type ScreeningSessionCloseRequest = z.infer<typeof screeningSessionCloseRequestSchema>
 export type ScreeningSessionReopenRequest = z.infer<typeof screeningSessionReopenRequestSchema>
 export type ScreeningSessionGetByIdRequest = z.infer<typeof screeningSessionGetByIdRequestSchema>
+export type ScreeningSessionGetSummaryRequest = z.infer<
+  typeof screeningSessionGetSummaryRequestSchema
+>
 export type ScreeningSessionListRequest = z.infer<typeof screeningSessionListRequestSchema>
 export type ScreeningSessionGetWorkspaceContextResult = z.infer<
   typeof screeningSessionGetWorkspaceContextResultSchema
@@ -338,6 +398,10 @@ export type ScreeningSessionCreateResult = z.infer<typeof screeningSessionCreate
 export type ScreeningSessionCloseResult = z.infer<typeof screeningSessionCloseResultSchema>
 export type ScreeningSessionReopenResult = z.infer<typeof screeningSessionReopenResultSchema>
 export type ScreeningSessionGetByIdResult = z.infer<typeof screeningSessionGetByIdResultSchema>
+export type PublicScreeningSessionSummary = z.infer<typeof publicScreeningSessionSummarySchema>
+export type ScreeningSessionGetSummaryResult = z.infer<
+  typeof screeningSessionGetSummaryResultSchema
+>
 export type ScreeningSessionListResult = z.infer<typeof screeningSessionListResultSchema>
 export type ScreeningSessionCreateSuccessData = z.infer<
   typeof screeningSessionCreateSuccessDataSchema

@@ -11,6 +11,8 @@ import {
   screeningSessionEnsureCurrentResultSchema,
   screeningSessionGetByIdRequestSchema,
   screeningSessionGetByIdResultSchema,
+  screeningSessionGetSummaryRequestSchema,
+  screeningSessionGetSummaryResultSchema,
   screeningSessionGetWorkspaceContextRequestSchema,
   screeningSessionGetWorkspaceContextResultSchema,
   screeningSessionListRequestSchema,
@@ -60,10 +62,14 @@ describe('screening-session IPC contracts', () => {
     expect(ipcChannels.screeningSessions.getById).toBe(
       'health-screening:screening-sessions:get-by-id'
     )
+    expect(ipcChannels.screeningSessions.getSummary).toBe(
+      'health-screening:screening-sessions:get-summary'
+    )
     expect(ipcChannels.screeningSessions.list).toBe('health-screening:screening-sessions:list')
   })
 
   it('accepts every valid exact request shape', () => {
+    expect(screeningSessionGetSummaryRequestSchema.parse({ sessionId })).toEqual({ sessionId })
     expect(screeningSessionGetWorkspaceContextRequestSchema.parse({})).toEqual({})
     expect(screeningSessionEnsureCurrentRequestSchema.parse(undefined)).toEqual({})
     expect(screeningSessionEnsureCurrentRequestSchema.parse({})).toEqual({})
@@ -120,6 +126,35 @@ describe('screening-session IPC contracts', () => {
       page: 1,
       pageSize: 25
     })
+  })
+
+  it('validates the session summary envelope', () => {
+    expect(
+      screeningSessionGetSummaryResultSchema.parse(
+        createIpcSuccess({
+          status: 'LOADED',
+          summary: {
+            id: sessionId,
+            sessionDate: '2026-07-29',
+            status: 'OPEN',
+            location: { id: locationId, name: 'Central Church' },
+            openedAt: timestamp,
+            openedBy: { id: sessionId, displayName: 'Nurse One' },
+            closedAt: null,
+            closedBy: null,
+            operational: {
+              totalEncounters: 2,
+              activeDrafts: 0,
+              emptyDrafts: 0,
+              finalizedEncounters: 2,
+              voidedEncounters: 0
+            },
+            recommendations: { routine: 1, standardReferral: 1, urgentReferral: 0 },
+            referrals: { open: 1, closed: 0 }
+          }
+        })
+      ).ok
+    ).toBe(true)
   })
 
   it('rejects missing fields, extra fields, renderer authority, and generated create fields', () => {
