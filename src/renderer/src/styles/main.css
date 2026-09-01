@@ -5451,6 +5451,168 @@ h1 {
   color: #667085;
 }
 
+.session-summary-workspace {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  gap: 1rem;
+  overflow: auto;
+}
+
+.session-summary-heading {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.session-summary-heading h1 {
+  margin-bottom: 0;
+}
+
+.session-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  justify-content: flex-end;
+}
+
+.session-summary-state {
+  display: flex;
+  min-height: 8rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+  background: var(--color-panel);
+  color: var(--color-muted);
+  font-weight: 700;
+}
+
+.session-summary-state-error {
+  flex-direction: column;
+  gap: 1rem;
+  border-color: #d8a4a4;
+  color: #7f1d1d;
+  background: #fff5f5;
+}
+
+.session-summary-print-area {
+  display: grid;
+  gap: 1rem;
+}
+
+.session-summary-metadata {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+  background: var(--color-border);
+}
+
+.session-summary-metadata div {
+  min-width: 0;
+  padding: 0.9rem 1rem;
+  background: var(--color-panel);
+}
+
+.session-summary-metadata dt {
+  margin-bottom: 0.35rem;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.session-summary-metadata dd {
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--color-ink);
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.session-summary-section {
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+  padding: 1rem;
+  background: var(--color-panel);
+}
+
+.session-summary-section h2 {
+  margin: 0 0 0.8rem;
+}
+
+.session-summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+}
+
+.session-summary-metric {
+  display: flex;
+  min-width: 0;
+  min-height: 5.5rem;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 0.8rem;
+  background: #f8fafc;
+}
+
+.session-summary-metric span {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.session-summary-metric strong {
+  color: var(--shell-primary);
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.session-summary-metric-success {
+  border-color: #a8d5ba;
+  background: #e9f7ef;
+}
+
+.session-summary-metric-success strong {
+  color: var(--shell-success);
+}
+
+.session-summary-metric-warning {
+  border-color: #e3cc7a;
+  background: #fff4ce;
+}
+
+.session-summary-metric-warning strong {
+  color: var(--shell-warning);
+}
+
+.session-summary-metric-referral {
+  border-color: #e3b392;
+  background: #fff1e8;
+}
+
+.session-summary-metric-referral strong {
+  color: var(--shell-referral);
+}
+
+.session-summary-metric-urgent {
+  border-color: #e1a3a3;
+  background: #fdecec;
+}
+
+.session-summary-metric-urgent strong {
+  color: #b42318;
+}
+
 @media (max-width: 860px) {
   .application-workspace:has(.manage-encounters-workspace) {
     overflow: auto;
@@ -5487,5 +5649,64 @@ h1 {
 
   .manage-encounters-search {
     width: 100%;
+  }
+}
+
+@media print {
+  @page {
+    margin: 14mm;
+    size: portrait;
+  }
+
+  .application-top-bar,
+  .application-shell-alert-slot,
+  .application-command-panel-slot,
+  .session-summary-actions,
+  .application-footer {
+    display: none !important;
+  }
+
+  #root,
+  .application-root,
+  .application-shell,
+  .application-workspace,
+  .session-summary-workspace {
+    width: auto;
+    min-height: 0;
+    height: auto;
+    overflow: visible;
+    background: #ffffff;
+  }
+
+  .application-workspace,
+  .session-summary-section {
+    padding: 0;
+  }
+
+  .session-summary-workspace {
+    display: block;
+  }
+
+  .session-summary-heading,
+  .session-summary-print-area,
+  .session-summary-section {
+    break-inside: avoid;
+  }
+
+  .session-summary-heading {
+    margin-bottom: 1rem;
+  }
+
+  .session-summary-section {
+    margin-top: 0.8rem;
+    border-color: #9aa4b2;
+    padding: 0.8rem;
+    box-shadow: none;
+  }
+
+  .session-summary-metric,
+  .session-summary-metadata div {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 }

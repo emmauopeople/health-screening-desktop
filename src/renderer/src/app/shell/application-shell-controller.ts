@@ -181,6 +181,13 @@ function createRouteForCommand(
     })
   }
 
+  if (definition.id === 'SCREENING_SESSION_SUMMARY') {
+    return Object.freeze({
+      status: 'SESSION_SUMMARY',
+      commandId: definition.id
+    })
+  }
+
   if (definition.id === 'HOME_OPEN_REFERRALS' || definition.id === 'REFERRALS_REFERRAL_WORKLIST') {
     return Object.freeze({
       status: 'REFERRALS',

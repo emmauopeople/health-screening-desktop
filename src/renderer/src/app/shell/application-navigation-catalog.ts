@@ -143,8 +143,8 @@ const commandDefinitions = [
     'SCREENING',
     'Session Summary',
     nurseAndAdminRoles,
-    'PLANNED',
-    plannedOwners.reporting
+    'AVAILABLE',
+    null
   ),
   command(
     'REFERRALS_REFERRAL_WORKLIST',

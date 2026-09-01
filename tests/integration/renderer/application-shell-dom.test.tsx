@@ -278,6 +278,30 @@ describe('application shell DOM integration', () => {
     await mounted.unmount()
   })
 
+  it('loads and prints the current screening session summary', async () => {
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => undefined)
+    const harness = createAppApi(activeSession(1))
+    const mounted = await mountApp(harness.api)
+
+    await clickButton(mounted, 'Screening')
+    await clickButton(mounted, 'Session Summary')
+
+    expectWorkspaceHeading(mounted, 'Session Summary')
+    expect(text(mounted)).toContain('Bastos Hall')
+    expect(text(mounted)).toContain('Total encounters3')
+    expect(text(mounted)).toContain('Completed2')
+    expect(text(mounted)).toContain('Standard referral1')
+    expect(text(mounted)).toContain('Open referrals1')
+    expect(harness.api.screeningSessions.getSummary).toHaveBeenCalledWith({
+      sessionId: '99999999-9999-4999-8999-999999999999'
+    })
+
+    await clickButton(mounted, 'Print summary')
+
+    expect(printSpy).toHaveBeenCalledOnce()
+    await mounted.unmount()
+  })
+
   it('navigates primary menu clicks to default workspaces and keeps the default command current', async () => {
     const mounted = await mountApp(createAppApi(activeSession(1)).api)
 
@@ -1168,6 +1192,7 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
     close: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['close']>>
     reopen: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['reopen']>>
     getById: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['getById']>>
+    getSummary: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['getSummary']>>
     list: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['list']>>
   } & HealthScreeningApi['screeningSessions']
   screeningEncounters: {
@@ -1361,6 +1386,38 @@ function createAppApi(initialSession: PublicAuthenticationSession): AppApiHarnes
       close: vi.fn(() => Promise.resolve(createScreeningSessionFailure('IPC_UNAVAILABLE'))),
       reopen: vi.fn(() => Promise.resolve(createScreeningSessionFailure('IPC_UNAVAILABLE'))),
       getById: vi.fn(() => Promise.resolve(createIpcSuccess({ status: 'NOT_FOUND' }))),
+      getSummary: vi.fn(() =>
+        Promise.resolve(
+          createIpcSuccess({
+            status: 'LOADED',
+            summary: {
+              id: '99999999-9999-4999-8999-999999999999',
+              sessionDate: '2026-08-06',
+              status: 'OPEN',
+              location: {
+                id: '77777777-7777-4777-8777-777777777777',
+                name: 'Bastos Hall'
+              },
+              openedAt: '2026-08-06T08:15:00.000Z',
+              openedBy: {
+                id: '11111111-1111-4111-8111-111111111111',
+                displayName: 'Admin User'
+              },
+              closedAt: null,
+              closedBy: null,
+              operational: {
+                totalEncounters: 3,
+                activeDrafts: 1,
+                emptyDrafts: 0,
+                finalizedEncounters: 2,
+                voidedEncounters: 0
+              },
+              recommendations: { routine: 1, standardReferral: 1, urgentReferral: 0 },
+              referrals: { open: 1, closed: 0 }
+            }
+          })
+        )
+      ),
       list: vi.fn(() =>
         Promise.resolve(
           createIpcSuccess({

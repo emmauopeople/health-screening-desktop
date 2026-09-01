@@ -101,6 +101,7 @@ describe('application navigation catalog', () => {
       'SCREENING_TODAYS_SESSION',
       'SCREENING_NEW_SCREENING',
       'SCREENING_MANAGE_ENCOUNTERS',
+      'SCREENING_SESSION_SUMMARY',
       'REFERRALS_REFERRAL_WORKLIST',
       'ADMINISTRATION_LOCATIONS'
     ])

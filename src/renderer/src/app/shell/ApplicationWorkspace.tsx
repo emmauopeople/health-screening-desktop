@@ -13,6 +13,7 @@ import { InstallationLocationAdministrationWorkspace } from '../administration/I
 import { PatientRegistryWorkspace } from '../patients/PatientRegistryWorkspace'
 import { ReferralWorklistWorkspace } from '../referrals/ReferralWorklistWorkspace'
 import { ManageEncountersWorkspace } from '../screening/manage/ManageEncountersWorkspace'
+import { SessionSummaryWorkspace } from '../screening/summary/SessionSummaryWorkspace'
 import {
   createPatientScreeningTab,
   ScreeningSessionWorkspace,
@@ -196,6 +197,14 @@ export function ApplicationWorkspace({
             onSelectCommand('SCREENING_NEW_SCREENING')
             return true
           }}
+        />
+      ) : route.status === 'SESSION_SUMMARY' ? (
+        <SessionSummaryWorkspace
+          api={api}
+          timeZone={context.timeZone}
+          headingId={workspaceHeadingId}
+          headingRef={headingRef}
+          onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
         />
       ) : (
         <PlannedModuleWorkspace
