@@ -90,6 +90,8 @@ import type {
   ScreeningSessionEnsureCurrentResult,
   ScreeningSessionGetByIdRequest,
   ScreeningSessionGetByIdResult,
+  ScreeningSessionGetSummaryRequest,
+  ScreeningSessionGetSummaryResult,
   ScreeningSessionGetWorkspaceContextResult,
   ScreeningSessionListRequest,
   ScreeningSessionListResult,
@@ -183,6 +185,9 @@ export interface HealthScreeningApi {
     close(request: ScreeningSessionCloseRequest): Promise<ScreeningSessionCloseResult>
     reopen(request: ScreeningSessionReopenRequest): Promise<ScreeningSessionReopenResult>
     getById(request: ScreeningSessionGetByIdRequest): Promise<ScreeningSessionGetByIdResult>
+    getSummary(
+      request: ScreeningSessionGetSummaryRequest
+    ): Promise<ScreeningSessionGetSummaryResult>
     list(request: ScreeningSessionListRequest): Promise<ScreeningSessionListResult>
   }
   screeningEncounters: {

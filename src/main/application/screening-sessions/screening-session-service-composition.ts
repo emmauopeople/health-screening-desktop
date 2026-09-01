@@ -10,6 +10,7 @@ import {
   createScreeningEncounterRepository,
   createScreeningSessionOutboxRepository,
   createScreeningSessionRepository,
+  createScreeningSessionSummaryRepository,
   type DatabaseTransactionLogger
 } from '@main/database'
 import { createSystemEntityIdGenerator, createSystemUtcClock } from '@main/foundation'
@@ -37,6 +38,7 @@ export function createProductionScreeningSessionService({
     locationRepository: createLocationRepository(connection),
     protocolVersionRepository: createProtocolVersionRepository(connection),
     screeningSessionRepository: createScreeningSessionRepository(connection),
+    screeningSessionSummaryRepository: createScreeningSessionSummaryRepository(connection),
     screeningSessionOutboxRepository: createScreeningSessionOutboxRepository(connection),
     auditEventRepository: createAuditEventRepository(connection),
     transactionExecutor: createDatabaseTransactionExecutor({

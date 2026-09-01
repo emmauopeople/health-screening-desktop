@@ -22,7 +22,8 @@ import {
   type ProtocolVersionRepository,
   type ScreeningSessionOutboxRepository,
   type ScreeningSessionRecord,
-  type ScreeningSessionRepository
+  type ScreeningSessionRepository,
+  type ScreeningSessionSummaryRepository
 } from '@main/database'
 import type {
   DatabaseTransactionConnection,
@@ -60,6 +61,35 @@ const screenerActor: ScreeningSessionServiceActor = Object.freeze({
 })
 
 describe('screening session service', () => {
+  it('returns the immutable repository session summary and preserves not-found', () => {
+    const summary = Object.freeze({
+      id: sessionId,
+      sessionDate: parseScreeningSessionDate('2026-07-29'),
+      status: 'OPEN' as const,
+      location: Object.freeze({ id: locationId, name: 'Screening Site' }),
+      openedAt: now,
+      openedBy: Object.freeze({ id: adminId, displayName: 'Admin User' }),
+      closedAt: null,
+      closedBy: null,
+      operational: Object.freeze({
+        totalEncounters: 2,
+        activeDrafts: 1,
+        emptyDrafts: 0,
+        finalizedEncounters: 1,
+        voidedEncounters: 0
+      }),
+      recommendations: Object.freeze({ routine: 1, standardReferral: 0, urgentReferral: 0 }),
+      referrals: Object.freeze({ open: 0, closed: 0 })
+    })
+    const found = createHarness({ summary }).service.getSummary({ id: sessionId }, nurseActor)
+    const missing = createHarness({ summary: null }).service.getSummary(
+      { id: sessionId },
+      adminActor
+    )
+    expect(found).toEqual({ status: 'FOUND', summary })
+    expect(missing).toEqual({ status: 'NOT_FOUND' })
+  })
+
   it('accepts exact creation requests and rejects caller-generated fields', () => {
     const harness = createHarness()
 
@@ -293,6 +323,7 @@ describe('screening session service', () => {
 type InspectionTrap = 'getPrototypeOf' | 'ownKeys' | 'getOwnPropertyDescriptor'
 
 interface HarnessOptions {
+  readonly summary?: ReturnType<ScreeningSessionSummaryRepository['getBySessionId']>
   readonly now?: UtcTimestamp
   readonly timeZone?: string
   readonly unsafeTimeZone?: string
@@ -409,6 +440,9 @@ function createHarness(options: HarnessOptions = {}): Harness {
         })
     )
   } satisfies ScreeningSessionRepository) as Harness['screeningSessionRepository']
+  const screeningSessionSummaryRepository: ScreeningSessionSummaryRepository = Object.freeze({
+    getBySessionId: vi.fn(() => options.summary ?? null)
+  })
   const auditEventRepository: AuditEventRepository = Object.freeze({
     getById: vi.fn(),
     listRecent: vi.fn(),
@@ -430,6 +464,7 @@ function createHarness(options: HarnessOptions = {}): Harness {
     locationRepository,
     protocolVersionRepository,
     screeningSessionRepository,
+    screeningSessionSummaryRepository,
     screeningSessionOutboxRepository,
     auditEventRepository,
     transactionExecutor

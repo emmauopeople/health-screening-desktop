@@ -9,7 +9,9 @@ import type {
   ScreeningSessionListResult,
   ScreeningSessionOutboxRepository,
   ScreeningSessionRecord,
-  ScreeningSessionRepository
+  ScreeningSessionRepository,
+  ScreeningSessionSummaryRecord,
+  ScreeningSessionSummaryRepository
 } from '@main/database'
 import type { DatabaseTransactionExecutor } from '@main/database/transaction'
 import type { EntityId } from '@main/foundation/entity-id'
@@ -114,6 +116,10 @@ export type ListScreeningSessionsResult = ScreeningSessionListResult & {
   readonly status: 'LISTED'
 }
 
+export type GetScreeningSessionSummaryResult =
+  | { readonly status: 'FOUND'; readonly summary: ScreeningSessionSummaryRecord }
+  | { readonly status: 'NOT_FOUND' }
+
 export interface ScreeningSessionService {
   create(
     request: CreateScreeningSessionRequest,
@@ -139,6 +145,11 @@ export interface ScreeningSessionService {
     request: ListScreeningSessionsRequest,
     actor: ScreeningSessionServiceActor
   ): ListScreeningSessionsResult
+
+  getSummary(
+    request: GetScreeningSessionRequest,
+    actor: ScreeningSessionServiceActor
+  ): GetScreeningSessionSummaryResult
 }
 
 export interface ScreeningSessionServiceDependencies {
@@ -146,6 +157,7 @@ export interface ScreeningSessionServiceDependencies {
   readonly locationRepository: LocationRepository
   readonly protocolVersionRepository: ProtocolVersionRepository
   readonly screeningSessionRepository: ScreeningSessionRepository
+  readonly screeningSessionSummaryRepository?: ScreeningSessionSummaryRepository
   readonly screeningSessionOutboxRepository: ScreeningSessionOutboxRepository
   readonly auditEventRepository: AuditEventRepository
   readonly transactionExecutor: DatabaseTransactionExecutor
