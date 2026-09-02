@@ -188,6 +188,13 @@ function createRouteForCommand(
     })
   }
 
+  if (definition.id === 'REPORTS_SESSION_REPORTS') {
+    return Object.freeze({
+      status: 'SESSION_REPORTS',
+      commandId: definition.id
+    })
+  }
+
   if (definition.id === 'HOME_OPEN_REFERRALS' || definition.id === 'REFERRALS_REFERRAL_WORKLIST') {
     return Object.freeze({
       status: 'REFERRALS',

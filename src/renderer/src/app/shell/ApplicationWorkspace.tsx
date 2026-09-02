@@ -12,6 +12,7 @@ import type {
 import { InstallationLocationAdministrationWorkspace } from '../administration/InstallationLocationAdministrationWorkspace'
 import { PatientRegistryWorkspace } from '../patients/PatientRegistryWorkspace'
 import { ReferralWorklistWorkspace } from '../referrals/ReferralWorklistWorkspace'
+import { SessionReportsWorkspace } from '../reports/SessionReportsWorkspace'
 import { ManageEncountersWorkspace } from '../screening/manage/ManageEncountersWorkspace'
 import { SessionSummaryWorkspace } from '../screening/summary/SessionSummaryWorkspace'
 import {
@@ -200,6 +201,14 @@ export function ApplicationWorkspace({
         />
       ) : route.status === 'SESSION_SUMMARY' ? (
         <SessionSummaryWorkspace
+          api={api}
+          timeZone={context.timeZone}
+          headingId={workspaceHeadingId}
+          headingRef={headingRef}
+          onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
+        />
+      ) : route.status === 'SESSION_REPORTS' ? (
+        <SessionReportsWorkspace
           api={api}
           timeZone={context.timeZone}
           headingId={workspaceHeadingId}
