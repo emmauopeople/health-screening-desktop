@@ -30,6 +30,7 @@ export type {
   ScreeningSessionStatus
 } from './screening-session-types'
 export type {
+  ScreeningSessionSummaryListResult,
   ScreeningSessionSummaryRecord,
   ScreeningSessionSummaryRepository
 } from './screening-session-summary-types'

@@ -211,6 +211,7 @@ export {
   type ScreeningSessionOutboxRepository,
   type ScreeningSessionRecord,
   type ScreeningSessionRepository,
+  type ScreeningSessionSummaryListResult,
   type ScreeningSessionSummaryRecord,
   type ScreeningSessionSummaryRepository,
   type ScreeningSessionStatus,

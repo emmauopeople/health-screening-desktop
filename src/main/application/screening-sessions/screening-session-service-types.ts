@@ -11,6 +11,7 @@ import type {
   ScreeningSessionRecord,
   ScreeningSessionRepository,
   ScreeningSessionSummaryRecord,
+  ScreeningSessionSummaryListResult,
   ScreeningSessionSummaryRepository
 } from '@main/database'
 import type { DatabaseTransactionExecutor } from '@main/database/transaction'
@@ -120,6 +121,10 @@ export type GetScreeningSessionSummaryResult =
   | { readonly status: 'FOUND'; readonly summary: ScreeningSessionSummaryRecord }
   | { readonly status: 'NOT_FOUND' }
 
+export type ListScreeningSessionSummariesResult = ScreeningSessionSummaryListResult & {
+  readonly status: 'LISTED'
+}
+
 export interface ScreeningSessionService {
   create(
     request: CreateScreeningSessionRequest,
@@ -150,6 +155,11 @@ export interface ScreeningSessionService {
     request: GetScreeningSessionRequest,
     actor: ScreeningSessionServiceActor
   ): GetScreeningSessionSummaryResult
+
+  listSummaries(
+    request: ListScreeningSessionsRequest,
+    actor: ScreeningSessionServiceActor
+  ): ListScreeningSessionSummariesResult
 }
 
 export interface ScreeningSessionServiceDependencies {

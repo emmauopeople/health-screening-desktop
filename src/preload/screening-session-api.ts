@@ -15,6 +15,8 @@ import {
   screeningSessionGetWorkspaceContextResultSchema,
   screeningSessionListRequestSchema,
   screeningSessionListResultSchema,
+  screeningSessionListSummariesRequestSchema,
+  screeningSessionListSummariesResultSchema,
   screeningSessionReopenRequestSchema,
   screeningSessionReopenResultSchema,
   type ScreeningSessionCloseRequest,
@@ -29,6 +31,8 @@ import {
   type ScreeningSessionGetWorkspaceContextResult,
   type ScreeningSessionListRequest,
   type ScreeningSessionListResult,
+  type ScreeningSessionListSummariesRequest,
+  type ScreeningSessionListSummariesResult,
   type ScreeningSessionReopenRequest,
   type ScreeningSessionReopenResult
 } from '@shared/ipc'
@@ -43,6 +47,9 @@ export interface ScreeningSessionApi {
   reopen(request: ScreeningSessionReopenRequest): Promise<ScreeningSessionReopenResult>
   getById(request: ScreeningSessionGetByIdRequest): Promise<ScreeningSessionGetByIdResult>
   getSummary(request: ScreeningSessionGetSummaryRequest): Promise<ScreeningSessionGetSummaryResult>
+  listSummaries(
+    request: ScreeningSessionListSummariesRequest
+  ): Promise<ScreeningSessionListSummariesResult>
   list(request: ScreeningSessionListRequest): Promise<ScreeningSessionListResult>
 }
 
@@ -145,6 +152,20 @@ export function createScreeningSessionApi(invoke: IpcInvoke): ScreeningSessionAp
         unavailableFailure: createScreeningSessionFailure(
           'IPC_UNAVAILABLE'
         ) as ScreeningSessionGetSummaryResult
+      }),
+    listSummaries: (request: ScreeningSessionListSummariesRequest) =>
+      invokeScreeningSession({
+        invoke,
+        channel: ipcChannels.screeningSessions.listSummaries,
+        request,
+        requestSchema: screeningSessionListSummariesRequestSchema,
+        resultSchema: screeningSessionListSummariesResultSchema,
+        validationFailure: createScreeningSessionFailure(
+          'VALIDATION_FAILED'
+        ) as ScreeningSessionListSummariesResult,
+        unavailableFailure: createScreeningSessionFailure(
+          'IPC_UNAVAILABLE'
+        ) as ScreeningSessionListSummariesResult
       }),
     list: (request: ScreeningSessionListRequest) =>
       invokeScreeningSession({

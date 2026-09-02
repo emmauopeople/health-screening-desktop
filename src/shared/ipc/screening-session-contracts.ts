@@ -67,6 +67,8 @@ export const screeningSessionListRequestSchema = exactObject({
   }
 })
 
+export const screeningSessionListSummariesRequestSchema = screeningSessionListRequestSchema
+
 export const publicScreeningSessionSchema = z
   .object({
     id: screeningSessionUuidSchema,
@@ -272,6 +274,16 @@ export const screeningSessionListSuccessDataSchema = z
   })
   .strict()
 
+export const screeningSessionListSummariesSuccessDataSchema = z
+  .object({
+    status: z.literal('LISTED'),
+    items: z.array(publicScreeningSessionSummarySchema),
+    page: z.number().int().min(1).safe(),
+    pageSize: screeningSessionPageSizeSchema,
+    total: z.number().int().min(0).safe()
+  })
+  .strict()
+
 export const screeningSessionSafeErrorMessages = {
   VALIDATION_FAILED: 'The request could not be processed.',
   IPC_FORBIDDEN: 'This operation is unavailable from the current window.',
@@ -360,6 +372,12 @@ export const screeningSessionListResultSchema = withSafeTransportPreprocess(
     screeningSessionFailureSchema
   ])
 )
+export const screeningSessionListSummariesResultSchema = withSafeTransportPreprocess(
+  z.discriminatedUnion('ok', [
+    createIpcSuccessResultSchema(screeningSessionListSummariesSuccessDataSchema),
+    screeningSessionFailureSchema
+  ])
+)
 
 export type ScreeningSessionStatus = z.infer<typeof screeningSessionStatusSchema>
 export type ScreeningSessionPageSize = z.infer<typeof screeningSessionPageSizeSchema>
@@ -388,6 +406,9 @@ export type ScreeningSessionGetSummaryRequest = z.infer<
   typeof screeningSessionGetSummaryRequestSchema
 >
 export type ScreeningSessionListRequest = z.infer<typeof screeningSessionListRequestSchema>
+export type ScreeningSessionListSummariesRequest = z.infer<
+  typeof screeningSessionListSummariesRequestSchema
+>
 export type ScreeningSessionGetWorkspaceContextResult = z.infer<
   typeof screeningSessionGetWorkspaceContextResultSchema
 >
@@ -403,6 +424,9 @@ export type ScreeningSessionGetSummaryResult = z.infer<
   typeof screeningSessionGetSummaryResultSchema
 >
 export type ScreeningSessionListResult = z.infer<typeof screeningSessionListResultSchema>
+export type ScreeningSessionListSummariesResult = z.infer<
+  typeof screeningSessionListSummariesResultSchema
+>
 export type ScreeningSessionCreateSuccessData = z.infer<
   typeof screeningSessionCreateSuccessDataSchema
 >
@@ -416,6 +440,9 @@ export type ScreeningSessionGetByIdSuccessData = z.infer<
   typeof screeningSessionGetByIdSuccessDataSchema
 >
 export type ScreeningSessionListSuccessData = z.infer<typeof screeningSessionListSuccessDataSchema>
+export type ScreeningSessionListSummariesSuccessData = z.infer<
+  typeof screeningSessionListSummariesSuccessDataSchema
+>
 
 export function createScreeningSessionFailure<TCode extends ScreeningSessionErrorCode>(
   code: TCode

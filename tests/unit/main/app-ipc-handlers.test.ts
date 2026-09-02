@@ -217,7 +217,7 @@ describe('application IPC handler registration', () => {
 
     const dispose = registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(62)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(63)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
@@ -280,6 +280,7 @@ describe('application IPC handler registration', () => {
       'health-screening:screening-sessions:get-summary',
       'health-screening:screening-sessions:get-workspace-context',
       'health-screening:screening-sessions:list',
+      'health-screening:screening-sessions:list-summaries',
       'health-screening:screening-sessions:reopen',
       'unrelated:channel'
     ])
@@ -541,7 +542,7 @@ describe('application IPC handler registration', () => {
     registerApplicationIpcHandlers(ipcMain, createDependencies())
     registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(124)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(126)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getHealth)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
@@ -608,6 +609,7 @@ describe('application IPC handler registration', () => {
       'health-screening:screening-sessions:get-summary',
       'health-screening:screening-sessions:get-workspace-context',
       'health-screening:screening-sessions:list',
+      'health-screening:screening-sessions:list-summaries',
       'health-screening:screening-sessions:reopen',
       'unrelated:channel'
     ])
@@ -845,7 +847,7 @@ describe('application IPC handler registration', () => {
     )
     const firstHandlers = new Map(ipcMain.handlers)
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(8)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(9)
     expect(ipcMain.handlers.has(ipcChannels.screeningSessions.create)).toBe(true)
     expect(ipcMain.handlers.has(ipcChannels.patient.search)).toBe(true)
     expect(firstHandlers.has(ipcChannels.screeningSessions.getWorkspaceContext)).toBe(true)
@@ -1009,7 +1011,7 @@ describe('application IPC handler registration', () => {
     expect(() =>
       registerScreeningSessionIpcHandlers(ipcMain, createDependencies().screeningSessions)
     ).toThrow(ApplicationIpcRegistrationError)
-    expect(ipcMain.handle).toHaveBeenCalledTimes(8)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(9)
 
     for (const [channel, handler] of originalHandlers) {
       expect(ipcMain.handlers.get(channel)).toBe(handler)

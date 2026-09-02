@@ -38,6 +38,8 @@ import {
   screeningSessionGetWorkspaceContextResultSchema,
   screeningSessionListRequestSchema,
   screeningSessionListResultSchema,
+  screeningSessionListSummariesRequestSchema,
+  screeningSessionListSummariesResultSchema,
   screeningSessionReopenRequestSchema,
   screeningSessionReopenResultSchema,
   type AuthenticationFailure,
@@ -57,6 +59,7 @@ import {
   type ScreeningSessionIpcChannel,
   type ScreeningSessionListRequest,
   type ScreeningSessionListResult,
+  type ScreeningSessionListSummariesResult,
   type ScreeningSessionReopenRequest,
   type ScreeningSessionReopenResult
 } from '@shared/ipc'
@@ -93,6 +96,10 @@ export interface ScreeningSessionIpcHandlers {
     event: IpcSenderValidationEvent,
     request: unknown
   ): Promise<ScreeningSessionGetSummaryResult>
+  listSummaries(
+    event: IpcSenderValidationEvent,
+    request: unknown
+  ): Promise<ScreeningSessionListSummariesResult>
   list(event: IpcSenderValidationEvent, request: unknown): Promise<ScreeningSessionListResult>
 }
 
@@ -273,6 +280,24 @@ export function createScreeningSessionIpcHandlers({
           return result.status === 'NOT_FOUND'
             ? freezeSuccess({ status: 'NOT_FOUND' })
             : freezeSuccess({ status: 'LOADED', summary: result.summary })
+        }
+      })
+    },
+
+    async listSummaries(
+      event: IpcSenderValidationEvent,
+      request: unknown
+    ): Promise<ScreeningSessionListSummariesResult> {
+      return handleScreeningSessionRequest({
+        channel: ipcChannels.screeningSessions.listSummaries,
+        request,
+        requestSchema: screeningSessionListSummariesRequestSchema,
+        resultSchema: screeningSessionListSummariesResultSchema,
+        logger,
+        authorize: () => authorization.requireAnyRole(event, reopenRoles),
+        invoke: (data, actor) => {
+          const result = screeningSessionService.listSummaries(toInternalListRequest(data), actor)
+          return freezeSuccess({ ...result, items: [...result.items] })
         }
       })
     },

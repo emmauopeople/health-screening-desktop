@@ -583,6 +583,7 @@ function createApi({
       reopen: vi.fn(async () => createScreeningSessionFailure('IPC_UNAVAILABLE')),
       getById: vi.fn(async () => createScreeningSessionFailure('IPC_UNAVAILABLE')),
       getSummary: vi.fn(async () => createScreeningSessionFailure('IPC_UNAVAILABLE')),
+      listSummaries: vi.fn(async () => createScreeningSessionFailure('IPC_UNAVAILABLE')),
       list: vi.fn(async () => createScreeningSessionFailure('IPC_UNAVAILABLE'))
     },
     screeningEncounters: {

@@ -399,6 +399,26 @@ export function createScreeningSessionService({
       } catch (error) {
         throw toScreeningSessionServiceBoundaryError(error)
       }
+    },
+
+    listSummaries(request: ListScreeningSessionsRequest, actor: ScreeningSessionServiceActor) {
+      try {
+        validateActor(actor)
+        if (screeningSessionSummaryRepository === undefined)
+          throw new ScreeningSessionServicePersistenceError()
+        const parsed = parseScreeningSessionListInput(request)
+        const result = screeningSessionSummaryRepository.list({
+          locationId: parsed.locationId === null ? null : parseEntityId(parsed.locationId),
+          status: parsed.status,
+          dateFrom: parsed.dateFrom === null ? null : parseScreeningSessionDate(parsed.dateFrom),
+          dateTo: parsed.dateTo === null ? null : parseScreeningSessionDate(parsed.dateTo),
+          page: parsed.page,
+          pageSize: parsed.pageSize
+        })
+        return Object.freeze({ status: 'LISTED' as const, ...result })
+      } catch (error) {
+        throw toScreeningSessionServiceBoundaryError(error)
+      }
     }
   })
 }
