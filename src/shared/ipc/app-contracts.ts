@@ -95,6 +95,8 @@ import type {
   ScreeningSessionGetWorkspaceContextResult,
   ScreeningSessionListRequest,
   ScreeningSessionListResult,
+  ScreeningSessionListSummariesRequest,
+  ScreeningSessionListSummariesResult,
   ScreeningSessionReopenRequest,
   ScreeningSessionReopenResult
 } from './screening-session-contracts'
@@ -188,6 +190,9 @@ export interface HealthScreeningApi {
     getSummary(
       request: ScreeningSessionGetSummaryRequest
     ): Promise<ScreeningSessionGetSummaryResult>
+    listSummaries(
+      request: ScreeningSessionListSummariesRequest
+    ): Promise<ScreeningSessionListSummariesResult>
     list(request: ScreeningSessionListRequest): Promise<ScreeningSessionListResult>
   }
   screeningEncounters: {

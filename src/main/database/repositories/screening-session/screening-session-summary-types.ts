@@ -1,7 +1,11 @@
 import type { EntityId } from '@main/foundation/entity-id'
 import type { UtcTimestamp } from '@main/foundation/utc-clock'
 
-import type { ScreeningSessionDate, ScreeningSessionStatus } from './screening-session-types'
+import type {
+  ScreeningSessionDate,
+  ScreeningSessionListInput,
+  ScreeningSessionStatus
+} from './screening-session-types'
 
 export interface ScreeningSessionSummaryRecord {
   readonly id: EntityId
@@ -29,4 +33,12 @@ export interface ScreeningSessionSummaryRecord {
 
 export interface ScreeningSessionSummaryRepository {
   getBySessionId(sessionId: EntityId): ScreeningSessionSummaryRecord | null
+  list(input: ScreeningSessionListInput): ScreeningSessionSummaryListResult
+}
+
+export interface ScreeningSessionSummaryListResult {
+  readonly items: readonly ScreeningSessionSummaryRecord[]
+  readonly page: number
+  readonly pageSize: ScreeningSessionListInput['pageSize']
+  readonly total: number
 }

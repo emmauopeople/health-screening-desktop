@@ -90,6 +90,30 @@ describe('screening session service', () => {
     expect(missing).toEqual({ status: 'NOT_FOUND' })
   })
 
+  it('lists paginated session report summaries through the aggregate repository', () => {
+    const summary = createSummary()
+    const result = createHarness({
+      summaryListResult: Object.freeze({
+        items: Object.freeze([summary]),
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    }).service.listSummaries(
+      {
+        locationId,
+        status: 'CLOSED',
+        dateFrom: parseScreeningSessionDate('2026-07-01'),
+        dateTo: parseScreeningSessionDate('2026-07-31'),
+        page: 1,
+        pageSize: 25
+      },
+      nurseActor
+    )
+
+    expect(result).toEqual({ status: 'LISTED', items: [summary], page: 1, pageSize: 25, total: 1 })
+  })
+
   it('accepts exact creation requests and rejects caller-generated fields', () => {
     const harness = createHarness()
 
@@ -324,6 +348,7 @@ type InspectionTrap = 'getPrototypeOf' | 'ownKeys' | 'getOwnPropertyDescriptor'
 
 interface HarnessOptions {
   readonly summary?: ReturnType<ScreeningSessionSummaryRepository['getBySessionId']>
+  readonly summaryListResult?: ReturnType<ScreeningSessionSummaryRepository['list']>
   readonly now?: UtcTimestamp
   readonly timeZone?: string
   readonly unsafeTimeZone?: string
@@ -441,7 +466,10 @@ function createHarness(options: HarnessOptions = {}): Harness {
     )
   } satisfies ScreeningSessionRepository) as Harness['screeningSessionRepository']
   const screeningSessionSummaryRepository: ScreeningSessionSummaryRepository = Object.freeze({
-    getBySessionId: vi.fn(() => options.summary ?? null)
+    getBySessionId: vi.fn(() => options.summary ?? null),
+    list: vi.fn(
+      () => options.summaryListResult ?? { items: [], page: 1, pageSize: 25 as const, total: 0 }
+    )
   })
   const auditEventRepository: AuditEventRepository = Object.freeze({
     getById: vi.fn(),
@@ -474,6 +502,30 @@ function createHarness(options: HarnessOptions = {}): Harness {
     service: createScreeningSessionService(dependencies),
     connection,
     screeningSessionRepository
+  })
+}
+
+function createSummary(): NonNullable<
+  ReturnType<ScreeningSessionSummaryRepository['getBySessionId']>
+> {
+  return Object.freeze({
+    id: sessionId,
+    sessionDate: parseScreeningSessionDate('2026-07-29'),
+    status: 'CLOSED',
+    location: Object.freeze({ id: locationId, name: 'Screening Site' }),
+    openedAt: now,
+    openedBy: Object.freeze({ id: adminId, displayName: 'Admin User' }),
+    closedAt: now,
+    closedBy: Object.freeze({ id: adminId, displayName: 'Admin User' }),
+    operational: Object.freeze({
+      totalEncounters: 2,
+      activeDrafts: 0,
+      emptyDrafts: 0,
+      finalizedEncounters: 2,
+      voidedEncounters: 0
+    }),
+    recommendations: Object.freeze({ routine: 1, standardReferral: 1, urgentReferral: 0 }),
+    referrals: Object.freeze({ open: 1, closed: 0 })
   })
 }
 

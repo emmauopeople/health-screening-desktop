@@ -7,8 +7,11 @@ import { parseUtcTimestamp } from '@main/foundation/utc-clock'
 import { RepositoryDataIntegrityError, RepositoryReadError } from '../repository-errors'
 import type {
   ScreeningSessionSummaryRecord,
+  ScreeningSessionSummaryListResult,
   ScreeningSessionSummaryRepository
 } from './screening-session-summary-types'
+import type { ScreeningSessionListInput } from './screening-session-types'
+import { parseScreeningSessionListInput } from './screening-session-validation'
 import {
   parseScreeningSessionDate,
   parseScreeningSessionStatus
@@ -25,7 +28,7 @@ const recordedDataSql = `
   OR EXISTS (SELECT 1 FROM otc_medication_logs d WHERE d.encounter_id = encounter.id)
 `
 
-const summarySql = `
+const summarySelectSql = `
 SELECT
   session.id, session.session_date, session.status, session.opened_at, session.closed_at,
   location.id AS location_id, location.name AS location_name,
@@ -40,16 +43,18 @@ SELECT
   COUNT(DISTINCT CASE WHEN encounter.status IN ('COMPLETED', 'AMENDED') AND encounter.next_action_category = 'REFER' THEN encounter.id END) AS standard_referral_count,
   COUNT(DISTINCT CASE WHEN encounter.status IN ('COMPLETED', 'AMENDED') AND encounter.next_action_category = 'URGENT_REFERRAL' THEN encounter.id END) AS urgent_referral_count,
   COUNT(DISTINCT CASE WHEN encounter.status IN ('COMPLETED', 'AMENDED') AND referral.status <> 'CLOSED' THEN referral.id END) AS open_referrals,
-  COUNT(DISTINCT CASE WHEN encounter.status IN ('COMPLETED', 'AMENDED') AND referral.status = 'CLOSED' THEN referral.id END) AS closed_referrals
+  COUNT(DISTINCT CASE WHEN encounter.status IN ('COMPLETED', 'AMENDED') AND referral.status = 'CLOSED' THEN referral.id END) AS closed_referrals,
+  COUNT(*) OVER() AS result_total
 FROM screening_sessions session
 JOIN locations location ON location.id = session.location_id
 JOIN users opened_by ON opened_by.id = session.opened_by
 LEFT JOIN users closed_by ON closed_by.id = session.closed_by
 LEFT JOIN screening_encounters encounter ON encounter.screening_session_id = session.id
 LEFT JOIN referrals referral ON referral.encounter_id = encounter.id
-WHERE session.id = ?
-GROUP BY session.id, location.id, opened_by.id, closed_by.id
 `
+
+const summaryGroupSql = `GROUP BY session.id, location.id, opened_by.id, closed_by.id`
+const summarySql = `${summarySelectSql} WHERE session.id = ? ${summaryGroupSql}`
 
 export function createScreeningSessionSummaryRepository(
   connection: Database.Database
@@ -65,8 +70,63 @@ export function createScreeningSessionSummaryRepository(
         if (error instanceof RepositoryDataIntegrityError) throw error
         throw new RepositoryReadError()
       }
+    },
+    list(input: ScreeningSessionListInput): ScreeningSessionSummaryListResult {
+      const parsed = parseScreeningSessionListInput(input)
+      const where: string[] = []
+      const parameters: unknown[] = []
+      if (parsed.locationId !== null) {
+        where.push('session.location_id = ?')
+        parameters.push(parseEntityId(parsed.locationId))
+      }
+      if (parsed.status !== null) {
+        where.push('session.status = ?')
+        parameters.push(parsed.status)
+      }
+      if (parsed.dateFrom !== null) {
+        where.push('session.session_date >= ?')
+        parameters.push(parsed.dateFrom)
+      }
+      if (parsed.dateTo !== null) {
+        where.push('session.session_date <= ?')
+        parameters.push(parsed.dateTo)
+      }
+      const whereSql = where.length === 0 ? '' : `WHERE ${where.join(' AND ')}`
+      const offset = (parsed.page - 1) * parsed.pageSize
+      try {
+        const rows = connection
+          .prepare(
+            `${summarySelectSql} ${whereSql} ${summaryGroupSql}
+             ORDER BY session.session_date DESC, session.opened_at DESC, session.id ASC
+             LIMIT ? OFFSET ?`
+          )
+          .all(...parameters, parsed.pageSize, offset) as readonly Record<string, unknown>[]
+        return Object.freeze({
+          items: Object.freeze(rows.map(readSummary)),
+          page: parsed.page,
+          pageSize: parsed.pageSize,
+          total:
+            rows.length === 0
+              ? countListTotal(connection, whereSql, parameters)
+              : count(rows[0]?.['result_total'])
+        })
+      } catch (error) {
+        if (error instanceof RepositoryDataIntegrityError) throw error
+        throw new RepositoryReadError()
+      }
     }
   })
+}
+
+function countListTotal(
+  connection: Database.Database,
+  whereSql: string,
+  parameters: readonly unknown[]
+): number {
+  const row = connection
+    .prepare(`SELECT COUNT(*) AS total FROM screening_sessions session ${whereSql}`)
+    .get(...parameters) as Record<string, unknown>
+  return count(row['total'])
 }
 
 function readSummary(row: Record<string, unknown>): ScreeningSessionSummaryRecord {

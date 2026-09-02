@@ -75,6 +75,7 @@ const screeningSessionIpcChannels: readonly ScreeningSessionIpcChannel[] = Objec
   ipcChannels.screeningSessions.reopen,
   ipcChannels.screeningSessions.getById,
   ipcChannels.screeningSessions.getSummary,
+  ipcChannels.screeningSessions.listSummaries,
   ipcChannels.screeningSessions.list
 ])
 const installationSettingsIpcChannels: readonly InstallationSettingsIpcChannel[] = Object.freeze([
@@ -344,6 +345,7 @@ export function registerScreeningSessionIpcHandlers(
     [ipcChannels.screeningSessions.reopen, screeningSessionHandlers.reopen],
     [ipcChannels.screeningSessions.getById, screeningSessionHandlers.getById],
     [ipcChannels.screeningSessions.getSummary, screeningSessionHandlers.getSummary],
+    [ipcChannels.screeningSessions.listSummaries, screeningSessionHandlers.listSummaries],
     [ipcChannels.screeningSessions.list, screeningSessionHandlers.list]
   ]
   const installedChannels: ScreeningSessionIpcChannel[] = []

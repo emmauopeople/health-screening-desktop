@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   createProductionDatabaseMigrationRunner,
-  createScreeningSessionSummaryRepository
+  createScreeningSessionSummaryRepository,
+  parseScreeningSessionDate
 } from '@main/database'
 import { parseEntityId } from '@main/foundation/entity-id'
 import { createUtcClock, type UtcTimestamp } from '@main/foundation/utc-clock'
@@ -37,6 +38,57 @@ describe('screening session summary repository', () => {
         referrals: { open: 1, closed: 0 }
       })
       expect(repository.getBySessionId(parseEntityId(id(99)))).toBeNull()
+    })
+  })
+
+  it('lists filtered report rows with stable pagination and totals', async () => {
+    await withDatabase((connection) => {
+      const repository = createScreeningSessionSummaryRepository(connection)
+      const firstPage = repository.list({
+        locationId: parseEntityId(id(3)),
+        status: 'OPEN',
+        dateFrom: parseScreeningSessionDate('2026-08-01'),
+        dateTo: parseScreeningSessionDate('2026-08-31'),
+        page: 1,
+        pageSize: 25
+      })
+
+      expect(firstPage).toMatchObject({
+        page: 1,
+        pageSize: 25,
+        total: 1,
+        items: [
+          {
+            id: id(4),
+            sessionDate: '2026-08-28',
+            operational: { finalizedEncounters: 2 },
+            recommendations: { routine: 1, urgentReferral: 1 },
+            referrals: { open: 1, closed: 0 }
+          }
+        ]
+      })
+
+      expect(
+        repository.list({
+          locationId: null,
+          status: 'CLOSED',
+          dateFrom: null,
+          dateTo: null,
+          page: 1,
+          pageSize: 25
+        })
+      ).toMatchObject({ items: [], total: 0 })
+
+      expect(
+        repository.list({
+          locationId: null,
+          status: null,
+          dateFrom: null,
+          dateTo: null,
+          page: 2,
+          pageSize: 25
+        })
+      ).toMatchObject({ items: [], page: 2, total: 1 })
     })
   })
 })

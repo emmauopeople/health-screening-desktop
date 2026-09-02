@@ -92,6 +92,7 @@ describe('preload screening-session API', () => {
       'reopen',
       'getById',
       'getSummary',
+      'listSummaries',
       'list'
     ])
     expect(Object.isFrozen(api)).toBe(true)
@@ -122,7 +123,24 @@ describe('preload screening-session API', () => {
     expect(typeof api.screeningSessions.reopen).toBe('function')
     expect(typeof api.screeningSessions.getById).toBe('function')
     expect(typeof api.screeningSessions.getSummary).toBe('function')
+    expect(typeof api.screeningSessions.listSummaries).toBe('function')
     expect(typeof api.screeningSessions.list).toBe('function')
+  })
+
+  it('invokes the fixed paginated session-report channel', async () => {
+    const response = createIpcSuccess({
+      status: 'LISTED' as const,
+      items: [],
+      page: 1,
+      pageSize: 25 as const,
+      total: 0
+    })
+    const invoke = vi.fn().mockResolvedValue(response)
+
+    await expect(
+      createHealthScreeningApi(invoke).screeningSessions.listSummaries(listRequest)
+    ).resolves.toEqual(response)
+    expect(invoke).toHaveBeenCalledWith(ipcChannels.screeningSessions.listSummaries, listRequest)
   })
 
   it('invokes the fixed session-summary channel and validates its response', async () => {

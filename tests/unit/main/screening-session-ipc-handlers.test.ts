@@ -14,7 +14,12 @@ import {
   LocalSessionPasswordChangeRequiredError,
   LocalSessionUnauthenticatedError
 } from '@main/application'
-import type { LocalUserRecord, LocalUserRole, ScreeningSessionRecord } from '@main/database'
+import type {
+  LocalUserRecord,
+  LocalUserRole,
+  ScreeningSessionRecord,
+  ScreeningSessionSummaryRecord
+} from '@main/database'
 import type { EntityId, UtcTimestamp } from '@main/foundation'
 import {
   createScreeningSessionIpcHandlers,
@@ -23,6 +28,7 @@ import {
 } from '@main/ipc/handlers/screening-session-handlers'
 import type { IpcSenderValidationEvent } from '@main/ipc/sender-policy'
 import {
+  createIpcSuccess,
   createScreeningSessionFailure,
   type ScreeningSessionCloseRequest,
   type ScreeningSessionCreateRequest,
@@ -67,6 +73,33 @@ const listRequest: ScreeningSessionListRequest = {
 }
 
 describe('screening-session IPC handlers', () => {
+  it('returns authorized, validated historical session report pages', async () => {
+    const harness = createHarness()
+    const request = {
+      locationId,
+      status: 'CLOSED' as const,
+      dateFrom: '2026-07-01',
+      dateTo: '2026-07-31',
+      page: 1,
+      pageSize: 25 as const
+    }
+
+    await expect(harness.handlers.listSummaries(createAllowedEvent(), request)).resolves.toEqual(
+      createIpcSuccess({
+        status: 'LISTED',
+        items: [createSummary()],
+        page: 1,
+        pageSize: 25,
+        total: 1
+      })
+    )
+    expect(harness.screeningSessionService.listSummaries).toHaveBeenCalledOnce()
+    expect(harness.authenticationSessionService.requireAnyRole).toHaveBeenCalledWith([
+      'LOCAL_ADMIN',
+      'NURSE'
+    ])
+  })
+
   it('authorizes context, create, close, get, and list for all local roles using trusted actor data', async () => {
     for (const role of ['LOCAL_ADMIN', 'NURSE', 'TRAINED_SCREENER'] as const) {
       const harness = createHarness({ role })
@@ -483,6 +516,7 @@ interface HandlerOverrides {
   readonly close?: ScreeningSessionService['close']
   readonly reopen?: ScreeningSessionService['reopen']
   readonly getById?: ScreeningSessionService['getById']
+  readonly listSummaries?: ScreeningSessionService['listSummaries']
   readonly list?: ScreeningSessionService['list']
 }
 
@@ -496,6 +530,7 @@ interface HandlerHarness {
     close: ReturnType<typeof vi.fn>
     reopen: ReturnType<typeof vi.fn>
     getById: ReturnType<typeof vi.fn>
+    listSummaries: ReturnType<typeof vi.fn>
     list: ReturnType<typeof vi.fn>
   }
   readonly currentScreeningSessionService: CurrentScreeningSessionService & {
@@ -597,6 +632,17 @@ function createScreeningSessionService(
         }))
     ),
     getById: vi.fn(overrides.getById ?? (() => ({ status: 'FOUND', session: createSession() }))),
+    getSummary: vi.fn(() => ({ status: 'FOUND', summary: createSummary() })),
+    listSummaries: vi.fn(
+      overrides.listSummaries ??
+        (() => ({
+          status: 'LISTED',
+          items: Object.freeze([createSummary()]),
+          page: 1,
+          pageSize: 25,
+          total: 1
+        }))
+    ),
     list: vi.fn(
       overrides.list ??
         (() => ({
@@ -673,6 +719,28 @@ function createSession(overrides: Partial<ScreeningSessionRecord> = {}): Screeni
     updatedAt: timestamp,
     rowVersion: status === 'CLOSED' ? 2 : 1,
     ...overrides
+  })
+}
+
+function createSummary(): ScreeningSessionSummaryRecord {
+  return Object.freeze({
+    id: sessionId,
+    sessionDate: '2026-07-29' as ScreeningSessionSummaryRecord['sessionDate'],
+    status: 'CLOSED' as const,
+    location: Object.freeze({ id: locationId, name: 'Central Church' }),
+    openedAt: timestamp,
+    openedBy: Object.freeze({ id: userId, displayName: 'Admin User' }),
+    closedAt: timestamp,
+    closedBy: Object.freeze({ id: userId, displayName: 'Admin User' }),
+    operational: Object.freeze({
+      totalEncounters: 2,
+      activeDrafts: 0,
+      emptyDrafts: 0,
+      finalizedEncounters: 2,
+      voidedEncounters: 0
+    }),
+    recommendations: Object.freeze({ routine: 1, standardReferral: 1, urgentReferral: 0 }),
+    referrals: Object.freeze({ open: 1, closed: 0 })
   })
 }
 
