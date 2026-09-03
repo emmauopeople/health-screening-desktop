@@ -32,7 +32,8 @@ const summary: PublicReferralSummary = {
 const detail: PublicReferralDetail = {
   ...summary,
   reasonCodes: ['URGENT_CLINICAL_EVALUATION'],
-  reasonText: 'Protocol-indicated urgent clinical evaluation',
+  reasonText: null,
+  triggeringBloodPressure: { systolic: 178, diastolic: 112 },
   destinationName: null,
   closureReason: null,
   closedAt: null,
@@ -68,13 +69,16 @@ describe('ReferralWorklistWorkspace', () => {
       urgency: null,
       dueFrom: null,
       dueTo: null,
+      screeningSessionId: null,
       page: 1,
       pageSize: 25
     })
     expect(harness.getDetail).toHaveBeenCalledWith({ referralId })
     expect(mounted.container.textContent).toContain('Grace N.')
     expect(mounted.container.textContent).toContain('BAB-000184')
-    expect(mounted.container.textContent).toContain('Protocol-indicated urgent clinical evaluation')
+    expect(mounted.container.textContent).toContain(
+      'Urgent blood pressure screening referral — BP 178/112 mmHg'
+    )
     expect(mounted.container.querySelector('.referral-list-pane')).not.toBeNull()
     expect(mounted.container.querySelector('.referral-detail-pane')).not.toBeNull()
 
