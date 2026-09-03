@@ -345,6 +345,10 @@ describe('application shell DOM integration', () => {
     await clickButton(mounted, 'Standard referral')
     expectWorkspaceHeading(mounted, 'Referral Worklist')
     expect(text(mounted)).toContain('Showing referrals for the selected screening session.')
+    await act(async () => {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+      await flushPromises()
+    })
     expect(harness.api.referrals.search).toHaveBeenLastCalledWith(
       expect.objectContaining({
         screeningSessionId: '99999999-9999-4999-8999-999999999999'
