@@ -16,6 +16,15 @@ export {
   RepositoryWriteError
 } from './repository-errors'
 export {
+  createSyncSnapshotRepository,
+  type MaterializedSyncActor,
+  type MaterializedSyncBatchSource,
+  type MaterializedSyncJsonValue,
+  type MaterializedSyncRecord,
+  type MaterializedSyncResourceType,
+  type SyncSnapshotRepository
+} from './sync-snapshot'
+export {
   createAuditEventRepository,
   parseAuditActionCode,
   parseAuditEntityType,

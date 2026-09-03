@@ -3,6 +3,7 @@ export {
   createSyncTransportFoundationService,
   sanitizeSyncErrorCode
 } from './sync-transport-service'
+export { createSyncSnapshotPreparationService } from './sync-snapshot-preparation-service'
 export {
   addMilliseconds,
   createCanonicalBatchRequest,
@@ -26,3 +27,8 @@ export type {
   SyncTransportFoundationService,
   SyncTransportFoundationServiceDependencies
 } from './sync-transport-types'
+export type {
+  PrepareNextSyncBatchResult,
+  SyncSnapshotPreparationService,
+  SyncSnapshotPreparationServiceDependencies
+} from './sync-snapshot-preparation-types'
