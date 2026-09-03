@@ -35,10 +35,38 @@ describe('referral service', () => {
         pageSize: 25
       })
       expect(search).toMatchObject({ status: 'LOADED', total: 1, items: [{ id: ids.referral }] })
+      expect(
+        service.search({
+          query: '',
+          statuses: [],
+          urgency: null,
+          dueFrom: null,
+          dueTo: null,
+          screeningSessionId: ids.session,
+          page: 1,
+          pageSize: 25
+        })
+      ).toMatchObject({ status: 'LOADED', total: 1 })
+      expect(
+        service.search({
+          query: '',
+          statuses: [],
+          urgency: null,
+          dueFrom: null,
+          dueTo: null,
+          screeningSessionId: '62000000-0000-4000-8000-000000000099',
+          page: 1,
+          pageSize: 25
+        })
+      ).toMatchObject({ status: 'LOADED', total: 0 })
       const detail = service.getDetail({ referralId: ids.referral })
       expect(detail).toMatchObject({
         status: 'LOADED',
-        detail: { status: 'OPEN', recordVersion: 1 }
+        detail: {
+          status: 'OPEN',
+          recordVersion: 1,
+          triggeringBloodPressure: { systolic: 178, diastolic: 112 }
+        }
       })
     })
   })
@@ -329,7 +357,7 @@ function seed(connection: Database.Database): void {
     )
   connection
     .prepare(
-      "INSERT INTO screening_encounters (id,patient_id,screening_session_id,location_id,protocol_version_id,status,started_at,completed_at,source_type,recorded_by,record_version,created_at,updated_at) VALUES (?,?,?,?,?,'COMPLETED',?,?,'LOCAL',?,1,?,?)"
+      "INSERT INTO screening_encounters (id,patient_id,screening_session_id,location_id,protocol_version_id,status,started_at,completed_at,summary_systolic,summary_diastolic,source_type,recorded_by,record_version,created_at,updated_at) VALUES (?,?,?,?,?,'COMPLETED',?,?,? ,?,'LOCAL',?,1,?,?)"
     )
     .run(
       ids.encounter,
@@ -339,6 +367,8 @@ function seed(connection: Database.Database): void {
       protocol,
       now,
       now,
+      178,
+      112,
       ids.user,
       now,
       now
