@@ -258,3 +258,55 @@ async function mount(
 async function change(element: HTMLSelectElement, value: string): Promise<void> {
   await act(async () => {
     const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+    setter?.call(element, value)
+    element.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+  })
+}
+
+async function input(
+  element: HTMLInputElement | HTMLTextAreaElement,
+  value: string
+): Promise<void> {
+  await act(async () => {
+    const prototype =
+      element instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype
+    const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+    setter?.call(element, value)
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+    element.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+  })
+}
+
+async function check(container: HTMLElement, label: string): Promise<void> {
+  const input = Array.from(container.querySelectorAll('label'))
+    .find((candidate) => candidate.textContent?.trim() === label)
+    ?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+  if (input === null || input === undefined) throw new Error(`Missing checkbox ${label}`)
+  await act(async () => {
+    input.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await flush()
+  })
+  await act(flush)
+}
+
+async function click(container: HTMLElement, label: string): Promise<void> {
+  const button = Array.from(container.querySelectorAll('button')).find(
+    (candidate) => candidate.textContent?.trim() === label
+  )
+  if (button === undefined) throw new Error(`Missing button ${label}`)
+  await act(async () => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await flush()
+  })
+  await act(flush)
+}
+
+async function flush(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+  await new Promise((resolve) => window.setTimeout(resolve, 0))
+}
