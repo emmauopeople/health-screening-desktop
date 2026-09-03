@@ -59,8 +59,8 @@ describe('location repository', () => {
       expect(Object.isFrozen(listAll())).toBe(true)
       expect(Object.isFrozen(listActive())).toBe(true)
       expect(readTableCount(connection, 'locations')).toBe(0)
-      expect(readUserVersion(connection)).toBe(19)
-      expect(readLedgerCount(connection)).toBe(19)
+      expect(readUserVersion(connection)).toBe(20)
+      expect(readLedgerCount(connection)).toBe(20)
     })
   })
 

@@ -66,10 +66,12 @@ Integration tests prove:
 - attempt leasing, retry timing, and expired-lease recovery;
 - atomic rollback when any requested outbox signal cannot be reserved.
 
-## Follow-up boundary
+## Follow-up implementation
 
-HSW-013B will add the canonical SQLite snapshot materializers, coalescing of
-eligible outbox events, the HTTP client, response validation, terminal outcome
-application, and identity-resolution delivery. It must reuse the exact stored
-request bytes supplied by this foundation. Food, OTC, and referral transport
-remain blocked until their central contracts are frozen.
+HSW-013B1 supplies canonical snapshot materialization and atomic batch
+preparation. HSW-013B2 adds the authenticated HTTP worker, response validation,
+exact-byte recovery, and outcome application described in
+[`desktop-sync-worker.md`](./desktop-sync-worker.md). HSW-013B3 remains
+responsible for local Medical ID application and reviewer-resolution delivery.
+Food, OTC, and referral transport remain blocked until their central contracts
+are frozen.

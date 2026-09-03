@@ -19,8 +19,9 @@ import repeatScreeningEncountersSql from './sql/0016-repeat-screening-encounters
 import bpScreeningProtocolSql from './sql/0017-bp-screening-protocol.sql?raw'
 import referralTreatmentActionsSql from './sql/0018-referral-treatment-actions.sql?raw'
 import syncTransportFoundationSql from './sql/0019-sync-transport-foundation.sql?raw'
+import syncWorkerResponseSql from './sql/0020-sync-worker-response.sql?raw'
 
-export const targetSchemaVersion = 19
+export const targetSchemaVersion = 20
 
 const initialSchemaMigration = Object.freeze({
   version: 1,
@@ -138,6 +139,12 @@ const syncTransportFoundationMigration = Object.freeze({
   sql: syncTransportFoundationSql
 } satisfies DatabaseMigration)
 
+const syncWorkerResponseMigration = Object.freeze({
+  version: 20,
+  name: 'sync-worker-response',
+  sql: syncWorkerResponseSql
+} satisfies DatabaseMigration)
+
 export const databaseMigrations = Object.freeze([
   initialSchemaMigration,
   patientRegistryManagementMigration,
@@ -157,7 +164,8 @@ export const databaseMigrations = Object.freeze([
   repeatScreeningEncountersMigration,
   bpScreeningProtocolMigration,
   referralTreatmentActionsMigration,
-  syncTransportFoundationMigration
+  syncTransportFoundationMigration,
+  syncWorkerResponseMigration
 ] as const)
 
 export function resolveDatabaseMigrations(
