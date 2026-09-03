@@ -5838,6 +5838,45 @@ h1 {
   gap: 1rem;
 }
 
+.clinical-report-masthead {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  border-bottom: 3px solid var(--shell-primary);
+  padding-bottom: 0.75rem;
+}
+
+.clinical-report-logo {
+  width: 5.4rem;
+  height: 2.3rem;
+  flex: 0 0 auto;
+  background: url('../../../../assests/images/small-logo.png') center / contain no-repeat;
+}
+
+.clinical-report-masthead div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.clinical-report-masthead strong {
+  color: var(--shell-primary);
+  font-size: 1.15rem;
+}
+
+.clinical-report-masthead span:last-child,
+.clinical-report-footer {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.clinical-report-footer {
+  margin: 0;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.65rem;
+  text-align: center;
+}
+
 .session-report-print-area > header > p:last-child {
   margin: 0.35rem 0 0;
   color: var(--color-muted);
@@ -5890,7 +5929,7 @@ h1 {
   gap: 0.6rem;
 }
 
-.session-report-metrics div {
+.session-report-metric {
   display: flex;
   min-width: 0;
   min-height: 4.5rem;
@@ -5899,11 +5938,38 @@ h1 {
   border-radius: 0.4rem;
   padding: 0.65rem;
   background: #f1f5f9;
+  border: 1px solid transparent;
+  color: inherit;
+  text-align: left;
 }
 
-.session-report-metrics strong {
+.session-report-metric:not(:disabled) {
+  cursor: pointer;
+}
+
+.session-report-metric:not(:disabled):hover,
+.session-report-metric:not(:disabled):focus-visible {
+  border-color: var(--shell-accent);
+  background: #e6f3f5;
+}
+
+.session-report-metric strong {
   color: var(--shell-primary);
   font-size: 1.55rem;
+}
+
+.referral-session-filter {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid #9bcbd2;
+  border-radius: 0.55rem;
+  padding: 0.65rem 0.8rem;
+  background: #e6f3f5;
+  color: var(--shell-primary);
+  font-weight: 700;
 }
 
 @media (max-width: 1100px) {
@@ -5994,7 +6060,7 @@ h1 {
     -webkit-print-color-adjust: exact;
   }
 
-  .session-report-metrics div,
+  .session-report-metric,
   .session-report-metadata div {
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
