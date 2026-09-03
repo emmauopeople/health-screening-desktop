@@ -77,11 +77,14 @@ describe('application shell rendering', () => {
   it('filters dashboard quick actions by role', () => {
     expect(getVisibleDashboardQuickActions('LOCAL_ADMIN').map((action) => action.label)).toEqual([
       'Find or open patient',
-      'New Screening'
+      'New Screening',
+      'Referrals',
+      'Manage Encounters',
+      'Reports'
     ])
     expect(
       getVisibleDashboardQuickActions('TRAINED_SCREENER').map((action) => action.label)
-    ).toEqual(['Find or open patient', 'New Screening'])
+    ).toEqual(['Find or open patient', 'New Screening', 'Referrals', 'Manage Encounters'])
   })
 
   it('defines viewport-constrained shell grid slots without a patient-tab row', () => {
@@ -96,6 +99,11 @@ describe('application shell rendering', () => {
     expect(css).toMatch(
       /\.application-workspace\s*\{[\s\S]*grid-area: workspace;[\s\S]*min-height: 0;[\s\S]*overflow: auto;/
     )
+    expect(css).toMatch(
+      /\.application-workspace:has\(\.dashboard-workspace\)\s*\{[\s\S]*overflow: hidden;/
+    )
+    expect(css).toMatch(/\.dashboard-quick-action-list\s*\{[\s\S]*overflow-y: auto;/)
+    expect(css).toMatch(/\.dashboard-table-scroll\s*\{[\s\S]*overflow: auto;/)
   })
 
   it('applies the approved application-shell visual tokens and reference layout classes', () => {
