@@ -22,6 +22,8 @@ interface ReferralWorklistWorkspaceProps {
   readonly api: HealthScreeningApi
   readonly headingId: string
   readonly headingRef: RefObject<HTMLHeadingElement | null>
+  readonly requestedSessionId?: string | null
+  onClearRequestedSession?(): void
   onAuthenticationFailure(code: PatientErrorCode): void
   onOpenPatient(patientId: string): void
   onOpenEncounter(encounterId: string): void
@@ -37,6 +39,8 @@ export function ReferralWorklistWorkspace({
   api,
   headingId,
   headingRef,
+  requestedSessionId = null,
+  onClearRequestedSession,
   onAuthenticationFailure,
   onOpenPatient,
   onOpenEncounter
@@ -100,6 +104,7 @@ export function ReferralWorklistWorkspace({
       setLoading(true)
       const result = await api.referrals.search({
         query: normalized,
+        screeningSessionId: requestedSessionId,
         statuses:
           statusFilter === 'ACTIVE'
             ? [...activeStatuses]
@@ -146,6 +151,7 @@ export function ReferralWorklistWorkspace({
       handleControlledFailure,
       onAuthenticationFailure,
       query,
+      requestedSessionId,
       statusFilter,
       urgency
     ]
@@ -223,6 +229,19 @@ export function ReferralWorklistWorkspace({
           Referral Worklist
         </h1>
       </header>
+
+      {requestedSessionId === null ? null : (
+        <div className="referral-session-filter" role="status">
+          <span>Showing referrals for the selected screening session.</span>
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={onClearRequestedSession}
+          >
+            Show all referrals
+          </button>
+        </div>
+      )}
 
       <form className="referral-filters" onSubmit={search}>
         <div className="referral-search-group">
@@ -459,7 +478,7 @@ function ReferralDetail({
       </p>
       <div className="referral-reason">
         <span>Referral reason</span>
-        <strong>{detail.reasonText ?? detail.reasonCodes.map(formatLabel).join(', ')}</strong>
+        <strong>{formatReferralReason(detail)}</strong>
         {detail.destinationName === null ? null : (
           <small>Destination: {detail.destinationName}</small>
         )}
@@ -908,6 +927,17 @@ function formatLabel(value: string): string {
     .toLowerCase()
     .replaceAll('_', ' ')
     .replace(/(^|\s)\S/gu, (letter) => letter.toUpperCase())
+}
+function formatReferralReason(detail: PublicReferralDetail): string {
+  const codedReason = detail.reasonCodes.includes('BP_SCREENING_URGENT_REFERRAL')
+    ? 'Urgent blood pressure screening referral'
+    : detail.reasonCodes.includes('BP_SCREENING_REFERRAL')
+      ? 'Blood pressure screening referral'
+      : detail.reasonCodes.map(formatLabel).join(', ')
+  const reason = detail.reasonText ?? codedReason
+  return detail.triggeringBloodPressure == null
+    ? reason
+    : `${reason} — BP ${detail.triggeringBloodPressure.systolic}/${detail.triggeringBloodPressure.diastolic} mmHg`
 }
 function messageForStatus(status: string): string {
   switch (status) {

@@ -73,6 +73,10 @@ export type ApplicationWorkspaceRoute =
       readonly commandId: 'SCREENING_SESSION_SUMMARY'
     }
   | {
+      readonly status: 'SESSION_REPORTS'
+      readonly commandId: 'REPORTS_SESSION_REPORTS'
+    }
+  | {
       readonly status: 'REFERRALS'
       readonly commandId: 'HOME_OPEN_REFERRALS' | 'REFERRALS_REFERRAL_WORKLIST'
     }

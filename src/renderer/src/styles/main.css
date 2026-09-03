@@ -5652,6 +5652,332 @@ h1 {
   }
 }
 
+.session-reports-workspace {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.session-reports-heading {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.session-reports-heading h1,
+.session-report-print-area h2 {
+  margin: 0;
+}
+
+.session-reports-heading-actions,
+.session-reports-filters,
+.session-reports-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.65rem;
+}
+
+.session-reports-heading-actions {
+  justify-content: flex-end;
+}
+
+.session-reports-filters {
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+  padding: 0.7rem;
+  background: var(--color-panel);
+}
+
+.session-reports-filters label {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.session-reports-filters select,
+.session-reports-filters input {
+  min-width: 10rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 0.4rem;
+  padding: 0.58rem 0.65rem;
+  background: #ffffff;
+  color: var(--color-ink);
+}
+
+.session-reports-layout {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(22rem, 0.9fr) minmax(28rem, 1.25fr);
+  gap: 0.85rem;
+  overflow: hidden;
+}
+
+.session-reports-list-panel,
+.session-reports-detail-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+  background: var(--color-panel);
+}
+
+.session-reports-list-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.session-reports-list-summary {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+.session-reports-list-summary span,
+.session-reports-state-error {
+  color: #b42318;
+}
+
+.session-reports-table-scroll,
+.session-reports-detail-panel {
+  overflow: auto;
+}
+
+.session-reports-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.session-reports-table th,
+.session-reports-table td {
+  overflow-wrap: anywhere;
+  border-top: 1px solid var(--color-border);
+  padding: 0.65rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.session-reports-table th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  background: var(--shell-primary);
+  color: #ffffff;
+  font-size: 0.78rem;
+}
+
+.session-reports-table tbody tr {
+  cursor: pointer;
+}
+
+.session-reports-table tbody tr:hover,
+.session-reports-table tbody tr:focus,
+.session-reports-table tbody tr.is-selected {
+  background: #e6f3f5;
+  outline: none;
+}
+
+.session-reports-table tbody tr.is-selected {
+  box-shadow: inset 4px 0 0 var(--shell-accent);
+}
+
+.session-reports-pagination {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  border-top: 1px solid var(--color-border);
+  padding: 0.65rem;
+}
+
+.session-reports-pagination span {
+  margin-right: auto;
+  color: var(--color-muted);
+  font-weight: 700;
+}
+
+.session-reports-detail-panel {
+  padding: 1rem;
+}
+
+.session-reports-empty,
+.session-reports-empty-detail,
+.session-reports-state {
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.session-reports-empty-detail,
+.session-reports-state {
+  display: flex;
+  min-height: 10rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.session-reports-state-error {
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.session-report-print-area {
+  display: grid;
+  gap: 1rem;
+}
+
+.clinical-report-masthead {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  border-bottom: 3px solid var(--shell-primary);
+  padding-bottom: 0.75rem;
+}
+
+.clinical-report-logo {
+  width: 5.4rem;
+  height: 2.3rem;
+  flex: 0 0 auto;
+  background: url('../../../../assests/images/small-logo.png') center / contain no-repeat;
+}
+
+.clinical-report-masthead div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.clinical-report-masthead strong {
+  color: var(--shell-primary);
+  font-size: 1.15rem;
+}
+
+.clinical-report-masthead span:last-child,
+.clinical-report-footer {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.clinical-report-footer {
+  margin: 0;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.65rem;
+  text-align: center;
+}
+
+.session-report-print-area > header > p:last-child {
+  margin: 0.35rem 0 0;
+  color: var(--color-muted);
+  font-weight: 700;
+}
+
+.session-report-metadata {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: var(--color-border);
+}
+
+.session-report-metadata div {
+  min-width: 0;
+  padding: 0.75rem;
+  background: #f8fafc;
+}
+
+.session-report-metadata dt,
+.session-report-metrics span {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.session-report-metadata dd {
+  overflow-wrap: anywhere;
+  margin: 0.3rem 0 0;
+  font-weight: 700;
+}
+
+.session-report-group {
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 0.8rem;
+}
+
+.session-report-group h3 {
+  margin: 0 0 0.65rem;
+}
+
+.session-report-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: 0.6rem;
+}
+
+.session-report-metric {
+  display: flex;
+  min-width: 0;
+  min-height: 4.5rem;
+  flex-direction: column;
+  justify-content: space-between;
+  border-radius: 0.4rem;
+  padding: 0.65rem;
+  background: #f1f5f9;
+  border: 1px solid transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.session-report-metric:not(:disabled) {
+  cursor: pointer;
+}
+
+.session-report-metric:not(:disabled):hover,
+.session-report-metric:not(:disabled):focus-visible {
+  border-color: var(--shell-accent);
+  background: #e6f3f5;
+}
+
+.session-report-metric strong {
+  color: var(--shell-primary);
+  font-size: 1.55rem;
+}
+
+.referral-session-filter {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid #9bcbd2;
+  border-radius: 0.55rem;
+  padding: 0.65rem 0.8rem;
+  background: #e6f3f5;
+  color: var(--shell-primary);
+  font-weight: 700;
+}
+
+@media (max-width: 1100px) {
+  .session-reports-layout {
+    grid-template-columns: minmax(19rem, 0.85fr) minmax(24rem, 1.15fr);
+  }
+}
+
 @media print {
   @page {
     margin: 14mm;
@@ -5662,6 +5988,9 @@ h1 {
   .application-shell-alert-slot,
   .application-command-panel-slot,
   .session-summary-actions,
+  .session-reports-heading,
+  .session-reports-filters,
+  .session-reports-list-panel,
   .application-footer {
     display: none !important;
   }
@@ -5670,7 +5999,10 @@ h1 {
   .application-root,
   .application-shell,
   .application-workspace,
-  .session-summary-workspace {
+  .session-summary-workspace,
+  .session-reports-workspace,
+  .session-reports-layout,
+  .session-reports-detail-panel {
     width: auto;
     min-height: 0;
     height: auto;
@@ -5687,10 +6019,28 @@ h1 {
     display: block;
   }
 
+  .session-reports-workspace,
+  .session-reports-layout,
+  .session-reports-detail-panel {
+    display: block;
+    border: 0;
+    padding: 0;
+  }
+
   .session-summary-heading,
   .session-summary-print-area,
   .session-summary-section {
     break-inside: avoid;
+  }
+
+  .session-report-group,
+  .session-report-print-area > header,
+  .session-report-metadata {
+    break-inside: avoid;
+  }
+
+  .session-report-group {
+    margin-top: 0.8rem;
   }
 
   .session-summary-heading {
@@ -5706,6 +6056,12 @@ h1 {
 
   .session-summary-metric,
   .session-summary-metadata div {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .session-report-metric,
+  .session-report-metadata div {
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }

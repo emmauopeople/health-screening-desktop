@@ -12,6 +12,7 @@ import type {
 import { InstallationLocationAdministrationWorkspace } from '../administration/InstallationLocationAdministrationWorkspace'
 import { PatientRegistryWorkspace } from '../patients/PatientRegistryWorkspace'
 import { ReferralWorklistWorkspace } from '../referrals/ReferralWorklistWorkspace'
+import { SessionReportsWorkspace } from '../reports/SessionReportsWorkspace'
 import { ManageEncountersWorkspace } from '../screening/manage/ManageEncountersWorkspace'
 import { SessionSummaryWorkspace } from '../screening/summary/SessionSummaryWorkspace'
 import {
@@ -67,6 +68,7 @@ export function ApplicationWorkspace({
   const [requestedManagedEncounterId, setRequestedManagedEncounterId] = useState<string | null>(
     null
   )
+  const [requestedReferralSessionId, setRequestedReferralSessionId] = useState<string | null>(null)
 
   return (
     <main
@@ -138,6 +140,8 @@ export function ApplicationWorkspace({
           api={api}
           headingId={workspaceHeadingId}
           headingRef={headingRef}
+          requestedSessionId={requestedReferralSessionId}
+          onClearRequestedSession={() => setRequestedReferralSessionId(null)}
           onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
           onOpenPatient={(patientId) => {
             void api.patient.get({ patientId }).then((result) => {
@@ -205,6 +209,18 @@ export function ApplicationWorkspace({
           headingId={workspaceHeadingId}
           headingRef={headingRef}
           onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
+        />
+      ) : route.status === 'SESSION_REPORTS' ? (
+        <SessionReportsWorkspace
+          api={api}
+          timeZone={context.timeZone}
+          headingId={workspaceHeadingId}
+          headingRef={headingRef}
+          onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
+          onOpenReferrals={(sessionId) => {
+            setRequestedReferralSessionId(sessionId)
+            onSelectCommand('REFERRALS_REFERRAL_WORKLIST')
+          }}
         />
       ) : (
         <PlannedModuleWorkspace

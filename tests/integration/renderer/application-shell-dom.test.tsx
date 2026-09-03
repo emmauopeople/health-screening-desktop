@@ -26,6 +26,7 @@ import {
   type PublicLockedAuthenticationSession,
   type PublicPasswordChangeRequiredAuthenticationSession,
   type PublicScreeningEncounterStartSummary,
+  type PublicScreeningSessionSummary,
   type PublicSignedOutAuthenticationSession,
   type UtcTimestamp
 } from '@shared/ipc'
@@ -296,9 +297,64 @@ describe('application shell DOM integration', () => {
       sessionId: '99999999-9999-4999-8999-999999999999'
     })
 
-    await clickButton(mounted, 'Print summary')
+    await clickButton(mounted, 'Create PDF report')
 
     expect(printSpy).toHaveBeenCalledOnce()
+    await mounted.unmount()
+  })
+
+  it('loads, filters, selects, and prints historical session reports', async () => {
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => undefined)
+    const harness = createAppApi(activeSession(1))
+    const mounted = await mountApp(harness.api)
+
+    await clickButton(mounted, 'Reports')
+    await clickButton(mounted, 'Session Reports')
+
+    expectWorkspaceHeading(mounted, 'Session Reports')
+    expect(text(mounted)).toContain('1 sessions')
+    expect(text(mounted)).toContain('Bastos Hall')
+    expect(text(mounted)).toContain('Recommendations')
+    expect(text(mounted)).toContain('Standard referral1')
+    expect(harness.api.screeningSessions.listSummaries).toHaveBeenCalledWith({
+      locationId: null,
+      status: null,
+      dateFrom: null,
+      dateTo: null,
+      page: 1,
+      pageSize: 25
+    })
+
+    const statusFilter = mounted.container.querySelector<HTMLSelectElement>(
+      '.session-reports-filters select'
+    )
+    expect(statusFilter).not.toBeNull()
+    await changeSelect(statusFilter!, 'CLOSED')
+    expect(harness.api.screeningSessions.listSummaries).toHaveBeenLastCalledWith({
+      locationId: null,
+      status: 'CLOSED',
+      dateFrom: null,
+      dateTo: null,
+      page: 1,
+      pageSize: 25
+    })
+
+    await clickButton(mounted, 'Create PDF report')
+    expect(printSpy).toHaveBeenCalledOnce()
+
+    await clickButton(mounted, 'Standard referral')
+    expectWorkspaceHeading(mounted, 'Referral Worklist')
+    expect(text(mounted)).toContain('Showing referrals for the selected screening session.')
+    await act(async () => {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+      await flushPromises()
+    })
+    expect(harness.api.referrals.search).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        screeningSessionId: '99999999-9999-4999-8999-999999999999'
+      })
+    )
+
     await mounted.unmount()
   })
 
@@ -1193,6 +1249,9 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
     reopen: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['reopen']>>
     getById: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['getById']>>
     getSummary: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['getSummary']>>
+    listSummaries: ReturnType<
+      typeof vi.fn<HealthScreeningApi['screeningSessions']['listSummaries']>
+    >
     list: ReturnType<typeof vi.fn<HealthScreeningApi['screeningSessions']['list']>>
   } & HealthScreeningApi['screeningSessions']
   screeningEncounters: {
@@ -1415,6 +1474,17 @@ function createAppApi(initialSession: PublicAuthenticationSession): AppApiHarnes
               recommendations: { routine: 1, standardReferral: 1, urgentReferral: 0 },
               referrals: { open: 1, closed: 0 }
             }
+          })
+        )
+      ),
+      listSummaries: vi.fn((request) =>
+        Promise.resolve(
+          createIpcSuccess({
+            status: 'LISTED',
+            items: [shellSessionReportSummary()],
+            page: request.page,
+            pageSize: request.pageSize,
+            total: 1
           })
         )
       ),
@@ -1970,6 +2040,34 @@ function duplicateCandidate(patient: PublicPatientSummary): PublicPatientDuplica
     matchedOn: ['name', 'date_of_birth'],
     score: 87,
     status: 'POSSIBLE_DUPLICATE'
+  }
+}
+
+function shellSessionReportSummary(): PublicScreeningSessionSummary {
+  return {
+    id: '99999999-9999-4999-8999-999999999999',
+    sessionDate: '2026-08-06',
+    status: 'CLOSED',
+    location: { id: '77777777-7777-4777-8777-777777777777', name: 'Bastos Hall' },
+    openedAt: '2026-08-06T08:15:00.000Z',
+    openedBy: {
+      id: '11111111-1111-4111-8111-111111111111',
+      displayName: 'Admin User'
+    },
+    closedAt: '2026-08-06T16:15:00.000Z',
+    closedBy: {
+      id: '11111111-1111-4111-8111-111111111111',
+      displayName: 'Admin User'
+    },
+    operational: {
+      totalEncounters: 3,
+      activeDrafts: 0,
+      emptyDrafts: 0,
+      finalizedEncounters: 3,
+      voidedEncounters: 0
+    },
+    recommendations: { routine: 2, standardReferral: 1, urgentReferral: 0 },
+    referrals: { open: 1, closed: 0 }
   }
 }
 

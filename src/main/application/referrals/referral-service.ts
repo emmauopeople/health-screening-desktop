@@ -135,6 +135,7 @@ export function createProductionReferralService({
           parsed.data.statuses.length === 0 ? null : JSON.stringify(parsed.data.statuses)
         const values = {
           locationId: auth.locationId,
+          screeningSessionId: parsed.data.screeningSessionId ?? null,
           query: `%${escapeLike(parsed.data.query.toLowerCase())}%`,
           emptyQuery: parsed.data.query === '' ? 1 : 0,
           statuses,
@@ -371,6 +372,7 @@ const summaryColumns = `
  referral.status, referral.record_version, referral.created_at, referral.updated_at,
  (SELECT MAX(contact_date) FROM followups WHERE referral_id = referral.id) AS last_contact_date`
 const searchWhere = `WHERE encounter.location_id = @locationId
+ AND (@screeningSessionId IS NULL OR encounter.screening_session_id = @screeningSessionId)
  AND (@emptyQuery = 1 OR lower(patient.display_name) LIKE @query ESCAPE '\\'
       OR lower(patient.patient_code) LIKE @query ESCAPE '\\')
  AND (@statuses IS NULL OR referral.status IN (SELECT value FROM json_each(@statuses)))
@@ -385,7 +387,9 @@ const countSql = `SELECT COUNT(*) AS total FROM referrals referral
  JOIN patients patient ON patient.id = referral.patient_id
  JOIN screening_encounters encounter ON encounter.id = referral.encounter_id ${searchWhere};`
 const detailSql = `SELECT ${summaryColumns}, referral.reason_codes_json, referral.reason_text,
- referral.destination_name, referral.closure_reason, referral.closed_at FROM referrals referral
+ referral.destination_name, referral.closure_reason, referral.closed_at,
+ encounter.summary_systolic AS triggering_systolic,
+ encounter.summary_diastolic AS triggering_diastolic FROM referrals referral
  JOIN patients patient ON patient.id = referral.patient_id
  JOIN screening_encounters encounter ON encounter.id = referral.encounter_id
  WHERE referral.id = ? AND encounter.location_id = ?;`
@@ -448,6 +452,13 @@ function readDetail(
     ...readSummary(row),
     reasonCodes: JSON.parse(String(row.reason_codes_json)) as string[],
     reasonText: nullable(row.reason_text),
+    triggeringBloodPressure:
+      row.triggering_systolic === null || row.triggering_diastolic === null
+        ? null
+        : {
+            systolic: Number(row.triggering_systolic),
+            diastolic: Number(row.triggering_diastolic)
+          },
     destinationName: nullable(row.destination_name),
     closureReason: nullable(row.closure_reason),
     closedAt: nullable(row.closed_at),

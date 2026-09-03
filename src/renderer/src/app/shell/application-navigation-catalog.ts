@@ -191,8 +191,8 @@ const commandDefinitions = [
     'REPORTS',
     'Session Reports',
     nurseAndAdminRoles,
-    'PLANNED',
-    plannedOwners.reporting
+    'AVAILABLE',
+    null
   ),
   command(
     'REPORTS_REFERRAL_REPORTS',

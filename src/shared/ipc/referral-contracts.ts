@@ -103,6 +103,14 @@ export const publicReferralFollowupSchema = z
 export const publicReferralDetailSchema = publicReferralSummarySchema.extend({
   reasonCodes: z.array(z.string().min(1)),
   reasonText: optionalText(1000),
+  triggeringBloodPressure: z
+    .object({
+      systolic: z.number().int().min(1).max(300),
+      diastolic: z.number().int().min(1).max(200)
+    })
+    .strict()
+    .nullable()
+    .optional(),
   destinationName: optionalText(255),
   closureReason: optionalText(1000),
   closedAt: referralUtcTimestampSchema.nullable(),
@@ -113,6 +121,7 @@ export const publicReferralDetailSchema = publicReferralSummarySchema.extend({
 export const referralSearchRequestSchema = z
   .object({
     query: z.string().trim().max(100),
+    screeningSessionId: referralUuidSchema.nullable().optional(),
     statuses: z.array(referralStatusSchema).max(5),
     urgency: referralUrgencySchema.nullable(),
     dueFrom: referralDateSchema.nullable(),
