@@ -420,3 +420,4 @@ export {
   type LifestyleWorkWeeklyResponse,
   type LifestyleRepository
 } from './repositories'
+export * from './repositories/sync-transport'
