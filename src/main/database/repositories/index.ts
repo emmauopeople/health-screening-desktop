@@ -408,3 +408,4 @@ export {
   type LifestyleWorkWeeklyResponse,
   type LifestyleRepository
 } from './lifestyle'
+export * from './sync-transport'
