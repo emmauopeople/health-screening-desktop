@@ -297,7 +297,7 @@ describe('application shell DOM integration', () => {
       sessionId: '99999999-9999-4999-8999-999999999999'
     })
 
-    await clickButton(mounted, 'Print summary')
+    await clickButton(mounted, 'Create PDF report')
 
     expect(printSpy).toHaveBeenCalledOnce()
     await mounted.unmount()
@@ -339,8 +339,17 @@ describe('application shell DOM integration', () => {
       pageSize: 25
     })
 
-    await clickButton(mounted, 'Print selected report')
+    await clickButton(mounted, 'Create PDF report')
     expect(printSpy).toHaveBeenCalledOnce()
+
+    await clickButton(mounted, 'Standard referral')
+    expectWorkspaceHeading(mounted, 'Referral Worklist')
+    expect(text(mounted)).toContain('Showing referrals for the selected screening session.')
+    expect(harness.api.referrals.search).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        screeningSessionId: '99999999-9999-4999-8999-999999999999'
+      })
+    )
 
     await mounted.unmount()
   })
