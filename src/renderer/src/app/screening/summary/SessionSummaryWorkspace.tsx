@@ -118,10 +118,10 @@ export function SessionSummaryWorkspace({
           <button
             className="button button-primary"
             type="button"
-            onClick={() => window.print()}
+            onClick={() => printReport('CHS-current-session-summary')}
             disabled={state.status !== 'READY'}
           >
-            Print summary
+            Create PDF report
           </button>
         </div>
       </header>
@@ -157,6 +157,7 @@ function SessionSummaryContent({
 }): React.JSX.Element {
   return (
     <div className="session-summary-print-area">
+      <ReportMasthead title="Current screening session summary" />
       <div className="session-summary-metadata">
         <SummaryMetadata label="Location" value={summary.location.name} />
         <SummaryMetadata label="Session date" value={formatSessionDate(summary.sessionDate)} />
@@ -209,7 +210,22 @@ function SessionSummaryContent({
         <SummaryMetric label="Open referrals" value={summary.referrals.open} tone="referral" />
         <SummaryMetric label="Closed referrals" value={summary.referrals.closed} tone="success" />
       </SummarySection>
+      <p className="clinical-report-footer">
+        Community Health Screening • Generated from verified local data
+      </p>
     </div>
+  )
+}
+
+function ReportMasthead({ title }: { readonly title: string }): React.JSX.Element {
+  return (
+    <header className="clinical-report-masthead">
+      <span className="clinical-report-logo" aria-hidden="true" />
+      <div>
+        <strong>Community Health Screening</strong>
+        <span>{title}</span>
+      </div>
+    </header>
   )
 }
 
@@ -274,4 +290,11 @@ function formatTimestamp(value: string, timeZone: string): string {
     timeStyle: 'short',
     timeZone
   }).format(new Date(value))
+}
+
+function printReport(fileName: string): void {
+  const previousTitle = document.title
+  document.title = fileName
+  window.print()
+  document.title = previousTitle
 }
