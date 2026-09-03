@@ -22,7 +22,9 @@ interface ReferralWorklistWorkspaceProps {
   readonly api: HealthScreeningApi
   readonly headingId: string
   readonly headingRef: RefObject<HTMLHeadingElement | null>
+  readonly requestedReferralId?: string | null
   readonly requestedSessionId?: string | null
+  onRequestedReferralConsumed?(): void
   onClearRequestedSession?(): void
   onAuthenticationFailure(code: PatientErrorCode): void
   onOpenPatient(patientId: string): void
@@ -39,7 +41,9 @@ export function ReferralWorklistWorkspace({
   api,
   headingId,
   headingRef,
+  requestedReferralId = null,
   requestedSessionId = null,
+  onRequestedReferralConsumed,
   onClearRequestedSession,
   onAuthenticationFailure,
   onOpenPatient,
@@ -52,7 +56,7 @@ export function ReferralWorklistWorkspace({
   const [page, setPage] = useState(1)
   const [items, setItems] = useState<readonly PublicReferralSummary[]>([])
   const [total, setTotal] = useState(0)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(requestedReferralId)
   const [detail, setDetail] = useState<PublicReferralDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -60,6 +64,7 @@ export function ReferralWorklistWorkspace({
   const [message, setMessage] = useState<string | null>(null)
   const [showFollowup, setShowFollowup] = useState(false)
   const requestIdRef = useRef(0)
+  const requestedReferralIdRef = useRef<string | null>(requestedReferralId)
 
   const dates = useMemo(() => resolveDueRange(dueFilter), [dueFilter])
 
@@ -129,8 +134,13 @@ export function ReferralWorklistWorkspace({
         setTotal(loaded.total)
         setPage(loaded.page)
         setMessage(null)
-        if (loaded.items.length === 0) setDetail(null)
+        if (loaded.items.length === 0 && requestedReferralIdRef.current === null) setDetail(null)
         setSelectedId((current) => {
+          if (requestedReferralIdRef.current !== null) {
+            const exactReferralId = requestedReferralIdRef.current
+            requestedReferralIdRef.current = null
+            return exactReferralId
+          }
           if (current !== null && loaded.items.some((item) => item.id === current)) {
             return current
           }
@@ -163,6 +173,12 @@ export function ReferralWorklistWorkspace({
     const timeout = window.setTimeout(() => void load(1), normalized.length === 0 ? 0 : 250)
     return () => window.clearTimeout(timeout)
   }, [load, query, statusFilter, urgency, dueFilter])
+
+  useEffect(() => {
+    if (requestedReferralId === null) return
+    requestedReferralIdRef.current = requestedReferralId
+    onRequestedReferralConsumed?.()
+  }, [onRequestedReferralConsumed, requestedReferralId])
 
   useEffect(() => {
     let active = true
@@ -343,10 +359,14 @@ export function ReferralWorklistWorkspace({
                       tabIndex={0}
                       aria-selected={item.id === selectedId}
                       className={item.id === selectedId ? 'is-selected' : undefined}
-                      onClick={() => setSelectedId(item.id)}
+                      onClick={() => {
+                        requestedReferralIdRef.current = null
+                        setSelectedId(item.id)
+                      }}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
+                          requestedReferralIdRef.current = null
                           setSelectedId(item.id)
                         }
                       }}

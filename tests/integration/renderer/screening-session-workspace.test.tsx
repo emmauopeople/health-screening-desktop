@@ -112,6 +112,7 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
 interface MountedWorkspace {
   readonly api: MockedHealthScreeningApi
   readonly container: HTMLElement
+  readonly onOpenReferral: ReturnType<typeof vi.fn<(referralId: string) => void>>
   readonly onSelectCommand: ReturnType<
     typeof vi.fn<(commandId: 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING') => void>
   >
@@ -332,6 +333,8 @@ describe('screening patient entry workspace', () => {
     expect(text(mounted)).not.toContain('Additional current measurements')
     expect(text(mounted)).toContain('Screening guidance—not a diagnosis.')
     expect(text(mounted)).toContain('No completed screenings yet.')
+    expect(text(mounted)).toContain('No open referral')
+    expect(mounted.container.querySelector('.screening-referral-status-link')).toBeNull()
     expect(text(mounted)).not.toContain('151 / 93')
     expect(text(mounted)).not.toContain('158')
 
@@ -393,6 +396,9 @@ describe('screening patient entry workspace', () => {
     expect(text(mounted)).toContain('142 / 89')
     expect(text(mounted)).toContain('3 screenings • mmHg')
     expect(text(mounted)).toContain('Contacted')
+    expect(
+      mounted.container.querySelector('[aria-label="Open Contacted referral in Referrals"]')
+    ).not.toBeNull()
     expect(text(mounted)).toContain('Due: Aug 12, 2026')
     expect(text(mounted)).toContain('Last contact: Aug 7, 2026')
     expect(
@@ -403,6 +409,9 @@ describe('screening patient entry workspace', () => {
     expect(
       mounted.container.querySelector('[aria-label="Weight trend from 80 to 78.5 kilograms"]')
     ).not.toBeNull()
+
+    await clickButton(mounted, 'Contacted')
+    expect(mounted.onOpenReferral).toHaveBeenCalledWith('40404040-4040-4040-8040-404040404040')
 
     await mounted.unmount()
   })
@@ -3648,6 +3657,7 @@ async function mountWorkspace({
   let openTabs: readonly PatientScreeningTab[] = []
   let activePatientId: string | null = null
   const onAuthenticationFailure = vi.fn<(code: ScreeningSessionErrorCode) => void>()
+  const onOpenReferral = vi.fn<(referralId: string) => void>()
   const onSelectCommand = vi.fn(
     (nextCommandId: 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING') => {
       currentCommandId = nextCommandId
@@ -3685,6 +3695,7 @@ async function mountWorkspace({
         onActivePatientIdChange: setActivePatientId,
         onOpenTabsChange: setOpenTabs,
         onScreeningSessionAuthenticationFailure: onAuthenticationFailure,
+        onOpenReferral,
         onSelectCommand,
         registerNavigationGuard: (guard) => {
           registeredGuard = guard
@@ -3706,6 +3717,7 @@ async function mountWorkspace({
   return {
     api,
     container,
+    onOpenReferral,
     onSelectCommand,
     onAuthenticationFailure,
     getRegisteredGuard: () => registeredGuard,
@@ -3764,6 +3776,7 @@ async function mountWorkspaceWithReactTabState({
     ((commandId: 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING') => void) | null = null
   let setVisibleFromHarness: ((visible: boolean) => void) | null = null
   const onAuthenticationFailure = vi.fn<(code: ScreeningSessionErrorCode) => void>()
+  const onOpenReferral = vi.fn<(referralId: string) => void>()
   const onSelectCommand = vi.fn(
     (nextCommandId: 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING') => {
       setCommandIdFromHarness?.(nextCommandId)
@@ -3794,6 +3807,7 @@ async function mountWorkspaceWithReactTabState({
       onActivePatientIdChange: setActivePatientId,
       onOpenTabsChange: setOpenTabs,
       onScreeningSessionAuthenticationFailure: onAuthenticationFailure,
+      onOpenReferral,
       onSelectCommand,
       registerNavigationGuard: (guard) => {
         registeredGuard = guard
@@ -3810,6 +3824,7 @@ async function mountWorkspaceWithReactTabState({
   return {
     api,
     container,
+    onOpenReferral,
     onSelectCommand,
     onAuthenticationFailure,
     getRegisteredGuard: () => registeredGuard,
