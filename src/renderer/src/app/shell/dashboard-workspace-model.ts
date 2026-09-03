@@ -48,6 +48,21 @@ const dashboardQuickActions = Object.freeze([
     label: 'New Screening',
     support: 'Open the Screening patients workspace',
     commandId: 'SCREENING_NEW_SCREENING' as const
+  }),
+  Object.freeze({
+    label: 'Referrals',
+    support: 'Open the referral worklist',
+    commandId: 'REFERRALS_REFERRAL_WORKLIST' as const
+  }),
+  Object.freeze({
+    label: 'Manage Encounters',
+    support: 'Search and manage screening encounters',
+    commandId: 'SCREENING_MANAGE_ENCOUNTERS' as const
+  }),
+  Object.freeze({
+    label: 'Reports',
+    support: 'Open screening session reports',
+    commandId: 'REPORTS_SESSION_REPORTS' as const
   })
 ])
 

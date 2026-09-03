@@ -1435,6 +1435,10 @@ h1 {
   overflow: hidden;
 }
 
+.application-workspace:has(.dashboard-workspace) {
+  overflow: hidden;
+}
+
 .application-workspace:has(.screening-workspace-active-encounter)
   > .screening-workspace-active-encounter {
   height: 100%;
@@ -1530,13 +1534,21 @@ h1 {
   line-height: 1.35;
 }
 
+.dashboard-workspace {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .dashboard-lower-grid {
   display: grid;
   grid-template-columns: minmax(360px, 475px) minmax(0, 1fr);
   gap: 23px;
   margin-top: 24px;
-  min-height: 320px;
-  max-height: calc(100vh - 420px);
+  min-height: 0;
+  max-height: none;
 }
 
 .dashboard-quick-actions,
@@ -1550,15 +1562,23 @@ h1 {
 
 .dashboard-quick-actions,
 .dashboard-worklist {
+  display: flex;
   min-height: 0;
-  overflow-y: auto;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .dashboard-quick-action-list {
   display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
   grid-template-columns: 1fr;
+  align-content: start;
   gap: 14px;
   margin-top: 22px;
+  padding-right: 4px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .dashboard-quick-action {
@@ -1666,7 +1686,8 @@ h1 {
 
 .dashboard-table-scroll {
   margin-top: 18px;
-  max-height: calc(100% - 150px);
+  min-height: 0;
+  flex: 1 1 auto;
   overflow: auto;
 }
 
@@ -4946,7 +4967,18 @@ h1 {
 
   .dashboard-lower-grid {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(300px, 42vh) minmax(420px, 55vh);
     max-height: none;
+  }
+
+  .application-workspace:has(.dashboard-workspace) {
+    overflow: auto;
+  }
+
+  .dashboard-workspace {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
   }
 
   .dashboard-worklist-search-row {

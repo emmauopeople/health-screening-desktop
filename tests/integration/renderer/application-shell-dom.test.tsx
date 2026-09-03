@@ -118,7 +118,7 @@ describe('application shell DOM integration', () => {
       Array.from(mounted.container.querySelectorAll('.dashboard-quick-action-number')).map(
         (node) => node.textContent
       )
-    ).toEqual(['1', '2'])
+    ).toEqual(['1', '2', '3', '4', '5'])
     expect(patientSearchInput(mounted).disabled).toBe(false)
     expect(buttonByText(mounted, 'Search').disabled).toBe(false)
     expect(buttonByText(mounted, 'Register patient').disabled).toBe(false)
@@ -699,6 +699,27 @@ describe('application shell DOM integration', () => {
 
     expect(text(mounted)).toContain('Patient Search and Management')
     expect(commandPanel(mounted)?.textContent).toContain('Patient Search')
+
+    await mounted.unmount()
+  })
+
+  it('routes dashboard Referrals, Manage Encounters, and Reports quick actions', async () => {
+    const harness = createAppApi(activeSession(1))
+    const mounted = await mountApp(harness.api)
+
+    await clickDashboardQuickAction(mounted, 'Referrals')
+    expectWorkspaceHeading(mounted, 'Referral Worklist')
+    expect(menuButton(mounted, 'Referrals').getAttribute('aria-current')).toBe('page')
+
+    await clickButton(mounted, 'Home')
+    await clickDashboardQuickAction(mounted, 'Manage Encounters')
+    expectWorkspaceHeading(mounted, 'Manage Encounters')
+    expect(menuButton(mounted, 'Screening').getAttribute('aria-current')).toBe('page')
+
+    await clickButton(mounted, 'Home')
+    await clickDashboardQuickAction(mounted, 'Reports')
+    expectWorkspaceHeading(mounted, 'Session Reports')
+    expect(menuButton(mounted, 'Reports').getAttribute('aria-current')).toBe('page')
 
     await mounted.unmount()
   })
@@ -1676,6 +1697,25 @@ async function clickButtonExact(mounted: MountedApp, label: string): Promise<voi
 
   if (button === undefined) {
     throw new Error(`Expected button ${label} to be rendered.`)
+  }
+
+  await act(async () => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await flushPromises()
+  })
+  await flushReact()
+}
+
+async function clickDashboardQuickAction(mounted: MountedApp, label: string): Promise<void> {
+  const button = Array.from(
+    mounted.container.querySelectorAll<HTMLButtonElement>('.dashboard-quick-action')
+  ).find(
+    (candidate) =>
+      candidate.querySelector('.dashboard-quick-action-title')?.textContent?.trim() === label
+  )
+
+  if (button === undefined) {
+    throw new Error(`Expected dashboard quick action ${label} to be rendered.`)
   }
 
   await act(async () => {

@@ -174,7 +174,7 @@ export function DashboardWorkspace({
   }
 
   return (
-    <>
+    <div className="dashboard-workspace">
       <header className="application-workspace-heading">
         <h1 ref={headingRef} id={headingId} tabIndex={-1}>
           Welcome, {user.displayName}
@@ -343,7 +343,7 @@ export function DashboardWorkspace({
           </div>
         </section>
       </div>
-    </>
+    </div>
   )
 }
 
