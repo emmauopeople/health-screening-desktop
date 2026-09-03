@@ -12,6 +12,7 @@ interface SessionReportsWorkspaceProps {
   readonly headingId: string
   readonly headingRef: RefObject<HTMLHeadingElement | null>
   onAuthenticationFailure(code: ScreeningSessionErrorCode): void
+  onOpenReferrals(sessionId: string): void
 }
 
 interface ReportFilters {
@@ -45,7 +46,8 @@ export function SessionReportsWorkspace({
   timeZone,
   headingId,
   headingRef,
-  onAuthenticationFailure
+  onAuthenticationFailure,
+  onOpenReferrals
 }: SessionReportsWorkspaceProps): React.JSX.Element {
   const requestRef = useRef(0)
   const [filters, setFilters] = useState<ReportFilters>({
@@ -146,10 +148,14 @@ export function SessionReportsWorkspace({
           <button
             className="button button-primary"
             type="button"
-            onClick={() => window.print()}
+            onClick={() =>
+              selected === null
+                ? undefined
+                : printReport(`CHS-session-report-${selected.sessionDate}`)
+            }
             disabled={selected === null}
           >
-            Print selected report
+            Create PDF report
           </button>
         </div>
       </header>
@@ -292,7 +298,11 @@ export function SessionReportsWorkspace({
                 Select a session to view its report.
               </div>
             ) : (
-              <SessionReportDetail summary={selected} timeZone={timeZone} />
+              <SessionReportDetail
+                summary={selected}
+                timeZone={timeZone}
+                onOpenReferrals={() => onOpenReferrals(selected.id)}
+              />
             )}
           </section>
         </div>
@@ -303,13 +313,22 @@ export function SessionReportsWorkspace({
 
 function SessionReportDetail({
   summary,
-  timeZone
+  timeZone,
+  onOpenReferrals
 }: {
   readonly summary: PublicScreeningSessionSummary
   readonly timeZone: string
+  onOpenReferrals(): void
 }): React.JSX.Element {
   return (
     <article className="session-report-print-area">
+      <header className="clinical-report-masthead">
+        <span className="clinical-report-logo" aria-hidden="true" />
+        <div>
+          <strong>Community Health Screening</strong>
+          <span>Historical screening session report</span>
+        </div>
+      </header>
       <header>
         <p className="application-workspace-kicker">Screening session report</p>
         <h2>{formatSessionDate(summary.sessionDate)}</h2>
@@ -345,6 +364,8 @@ function SessionReportDetail({
       />
       <ReportGroup
         heading="Recommendations"
+        onOpenReferrals={onOpenReferrals}
+        clickableLabels={['Routine', 'Standard referral', 'Urgent referral']}
         metrics={[
           ['Routine', summary.recommendations.routine],
           ['Standard referral', summary.recommendations.standardReferral],
@@ -353,32 +374,50 @@ function SessionReportDetail({
       />
       <ReportGroup
         heading="Referrals"
+        onOpenReferrals={onOpenReferrals}
+        clickableLabels={['Open']}
         metrics={[
           ['Open', summary.referrals.open],
           ['Closed', summary.referrals.closed]
         ]}
       />
+      <p className="clinical-report-footer">
+        Community Health Screening • Generated from verified local data
+      </p>
     </article>
   )
 }
 
 function ReportGroup({
   heading,
-  metrics
+  metrics,
+  onOpenReferrals,
+  clickableLabels = []
 }: {
   readonly heading: string
   readonly metrics: readonly (readonly [string, number])[]
+  onOpenReferrals?(): void
+  readonly clickableLabels?: readonly string[]
 }): React.JSX.Element {
   return (
     <section className="session-report-group">
       <h3>{heading}</h3>
       <div className="session-report-metrics">
-        {metrics.map(([label, value]) => (
-          <div key={label}>
-            <span>{label}</span>
-            <strong>{value}</strong>
-          </div>
-        ))}
+        {metrics.map(([label, value]) => {
+          const clickable = onOpenReferrals !== undefined && clickableLabels.includes(label)
+          return (
+            <button
+              key={label}
+              type="button"
+              className="session-report-metric"
+              onClick={clickable ? onOpenReferrals : undefined}
+              disabled={!clickable}
+            >
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </button>
+          )
+        })}
       </div>
     </section>
   )
@@ -395,4 +434,11 @@ function formatTimestamp(value: string, timeZone: string): string {
     timeStyle: 'short',
     timeZone
   }).format(new Date(value))
+}
+
+function printReport(fileName: string): void {
+  const previousTitle = document.title
+  document.title = fileName
+  window.print()
+  document.title = previousTitle
 }
