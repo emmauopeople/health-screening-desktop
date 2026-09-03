@@ -421,3 +421,4 @@ export {
   type LifestyleRepository
 } from './repositories'
 export * from './repositories/sync-transport'
+export * from './repositories/sync-snapshot'
