@@ -68,6 +68,7 @@ export function ApplicationWorkspace({
   const [requestedManagedEncounterId, setRequestedManagedEncounterId] = useState<string | null>(
     null
   )
+  const [requestedReferralSessionId, setRequestedReferralSessionId] = useState<string | null>(null)
 
   return (
     <main
@@ -139,6 +140,8 @@ export function ApplicationWorkspace({
           api={api}
           headingId={workspaceHeadingId}
           headingRef={headingRef}
+          requestedSessionId={requestedReferralSessionId}
+          onClearRequestedSession={() => setRequestedReferralSessionId(null)}
           onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
           onOpenPatient={(patientId) => {
             void api.patient.get({ patientId }).then((result) => {
@@ -214,6 +217,10 @@ export function ApplicationWorkspace({
           headingId={workspaceHeadingId}
           headingRef={headingRef}
           onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
+          onOpenReferrals={(sessionId) => {
+            setRequestedReferralSessionId(sessionId)
+            onSelectCommand('REFERRALS_REFERRAL_WORKLIST')
+          }}
         />
       ) : (
         <PlannedModuleWorkspace
