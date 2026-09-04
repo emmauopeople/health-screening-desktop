@@ -275,26 +275,348 @@ function VitalsReport({
   )
   return (
     <ReportSection title="Vitals" empty={rows.length === 0} emptyMessage="No vitals in this range.">
-      <ReportTable headings={['Date', 'BP', 'HR', 'Weight', 'Recommendation', 'Encounter']}>
-        {rows.map(({ detail, vital, encounter }) => (
-          <tr key={`${detail.encounter.id}-${vital.sequenceNumber}`}>
-            <td>{formatTimestamp(vital.measuredAt, timeZone)}</td>
-            <td>{`${vital.systolic} / ${vital.diastolic} mmHg`}</td>
-            <td>{vital.pulse === null ? '-' : `${vital.pulse} bpm`}</td>
-            <td>{encounter?.weightKg == null ? '-' : `${encounter.weightKg} kg`}</td>
-            <td>{encounter === undefined ? '-' : formatAction(encounter.nextAction)}</td>
-            <td>
-              {interactive ? (
-                <RecordLink onClick={() => onOpenEncounter(detail.encounter.id)}>Open</RecordLink>
-              ) : (
-                detail.encounter.patientCode
-              )}
-            </td>
-          </tr>
-        ))}
-      </ReportTable>
+      <>
+        <ReportTable headings={['Date', 'BP', 'HR', 'Weight', 'Recommendation', 'Encounter']}>
+          {rows.map(({ detail, vital, encounter }) => (
+            <tr key={`${detail.encounter.id}-${vital.sequenceNumber}`}>
+              <td>{formatTimestamp(vital.measuredAt, timeZone)}</td>
+              <td>{`${vital.systolic} / ${vital.diastolic} mmHg`}</td>
+              <td>{vital.pulse === null ? '-' : `${vital.pulse} bpm`}</td>
+              <td>{encounter?.weightKg == null ? '-' : `${encounter.weightKg} kg`}</td>
+              <td>{encounter === undefined ? '-' : formatAction(encounter.nextAction)}</td>
+              <td>
+                {interactive ? (
+                  <RecordLink onClick={() => onOpenEncounter(detail.encounter.id)}>Open</RecordLink>
+                ) : (
+                  detail.encounter.patientCode
+                )}
+              </td>
+            </tr>
+          ))}
+        </ReportTable>
+        {report.kind === 'VITALS' ? (
+          <VitalsTrendCharts report={report} timeZone={timeZone} />
+        ) : null}
+      </>
     </ReportSection>
   )
+}
+
+interface ReportTrendPoint {
+  readonly timestamp: string
+  readonly value: number
+}
+
+function VitalsTrendCharts({
+  report,
+  timeZone
+}: {
+  readonly report: PatientReportData
+  readonly timeZone: string
+}): React.JSX.Element {
+  const bloodPressureReadings = report.encounterDetails
+    .flatMap((detail) =>
+      detail.vitals.map((vital) => ({
+        timestamp: vital.measuredAt,
+        systolic: vital.systolic,
+        diastolic: vital.diastolic,
+        sequenceNumber: vital.sequenceNumber,
+        encounterId: detail.encounter.id
+      }))
+    )
+    .sort(
+      (left, right) =>
+        left.timestamp.localeCompare(right.timestamp) ||
+        left.encounterId.localeCompare(right.encounterId) ||
+        left.sequenceNumber - right.sequenceNumber
+    )
+  const weightReadings: ReportTrendPoint[] = report.encounters
+    .flatMap((encounter) =>
+      encounter.weightKg === null
+        ? []
+        : [{ timestamp: encounter.completedAt, value: encounter.weightKg }]
+    )
+    .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
+
+  return (
+    <section className="patient-report-trends" aria-label="Vital-sign trends">
+      <h4>Vital-sign trends</h4>
+      <BloodPressureLineChart readings={bloodPressureReadings} timeZone={timeZone} />
+      <SingleSeriesLineChart
+        title="Weight trend"
+        unit="kg"
+        emptyMessage="No weight readings in this range."
+        readings={weightReadings}
+        timeZone={timeZone}
+      />
+    </section>
+  )
+}
+
+function BloodPressureLineChart({
+  readings,
+  timeZone
+}: {
+  readonly readings: readonly {
+    readonly timestamp: string
+    readonly systolic: number
+    readonly diastolic: number
+  }[]
+  readonly timeZone: string
+}): React.JSX.Element {
+  const dimensions = createTrendDimensions(
+    readings.flatMap((reading) => [reading.systolic, reading.diastolic]),
+    10
+  )
+  const systolicPoints = readings.map((reading, index) => ({
+    x: trendX(index, readings.length, dimensions),
+    y: trendY(reading.systolic, dimensions),
+    timestamp: reading.timestamp,
+    value: reading.systolic
+  }))
+  const diastolicPoints = readings.map((reading, index) => ({
+    x: trendX(index, readings.length, dimensions),
+    y: trendY(reading.diastolic, dimensions),
+    timestamp: reading.timestamp,
+    value: reading.diastolic
+  }))
+
+  return (
+    <div
+      className="patient-report-line-chart patient-report-bp-chart"
+      data-report-chart="blood-pressure"
+      role="img"
+      aria-label={`Blood pressure line graph with ${readings.length} ${readings.length === 1 ? 'reading' : 'readings'}`}
+    >
+      <ChartHeading title="Blood pressure trend" unit="mmHg">
+        <span data-series="systolic">Systolic</span>
+        <span data-series="diastolic">Diastolic</span>
+      </ChartHeading>
+      <svg viewBox="0 0 800 230" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+        <TrendAxes
+          dimensions={dimensions}
+          timestamps={readings.map((reading) => reading.timestamp)}
+          timeZone={timeZone}
+          formatValue={(value) => String(Math.round(value))}
+        />
+        <path className="patient-report-trend-line is-systolic" d={trendPath(systolicPoints)} />
+        <path className="patient-report-trend-line is-diastolic" d={trendPath(diastolicPoints)} />
+        <TrendMarkers points={systolicPoints} series="systolic" unit="mmHg" />
+        <TrendMarkers points={diastolicPoints} series="diastolic" unit="mmHg" />
+      </svg>
+    </div>
+  )
+}
+
+function SingleSeriesLineChart({
+  title,
+  unit,
+  emptyMessage,
+  readings,
+  timeZone
+}: {
+  readonly title: string
+  readonly unit: string
+  readonly emptyMessage: string
+  readonly readings: readonly ReportTrendPoint[]
+  readonly timeZone: string
+}): React.JSX.Element {
+  if (readings.length === 0) {
+    return (
+      <div
+        className="patient-report-line-chart patient-report-chart-empty"
+        data-report-chart="weight"
+      >
+        <ChartHeading title={title} unit={unit} />
+        <p>{emptyMessage}</p>
+      </div>
+    )
+  }
+
+  const dimensions = createTrendDimensions(
+    readings.map((reading) => reading.value),
+    1
+  )
+  const points = readings.map((reading, index) => ({
+    ...reading,
+    x: trendX(index, readings.length, dimensions),
+    y: trendY(reading.value, dimensions)
+  }))
+
+  return (
+    <div
+      className="patient-report-line-chart patient-report-weight-chart"
+      data-report-chart="weight"
+      role="img"
+      aria-label={`${title} line graph with ${readings.length} ${readings.length === 1 ? 'reading' : 'readings'}`}
+    >
+      <ChartHeading title={title} unit={unit} />
+      <svg viewBox="0 0 800 230" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+        <TrendAxes
+          dimensions={dimensions}
+          timestamps={readings.map((reading) => reading.timestamp)}
+          timeZone={timeZone}
+          formatValue={formatTrendWeight}
+        />
+        <path className="patient-report-trend-line is-weight" d={trendPath(points)} />
+        <TrendMarkers points={points} series="weight" unit={unit} />
+      </svg>
+    </div>
+  )
+}
+
+function ChartHeading({
+  title,
+  unit,
+  children
+}: {
+  readonly title: string
+  readonly unit: string
+  readonly children?: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <div className="patient-report-chart-heading">
+      <strong>{title}</strong>
+      <span>{unit}</span>
+      {children === undefined ? null : (
+        <div className="patient-report-chart-legend" aria-hidden="true">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface TrendDimensions {
+  readonly left: number
+  readonly right: number
+  readonly top: number
+  readonly bottom: number
+  readonly minimum: number
+  readonly maximum: number
+  readonly ticks: readonly number[]
+}
+
+function createTrendDimensions(values: readonly number[], padding: number): TrendDimensions {
+  const valueMinimum = Math.min(...values)
+  const valueMaximum = Math.max(...values)
+  const step = padding >= 10 ? 10 : 0.5
+  const minimum = Math.max(0, Math.floor((valueMinimum - padding) / step) * step)
+  const maximum = Math.max(minimum + step * 4, Math.ceil((valueMaximum + padding) / step) * step)
+  return {
+    left: 58,
+    right: 782,
+    top: 18,
+    bottom: 188,
+    minimum,
+    maximum,
+    ticks: Array.from({ length: 5 }, (_, index) => minimum + ((maximum - minimum) * index) / 4)
+  }
+}
+
+function trendX(index: number, count: number, dimensions: TrendDimensions): number {
+  if (count <= 1) return (dimensions.left + dimensions.right) / 2
+  return dimensions.left + (index * (dimensions.right - dimensions.left)) / (count - 1)
+}
+
+function trendY(value: number, dimensions: TrendDimensions): number {
+  return (
+    dimensions.bottom -
+    ((value - dimensions.minimum) / (dimensions.maximum - dimensions.minimum)) *
+      (dimensions.bottom - dimensions.top)
+  )
+}
+
+function trendPath(points: readonly { readonly x: number; readonly y: number }[]): string {
+  return points
+    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
+    .join(' ')
+}
+
+function TrendAxes({
+  dimensions,
+  timestamps,
+  timeZone,
+  formatValue
+}: {
+  readonly dimensions: TrendDimensions
+  readonly timestamps: readonly string[]
+  readonly timeZone: string
+  formatValue(value: number): string
+}): React.JSX.Element {
+  const labelIndexes = trendLabelIndexes(timestamps.length)
+  return (
+    <g className="patient-report-trend-axes">
+      {dimensions.ticks.map((tick) => {
+        const y = trendY(tick, dimensions)
+        return (
+          <g key={tick}>
+            <line x1={dimensions.left} y1={y} x2={dimensions.right} y2={y} />
+            <text x={dimensions.left - 10} y={y + 4} textAnchor="end">
+              {formatValue(tick)}
+            </text>
+          </g>
+        )
+      })}
+      {labelIndexes.map((index) => {
+        const timestamp = timestamps[index]
+        return timestamp === undefined ? null : (
+          <text
+            key={`${timestamp}-${index}`}
+            x={trendX(index, timestamps.length, dimensions)}
+            y="216"
+            textAnchor="middle"
+          >
+            {formatTrendDate(timestamp, timeZone)}
+          </text>
+        )
+      })}
+    </g>
+  )
+}
+
+function TrendMarkers({
+  points,
+  series,
+  unit
+}: {
+  readonly points: readonly {
+    readonly x: number
+    readonly y: number
+    readonly timestamp: string
+    readonly value: number
+  }[]
+  readonly series: 'systolic' | 'diastolic' | 'weight'
+  readonly unit: string
+}): React.JSX.Element {
+  return (
+    <g className={`patient-report-trend-markers is-${series}`}>
+      {points.map((point, index) => (
+        <circle key={`${point.timestamp}-${index}`} cx={point.x} cy={point.y} r="4">
+          <title>{`${formatCode(series)} ${formatTrendWeight(point.value)} ${unit}`}</title>
+        </circle>
+      ))}
+    </g>
+  )
+}
+
+function trendLabelIndexes(count: number): readonly number[] {
+  if (count <= 6) return Array.from({ length: count }, (_, index) => index)
+  return Array.from(
+    new Set(Array.from({ length: 6 }, (_, index) => Math.round((index * (count - 1)) / 5)))
+  )
+}
+
+function formatTrendDate(value: string, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone
+  }).format(new Date(value))
+}
+
+function formatTrendWeight(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1)
 }
 
 function LifestyleReport({

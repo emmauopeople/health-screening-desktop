@@ -6306,6 +6306,113 @@ h1 {
   padding: 0.5rem 0.55rem;
 }
 
+.patient-report-trends {
+  display: grid;
+  gap: 0.75rem;
+  border-top: 1px solid var(--color-border);
+  padding: 0.85rem 0.75rem 0.75rem;
+}
+
+.patient-report-trends > h4 {
+  margin: 0;
+  color: var(--shell-primary);
+  font-size: 0.95rem;
+}
+
+.patient-report-line-chart {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 0.4rem;
+  background: #ffffff;
+  break-inside: avoid;
+}
+
+.patient-report-chart-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.65rem;
+  background: #f8fafc;
+}
+
+.patient-report-chart-heading > span {
+  color: var(--color-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.patient-report-chart-legend {
+  display: flex;
+  gap: 0.85rem;
+  margin-left: auto;
+  color: var(--color-muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.patient-report-chart-legend span::before {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.18rem;
+  margin-right: 0.3rem;
+  border-radius: 999px;
+  background: var(--shell-teal);
+  vertical-align: middle;
+  content: '';
+}
+
+.patient-report-chart-legend span[data-series='diastolic']::before {
+  background: #7d4f9e;
+}
+
+.patient-report-line-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 14.5rem;
+}
+
+.patient-report-trend-axes line {
+  stroke: #dce4ec;
+  stroke-width: 1;
+}
+
+.patient-report-trend-axes text {
+  fill: #52606d;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.patient-report-trend-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.patient-report-trend-line.is-systolic,
+.patient-report-trend-markers.is-systolic circle,
+.patient-report-trend-line.is-weight,
+.patient-report-trend-markers.is-weight circle {
+  stroke: var(--shell-teal);
+}
+
+.patient-report-trend-line.is-diastolic,
+.patient-report-trend-markers.is-diastolic circle {
+  stroke: #7d4f9e;
+}
+
+.patient-report-trend-markers circle {
+  fill: #ffffff;
+  stroke-width: 2.5;
+}
+
+.patient-report-chart-empty > p {
+  margin: 0;
+  padding: 1rem;
+  color: var(--color-muted);
+}
+
 .patient-report-referral-list {
   display: grid;
   gap: 0.75rem;
@@ -6994,7 +7101,16 @@ h1 {
 
   .patient-report-demographic-header,
   .patient-report-referral-record,
-  .patient-report-followup {
+  .patient-report-followup,
+  .patient-report-line-chart {
     break-inside: avoid;
+  }
+
+  .patient-report-line-chart,
+  .patient-report-chart-heading,
+  .patient-report-trend-line,
+  .patient-report-trend-markers circle {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 }
