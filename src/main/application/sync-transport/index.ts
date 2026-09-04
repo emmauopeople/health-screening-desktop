@@ -13,9 +13,14 @@ export {
 } from './sync-transport-validation'
 export {
   parseContractUuid,
+  parseIdentityResolutionAcknowledgmentResponse,
+  parseIdentityResolutionPullResponse,
   parseSyncBatchResponse,
   parseSyncProblem,
   type ContractUuid,
+  type IdentityResolutionAcknowledgmentResponse,
+  type IdentityResolutionDelivery,
+  type IdentityResolutionPullResponse,
   type SyncBatchResponse,
   type SyncProblem,
   type SyncRecordOutcome

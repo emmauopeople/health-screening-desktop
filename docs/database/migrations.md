@@ -11,7 +11,7 @@ under `src/main/database/migrations/sql/`.
 - Use positive integer versions beginning at `1` with no gaps.
 - Use stable lowercase kebab-case names.
 - Import SQL with `?raw` so the text is bundled into the Electron main output.
-- The current production target is migration version `20`.
+- The current production target is migration version `21`.
 - Version `5`, `screening-encounter-identity`, adds the root encounter identity
   constraint `ux_screening_encounters_root_session_patient`.
 - Version `6`, `installation-location-configuration`, adds the singleton
@@ -31,6 +31,9 @@ under `src/main/database/migrations/sql/`.
   batch-item reservations, attempt leases, and protected transport settings.
 - Version `20`, `sync-worker-response`, adds immutable response storage,
   reusable retry-history links, and canonical resource mappings.
+- Version `21`, `sync-identity-resolution-delivery`, adds central-person links,
+  exact durable acknowledgment requests, and immutable reviewer-decision
+  delivery evidence.
 - Do not export raw SQL through preload, renderer, or shared contracts.
 
 ## Checksums

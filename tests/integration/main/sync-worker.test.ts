@@ -284,6 +284,213 @@ describe('HSW-013B desktop synchronization worker', () => {
     ).toEqual({ count: 2 })
     harness.connection.close()
   })
+
+  it('stores a Medical ID returned with an accepted patient outcome in the batch transaction', async () => {
+    const harness = createHarness([
+      'cb000000-0000-4000-8000-000000000001',
+      'cb000000-0000-4000-8000-000000000002',
+      'cb000000-0000-4000-8000-000000000003'
+    ])
+    seedPatientOnly(harness.connection)
+    configure(harness.foundation)
+    const worker = createWorker(
+      harness,
+      httpClient({
+        submitBatch: async (_credential, requestJson) =>
+          response(200, acceptedResponse(requestJson, true))
+      })
+    )
+
+    await expect(worker.runOnce()).resolves.toMatchObject({
+      status: 'SYNCED',
+      identityDeliveriesApplied: 0
+    })
+    expect(
+      harness.connection
+        .prepare(
+          'SELECT patient_id, central_person_id, chs_medical_id FROM sync_patient_identity_links'
+        )
+        .get()
+    ).toEqual({
+      patient_id: patientId,
+      central_person_id: 'b0000000-0000-7000-8000-000000000001',
+      chs_medical_id: 'CHS-ABCD-EFGH-JKMN'
+    })
+    expect(
+      harness.connection
+        .prepare(
+          `SELECT identifier_value, status FROM patient_identifiers
+           WHERE patient_id = ? AND identifier_type = 'CHS_MEDICAL_ID'`
+        )
+        .get(patientId)
+    ).toEqual({ identifier_value: 'CHS-ABCD-EFGH-JKMN', status: 'ACTIVE' })
+    harness.connection.close()
+  })
+
+  it('commits a reviewer decision before retrying the exact durable acknowledgment after restart', async () => {
+    const harness = createHarness([
+      'd0000000-0000-4000-8000-000000000001',
+      'd0000000-0000-4000-8000-000000000002'
+    ])
+    seedPatientWithoutOutbox(harness.connection)
+    configure(harness.foundation)
+    const acknowledgmentBodies: string[] = []
+    let acknowledgmentAttempt = 0
+    let pullAttempt = 0
+    const delivery = {
+      resolutionReference: 'e0000000-0000-7000-8000-000000000001',
+      localPatientReference: patientId,
+      localPatientCode: 'PT-000001',
+      sourceRevision: 2,
+      centralPersonId: 'e0000000-0000-7000-8000-000000000002',
+      chsMedicalId: 'CHS-2345-6789-ABCD',
+      resolvedAt: '2026-09-03T12:00:00.000Z'
+    }
+    const http = httpClient({
+      pullIdentityResolutions: async () => {
+        pullAttempt += 1
+        return response(
+          200,
+          JSON.stringify({
+            contractVersion: '1.0',
+            deliveries: pullAttempt === 1 ? [delivery] : [],
+            hasMore: false,
+            serverTime: '2026-09-03T12:00:01.000Z'
+          })
+        )
+      },
+      acknowledgeIdentityResolution: async (_credential, requestJson) => {
+        acknowledgmentBodies.push(requestJson)
+        acknowledgmentAttempt += 1
+        if (acknowledgmentAttempt === 1) {
+          return { status: 'TRANSPORT_ERROR', errorCode: 'NETWORK_ERROR' }
+        }
+        const request = JSON.parse(requestJson) as {
+          acknowledgmentId: string
+          resolutionReference: string
+        }
+        return response(
+          200,
+          JSON.stringify({
+            contractVersion: '1.0',
+            acknowledgmentId: request.acknowledgmentId,
+            resolutionReference: request.resolutionReference,
+            status: 'ACKNOWLEDGED',
+            acknowledgedAt: '2026-09-03T12:00:02.000Z',
+            replayed: true
+          })
+        )
+      }
+    })
+
+    await expect(createWorker(harness, http).runOnce()).resolves.toEqual({
+      status: 'IDLE',
+      identityDeliveriesApplied: 1
+    })
+    expect(
+      harness.connection
+        .prepare('SELECT acknowledged_at FROM sync_identity_resolution_deliveries')
+        .get()
+    ).toEqual({ acknowledged_at: null })
+    expect(
+      harness.connection
+        .prepare(
+          `SELECT identifier_value FROM patient_identifiers
+           WHERE patient_id = ? AND identifier_type = 'CHS_MEDICAL_ID'`
+        )
+        .get(patientId)
+    ).toEqual({ identifier_value: 'CHS-2345-6789-ABCD' })
+
+    await expect(createWorker(harness, http).runOnce()).resolves.toEqual({
+      status: 'IDLE',
+      identityDeliveriesApplied: 0
+    })
+    expect(acknowledgmentBodies).toHaveLength(2)
+    expect(acknowledgmentBodies[1]).toBe(acknowledgmentBodies[0])
+    expect(
+      harness.connection
+        .prepare(
+          'SELECT acknowledgment_json, acknowledged_at FROM sync_identity_resolution_deliveries'
+        )
+        .get()
+    ).toEqual({
+      acknowledgment_json: acknowledgmentBodies[0],
+      acknowledged_at: '2026-09-03T12:00:02.000Z'
+    })
+    expect(
+      harness.connection
+        .prepare(
+          `SELECT COUNT(*) AS count FROM patient_identifiers
+           WHERE patient_id = ? AND identifier_type = 'CHS_MEDICAL_ID'`
+        )
+        .get(patientId)
+    ).toEqual({ count: 1 })
+    expect(() =>
+      harness.connection
+        .prepare("UPDATE sync_identity_resolution_deliveries SET acknowledgment_json = '{}'")
+        .run()
+    ).toThrow()
+    expect(() =>
+      harness.connection
+        .prepare(
+          "UPDATE sync_identity_resolution_deliveries SET acknowledged_at = '2026-09-03T12:00:03.000Z'"
+        )
+        .run()
+    ).toThrow()
+    harness.connection.close()
+  })
+
+  it('fails closed without acknowledging a decision for a stale local patient revision', async () => {
+    const harness = createHarness([
+      'da000000-0000-4000-8000-000000000001',
+      'da000000-0000-4000-8000-000000000002'
+    ])
+    seedPatientWithoutOutbox(harness.connection)
+    configure(harness.foundation)
+    const acknowledgeIdentityResolution = vi.fn<SyncHttpClient['acknowledgeIdentityResolution']>()
+    const worker = createWorker(
+      harness,
+      httpClient({
+        pullIdentityResolutions: async () =>
+          response(
+            200,
+            JSON.stringify({
+              contractVersion: '1.0',
+              deliveries: [
+                {
+                  resolutionReference: 'ea000000-0000-7000-8000-000000000001',
+                  localPatientReference: patientId,
+                  localPatientCode: 'PT-000001',
+                  sourceRevision: 1,
+                  centralPersonId: 'ea000000-0000-7000-8000-000000000002',
+                  chsMedicalId: 'CHS-3456-789A-BCDE',
+                  resolvedAt: '2026-09-03T12:00:00.000Z'
+                }
+              ],
+              hasMore: false,
+              serverTime: '2026-09-03T12:00:01.000Z'
+            })
+          ),
+        acknowledgeIdentityResolution
+      })
+    )
+
+    await expect(worker.runOnce()).resolves.toEqual({ status: 'UNAVAILABLE' })
+    expect(acknowledgeIdentityResolution).not.toHaveBeenCalled()
+    expect(
+      harness.connection
+        .prepare('SELECT COUNT(*) AS count FROM sync_identity_resolution_deliveries')
+        .get()
+    ).toEqual({ count: 0 })
+    expect(
+      harness.connection
+        .prepare(
+          "SELECT COUNT(*) AS count FROM patient_identifiers WHERE identifier_type = 'CHS_MEDICAL_ID'"
+        )
+        .get()
+    ).toEqual({ count: 0 })
+    harness.connection.close()
+  })
 })
 
 function createDatabase(): Database.Database {
@@ -328,7 +535,7 @@ function createWorker(harness: WorkerHarness, httpClient: SyncHttpClient): SyncW
     foundation: harness.foundation,
     preparation: createPreparation(harness),
     httpClient,
-    repository: createSyncWorkerRepository(),
+    repository: createSyncWorkerRepository(harness.connection),
     transactionExecutor: harness.transactionExecutor,
     random: () => 0.5
   })
@@ -340,7 +547,7 @@ function createPreparation(harness: WorkerHarness): SyncSnapshotPreparationServi
     batchRepository: createSyncTransportBatchRepository(harness.connection),
     transactionExecutor: harness.transactionExecutor,
     desktopApplicationVersion: '1.0.0',
-    desktopSchemaVersion: 20
+    desktopSchemaVersion: 21
   })
 }
 
@@ -365,7 +572,10 @@ function httpClient(overrides: Partial<SyncHttpClient>): SyncHttpClient {
   const idle = async (): Promise<SyncHttpResult> => response(503, problem(503, 'UNAVAILABLE'))
   return {
     submitBatch: overrides.submitBatch ?? idle,
-    recoverBatch: overrides.recoverBatch ?? idle
+    recoverBatch: overrides.recoverBatch ?? idle,
+    pullIdentityResolutions:
+      overrides.pullIdentityResolutions ?? (async () => response(200, emptyPullResponse())),
+    acknowledgeIdentityResolution: overrides.acknowledgeIdentityResolution ?? idle
   }
 }
 
@@ -377,7 +587,16 @@ function problem(status: number, code: string): string {
   return JSON.stringify({ type: 'about:blank', title: 'Synthetic problem', status, code })
 }
 
-function acceptedResponse(requestJson: string): string {
+function emptyPullResponse(): string {
+  return JSON.stringify({
+    contractVersion: '1.0',
+    deliveries: [],
+    hasMore: false,
+    serverTime: '2026-09-03T12:00:01.000Z'
+  })
+}
+
+function acceptedResponse(requestJson: string, includeIdentity = false): string {
   const request = JSON.parse(requestJson) as {
     batchId: string
     records: readonly {
@@ -400,9 +619,13 @@ function acceptedResponse(requestJson: string): string {
       sourceRevision: record.sourceRevision,
       status: 'ACCEPTED',
       canonicalResourceId: `f0000000-0000-7000-8000-${String(index + 1).padStart(12, '0')}`,
-      centralPersonId: null,
-      chsMedicalId: null,
-      medicalIdStatus: null,
+      centralPersonId:
+        includeIdentity && record.resourceType === 'PATIENT'
+          ? 'b0000000-0000-7000-8000-000000000001'
+          : null,
+      chsMedicalId:
+        includeIdentity && record.resourceType === 'PATIENT' ? 'CHS-ABCD-EFGH-JKMN' : null,
+      medicalIdStatus: includeIdentity && record.resourceType === 'PATIENT' ? 'ASSIGNED' : null,
       errors: []
     }))
   })
