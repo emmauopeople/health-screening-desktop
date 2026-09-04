@@ -119,6 +119,7 @@ interface ScreeningSessionWorkspaceProps {
   onActivePatientIdChange: Dispatch<SetStateAction<string | null>>
   onOpenTabsChange: Dispatch<SetStateAction<readonly PatientScreeningTab[]>>
   onScreeningSessionAuthenticationFailure(code: ScreeningSessionErrorCode): void
+  onOpenReferral(referralId: string): void
   onSelectCommand(commandId: 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING'): void
   onRequestedPatientConsumed?(): void
   registerNavigationGuard(guard: WorkspaceNavigationGuard | null): void
@@ -268,6 +269,7 @@ export function ScreeningSessionWorkspace({
   onActivePatientIdChange,
   onOpenTabsChange,
   onScreeningSessionAuthenticationFailure,
+  onOpenReferral,
   onSelectCommand,
   onRequestedPatientConsumed,
   registerNavigationGuard
@@ -2766,6 +2768,7 @@ export function ScreeningSessionWorkspace({
               onActivateTab={onActivePatientIdChange}
               onCloseTab={closePatientTab}
               onOpenPatients={() => selectWorkspaceTab('PATIENTS')}
+              onOpenReferral={onOpenReferral}
               onRetryPatientContext={() => {
                 if (activeTab !== null) {
                   void loadPatientContext(activeTab.patient.id, activeTab.encounter.id)
@@ -3021,6 +3024,7 @@ function NewScreeningWorkspace({
   onActivateTab,
   onCloseTab,
   onOpenPatients,
+  onOpenReferral,
   onRetryPatientContext,
   onSaveVitalsDraft,
   onUpdateVitalsDraft,
@@ -3052,6 +3056,7 @@ function NewScreeningWorkspace({
   onActivateTab(patientId: string): void
   onCloseTab(patientId: string): void
   onOpenPatients(): void
+  onOpenReferral(referralId: string): void
   onRetryPatientContext(): void
   onSaveVitalsDraft(
     patientId: string,
@@ -3122,7 +3127,11 @@ function NewScreeningWorkspace({
         </div>
       ) : (
         <div className="screening-split-workspace screening-split-workspace-bounded">
-          <PatientContextPanel tab={activeTab} onRetry={onRetryPatientContext} />
+          <PatientContextPanel
+            tab={activeTab}
+            onOpenReferral={onOpenReferral}
+            onRetry={onRetryPatientContext}
+          />
           <CurrentEncounterPanel
             location={location}
             session={session}
@@ -3281,15 +3290,18 @@ function OpenPatientTabStrip({
 
 function PatientContextPanel({
   tab,
+  onOpenReferral,
   onRetry
 }: {
   readonly tab: PatientScreeningTab
+  onOpenReferral(referralId: string): void
   onRetry(): void
 }): React.JSX.Element {
   const displayName = formatPatientName(tab.patient)
   const villageQuarter = formatVillageQuarter(tab.patient)
   const context = tab.patientContext.status === 'READY' ? tab.patientContext.context : null
   const recentEncounters = context?.recentEncounters ?? []
+  const activeReferral = context?.activeReferral ?? null
   const historyMessage =
     tab.patientContext.status === 'LOADING'
       ? 'Loading screening history...'
@@ -3357,21 +3369,27 @@ function PatientContextPanel({
         </section>
         <section aria-labelledby="screening-referral-title">
           <h3 id="screening-referral-title">Referral status</h3>
-          <strong className="screening-referral-status">
-            {context?.activeReferral === null || context === null
-              ? 'No open referral'
-              : formatReferralStatus(context.activeReferral.status)}
-          </strong>
-          {context?.activeReferral?.dueDate !== undefined &&
-          context.activeReferral.dueDate !== null ? (
-            <span>Due: {formatLocalDate(context.activeReferral.dueDate)}</span>
+          {activeReferral === null ? (
+            <strong className="screening-referral-status">No open referral</strong>
+          ) : (
+            <button
+              className="screening-referral-status screening-referral-status-link"
+              type="button"
+              aria-label={`Open ${formatReferralStatus(activeReferral.status)} referral in Referrals`}
+              onClick={() => onOpenReferral(activeReferral.id)}
+            >
+              {formatReferralStatus(activeReferral.status)}
+            </button>
+          )}
+          {activeReferral?.dueDate !== undefined && activeReferral.dueDate !== null ? (
+            <span>Due: {formatLocalDate(activeReferral.dueDate)}</span>
           ) : null}
           <span>
             Last contact:{' '}
-            {context?.activeReferral?.lastContactDate === undefined ||
-            context.activeReferral.lastContactDate === null
+            {activeReferral?.lastContactDate === undefined ||
+            activeReferral.lastContactDate === null
               ? '—'
-              : formatLocalDate(context.activeReferral.lastContactDate)}
+              : formatLocalDate(activeReferral.lastContactDate)}
           </span>
         </section>
       </div>

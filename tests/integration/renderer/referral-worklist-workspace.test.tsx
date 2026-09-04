@@ -14,6 +14,7 @@ import {
 import { ReferralWorklistWorkspace } from '../../../src/renderer/src/app/referrals/ReferralWorklistWorkspace'
 
 const referralId = '11111111-1111-4111-8111-111111111111'
+const requestedReferralId = '55555555-5555-4555-8555-555555555555'
 const patientId = '22222222-2222-4222-8222-222222222222'
 const summary: PublicReferralSummary = {
   id: referralId,
@@ -81,6 +82,38 @@ describe('ReferralWorklistWorkspace', () => {
     )
     expect(mounted.container.querySelector('.referral-list-pane')).not.toBeNull()
     expect(mounted.container.querySelector('.referral-detail-pane')).not.toBeNull()
+
+    await mounted.unmount()
+  })
+
+  it('opens an exact referral requested from patient context even when it is not on the first page', async () => {
+    const requestedDetail: PublicReferralDetail = {
+      ...detail,
+      id: requestedReferralId,
+      patientDisplayName: 'Suzana Fuavesan',
+      patientCode: 'PT-000003',
+      status: 'CONTACTED'
+    }
+    const onRequestedReferralConsumed = vi.fn()
+    const harness = createHarness()
+    harness.getDetail.mockImplementation(({ referralId: detailReferralId }) =>
+      Promise.resolve(
+        createIpcSuccess({
+          status: 'LOADED',
+          detail: detailReferralId === requestedReferralId ? requestedDetail : detail
+        })
+      )
+    )
+
+    const mounted = await mount(harness.api, vi.fn(), vi.fn(), {
+      requestedReferralId,
+      onRequestedReferralConsumed
+    })
+
+    expect(harness.getDetail).toHaveBeenCalledWith({ referralId: requestedReferralId })
+    expect(mounted.container.textContent).toContain('Suzana Fuavesan')
+    expect(mounted.container.textContent).toContain('PT-000003')
+    expect(onRequestedReferralConsumed).toHaveBeenCalledOnce()
 
     await mounted.unmount()
   })
@@ -225,7 +258,11 @@ function createHarness(): ReferralHarness {
 async function mount(
   api: HealthScreeningApi,
   onOpenPatient = vi.fn(),
-  onOpenEncounter = vi.fn()
+  onOpenEncounter = vi.fn(),
+  requestedReferral: {
+    readonly requestedReferralId: string
+    onRequestedReferralConsumed(): void
+  } | null = null
 ): Promise<MountedWorkspace> {
   const container = document.createElement('div')
   document.body.append(container)
@@ -236,6 +273,8 @@ async function mount(
         api,
         headingId: 'referral-heading',
         headingRef: { current: null },
+        requestedReferralId: requestedReferral?.requestedReferralId,
+        onRequestedReferralConsumed: requestedReferral?.onRequestedReferralConsumed,
         onAuthenticationFailure: vi.fn(),
         onOpenPatient,
         onOpenEncounter

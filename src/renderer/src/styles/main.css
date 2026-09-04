@@ -2642,6 +2642,31 @@ h1 {
   line-height: 1.25;
 }
 
+.screening-referral-status-link {
+  width: fit-content;
+  border: 0;
+  padding: 0;
+  color: #075b70;
+  background: transparent;
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.screening-referral-status-link:hover {
+  color: #034355;
+}
+
+.screening-referral-status-link:focus-visible {
+  border-radius: 3px;
+  outline: 3px solid rgba(14, 116, 144, 0.28);
+  outline-offset: 3px;
+}
+
 .screening-context-metrics span {
   color: var(--shell-secondary-text);
   font-size: 0.82rem;

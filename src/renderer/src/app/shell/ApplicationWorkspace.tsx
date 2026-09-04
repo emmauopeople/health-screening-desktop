@@ -69,6 +69,7 @@ export function ApplicationWorkspace({
     null
   )
   const [requestedReferralSessionId, setRequestedReferralSessionId] = useState<string | null>(null)
+  const [requestedReferralId, setRequestedReferralId] = useState<string | null>(null)
 
   return (
     <main
@@ -131,6 +132,11 @@ export function ApplicationWorkspace({
           onActivePatientIdChange={setActiveScreeningPatientId}
           onOpenTabsChange={setOpenScreeningPatientTabs}
           onScreeningSessionAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
+          onOpenReferral={(referralId) => {
+            setRequestedReferralSessionId(null)
+            setRequestedReferralId(referralId)
+            onSelectCommand('REFERRALS_REFERRAL_WORKLIST')
+          }}
           onSelectCommand={onSelectCommand}
           onRequestedPatientConsumed={() => setRequestedScreeningPatient(null)}
           registerNavigationGuard={registerNavigationGuard}
@@ -140,7 +146,9 @@ export function ApplicationWorkspace({
           api={api}
           headingId={workspaceHeadingId}
           headingRef={headingRef}
+          requestedReferralId={requestedReferralId}
           requestedSessionId={requestedReferralSessionId}
+          onRequestedReferralConsumed={() => setRequestedReferralId(null)}
           onClearRequestedSession={() => setRequestedReferralSessionId(null)}
           onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
           onOpenPatient={(patientId) => {
@@ -218,6 +226,7 @@ export function ApplicationWorkspace({
           headingRef={headingRef}
           onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
           onOpenReferrals={(sessionId) => {
+            setRequestedReferralId(null)
             setRequestedReferralSessionId(sessionId)
             onSelectCommand('REFERRALS_REFERRAL_WORKLIST')
           }}

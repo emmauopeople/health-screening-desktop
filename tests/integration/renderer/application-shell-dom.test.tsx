@@ -23,6 +23,7 @@ import {
   type PublicPatientDetail,
   type PublicPatientDuplicateCandidate,
   type PublicPatientSummary,
+  type PublicReferralDetail,
   type PublicLockedAuthenticationSession,
   type PublicPasswordChangeRequiredAuthenticationSession,
   type PublicScreeningEncounterStartSummary,
@@ -724,6 +725,49 @@ describe('application shell DOM integration', () => {
     await mounted.unmount()
   })
 
+  it('opens the exact active referral from the screening patient context', async () => {
+    const referral = shellReferralDetail()
+    const patient = shellPatientSummary({
+      displayName: referral.patientDisplayName,
+      patientCode: referral.patientCode
+    })
+    const harness = createAppApi(activeSession(1))
+    harness.api.patient.search.mockResolvedValue(
+      createIpcSuccess({ items: [patient], page: 1, pageSize: 25, total: 1 })
+    )
+    harness.api.screeningEncounters.management.getPatientContext.mockResolvedValue(
+      createIpcSuccess({
+        status: 'LOADED',
+        context: {
+          recentEncounters: [],
+          thirtyDayAverage: null,
+          activeReferral: {
+            id: referral.id,
+            status: 'CONTACTED',
+            urgency: referral.urgency,
+            dueDate: referral.dueDate,
+            lastContactDate: referral.lastContactDate
+          }
+        }
+      })
+    )
+    harness.api.referrals.getDetail.mockResolvedValue(
+      createIpcSuccess({ status: 'LOADED', detail: referral })
+    )
+    const mounted = await mountApp(harness.api)
+
+    await clickButton(mounted, 'Screening')
+    await clickRowByText(mounted, referral.patientDisplayName)
+    await clickButtonExact(mounted, 'Contacted')
+
+    expectWorkspaceHeading(mounted, 'Referral Worklist')
+    expect(harness.api.referrals.getDetail).toHaveBeenCalledWith({ referralId: referral.id })
+    expect(text(mounted)).toContain(referral.patientDisplayName)
+    expect(text(mounted)).toContain(referral.patientCode)
+
+    await mounted.unmount()
+  })
+
   it('shows authentication unavailable and clears patient identity when patient IPC is forbidden', async () => {
     const harness = createAppApi(activeSession(1))
     queuePatientWorkspaceSearch(harness, createPatientFailure('IPC_FORBIDDEN'))
@@ -1277,6 +1321,16 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
   } & HealthScreeningApi['screeningSessions']
   screeningEncounters: {
     start: ReturnType<typeof vi.fn<HealthScreeningApi['screeningEncounters']['start']>>
+    management: {
+      getPatientContext: ReturnType<
+        typeof vi.fn<HealthScreeningApi['screeningEncounters']['management']['getPatientContext']>
+      >
+    } & HealthScreeningApi['screeningEncounters']['management']
+    vitals: {
+      getDraft: ReturnType<
+        typeof vi.fn<HealthScreeningApi['screeningEncounters']['vitals']['getDraft']>
+      >
+    } & HealthScreeningApi['screeningEncounters']['vitals']
   } & HealthScreeningApi['screeningEncounters']
   installationSettings: {
     getConfiguredLocation: ReturnType<
@@ -1534,6 +1588,14 @@ function createAppApi(initialSession: PublicAuthenticationSession): AppApiHarnes
         )
       ),
       management: {
+        getPatientContext: vi.fn(() =>
+          Promise.resolve(
+            createIpcSuccess({
+              status: 'LOADED',
+              context: { recentEncounters: [], thirtyDayAverage: null, activeReferral: null }
+            })
+          )
+        ),
         search: vi.fn((request) =>
           Promise.resolve(
             createIpcSuccess({
@@ -1545,6 +1607,9 @@ function createAppApi(initialSession: PublicAuthenticationSession): AppApiHarnes
             })
           )
         )
+      },
+      vitals: {
+        getDraft: vi.fn(() => Promise.resolve(createIpcSuccess({ status: 'LOADED', draft: null })))
       }
     },
     installationSettings: {
@@ -1701,6 +1766,22 @@ async function clickButtonExact(mounted: MountedApp, label: string): Promise<voi
 
   await act(async () => {
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await flushPromises()
+  })
+  await flushReact()
+}
+
+async function clickRowByText(mounted: MountedApp, label: string): Promise<void> {
+  const row = Array.from(mounted.container.querySelectorAll('tr')).find((candidate) =>
+    candidate.textContent?.includes(label)
+  )
+
+  if (row === undefined) {
+    throw new Error(`Expected row ${label} to be rendered.`)
+  }
+
+  await act(async () => {
+    row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await flushPromises()
   })
   await flushReact()
@@ -2071,6 +2152,31 @@ function shellEncounterSummary(
     startedAt: futureTimestamp(0),
     recordVersion: 1,
     ...overrides
+  }
+}
+
+function shellReferralDetail(): PublicReferralDetail {
+  return {
+    id: '40404040-4040-4040-8040-404040404040',
+    patientId: '11111111-1111-4111-8111-111111111111',
+    encounterId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    patientCode: 'PT-000003',
+    patientDisplayName: 'Suzana Fuavesan',
+    urgency: 'STANDARD',
+    dueDate: '2026-09-10',
+    status: 'CONTACTED',
+    lastContactDate: '2026-09-03',
+    recordVersion: 1,
+    createdAt: '2026-09-03T08:00:00.000Z',
+    updatedAt: '2026-09-03T08:00:00.000Z',
+    reasonCodes: ['BP_SCREENING_REFERRAL'],
+    reasonText: null,
+    triggeringBloodPressure: { systolic: 103, diastolic: 91 },
+    destinationName: null,
+    closureReason: null,
+    closedAt: null,
+    statusHistory: [],
+    followups: []
   }
 }
 
