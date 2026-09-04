@@ -73,6 +73,10 @@ export type ApplicationWorkspaceRoute =
       readonly commandId: 'SCREENING_SESSION_SUMMARY'
     }
   | {
+      readonly status: 'PATIENT_REPORTS'
+      readonly commandId: 'REPORTS_PATIENT_REPORTS'
+    }
+  | {
       readonly status: 'SESSION_REPORTS'
       readonly commandId: 'REPORTS_SESSION_REPORTS'
     }

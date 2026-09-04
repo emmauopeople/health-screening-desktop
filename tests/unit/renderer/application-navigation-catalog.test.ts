@@ -103,6 +103,7 @@ describe('application navigation catalog', () => {
       'SCREENING_MANAGE_ENCOUNTERS',
       'SCREENING_SESSION_SUMMARY',
       'REFERRALS_REFERRAL_WORKLIST',
+      'REPORTS_PATIENT_REPORTS',
       'REPORTS_SESSION_REPORTS',
       'ADMINISTRATION_LOCATIONS'
     ])

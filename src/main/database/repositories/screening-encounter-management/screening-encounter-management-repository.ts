@@ -379,7 +379,8 @@ export function createScreeningEncounterManagementRepository(
             (
               connection
                 .prepare(
-                  `SELECT product_name, reason_for_use, currently_taking FROM otc_medication_logs
+                  `SELECT product_name, reason_for_use, dose_text, frequency_text, duration_text,
+                          source_of_medication, currently_taking FROM otc_medication_logs
                  WHERE encounter_id = ? ORDER BY product_name_normalized, id`
                 )
                 .all(parsedEncounterId) as readonly Record<string, unknown>[]
@@ -735,6 +736,10 @@ function readOtc(row: Record<string, unknown>): ManagedEncounterOtcRecord {
   return Object.freeze({
     productName: parseStoredText(row['product_name']),
     reasonForUse: parseStoredText(row['reason_for_use']),
+    doseText: parseNullableText(row['dose_text']),
+    frequencyText: parseNullableText(row['frequency_text']),
+    durationText: parseNullableText(row['duration_text']),
+    sourceOfMedication: parseNullableText(row['source_of_medication']),
     currentlyTaking: currentlyTaking === null ? null : currentlyTaking === 1
   })
 }
