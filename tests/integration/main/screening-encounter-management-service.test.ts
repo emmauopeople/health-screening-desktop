@@ -173,6 +173,17 @@ describe('screening encounter management service integration', () => {
         foods: before.detail.foods,
         otcMedications: before.detail.otcMedications
       }
+      expect(clinicalBefore.otcMedications).toEqual([
+        {
+          productName: 'Pain reliever',
+          reasonForUse: 'Headache',
+          doseText: '500 mg',
+          frequencyText: 'As needed',
+          durationText: '3 days',
+          sourceOfMedication: 'Community pharmacy',
+          currentlyTaking: true
+        }
+      ])
 
       expect(
         service.addAddendum(parseEntityId(ids.encounter), 'Source record needs review.')
@@ -716,7 +727,11 @@ function seedGraph(connection: Database.Database): void {
     )
   connection
     .prepare(
-      'INSERT INTO otc_medication_logs (id, encounter_id, product_name, product_name_normalized, reason_for_use, currently_taking, source_type, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      `INSERT INTO otc_medication_logs (
+         id, encounter_id, product_name, product_name_normalized, reason_for_use,
+         dose_text, frequency_text, duration_text, source_of_medication,
+         currently_taking, source_type, recorded_by, recorded_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       ids.otc,
@@ -724,6 +739,10 @@ function seedGraph(connection: Database.Database): void {
       'Pain reliever',
       'pain reliever',
       'Headache',
+      '500 mg',
+      'As needed',
+      '3 days',
+      'Community pharmacy',
       1,
       'PATIENT_REPORTED',
       ids.user,

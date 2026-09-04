@@ -1,13 +1,28 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type RefObject } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type RefObject
+} from 'react'
 import type {
   HealthScreeningApi,
   PatientErrorCode,
-  PublicPatientDetail,
-  PublicPatientHistoryEncounter,
-  PublicPatientScreeningHistory,
   PublicPatientSummary,
   ScreeningSessionErrorCode
 } from '@shared/ipc'
+import { PatientReportDocument } from './PatientReportDocument'
+import {
+  createPresetDateRange,
+  isValidDateRange,
+  loadPatientReport,
+  type PatientReportData,
+  type PatientReportDateRange,
+  type PatientReportKind,
+  type PatientReportRangePreset
+} from './patient-report-model'
 
 interface PatientReportsWorkspaceProps {
   readonly api: HealthScreeningApi
@@ -33,15 +48,16 @@ type SearchState =
 type ReportState =
   | { readonly status: 'IDLE' }
   | { readonly status: 'LOADING'; readonly patient: PublicPatientSummary }
-  | {
-      readonly status: 'READY'
-      readonly patient: PublicPatientDetail
-      readonly history: PublicPatientScreeningHistory
-    }
+  | { readonly status: 'READY'; readonly report: PatientReportData }
   | { readonly status: 'ERROR'; readonly patient: PublicPatientSummary; readonly message: string }
 
 const patientPageSize = 25
-const reportHistoryPageSize = 100
+const reportKinds: readonly { readonly value: PatientReportKind; readonly label: string }[] = [
+  { value: 'GENERAL', label: 'General' },
+  { value: 'VITALS', label: 'Vitals' },
+  { value: 'LIFESTYLE', label: 'Lifestyle' },
+  { value: 'REFERRALS', label: 'Referrals' }
+]
 
 export function PatientReportsWorkspace({
   api,
@@ -52,14 +68,24 @@ export function PatientReportsWorkspace({
   onOpenEncounter,
   onOpenReferral
 }: PatientReportsWorkspaceProps): React.JSX.Element {
+  const initialRange = useMemo(() => createPresetDateRange('LAST_30_DAYS', timeZone), [timeZone])
   const searchRequestRef = useRef(0)
   const reportRequestRef = useRef(0)
+  const printButtonRef = useRef<HTMLButtonElement | null>(null)
   const [query, setQuery] = useState('')
   const [searchState, setSearchState] = useState<SearchState>({
     status: 'LOADING',
     previous: null
   })
+  const [selectedPatient, setSelectedPatient] = useState<PublicPatientSummary | null>(null)
   const [reportState, setReportState] = useState<ReportState>({ status: 'IDLE' })
+  const [reportKind, setReportKind] = useState<PatientReportKind>('GENERAL')
+  const [rangePreset, setRangePreset] = useState<PatientReportRangePreset>('LAST_30_DAYS')
+  const [range, setRange] = useState<PatientReportDateRange>(initialRange)
+  const [customFrom, setCustomFrom] = useState(initialRange.from)
+  const [customTo, setCustomTo] = useState(initialRange.to)
+  const [rangeMessage, setRangeMessage] = useState<string | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   const loadPatients = useCallback(
     async (page: number, searchQuery: string): Promise<void> => {
@@ -79,8 +105,8 @@ export function PatientReportsWorkspace({
         })
         if (searchRequestRef.current !== requestId) return
         if (!result.ok) {
-          if (isProtectedFailure(result.error.code)) {
-            onAuthenticationFailure(result.error.code)
+          if (result.error.code === 'IPC_FORBIDDEN') {
+            onAuthenticationFailure('IPC_FORBIDDEN')
             return
           }
           setSearchState((current) => ({
@@ -111,76 +137,29 @@ export function PatientReportsWorkspace({
     [api, onAuthenticationFailure]
   )
 
-  const loadReport = useCallback(
-    async (patient: PublicPatientSummary): Promise<void> => {
+  const refreshReport = useCallback(
+    async (
+      patient: PublicPatientSummary,
+      nextKind: PatientReportKind,
+      nextRange: PatientReportDateRange
+    ): Promise<void> => {
       const requestId = reportRequestRef.current + 1
       reportRequestRef.current = requestId
+      setPreviewOpen(false)
       setReportState({ status: 'LOADING', patient })
-      try {
-        const [patientResult, historyResult] = await Promise.all([
-          api.patient.get({ patientId: patient.id }),
-          api.screeningEncounters.management.getPatientHistory({
-            patientId: patient.id,
-            page: 1,
-            pageSize: reportHistoryPageSize
-          })
-        ])
-        if (reportRequestRef.current !== requestId) return
-        if (!patientResult.ok) {
-          if (isProtectedFailure(patientResult.error.code)) {
-            onAuthenticationFailure(patientResult.error.code)
-            return
-          }
-          setReportState({
-            status: 'ERROR',
-            patient,
-            message: 'The patient report could not be loaded.'
-          })
-          return
-        }
-        if (!historyResult.ok) {
-          if (isProtectedFailure(historyResult.error.code)) {
-            onAuthenticationFailure(historyResult.error.code)
-            return
-          }
-          setReportState({
-            status: 'ERROR',
-            patient,
-            message: 'The patient screening history could not be loaded.'
-          })
-          return
-        }
-        if (historyResult.data.status !== 'LOADED') {
-          if (isProtectedFailure(historyResult.data.status)) {
-            onAuthenticationFailure(historyResult.data.status)
-            return
-          }
-          setReportState({
-            status: 'ERROR',
-            patient,
-            message:
-              historyResult.data.status === 'PATIENT_NOT_FOUND'
-                ? 'The patient report was not found.'
-                : 'The patient screening history could not be loaded.'
-          })
-          return
-        }
-        setReportState({
-          status: 'READY',
-          patient: patientResult.data,
-          history: historyResult.data.history
-        })
-      } catch {
-        if (reportRequestRef.current === requestId) {
-          setReportState({
-            status: 'ERROR',
-            patient,
-            message: 'The patient report could not be loaded.'
-          })
-        }
+      const result = await loadPatientReport(api, patient, nextKind, nextRange, timeZone)
+      if (reportRequestRef.current !== requestId) return
+      if (result.status === 'AUTHENTICATION_FAILED') {
+        onAuthenticationFailure(result.code)
+        return
       }
+      if (result.status === 'FAILED') {
+        setReportState({ status: 'ERROR', patient, message: result.message })
+        return
+      }
+      setReportState({ status: 'READY', report: result.report })
     },
-    [api, onAuthenticationFailure]
+    [api, onAuthenticationFailure, timeZone]
   )
 
   useEffect(() => {
@@ -193,6 +172,16 @@ export function PatientReportsWorkspace({
     return () => window.clearTimeout(timeout)
   }, [loadPatients, query])
 
+  useEffect(() => {
+    if (!previewOpen) return
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setPreviewOpen(false)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    printButtonRef.current?.focus()
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [previewOpen])
+
   useEffect(
     () => () => {
       searchRequestRef.current += 1
@@ -203,15 +192,37 @@ export function PatientReportsWorkspace({
 
   const page = searchState.status === 'READY' ? searchState.page : searchState.previous
   const totalPages = Math.max(1, Math.ceil((page?.total ?? 0) / patientPageSize))
-  const selectedPatientId =
-    reportState.status === 'READY' ||
-    reportState.status === 'LOADING' ||
-    reportState.status === 'ERROR'
-      ? reportState.patient.id
-      : null
   const submitSearch = (event: FormEvent): void => {
     event.preventDefault()
     void loadPatients(1, query)
+  }
+  const applyPreset = (preset: Exclude<PatientReportRangePreset, 'CUSTOM'>): void => {
+    const nextRange = createPresetDateRange(preset, timeZone)
+    setRangePreset(preset)
+    setRange(nextRange)
+    setCustomFrom(nextRange.from)
+    setCustomTo(nextRange.to)
+    setRangeMessage(null)
+    if (selectedPatient !== null) void refreshReport(selectedPatient, reportKind, nextRange)
+  }
+  const applyCustomRange = (): void => {
+    const nextRange = { from: customFrom, to: customTo }
+    if (!isValidDateRange(nextRange)) {
+      setRangeMessage('Enter a valid start and end date. The start must be before the end.')
+      return
+    }
+    setRangePreset('CUSTOM')
+    setRange(nextRange)
+    setRangeMessage(null)
+    if (selectedPatient !== null) void refreshReport(selectedPatient, reportKind, nextRange)
+  }
+  const selectPatient = (patient: PublicPatientSummary): void => {
+    setSelectedPatient(patient)
+    void refreshReport(patient, reportKind, range)
+  }
+  const selectReportKind = (nextKind: PatientReportKind): void => {
+    setReportKind(nextKind)
+    if (selectedPatient !== null) void refreshReport(selectedPatient, nextKind, range)
   }
 
   return (
@@ -223,59 +234,34 @@ export function PatientReportsWorkspace({
             Patient Reports
           </h1>
         </div>
-        <div className="patient-reports-heading-actions">
-          <button
-            className="button button-secondary"
-            type="button"
-            disabled={reportState.status !== 'READY'}
-            onClick={() => {
-              if (reportState.status === 'READY') void loadReport(reportState.patient)
-            }}
-          >
-            Refresh report
-          </button>
-          <button
-            className="button button-primary"
-            type="button"
-            disabled={reportState.status !== 'READY'}
-            onClick={() => {
-              if (reportState.status === 'READY') {
-                printReport(`CHS-patient-report-${reportState.patient.patientCode}`)
-              }
-            }}
-          >
-            Create PDF report
-          </button>
-        </div>
       </header>
-
-      <form className="patient-reports-search" onSubmit={submitSearch}>
-        <label htmlFor="patient-report-search">Search patients</label>
-        <div>
-          <input
-            id="patient-report-search"
-            type="search"
-            value={query}
-            placeholder="Patient name, code, phone, DOB, village or quarter"
-            onChange={(event) => setQuery(event.currentTarget.value)}
-          />
-          <button
-            className="button button-primary"
-            type="submit"
-            disabled={searchState.status === 'LOADING'}
-          >
-            Search
-          </button>
-        </div>
-        {query.trim().length > 0 && query.trim().length < 3 ? (
-          <span>Enter at least 3 characters.</span>
-        ) : null}
-      </form>
 
       <div className="patient-reports-layout">
         <section className="patient-reports-list-panel" aria-label="Patient report search results">
+          <form className="patient-reports-search" onSubmit={submitSearch}>
+            <label htmlFor="patient-report-search">Search patients</label>
+            <div>
+              <input
+                id="patient-report-search"
+                type="search"
+                value={query}
+                placeholder="Name, patient ID, phone or location"
+                onChange={(event) => setQuery(event.currentTarget.value)}
+              />
+              <button
+                className="button button-primary"
+                type="submit"
+                disabled={searchState.status === 'LOADING'}
+              >
+                Search
+              </button>
+            </div>
+            {query.trim().length > 0 && query.trim().length < 3 ? (
+              <span>Enter at least 3 characters.</span>
+            ) : null}
+          </form>
           <div className="patient-reports-list-summary">
-            <strong>{page === null ? 'Loading patients…' : `${page.total} patients`}</strong>
+            <strong>{page === null ? 'Loading patients...' : `${page.total} patients`}</strong>
             {searchState.status === 'ERROR' ? (
               <span role="alert">{searchState.message}</span>
             ) : null}
@@ -293,14 +279,14 @@ export function PatientReportsWorkspace({
                 {page?.items.map((patient) => (
                   <tr
                     key={patient.id}
-                    className={patient.id === selectedPatientId ? 'is-selected' : undefined}
+                    className={patient.id === selectedPatient?.id ? 'is-selected' : undefined}
                     tabIndex={0}
-                    aria-selected={patient.id === selectedPatientId}
-                    onClick={() => void loadReport(patient)}
+                    aria-selected={patient.id === selectedPatient?.id}
+                    onClick={() => selectPatient(patient)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault()
-                        void loadReport(patient)
+                        selectPatient(patient)
                       }
                     }}
                   >
@@ -346,11 +332,29 @@ export function PatientReportsWorkspace({
         </section>
 
         <section className="patient-reports-detail-panel" aria-label="Selected patient report">
+          {selectedPatient === null ? null : (
+            <ReportControls
+              kind={reportKind}
+              preset={rangePreset}
+              customFrom={customFrom}
+              customTo={customTo}
+              rangeMessage={rangeMessage}
+              maximumDate={createPresetDateRange('LAST_7_DAYS', timeZone).to}
+              loading={reportState.status === 'LOADING'}
+              onKindChange={selectReportKind}
+              onPresetChange={applyPreset}
+              onCustomFromChange={setCustomFrom}
+              onCustomToChange={setCustomTo}
+              onApplyCustom={applyCustomRange}
+              onRefresh={() => void refreshReport(selectedPatient, reportKind, range)}
+            />
+          )}
+
           {reportState.status === 'IDLE' ? (
-            <div className="patient-reports-empty-detail">Select a patient to view the report.</div>
+            <div className="patient-reports-empty-detail">Select a patient to create a report.</div>
           ) : reportState.status === 'LOADING' ? (
             <div className="patient-reports-empty-detail" role="status">
-              Loading {reportState.patient.displayName}…
+              Creating {reportKind.toLowerCase()} report for {reportState.patient.displayName}...
             </div>
           ) : reportState.status === 'ERROR' ? (
             <div className="patient-reports-error" role="alert">
@@ -358,338 +362,222 @@ export function PatientReportsWorkspace({
               <button
                 className="button button-secondary"
                 type="button"
-                onClick={() => void loadReport(reportState.patient)}
+                onClick={() => void refreshReport(reportState.patient, reportKind, range)}
               >
                 Try again
               </button>
             </div>
           ) : (
-            <PatientReport
-              patient={reportState.patient}
-              history={reportState.history}
+            <PatientReportDocument
+              report={reportState.report}
               timeZone={timeZone}
+              preview={false}
               onOpenEncounter={onOpenEncounter}
               onOpenReferral={onOpenReferral}
+              onOpenPrintPreview={() => setPreviewOpen(true)}
             />
           )}
         </section>
       </div>
+
+      {previewOpen && reportState.status === 'READY' ? (
+        <PrintPreview
+          report={reportState.report}
+          timeZone={timeZone}
+          printButtonRef={printButtonRef}
+          onClose={() => setPreviewOpen(false)}
+          onOpenEncounter={onOpenEncounter}
+          onOpenReferral={onOpenReferral}
+        />
+      ) : null}
     </section>
   )
 }
 
-function PatientReport({
-  patient,
-  history,
-  timeZone,
-  onOpenEncounter,
-  onOpenReferral
+function ReportControls({
+  kind,
+  preset,
+  customFrom,
+  customTo,
+  rangeMessage,
+  maximumDate,
+  loading,
+  onKindChange,
+  onPresetChange,
+  onCustomFromChange,
+  onCustomToChange,
+  onApplyCustom,
+  onRefresh
 }: {
-  readonly patient: PublicPatientDetail
-  readonly history: PublicPatientScreeningHistory
-  readonly timeZone: string
-  onOpenEncounter(encounterId: string): void
-  onOpenReferral(referralId: string): void
+  readonly kind: PatientReportKind
+  readonly preset: PatientReportRangePreset
+  readonly customFrom: string
+  readonly customTo: string
+  readonly rangeMessage: string | null
+  readonly maximumDate: string
+  readonly loading: boolean
+  onKindChange(kind: PatientReportKind): void
+  onPresetChange(preset: Exclude<PatientReportRangePreset, 'CUSTOM'>): void
+  onCustomFromChange(value: string): void
+  onCustomToChange(value: string): void
+  onApplyCustom(): void
+  onRefresh(): void
 }): React.JSX.Element {
-  const latestEncounter = history.items[0] ?? null
   return (
-    <article className="patient-report-print-area">
-      <header className="clinical-report-masthead">
-        <span className="clinical-report-logo" aria-hidden="true" />
-        <div>
-          <strong>Community Health Screening</strong>
-          <span>Patient screening report</span>
-        </div>
-      </header>
-
-      <header className="patient-report-title">
-        <div>
-          <p className="application-workspace-kicker">Patient report</p>
-          <h2>{patient.displayName}</h2>
-          <p>{patient.patientCode}</p>
-        </div>
-        <span className="status-pill">{formatLabel(patient.status)}</span>
-      </header>
-
-      <dl className="patient-report-demographics">
-        <ReportMetadata label="Date of birth / age" value={formatPatientBirth(patient)} />
-        <ReportMetadata label="Sex" value={formatSex(patient.sex)} />
-        <ReportMetadata label="Village / quarter" value={formatPatientLocation(patient)} />
-        <ReportMetadata label="Phone" value={patient.phone ?? 'Not recorded'} />
-        <ReportMetadata label="Alternate contact" value={formatAlternateContact(patient)} />
-        <ReportMetadata
-          label="Report generated"
-          value={formatTimestamp(new Date().toISOString(), timeZone)}
-        />
-      </dl>
-
-      <section className="patient-report-summary" aria-label="Patient report summary">
-        <ReportMetric label="Completed screenings" value={String(history.total)} />
-        <ReportMetric
-          label="30-day average BP"
-          value={
-            history.thirtyDayAverage === null
-              ? '—'
-              : `${history.thirtyDayAverage.systolic} / ${history.thirtyDayAverage.diastolic}`
-          }
-          support={
-            history.thirtyDayAverage === null
-              ? 'No recent readings'
-              : `${history.thirtyDayAverage.encounterCount} screenings • mmHg`
-          }
-        />
-        <ReportMetric
-          label="Latest BP"
-          value={
-            latestEncounter === null
-              ? '—'
-              : `${latestEncounter.systolic} / ${latestEncounter.diastolic}`
-          }
-          support={latestEncounter === null ? 'No completed screenings' : 'mmHg'}
-        />
-        <ReportMetric
-          label="Latest recommendation"
-          value={latestEncounter === null ? '—' : formatAction(latestEncounter.nextAction)}
-        />
-      </section>
-
-      <section className="patient-report-section">
-        <h3>Recent trend</h3>
-        {history.trendEncounters.length === 0 ? (
-          <p>No completed screening readings.</p>
-        ) : (
-          <div className="patient-report-table-wrap">
-            <table className="patient-report-table patient-report-trend-table">
-              <thead>
-                <tr>
-                  <th scope="col">Date</th>
-                  <th scope="col">Blood pressure</th>
-                  <th scope="col">Pulse</th>
-                  <th scope="col">Weight</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.trendEncounters.map((encounter) => (
-                  <tr key={encounter.id}>
-                    <td>{formatTimestamp(encounter.completedAt, timeZone, false)}</td>
-                    <td>{`${encounter.systolic} / ${encounter.diastolic} mmHg`}</td>
-                    <td>{`${encounter.pulse} bpm`}</td>
-                    <td>{encounter.weightKg === null ? '—' : `${encounter.weightKg} kg`}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="patient-report-section">
-        <div className="patient-report-section-heading">
-          <h3>Screening history</h3>
-          <span>
-            {history.total > history.items.length
-              ? `Most recent ${history.items.length} of ${history.total}`
-              : `${history.total} completed`}
-          </span>
-        </div>
-        {history.items.length === 0 ? (
-          <p>No completed screenings.</p>
-        ) : (
-          <div className="patient-report-table-wrap">
-            <table className="patient-report-table">
-              <thead>
-                <tr>
-                  <th scope="col">Screening</th>
-                  <th scope="col">Vitals</th>
-                  <th scope="col">Recommendation</th>
-                  <th scope="col">Referral and follow-up</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.items.map((encounter) => (
-                  <PatientReportEncounterRow
-                    key={encounter.id}
-                    encounter={encounter}
-                    timeZone={timeZone}
-                    onOpenEncounter={onOpenEncounter}
-                    onOpenReferral={onOpenReferral}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <p className="clinical-report-footer">
-        Community Health Screening • Generated from verified local data • Screening guidance is not
-        a diagnosis
-      </p>
-    </article>
-  )
-}
-
-function PatientReportEncounterRow({
-  encounter,
-  timeZone,
-  onOpenEncounter,
-  onOpenReferral
-}: {
-  readonly encounter: PublicPatientHistoryEncounter
-  readonly timeZone: string
-  onOpenEncounter(encounterId: string): void
-  onOpenReferral(referralId: string): void
-}): React.JSX.Element {
-  const followup = encounter.referral?.latestFollowup ?? null
-  const referral = encounter.referral
-  return (
-    <tr>
-      <td>
-        <strong>{formatTimestamp(encounter.completedAt, timeZone, false)}</strong>
-        <button
-          className="patient-report-record-link"
-          type="button"
-          onClick={() => onOpenEncounter(encounter.id)}
-        >
-          Open encounter
-        </button>
-      </td>
-      <td>
-        <strong>{`${encounter.systolic} / ${encounter.diastolic} mmHg`}</strong>
-        <span>{`${encounter.pulse} bpm`}</span>
-        <span>
-          {encounter.weightKg === null ? 'Weight not recorded' : `${encounter.weightKg} kg`}
-        </span>
-      </td>
-      <td>{formatAction(encounter.nextAction)}</td>
-      <td>
-        {referral === null ? (
-          <span>None</span>
-        ) : (
-          <>
+    <section className="patient-report-controls" aria-label="Patient report options">
+      <div className="patient-report-control-row">
+        <span>Report</span>
+        <div className="patient-report-segmented-control">
+          {reportKinds.map((option) => (
             <button
-              className="patient-report-record-link"
+              key={option.value}
               type="button"
-              onClick={() => onOpenReferral(referral.id)}
+              aria-pressed={kind === option.value}
+              onClick={() => onKindChange(option.value)}
             >
-              {`${formatLabel(referral.status)} • ${formatLabel(referral.urgency)}`}
+              {option.label}
             </button>
-            <span>
-              {followup === null
-                ? 'No follow-up recorded'
-                : (followup.reportedOutcome ??
-                  `Follow-up ${formatLocalDate(followup.contactDate)}`)}
-            </span>
-          </>
-        )}
-      </td>
-    </tr>
+          ))}
+        </div>
+        <button
+          className="button button-secondary patient-report-refresh"
+          type="button"
+          disabled={loading}
+          onClick={onRefresh}
+        >
+          Refresh
+        </button>
+      </div>
+      <div className="patient-report-control-row">
+        <span>Date range</span>
+        <div className="patient-report-segmented-control">
+          <button
+            type="button"
+            aria-pressed={preset === 'LAST_7_DAYS'}
+            onClick={() => onPresetChange('LAST_7_DAYS')}
+          >
+            Last 7 days
+          </button>
+          <button
+            type="button"
+            aria-pressed={preset === 'LAST_30_DAYS'}
+            onClick={() => onPresetChange('LAST_30_DAYS')}
+          >
+            Last 30 days
+          </button>
+        </div>
+        <label>
+          From
+          <input
+            type="date"
+            value={customFrom}
+            max={maximumDate}
+            onChange={(event) => onCustomFromChange(event.currentTarget.value)}
+          />
+        </label>
+        <label>
+          To
+          <input
+            type="date"
+            value={customTo}
+            max={maximumDate}
+            onChange={(event) => onCustomToChange(event.currentTarget.value)}
+          />
+        </label>
+        <button className="button button-secondary" type="button" onClick={onApplyCustom}>
+          Apply dates
+        </button>
+      </div>
+      {rangeMessage === null ? null : <p role="alert">{rangeMessage}</p>}
+    </section>
   )
 }
 
-function ReportMetadata({
-  label,
-  value
+function PrintPreview({
+  report,
+  timeZone,
+  printButtonRef,
+  onClose,
+  onOpenEncounter,
+  onOpenReferral
 }: {
-  readonly label: string
-  readonly value: string
+  readonly report: PatientReportData
+  readonly timeZone: string
+  readonly printButtonRef: RefObject<HTMLButtonElement | null>
+  onClose(): void
+  onOpenEncounter(encounterId: string): void
+  onOpenReferral(referralId: string): void
 }): React.JSX.Element {
   return (
-    <div>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
+    <div className="patient-report-preview-backdrop">
+      <section
+        className="patient-report-preview-window"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Patient report print preview"
+      >
+        <header className="patient-report-preview-toolbar">
+          <div>
+            <strong>Print preview</strong>
+            <span>Review the complete report before printing or saving as PDF.</span>
+          </div>
+          <div>
+            <button
+              ref={printButtonRef}
+              className="button button-primary"
+              type="button"
+              onClick={() =>
+                printReport(`CHS-${report.kind.toLowerCase()}-${report.patient.patientCode}`)
+              }
+            >
+              <PrintIcon />
+              Print
+            </button>
+            <button className="button button-secondary" type="button" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </header>
+        <div className="patient-report-preview-scroll">
+          <div className="patient-report-preview-page">
+            <PatientReportDocument
+              report={report}
+              timeZone={timeZone}
+              preview
+              onOpenEncounter={onOpenEncounter}
+              onOpenReferral={onOpenReferral}
+              onOpenPrintPreview={() => undefined}
+            />
+          </div>
+        </div>
+      </section>
     </div>
   )
 }
 
-function ReportMetric({
-  label,
-  value,
-  support
-}: {
-  readonly label: string
-  readonly value: string
-  readonly support?: string
-}): React.JSX.Element {
+function PrintIcon(): React.JSX.Element {
   return (
-    <div>
-      <span>{label}</span>
-      <strong>{value}</strong>
-      {support === undefined ? null : <small>{support}</small>}
-    </div>
-  )
-}
-
-function isProtectedFailure(
-  code: string
-): code is
-  | 'IPC_FORBIDDEN'
-  | 'AUTH_UNAUTHENTICATED'
-  | 'AUTH_LOCKED'
-  | 'AUTH_PASSWORD_CHANGE_REQUIRED'
-  | 'AUTHORIZATION_FAILED' {
-  return (
-    code === 'IPC_FORBIDDEN' ||
-    code === 'AUTH_UNAUTHENTICATED' ||
-    code === 'AUTH_LOCKED' ||
-    code === 'AUTH_PASSWORD_CHANGE_REQUIRED' ||
-    code === 'AUTHORIZATION_FAILED'
+    <svg className="patient-report-print-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M7 14h10v7H7z" />
+    </svg>
   )
 }
 
 function formatPatientBirth(patient: PublicPatientSummary): string {
   if (patient.dateOfBirth !== null) return formatLocalDate(patient.dateOfBirth)
   if (patient.approximateAgeYears === null) return 'Not recorded'
-  return `Approximately ${patient.approximateAgeYears} years${
-    patient.ageAsOfDate === null ? '' : ` as of ${formatLocalDate(patient.ageAsOfDate)}`
-  }`
+  return `Approximately ${patient.approximateAgeYears} years`
 }
 
 function formatPatientLocation(patient: PublicPatientSummary): string {
-  return [patient.village, patient.quarter].filter((value) => value !== null).join(' / ') || '—'
-}
-
-function formatAlternateContact(patient: PublicPatientDetail): string {
-  if (patient.alternateContactName === null && patient.alternateContactPhone === null) {
-    return 'Not recorded'
-  }
-  return [patient.alternateContactName, patient.alternateContactPhone]
-    .filter((value) => value !== null)
-    .join(' • ')
-}
-
-function formatSex(value: PublicPatientSummary['sex']): string {
-  return value === 'FEMALE' ? 'Female' : value === 'MALE' ? 'Male' : 'Unknown'
-}
-
-function formatAction(value: PublicPatientHistoryEncounter['nextAction']): string {
-  return value === 'URGENT_REFERRAL'
-    ? 'Urgent referral'
-    : value === 'REFER'
-      ? 'Standard referral'
-      : 'Routine'
-}
-
-function formatLabel(value: string): string {
-  return value
-    .toLowerCase()
-    .replaceAll('_', ' ')
-    .replace(/^./u, (letter) => letter.toUpperCase())
+  return [patient.village, patient.quarter].filter((value) => value !== null).join(' / ') || '-'
 }
 
 function formatLocalDate(value: string): string {
-  const [year, month, day] = value.split('-').map(Number)
+  const [year = 0, month = 0, day = 0] = value.split('-').map(Number)
   return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' }).format(
-    new Date(Date.UTC(year!, month! - 1, day!))
+    new Date(Date.UTC(year, month - 1, day))
   )
-}
-
-function formatTimestamp(value: string, timeZone: string, includeTime = true): string {
-  return new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'medium',
-    ...(includeTime ? { timeStyle: 'short' as const } : {}),
-    timeZone
-  }).format(new Date(value))
 }
 
 function printReport(fileName: string): void {

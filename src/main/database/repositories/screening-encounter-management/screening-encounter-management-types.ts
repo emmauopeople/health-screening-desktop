@@ -70,6 +70,10 @@ export interface ManagedEncounterFoodRecord {
 export interface ManagedEncounterOtcRecord {
   readonly productName: string
   readonly reasonForUse: string
+  readonly doseText: string | null
+  readonly frequencyText: string | null
+  readonly durationText: string | null
+  readonly sourceOfMedication: string | null
   readonly currentlyTaking: boolean | null
 }
 

@@ -262,6 +262,10 @@ export const publicManagedEncounterDetailSchema = z
         .object({
           productName: z.string().min(1),
           reasonForUse: z.string().min(1),
+          doseText: z.string().min(1).nullable().optional(),
+          frequencyText: z.string().min(1).nullable().optional(),
+          durationText: z.string().min(1).nullable().optional(),
+          sourceOfMedication: z.string().min(1).nullable().optional(),
           currentlyTaking: z.boolean().nullable()
         })
         .strict()
