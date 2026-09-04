@@ -28,7 +28,9 @@ import {
   createProductionScreeningOtcService,
   createProductionScreeningVitalsDraftService,
   createProductionScreeningSessionService,
-  createProductionScreeningSessionWorkspaceContextService
+  createProductionScreeningSessionWorkspaceContextService,
+  createProductionSyncWorkerService,
+  createSyncWorkerScheduler
 } from '@main/application'
 import {
   createDatabaseHealthProvider,
@@ -36,9 +38,11 @@ import {
   createProductionDatabaseMigrationRunner,
   createLocationRepository,
   getDatabasePath,
+  targetSchemaVersion,
   type DatabaseRuntime
 } from '@main/database'
 import { createAuthenticationSessionPublisher } from '@main/ipc/authentication'
+import { createElectronSyncCredentialProtector } from '@main/application/sync-transport/electron-credential-protector'
 import { registerApplicationIpcHandlers } from '@main/ipc/register-handlers'
 import { configureSessionSecurity } from '@main/security/session-security'
 import icon from '../../../resources/icon.png?asset'
@@ -179,6 +183,15 @@ export function startApplicationLifecycle(): void {
         installationLocationService,
         logger: console
       })
+      const syncWorkerScheduler = createSyncWorkerScheduler(
+        createProductionSyncWorkerService({
+          connection: databaseRuntime.getConnection(),
+          desktopApplicationVersion: app.getVersion(),
+          desktopSchemaVersion: targetSchemaVersion,
+          credentialProtector: createElectronSyncCredentialProtector(),
+          logger: console
+        })
+      )
       const locationRepository = createLocationRepository(databaseRuntime.getConnection())
       const authenticationSessionPublisher = createAuthenticationSessionPublisher({
         navigationPolicy,
@@ -253,7 +266,16 @@ export function startApplicationLifecycle(): void {
         logger: console
       })
 
-      registerApplicationShutdown(app, disposeIpcHandlers, () => databaseRuntime?.close())
+      registerApplicationShutdown(
+        app,
+        () => {
+          syncWorkerScheduler.stop()
+          disposeIpcHandlers()
+        },
+        () => databaseRuntime?.close()
+      )
+
+      syncWorkerScheduler.start()
 
       app.on('second-instance', () => {
         void createOrFocusMainWindow(configuration).catch((error: unknown) => {

@@ -1,4 +1,6 @@
 export { createSyncTransportBatchRepository } from './sync-transport-repository'
+export { createSyncWorkerRepository } from './sync-worker-repository'
+export type { CompleteSyncBatchInput, SyncWorkerRepository } from './sync-worker-repository'
 export type {
   ClaimSyncTransportBatchInput,
   InsertPreparedSyncTransportBatchInput,
