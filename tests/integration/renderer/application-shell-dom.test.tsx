@@ -394,6 +394,8 @@ describe('application shell DOM integration', () => {
 
     await clickButton(mounted, 'Reports')
     expectWorkspaceHeading(mounted, 'Patient Reports')
+    expect(text(mounted)).toContain('Local patient reporting')
+    expect(buttonByText(mounted, 'Create PDF report').disabled).toBe(true)
     expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Reports commands')
     expect(commandButtonByText(mounted, 'Patient Reports').getAttribute('aria-current')).toBe(
       'page'

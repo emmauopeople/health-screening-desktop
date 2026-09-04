@@ -5709,6 +5709,7 @@ h1 {
   }
 }
 
+.patient-reports-workspace,
 .session-reports-workspace {
   display: flex;
   min-width: 0;
@@ -5716,6 +5717,345 @@ h1 {
   height: 100%;
   flex-direction: column;
   gap: 0.85rem;
+}
+
+.patient-reports-heading {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.patient-reports-heading h1,
+.patient-report-title h2 {
+  margin: 0;
+}
+
+.patient-reports-heading-actions,
+.patient-reports-search > div,
+.patient-reports-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.patient-reports-search {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 0.35rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+  padding: 0.7rem;
+  background: var(--color-panel);
+}
+
+.patient-reports-search label {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.patient-reports-search input {
+  min-width: min(34rem, 70vw);
+  flex: 1 1 24rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 0.4rem;
+  padding: 0.58rem 0.65rem;
+  background: #ffffff;
+  color: var(--color-ink);
+}
+
+.patient-reports-search > span {
+  color: #8a4b08;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.patient-reports-layout {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(22rem, 0.78fr) minmax(32rem, 1.4fr);
+  gap: 0.85rem;
+  overflow: hidden;
+}
+
+.patient-reports-list-panel,
+.patient-reports-detail-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+  background: var(--color-panel);
+}
+
+.patient-reports-list-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.patient-reports-list-summary {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+.patient-reports-list-summary span,
+.patient-reports-error {
+  color: #b42318;
+}
+
+.patient-reports-table-scroll,
+.patient-reports-detail-panel {
+  overflow: auto;
+}
+
+.patient-reports-table,
+.patient-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.patient-reports-table th,
+.patient-reports-table td,
+.patient-report-table th,
+.patient-report-table td {
+  overflow-wrap: anywhere;
+  border-top: 1px solid var(--color-border);
+  padding: 0.65rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.patient-reports-table th,
+.patient-report-table th {
+  background: var(--shell-primary);
+  color: #ffffff;
+  font-size: 0.78rem;
+}
+
+.patient-reports-table th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+}
+
+.patient-reports-table tbody tr {
+  cursor: pointer;
+}
+
+.patient-reports-table tbody tr:hover,
+.patient-reports-table tbody tr:focus,
+.patient-reports-table tbody tr.is-selected {
+  background: #e6f3f5;
+  outline: none;
+}
+
+.patient-reports-table tbody tr.is-selected {
+  box-shadow: inset 4px 0 0 var(--shell-accent);
+}
+
+.patient-reports-table td:first-child,
+.patient-report-table td {
+  display: table-cell;
+}
+
+.patient-reports-table td:first-child strong,
+.patient-reports-table td:first-child span,
+.patient-report-table td strong,
+.patient-report-table td span {
+  display: block;
+}
+
+.patient-reports-table td:first-child span,
+.patient-report-table td span,
+.patient-report-section-heading span {
+  margin-top: 0.2rem;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+}
+
+.patient-reports-pagination {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  border-top: 1px solid var(--color-border);
+  padding: 0.65rem;
+}
+
+.patient-reports-pagination > span {
+  margin-right: auto;
+  color: var(--color-muted);
+  font-weight: 700;
+}
+
+.patient-reports-detail-panel {
+  padding: 1rem;
+}
+
+.patient-reports-empty,
+.patient-reports-empty-detail {
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.patient-reports-empty-detail,
+.patient-reports-error {
+  display: flex;
+  min-height: 10rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.patient-reports-error {
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.patient-report-print-area {
+  display: grid;
+  gap: 1rem;
+}
+
+.patient-report-title,
+.patient-report-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.patient-report-title > div > p:last-child {
+  margin: 0.3rem 0 0;
+  color: var(--color-muted);
+  font-weight: 750;
+}
+
+.patient-report-demographics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: var(--color-border);
+}
+
+.patient-report-demographics div {
+  min-width: 0;
+  padding: 0.75rem;
+  background: #f8fafc;
+}
+
+.patient-report-demographics dt,
+.patient-report-summary span {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.patient-report-demographics dd {
+  overflow-wrap: anywhere;
+  margin: 0.3rem 0 0;
+  font-weight: 700;
+}
+
+.patient-report-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.patient-report-summary > div {
+  display: flex;
+  min-width: 0;
+  min-height: 5rem;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.35rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.45rem;
+  padding: 0.7rem;
+  background: #f1f5f9;
+}
+
+.patient-report-summary strong {
+  color: var(--shell-primary);
+  font-size: 1.35rem;
+}
+
+.patient-report-summary small {
+  color: var(--color-muted);
+  font-weight: 650;
+}
+
+.patient-report-section {
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 0.8rem;
+}
+
+.patient-report-section h3 {
+  margin: 0 0 0.65rem;
+}
+
+.patient-report-section-heading h3 {
+  margin-bottom: 0;
+}
+
+.patient-report-table-wrap {
+  overflow-x: auto;
+}
+
+.patient-report-table {
+  font-size: 0.85rem;
+}
+
+.patient-report-table th:nth-child(1) {
+  width: 18%;
+}
+
+.patient-report-table th:nth-child(2) {
+  width: 23%;
+}
+
+.patient-report-table th:nth-child(3) {
+  width: 19%;
+}
+
+.patient-report-table th:nth-child(4) {
+  width: 40%;
+}
+
+.patient-report-trend-table th {
+  width: 25%;
+}
+
+.patient-report-record-link {
+  width: fit-content;
+  border: 0;
+  padding: 0;
+  color: #075b70;
+  background: transparent;
+  font: inherit;
+  font-weight: 750;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.patient-report-record-link:hover,
+.patient-report-record-link:focus-visible {
+  color: #034355;
 }
 
 .session-reports-heading {
@@ -6030,6 +6370,7 @@ h1 {
 }
 
 @media (max-width: 1100px) {
+  .patient-reports-layout,
   .session-reports-layout {
     grid-template-columns: minmax(19rem, 0.85fr) minmax(24rem, 1.15fr);
   }
@@ -6045,6 +6386,9 @@ h1 {
   .application-shell-alert-slot,
   .application-command-panel-slot,
   .session-summary-actions,
+  .patient-reports-heading,
+  .patient-reports-search,
+  .patient-reports-list-panel,
   .session-reports-heading,
   .session-reports-filters,
   .session-reports-list-panel,
@@ -6057,6 +6401,9 @@ h1 {
   .application-shell,
   .application-workspace,
   .session-summary-workspace,
+  .patient-reports-workspace,
+  .patient-reports-layout,
+  .patient-reports-detail-panel,
   .session-reports-workspace,
   .session-reports-layout,
   .session-reports-detail-panel {
@@ -6077,6 +6424,9 @@ h1 {
   }
 
   .session-reports-workspace,
+  .patient-reports-workspace,
+  .patient-reports-layout,
+  .patient-reports-detail-panel,
   .session-reports-layout,
   .session-reports-detail-panel {
     display: block;
@@ -6091,6 +6441,10 @@ h1 {
   }
 
   .session-report-group,
+  .patient-report-print-area > header,
+  .patient-report-demographics,
+  .patient-report-summary,
+  .patient-report-table tr,
   .session-report-print-area > header,
   .session-report-metadata {
     break-inside: avoid;
@@ -6118,8 +6472,16 @@ h1 {
   }
 
   .session-report-metric,
+  .patient-report-summary > div,
+  .patient-report-demographics div,
   .session-report-metadata div {
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
+  }
+
+  .patient-report-record-link {
+    color: inherit;
+    text-decoration: none;
+    pointer-events: none;
   }
 }
