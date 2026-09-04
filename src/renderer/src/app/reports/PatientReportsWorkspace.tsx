@@ -27,6 +27,7 @@ import {
 interface PatientReportsWorkspaceProps {
   readonly api: HealthScreeningApi
   readonly timeZone: string
+  readonly reportedBy: string
   readonly headingId: string
   readonly headingRef: RefObject<HTMLHeadingElement | null>
   onAuthenticationFailure(code: PatientErrorCode | ScreeningSessionErrorCode): void
@@ -62,6 +63,7 @@ const reportKinds: readonly { readonly value: PatientReportKind; readonly label:
 export function PatientReportsWorkspace({
   api,
   timeZone,
+  reportedBy,
   headingId,
   headingRef,
   onAuthenticationFailure,
@@ -371,6 +373,7 @@ export function PatientReportsWorkspace({
             <PatientReportDocument
               report={reportState.report}
               timeZone={timeZone}
+              reportedBy={reportedBy}
               preview={false}
               onOpenEncounter={onOpenEncounter}
               onOpenReferral={onOpenReferral}
@@ -384,6 +387,7 @@ export function PatientReportsWorkspace({
         <PrintPreview
           report={reportState.report}
           timeZone={timeZone}
+          reportedBy={reportedBy}
           printButtonRef={printButtonRef}
           onClose={() => setPreviewOpen(false)}
           onOpenEncounter={onOpenEncounter}
@@ -496,6 +500,7 @@ function ReportControls({
 function PrintPreview({
   report,
   timeZone,
+  reportedBy,
   printButtonRef,
   onClose,
   onOpenEncounter,
@@ -503,6 +508,7 @@ function PrintPreview({
 }: {
   readonly report: PatientReportData
   readonly timeZone: string
+  readonly reportedBy: string
   readonly printButtonRef: RefObject<HTMLButtonElement | null>
   onClose(): void
   onOpenEncounter(encounterId: string): void
@@ -543,6 +549,7 @@ function PrintPreview({
             <PatientReportDocument
               report={report}
               timeZone={timeZone}
+              reportedBy={reportedBy}
               preview
               onOpenEncounter={onOpenEncounter}
               onOpenReferral={onOpenReferral}

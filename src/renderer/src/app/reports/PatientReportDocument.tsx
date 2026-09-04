@@ -11,6 +11,7 @@ type PublicReferralFollowup = PublicReferralDetail['followups'][number]
 interface PatientReportDocumentProps {
   readonly report: PatientReportData
   readonly timeZone: string
+  readonly reportedBy: string
   readonly preview: boolean
   onOpenEncounter(encounterId: string): void
   onOpenReferral(referralId: string): void
@@ -20,6 +21,7 @@ interface PatientReportDocumentProps {
 export function PatientReportDocument({
   report,
   timeZone,
+  reportedBy,
   preview,
   onOpenEncounter,
   onOpenReferral,
@@ -64,10 +66,7 @@ export function PatientReportDocument({
         />
       )}
 
-      <p className="clinical-report-footer">
-        Community Health Screening - Generated from verified local data - Screening guidance is not
-        a diagnosis
-      </p>
+      {preview ? <PrintedReportFooter patient={report.patient} reportedBy={reportedBy} /> : null}
 
       {!preview ? (
         <div className="patient-report-browser-actions">
@@ -80,6 +79,28 @@ export function PatientReportDocument({
   )
 }
 
+function PrintedReportFooter({
+  patient,
+  reportedBy
+}: {
+  readonly patient: PublicPatientDetail
+  readonly reportedBy: string
+}): React.JSX.Element {
+  const birthDate =
+    patient.dateOfBirth === null ? 'Not recorded' : formatLocalDate(patient.dateOfBirth)
+
+  return (
+    <footer className="patient-report-page-footer" aria-label="Printed report page footer">
+      <span>{`${patient.displayName} / Date of birth: ${birthDate}`}</span>
+      <span className="patient-report-page-number" aria-label="Printed page number">
+        Page <span className="patient-report-current-page" /> of{' '}
+        <span className="patient-report-total-pages" />
+      </span>
+      <span>{`Reported by ${reportedBy}`}</span>
+    </footer>
+  )
+}
+
 function ReportMasthead(): React.JSX.Element {
   return (
     <header className="clinical-report-masthead patient-report-print-masthead">
@@ -88,6 +109,7 @@ function ReportMasthead(): React.JSX.Element {
         <strong>Community Health Screening</strong>
         <span>Patient report</span>
       </div>
+      <span className="patient-report-print-disclaimer">Screening guidance is not a diagnosis</span>
     </header>
   )
 }

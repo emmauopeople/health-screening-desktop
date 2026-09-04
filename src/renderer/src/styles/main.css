@@ -6388,6 +6388,35 @@ h1 {
   padding-top: 0.8rem;
 }
 
+.patient-report-page-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.45rem;
+  color: var(--color-muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.patient-report-page-footer > span {
+  min-width: 0;
+}
+
+.patient-report-page-footer > span:nth-child(2) {
+  text-align: center;
+}
+
+.patient-report-page-footer > span:last-child {
+  text-align: right;
+}
+
+.patient-report-current-page::after,
+.patient-report-total-pages::after {
+  content: '1';
+}
+
 .patient-report-preview-backdrop {
   position: fixed;
   z-index: 1000;
@@ -6455,6 +6484,15 @@ h1 {
 
 .patient-report-print-masthead {
   display: flex;
+}
+
+.patient-report-print-disclaimer {
+  align-self: flex-end;
+  margin-left: auto;
+  color: var(--color-ink);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-align: right;
 }
 
 .patient-report-print-icon {
@@ -6791,6 +6829,18 @@ h1 {
     size: portrait;
   }
 
+  @page patient-report {
+    margin: 14mm 14mm 20mm;
+
+    @bottom-center {
+      content: 'Page ' counter(page) ' of ' counter(pages);
+      color: #52606d;
+      font-family: Arial, sans-serif;
+      font-size: 7.5pt;
+      font-weight: 650;
+    }
+  }
+
   .application-top-bar,
   .application-shell-alert-slot,
   .application-command-panel-slot,
@@ -6922,6 +6972,24 @@ h1 {
 
   .patient-report-document {
     padding: 0;
+  }
+
+  .patient-report-document.is-print-preview {
+    page: patient-report;
+  }
+
+  .patient-report-page-footer {
+    position: fixed;
+    right: 0;
+    bottom: -12mm;
+    left: 0;
+    border-top-color: #9aa4b2;
+    padding-top: 1.5mm;
+    font-size: 7.5pt;
+  }
+
+  .patient-report-page-number {
+    visibility: hidden;
   }
 
   .patient-report-demographic-header,

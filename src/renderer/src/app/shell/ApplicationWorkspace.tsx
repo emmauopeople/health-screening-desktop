@@ -223,6 +223,7 @@ export function ApplicationWorkspace({
         <PatientReportsWorkspace
           api={api}
           timeZone={context.timeZone}
+          reportedBy={user.displayName}
           headingId={workspaceHeadingId}
           headingRef={headingRef}
           onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}

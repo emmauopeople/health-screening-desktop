@@ -253,6 +253,9 @@ describe('PatientReportsWorkspace', () => {
     expect(browserReport.textContent).toContain('Treatment modified, New medication')
     expect(browserReport.textContent).toContain('Provider reviewed blood pressure management.')
     expect(browserReport.querySelector('.clinical-report-masthead')).toBeNull()
+    expect(browserReport.querySelector('.patient-report-page-footer')).toBeNull()
+    expect(browserReport.textContent).not.toContain('Screening guidance is not a diagnosis')
+    expect(browserReport.textContent).not.toContain('Generated from verified local data')
 
     await clickButton(mounted.container, 'Print preview')
 
@@ -260,6 +263,13 @@ describe('PatientReportsWorkspace', () => {
     expect(dialog).not.toBeNull()
     expect(dialog?.querySelector('.clinical-report-masthead')).not.toBeNull()
     expect(dialog?.textContent).toContain('Community Health Screening')
+    const pageFooter = dialog?.querySelector('.patient-report-page-footer')
+    expect(pageFooter?.textContent).toContain('Suzana Fuavesan / Date of birth: Jan 15, 1998')
+    expect(pageFooter?.querySelector('.patient-report-current-page')).not.toBeNull()
+    expect(pageFooter?.querySelector('.patient-report-total-pages')).not.toBeNull()
+    expect(pageFooter?.textContent).toContain('Reported by Nurse E.')
+    expect(dialog?.textContent).toContain('Screening guidance is not a diagnosis')
+    expect(dialog?.textContent).not.toContain('Generated from verified local data')
 
     const printSpy = vi.spyOn(window, 'print').mockImplementation(() => undefined)
     const previousTitle = document.title
@@ -440,6 +450,7 @@ async function mount(harness: Harness): Promise<MountedWorkspace> {
       createElement(PatientReportsWorkspace, {
         api: harness.api,
         timeZone: 'Africa/Douala',
+        reportedBy: 'Nurse E.',
         headingId: 'patient-reports-heading',
         headingRef: { current: null },
         onAuthenticationFailure: vi.fn(),
