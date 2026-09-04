@@ -1,27 +1,62 @@
 import { createHash } from 'node:crypto'
+import type Database from 'better-sqlite3'
 import type {
+  ContractUuid,
+  IdentityResolutionDelivery,
   SyncBatchResponse,
   SyncRecordOutcome
 } from '@main/application/sync-transport/sync-contract'
+import { parseContractUuid } from '@main/application/sync-transport/sync-contract'
 import type { DatabaseTransactionConnection } from '@main/database/transaction'
 import { assertActiveDatabaseTransactionConnection } from '@main/database/transaction/transaction-capability'
 import { parseEntityId, type EntityId } from '@main/foundation/entity-id'
 import { parseUtcTimestamp, type UtcTimestamp } from '@main/foundation/utc-clock'
 
-import { RepositoryValidationError, RepositoryWriteError } from '../repository-errors'
+import {
+  RepositoryReadError,
+  RepositoryValidationError,
+  RepositoryWriteError
+} from '../repository-errors'
+
+export interface PendingIdentityResolutionAcknowledgment {
+  readonly resolutionReference: ContractUuid
+  readonly acknowledgmentId: EntityId
+  readonly appliedAt: UtcTimestamp
+  readonly requestJson: string
+}
 
 export interface CompleteSyncBatchInput {
   readonly response: SyncBatchResponse
   readonly responseJson: string
   readonly completedAt: UtcTimestamp
   readonly retryAt: UtcTimestamp
+  readonly identifierIds: ReadonlyMap<EntityId, EntityId>
+}
+
+export interface ApplyIdentityResolutionInput {
+  readonly delivery: IdentityResolutionDelivery
+  readonly acknowledgmentId: EntityId
+  readonly acknowledgmentJson: string
+  readonly identifierId: EntityId
+  readonly appliedAt: UtcTimestamp
 }
 
 export interface SyncWorkerRepository {
   completeBatch(connection: DatabaseTransactionConnection, input: CompleteSyncBatchInput): void
+  applyIdentityResolution(
+    connection: DatabaseTransactionConnection,
+    input: ApplyIdentityResolutionInput
+  ): boolean
+  listPendingIdentityResolutionAcknowledgments(): readonly PendingIdentityResolutionAcknowledgment[]
+  markIdentityResolutionAcknowledged(
+    connection: DatabaseTransactionConnection,
+    resolutionReference: ContractUuid,
+    acknowledgmentId: EntityId,
+    acknowledgedAt: UtcTimestamp
+  ): void
 }
 
-export function createSyncWorkerRepository(): SyncWorkerRepository {
+export function createSyncWorkerRepository(connection: Database.Database): SyncWorkerRepository {
   return Object.freeze({
     completeBatch(
       scopedConnection: DatabaseTransactionConnection,
@@ -54,6 +89,24 @@ export function createSyncWorkerRepository(): SyncWorkerRepository {
           ) {
             upsertResourceMapping(scopedConnection, outcome, input.completedAt)
           }
+          if (
+            outcome.resourceType === 'PATIENT' &&
+            outcome.centralPersonId !== null &&
+            outcome.chsMedicalId !== null &&
+            (outcome.medicalIdStatus === 'ASSIGNED' || outcome.medicalIdStatus === 'CONFIRMED')
+          ) {
+            const identifierId = input.identifierIds.get(outcome.localResourceId)
+            if (identifierId === undefined) throw new RepositoryWriteError()
+            applyIdentityLink(scopedConnection, {
+              patientId: outcome.localResourceId,
+              centralPersonId: outcome.centralPersonId,
+              chsMedicalId: outcome.chsMedicalId,
+              sourceRevision: outcome.sourceRevision,
+              resolutionReference: null,
+              identifierId,
+              appliedAt: input.completedAt
+            })
+          }
           applyOutcomeToOutbox(scopedConnection, input.response.batchId, outcome, input)
         }
 
@@ -77,6 +130,136 @@ export function createSyncWorkerRepository(): SyncWorkerRepository {
           )
           .run(input.completedAt, input.responseJson, responseSha256, input.response.batchId)
         if (batchResult.changes !== 1) throw new RepositoryWriteError()
+      } catch (error) {
+        if (error instanceof RepositoryWriteError) throw error
+        throw new RepositoryWriteError(error instanceof Error ? error.name : typeof error)
+      }
+    },
+
+    applyIdentityResolution(
+      scopedConnection: DatabaseTransactionConnection,
+      input: ApplyIdentityResolutionInput
+    ): boolean {
+      assertActiveDatabaseTransactionConnection(scopedConnection)
+      parseEntityId(input.acknowledgmentId)
+      parseEntityId(input.identifierId)
+      parseUtcTimestamp(input.appliedAt)
+      validateAcknowledgmentJson(input)
+      try {
+        const existing = scopedConnection
+          .prepare(
+            'SELECT * FROM sync_identity_resolution_deliveries WHERE resolution_reference = ?'
+          )
+          .get(input.delivery.resolutionReference) as Record<string, unknown> | undefined
+        if (existing !== undefined) {
+          if (
+            existing.local_patient_id !== input.delivery.localPatientReference ||
+            existing.local_patient_code !== input.delivery.localPatientCode ||
+            existing.source_revision !== input.delivery.sourceRevision ||
+            existing.central_person_id !== input.delivery.centralPersonId ||
+            existing.chs_medical_id !== input.delivery.chsMedicalId ||
+            existing.resolved_at !== input.delivery.resolvedAt
+          ) {
+            throw new RepositoryWriteError()
+          }
+          return false
+        }
+
+        const patient = scopedConnection
+          .prepare('SELECT patient_code, row_version FROM patients WHERE id = ?')
+          .get(input.delivery.localPatientReference) as
+          { patient_code?: unknown; row_version?: unknown } | undefined
+        if (
+          patient === undefined ||
+          patient.patient_code !== input.delivery.localPatientCode ||
+          patient.row_version !== input.delivery.sourceRevision
+        ) {
+          throw new RepositoryWriteError()
+        }
+
+        applyIdentityLink(scopedConnection, {
+          patientId: input.delivery.localPatientReference,
+          centralPersonId: input.delivery.centralPersonId,
+          chsMedicalId: input.delivery.chsMedicalId,
+          sourceRevision: input.delivery.sourceRevision,
+          resolutionReference: input.delivery.resolutionReference,
+          identifierId: input.identifierId,
+          appliedAt: input.appliedAt
+        })
+        const result = scopedConnection
+          .prepare(
+            `INSERT INTO sync_identity_resolution_deliveries (
+               resolution_reference, local_patient_id, local_patient_code, source_revision,
+               central_person_id, chs_medical_id, resolved_at, acknowledgment_id,
+               acknowledgment_json, applied_at, acknowledged_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`
+          )
+          .run(
+            input.delivery.resolutionReference,
+            input.delivery.localPatientReference,
+            input.delivery.localPatientCode,
+            input.delivery.sourceRevision,
+            input.delivery.centralPersonId,
+            input.delivery.chsMedicalId,
+            input.delivery.resolvedAt,
+            input.acknowledgmentId,
+            input.acknowledgmentJson,
+            input.appliedAt
+          )
+        if (result.changes !== 1) throw new RepositoryWriteError()
+        return true
+      } catch (error) {
+        if (error instanceof RepositoryWriteError) throw error
+        throw new RepositoryWriteError(error instanceof Error ? error.name : typeof error)
+      }
+    },
+
+    listPendingIdentityResolutionAcknowledgments() {
+      try {
+        return (
+          connection
+            .prepare(
+              `SELECT resolution_reference, acknowledgment_id, acknowledgment_json, applied_at
+               FROM sync_identity_resolution_deliveries
+               WHERE acknowledged_at IS NULL
+               ORDER BY applied_at, resolution_reference`
+            )
+            .all() as readonly Record<string, unknown>[]
+        ).map((row) => {
+          const pending = Object.freeze({
+            resolutionReference: parseContractUuid(row.resolution_reference),
+            acknowledgmentId: parseEntityId(row.acknowledgment_id),
+            appliedAt: parseUtcTimestamp(row.applied_at),
+            requestJson: requiredString(row.acknowledgment_json)
+          })
+          validateStoredAcknowledgmentJson(pending)
+          return pending
+        })
+      } catch (error) {
+        throw new RepositoryReadError(error instanceof Error ? error.name : typeof error)
+      }
+    },
+
+    markIdentityResolutionAcknowledged(
+      scopedConnection: DatabaseTransactionConnection,
+      resolutionReference: ContractUuid,
+      acknowledgmentId: EntityId,
+      acknowledgedAt: UtcTimestamp
+    ): void {
+      assertActiveDatabaseTransactionConnection(scopedConnection)
+      parseContractUuid(resolutionReference)
+      parseEntityId(acknowledgmentId)
+      parseUtcTimestamp(acknowledgedAt)
+      try {
+        const result = scopedConnection
+          .prepare(
+            `UPDATE sync_identity_resolution_deliveries
+             SET acknowledged_at = ?
+             WHERE resolution_reference = ? AND acknowledgment_id = ?
+               AND acknowledged_at IS NULL`
+          )
+          .run(acknowledgedAt, resolutionReference, acknowledgmentId)
+        if (result.changes !== 1) throw new RepositoryWriteError()
       } catch (error) {
         if (error instanceof RepositoryWriteError) throw error
         throw new RepositoryWriteError(error instanceof Error ? error.name : typeof error)
@@ -193,6 +376,119 @@ function upsertResourceMapping(
       appliedAt
     )
   if (result.changes !== 1) throw new RepositoryWriteError()
+}
+
+function applyIdentityLink(
+  connection: DatabaseTransactionConnection,
+  input: Readonly<{
+    patientId: EntityId
+    centralPersonId: ContractUuid
+    chsMedicalId: string
+    sourceRevision: number
+    resolutionReference: ContractUuid | null
+    identifierId: EntityId
+    appliedAt: UtcTimestamp
+  }>
+): void {
+  const patient = connection
+    .prepare('SELECT created_by FROM patients WHERE id = ?')
+    .get(input.patientId) as { created_by?: unknown } | undefined
+  if (patient === undefined) throw new RepositoryWriteError()
+
+  const identifiers = connection
+    .prepare(
+      `SELECT patient_id, identifier_value, status FROM patient_identifiers
+       WHERE identifier_type = 'CHS_MEDICAL_ID'
+         AND (patient_id = ? OR identifier_value = ?)`
+    )
+    .all(input.patientId, input.chsMedicalId) as readonly {
+    patient_id?: unknown
+    identifier_value?: unknown
+    status?: unknown
+  }[]
+  if (
+    identifiers.length > 1 ||
+    identifiers.some(
+      (row) =>
+        row.patient_id !== input.patientId ||
+        row.identifier_value !== input.chsMedicalId ||
+        row.status !== 'ACTIVE'
+    )
+  ) {
+    throw new RepositoryWriteError()
+  }
+  if (identifiers.length === 0) {
+    const result = connection
+      .prepare(
+        `INSERT INTO patient_identifiers (
+           id, patient_id, identifier_type, issuer, identifier_value, is_primary,
+           valid_from, valid_to, created_by, created_at, status
+         ) VALUES (?, ?, 'CHS_MEDICAL_ID', 'CHS_CENTRAL', ?, 1, ?, NULL, ?, ?, 'ACTIVE')`
+      )
+      .run(
+        input.identifierId,
+        input.patientId,
+        input.chsMedicalId,
+        input.appliedAt,
+        parseEntityId(patient.created_by),
+        input.appliedAt
+      )
+    if (result.changes !== 1) throw new RepositoryWriteError()
+  }
+
+  const result = connection
+    .prepare(
+      `INSERT INTO sync_patient_identity_links (
+         patient_id, central_person_id, chs_medical_id, source_revision,
+         resolution_reference, applied_at
+       ) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(patient_id) DO UPDATE SET
+         source_revision = MAX(sync_patient_identity_links.source_revision, excluded.source_revision),
+         resolution_reference = COALESCE(sync_patient_identity_links.resolution_reference, excluded.resolution_reference),
+         applied_at = excluded.applied_at
+       WHERE sync_patient_identity_links.central_person_id = excluded.central_person_id
+         AND sync_patient_identity_links.chs_medical_id = excluded.chs_medical_id
+         AND (
+           sync_patient_identity_links.resolution_reference IS NULL
+           OR excluded.resolution_reference IS NULL
+           OR sync_patient_identity_links.resolution_reference = excluded.resolution_reference
+         )`
+    )
+    .run(
+      input.patientId,
+      input.centralPersonId,
+      input.chsMedicalId,
+      input.sourceRevision,
+      input.resolutionReference,
+      input.appliedAt
+    )
+  if (result.changes !== 1) throw new RepositoryWriteError()
+}
+
+function validateAcknowledgmentJson(input: ApplyIdentityResolutionInput): void {
+  parseContractUuid(input.delivery.resolutionReference)
+  const expected = JSON.stringify({
+    contractVersion: '1.0',
+    acknowledgmentId: input.acknowledgmentId,
+    resolutionReference: input.delivery.resolutionReference,
+    appliedAt: input.appliedAt
+  })
+  if (input.acknowledgmentJson !== expected) throw new RepositoryValidationError()
+}
+
+function validateStoredAcknowledgmentJson(pending: PendingIdentityResolutionAcknowledgment): void {
+  const expected = JSON.stringify({
+    contractVersion: '1.0',
+    acknowledgmentId: pending.acknowledgmentId,
+    resolutionReference: pending.resolutionReference,
+    appliedAt: pending.appliedAt
+  })
+  if (pending.requestJson !== expected) throw new RepositoryReadError()
+}
+
+function requiredString(value: unknown): string {
+  if (typeof value !== 'string' || value.length === 0) throw new RepositoryReadError()
+  return value
 }
 
 function validateCompleteInput(input: CompleteSyncBatchInput): void {

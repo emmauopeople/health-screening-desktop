@@ -42,8 +42,9 @@ one SQLite transaction, a valid response:
 - returns retryable signals to bounded local retry state while preserving prior
   batch-item history.
 
-No patient identity value is written in this increment. Patient outcome identity
-fields remain preserved in the immutable response for HSW-013B3.
+No patient identity value is written by HSW-013B2 itself. HSW-013B3 applies
+approved identity values through the separately documented identity-delivery
+boundary.
 
 ## Verification
 
@@ -54,8 +55,9 @@ retryable outcomes, immutable response storage, and retry history.
 
 ## Follow-up boundary
 
-HSW-013B3 will add local CHS Medical ID application and installation-scoped
-reviewer-resolution pull and acknowledgment. Administrator configuration and
-minimum-necessary synchronization status UI remain HSW-013C work. Food, OTC,
-referral, addendum, and review-flag transport remain blocked until their central
-contracts are frozen.
+HSW-013B3 adds local CHS Medical ID application and installation-scoped
+reviewer-resolution pull and acknowledgment in
+[`desktop-sync-identity-resolution-delivery.md`](./desktop-sync-identity-resolution-delivery.md).
+Administrator configuration and minimum-necessary synchronization status UI
+remain HSW-013C work. Food, OTC, referral, addendum, and review-flag transport
+remain blocked until their central contracts are frozen.

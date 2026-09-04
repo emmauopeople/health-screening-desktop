@@ -29,6 +29,9 @@ describe('synchronization HTTP client', () => {
       retryAfterMs: null
     })
     await client.recoverBatch(credential, parseEntityId('10000000-0000-4000-8000-000000000001'))
+    await client.pullIdentityResolutions(credential, 25)
+    const acknowledgment = '{"contractVersion":"1.0","acknowledgmentId":"exact"}'
+    await client.acknowledgeIdentityResolution(credential, acknowledgment)
 
     expect(calls[0]).toMatchObject({
       url: 'https://sync.example.org/api/v1/sync/batches',
@@ -48,6 +51,20 @@ describe('synchronization HTTP client', () => {
       init: { method: 'GET' }
     })
     expect(calls[1]?.init?.body).toBeUndefined()
+    expect(calls[2]).toMatchObject({
+      url: 'https://sync.example.org/api/v1/sync/identity-resolutions/pull',
+      init: {
+        method: 'POST',
+        body: '{"contractVersion":"1.0","limit":25}'
+      }
+    })
+    expect(calls[3]).toMatchObject({
+      url: 'https://sync.example.org/api/v1/sync/identity-resolutions/acknowledge',
+      init: { method: 'POST', body: acknowledgment }
+    })
+    expect(() => client.pullIdentityResolutions(credential, 101)).toThrow(
+      'Invalid identity-resolution pull limit.'
+    )
   })
 
   it('rejects oversized response bodies without returning their contents', async () => {

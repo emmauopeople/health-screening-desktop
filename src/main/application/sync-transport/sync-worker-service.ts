@@ -3,12 +3,20 @@ import type { DatabaseTransactionExecutor } from '@main/database/transaction'
 import type { EntityId } from '@main/foundation/entity-id'
 import { parseUtcTimestamp } from '@main/foundation/utc-clock'
 
-import { parseSyncBatchResponse, parseSyncProblem, type SyncBatchResponse } from './sync-contract'
+import {
+  parseIdentityResolutionAcknowledgmentResponse,
+  parseIdentityResolutionPullResponse,
+  parseSyncBatchResponse,
+  parseSyncProblem,
+  type IdentityResolutionDelivery,
+  type SyncBatchResponse
+} from './sync-contract'
 import type { SyncHttpClient, SyncHttpResult } from './sync-http-client'
 import type { SyncSnapshotPreparationService } from './sync-snapshot-preparation-types'
 import { addMilliseconds } from './sync-transport-validation'
 import type { SyncTransportFoundationService } from './sync-transport-types'
 
+const identityPullLimit = 25
 const maximumRetryMs = 15 * 60_000
 const permanentFailureRetryMs = 24 * 60 * 60_000
 
@@ -17,8 +25,9 @@ export type SyncWorkerRunResult =
       status: 'SYNCED'
       batchId: EntityId
       recordCount: number
+      identityDeliveriesApplied: number
     }>
-  | Readonly<{ status: 'IDLE' }>
+  | Readonly<{ status: 'IDLE'; identityDeliveriesApplied: number }>
   | Readonly<{ status: 'RETRY_SCHEDULED'; batchId: EntityId; errorCode: string }>
   | Readonly<{ status: 'NOT_CONFIGURED' | 'BUSY' | 'UNAVAILABLE' }>
 
@@ -74,7 +83,8 @@ async function runWorker(
   }
   if (claimed.status !== 'CLAIMED') {
     if (claimed.status === 'UNAVAILABLE') return Object.freeze({ status: 'UNAVAILABLE' as const })
-    return Object.freeze({ status: 'IDLE' as const })
+    const identityDeliveriesApplied = await synchronizeIdentityResolutions(dependencies, credential)
+    return Object.freeze({ status: 'IDLE' as const, identityDeliveriesApplied })
   }
   const activeClaim = claimed as Extract<
     ReturnType<SyncTransportFoundationService['claimNextBatch']>,
@@ -117,20 +127,34 @@ async function runWorker(
 
   dependencies.transactionExecutor.run((context) => {
     const completedAt = context.nowUtc()
+    const identifierIds = new Map<EntityId, EntityId>()
+    for (const outcome of parsed.outcomes) {
+      if (
+        outcome.resourceType === 'PATIENT' &&
+        outcome.centralPersonId !== null &&
+        outcome.chsMedicalId !== null &&
+        (outcome.medicalIdStatus === 'ASSIGNED' || outcome.medicalIdStatus === 'CONFIRMED')
+      ) {
+        identifierIds.set(outcome.localResourceId, context.newEntityId())
+      }
+    }
     dependencies.repository.completeBatch(context.connection, {
       response: parsed,
       responseJson: response.bodyText,
       completedAt,
       retryAt: parseUtcTimestamp(
         addMilliseconds(completedAt, retryDelay(activeClaim.attemptCount, random))
-      )
+      ),
+      identifierIds
     })
   })
 
+  const identityDeliveriesApplied = await synchronizeIdentityResolutions(dependencies, credential)
   return Object.freeze({
     status: 'SYNCED' as const,
     batchId: activeClaim.batchId,
-    recordCount: parsed.outcomes.length
+    recordCount: parsed.outcomes.length,
+    identityDeliveriesApplied
   })
 }
 
@@ -180,4 +204,84 @@ function retryDelay(attemptCount: number, random: () => number): number {
 
 function sanitizeErrorCode(value: string): string {
   return /^[A-Z0-9_]{1,64}$/.test(value) ? value : 'TRANSPORT_FAILURE'
+}
+
+async function synchronizeIdentityResolutions(
+  dependencies: SyncWorkerServiceDependencies,
+  credential: NonNullable<ReturnType<SyncTransportFoundationService['loadCredentialForTransport']>>
+): Promise<number> {
+  if (!(await acknowledgePending(dependencies, credential))) return 0
+  const pull = await dependencies.httpClient.pullIdentityResolutions(credential, identityPullLimit)
+  if (pull.status !== 'RESPONSE' || pull.httpStatus !== 200) return 0
+
+  let response: ReturnType<typeof parseIdentityResolutionPullResponse>
+  try {
+    response = parseIdentityResolutionPullResponse(pull.bodyText)
+  } catch {
+    return 0
+  }
+
+  let applied = 0
+  for (const delivery of response.deliveries) {
+    if (applyIdentityDelivery(dependencies, delivery)) applied += 1
+  }
+  await acknowledgePending(dependencies, credential)
+  return applied
+}
+
+function applyIdentityDelivery(
+  dependencies: SyncWorkerServiceDependencies,
+  delivery: IdentityResolutionDelivery
+): boolean {
+  return dependencies.transactionExecutor.run((context) => {
+    const acknowledgmentId = context.newEntityId()
+    const appliedAt = context.nowUtc()
+    const acknowledgmentJson = JSON.stringify({
+      contractVersion: '1.0',
+      acknowledgmentId,
+      resolutionReference: delivery.resolutionReference,
+      appliedAt
+    })
+    return dependencies.repository.applyIdentityResolution(context.connection, {
+      delivery,
+      acknowledgmentId,
+      acknowledgmentJson,
+      identifierId: context.newEntityId(),
+      appliedAt
+    })
+  })
+}
+
+async function acknowledgePending(
+  dependencies: SyncWorkerServiceDependencies,
+  credential: NonNullable<ReturnType<SyncTransportFoundationService['loadCredentialForTransport']>>
+): Promise<boolean> {
+  for (const pending of dependencies.repository.listPendingIdentityResolutionAcknowledgments()) {
+    const result = await dependencies.httpClient.acknowledgeIdentityResolution(
+      credential,
+      pending.requestJson
+    )
+    if (result.status !== 'RESPONSE' || result.httpStatus !== 200) return false
+
+    let response: ReturnType<typeof parseIdentityResolutionAcknowledgmentResponse>
+    try {
+      response = parseIdentityResolutionAcknowledgmentResponse(
+        result.bodyText,
+        pending.acknowledgmentId,
+        pending.resolutionReference,
+        pending.appliedAt
+      )
+    } catch {
+      return false
+    }
+    dependencies.transactionExecutor.run((context) => {
+      dependencies.repository.markIdentityResolutionAcknowledged(
+        context.connection,
+        pending.resolutionReference,
+        pending.acknowledgmentId,
+        response.acknowledgedAt
+      )
+    })
+  }
+  return true
 }
