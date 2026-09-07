@@ -53,7 +53,7 @@ export function createProductionSyncWorkerService({
       desktopSchemaVersion
     }),
     httpClient: createSyncHttpClient(httpClientOptions),
-    repository: createSyncWorkerRepository(),
+    repository: createSyncWorkerRepository(connection),
     transactionExecutor
   })
 }

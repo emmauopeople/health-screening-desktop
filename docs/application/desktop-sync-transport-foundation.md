@@ -71,7 +71,8 @@ Integration tests prove:
 HSW-013B1 supplies canonical snapshot materialization and atomic batch
 preparation. HSW-013B2 adds the authenticated HTTP worker, response validation,
 exact-byte recovery, and outcome application described in
-[`desktop-sync-worker.md`](./desktop-sync-worker.md). HSW-013B3 remains
-responsible for local Medical ID application and reviewer-resolution delivery.
+[`desktop-sync-worker.md`](./desktop-sync-worker.md). HSW-013B3 adds local
+Medical ID application and reviewer-resolution delivery in
+[`desktop-sync-identity-resolution-delivery.md`](./desktop-sync-identity-resolution-delivery.md).
 Food, OTC, and referral transport remain blocked until their central contracts
 are frozen.

@@ -23,7 +23,11 @@ const resourceType = z.enum([
   'VITALS',
   'LIFESTYLE'
 ])
-const medicalId = z.string().min(8).max(64)
+const medicalId = z
+  .string()
+  .regex(
+    /^CHS-[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{4}-[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{4}-[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{4}$/
+  )
 const nullableUuid = uuid.nullable()
 
 const recordError = z
@@ -61,6 +65,13 @@ const outcomeSchema = z
       context.addIssue({ code: 'custom', message: 'Identity fields are patient-only.' })
     }
     if (
+      value.resourceType === 'PATIENT' &&
+      value.medicalIdStatus === null &&
+      (value.centralPersonId !== null || value.chsMedicalId !== null)
+    ) {
+      context.addIssue({ code: 'custom', message: 'Invalid unclassified identity state.' })
+    }
+    if (
       value.medicalIdStatus === 'PENDING_REVIEW' &&
       (value.status !== 'REVIEW_REQUIRED' ||
         value.centralPersonId !== null ||
@@ -86,6 +97,42 @@ const batchResponseSchema = z
     receivedAt: utcTimestamp,
     completedAt: utcTimestamp,
     outcomes: z.array(outcomeSchema).min(1).max(100)
+  })
+  .strict()
+
+const identityDeliverySchema = z
+  .object({
+    resolutionReference: uuid,
+    localPatientReference: uuid,
+    localPatientCode: z.string().regex(/^PT-[0-9]{6}$/),
+    sourceRevision: z.number().int().min(1).safe(),
+    centralPersonId: uuid,
+    chsMedicalId: z
+      .string()
+      .regex(
+        /^CHS-[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{4}-[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{4}-[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{4}$/
+      ),
+    resolvedAt: utcTimestamp
+  })
+  .strict()
+
+const identityPullResponseSchema = z
+  .object({
+    contractVersion: z.literal('1.0'),
+    deliveries: z.array(identityDeliverySchema).max(100),
+    hasMore: z.boolean(),
+    serverTime: utcTimestamp
+  })
+  .strict()
+
+const acknowledgmentResponseSchema = z
+  .object({
+    contractVersion: z.literal('1.0'),
+    acknowledgmentId: uuid,
+    resolutionReference: uuid,
+    status: z.literal('ACKNOWLEDGED'),
+    acknowledgedAt: utcTimestamp,
+    replayed: z.boolean()
   })
   .strict()
 
@@ -119,6 +166,32 @@ export type SyncBatchResponse = Readonly<{
   receivedAt: UtcTimestamp
   completedAt: UtcTimestamp
   outcomes: readonly SyncRecordOutcome[]
+}>
+
+export type IdentityResolutionDelivery = Readonly<{
+  resolutionReference: ContractUuid
+  localPatientReference: EntityId
+  localPatientCode: string
+  sourceRevision: number
+  centralPersonId: ContractUuid
+  chsMedicalId: string
+  resolvedAt: UtcTimestamp
+}>
+
+export type IdentityResolutionPullResponse = Readonly<{
+  contractVersion: '1.0'
+  deliveries: readonly IdentityResolutionDelivery[]
+  hasMore: boolean
+  serverTime: UtcTimestamp
+}>
+
+export type IdentityResolutionAcknowledgmentResponse = Readonly<{
+  contractVersion: '1.0'
+  acknowledgmentId: EntityId
+  resolutionReference: ContractUuid
+  status: 'ACKNOWLEDGED'
+  acknowledgedAt: UtcTimestamp
+  replayed: boolean
 }>
 
 export type SyncProblem = Readonly<{ status: number; code: string }>
@@ -158,6 +231,41 @@ export function parseSyncProblem(bodyText: string): SyncProblem | null {
   } catch {
     return null
   }
+}
+
+export function parseIdentityResolutionPullResponse(
+  bodyText: string
+): IdentityResolutionPullResponse {
+  const parsed = identityPullResponseSchema.parse(parseJson(bodyText))
+  if (
+    new Set(parsed.deliveries.map((delivery) => delivery.resolutionReference)).size !==
+      parsed.deliveries.length ||
+    new Set(parsed.deliveries.map((delivery) => delivery.localPatientReference)).size !==
+      parsed.deliveries.length ||
+    parsed.deliveries.some(
+      (delivery) => Date.parse(delivery.resolvedAt) > Date.parse(parsed.serverTime)
+    )
+  ) {
+    throw new Error('IDENTITY_DELIVERY_DUPLICATE')
+  }
+  return parsed as unknown as IdentityResolutionPullResponse
+}
+
+export function parseIdentityResolutionAcknowledgmentResponse(
+  bodyText: string,
+  acknowledgmentId: EntityId,
+  resolutionReference: ContractUuid,
+  appliedAt: UtcTimestamp
+): IdentityResolutionAcknowledgmentResponse {
+  const parsed = acknowledgmentResponseSchema.parse(parseJson(bodyText))
+  if (
+    parsed.acknowledgmentId !== acknowledgmentId ||
+    parsed.resolutionReference !== resolutionReference ||
+    Date.parse(parsed.acknowledgedAt) < Date.parse(appliedAt)
+  ) {
+    throw new Error('IDENTITY_ACKNOWLEDGMENT_MISMATCH')
+  }
+  return parsed as IdentityResolutionAcknowledgmentResponse
 }
 
 export function parseContractUuid(value: unknown): ContractUuid {

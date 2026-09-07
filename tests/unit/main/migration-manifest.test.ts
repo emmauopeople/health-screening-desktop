@@ -21,7 +21,7 @@ const validMigration: DatabaseMigration = {
 }
 
 describe('migration manifest', () => {
-  it('defines the exact immutable production catalog through HSW-013B', () => {
+  it('defines the exact immutable production catalog through HSW-013B3', () => {
     const resolved = validateMigrationManifest(databaseMigrations, {
       expectedHighestVersion: targetSchemaVersion
     })
@@ -54,9 +54,10 @@ describe('migration manifest', () => {
       { version: 17, name: 'bp-screening-protocol', checksumLength: 64 },
       { version: 18, name: 'referral-treatment-actions', checksumLength: 64 },
       { version: 19, name: 'sync-transport-foundation', checksumLength: 64 },
-      { version: 20, name: 'sync-worker-response', checksumLength: 64 }
+      { version: 20, name: 'sync-worker-response', checksumLength: 64 },
+      { version: 21, name: 'sync-identity-resolution-delivery', checksumLength: 64 }
     ])
-    expect(targetSchemaVersion).toBe(20)
+    expect(targetSchemaVersion).toBe(21)
     expect(resolved[0]?.checksum).toBe(
       '36bb5114185c0a691c8ba8dc1fdfc749a6f5a7069cbcb5efb88a6b55dd6e5fed'
     )

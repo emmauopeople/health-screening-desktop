@@ -17,6 +17,14 @@ export type SyncHttpResult =
 export interface SyncHttpClient {
   submitBatch(credential: SyncTransportCredential, requestJson: string): Promise<SyncHttpResult>
   recoverBatch(credential: SyncTransportCredential, batchId: EntityId): Promise<SyncHttpResult>
+  pullIdentityResolutions(
+    credential: SyncTransportCredential,
+    limit: number
+  ): Promise<SyncHttpResult>
+  acknowledgeIdentityResolution(
+    credential: SyncTransportCredential,
+    requestJson: string
+  ): Promise<SyncHttpResult>
 }
 
 export interface SyncHttpClientOptions {
@@ -41,8 +49,33 @@ export function createSyncHttpClient(options: SyncHttpClientOptions = {}): SyncH
         credential,
         `/api/v1/sync/batches/${encodeURIComponent(batchId)}`,
         'GET'
+      ),
+    pullIdentityResolutions: (credential: SyncTransportCredential, limit: number) =>
+      request(
+        fetcher,
+        timeoutMs,
+        credential,
+        '/api/v1/sync/identity-resolutions/pull',
+        'POST',
+        identityPullRequest(limit)
+      ),
+    acknowledgeIdentityResolution: (credential: SyncTransportCredential, requestJson: string) =>
+      request(
+        fetcher,
+        timeoutMs,
+        credential,
+        '/api/v1/sync/identity-resolutions/acknowledge',
+        'POST',
+        requestJson
       )
   })
+}
+
+function identityPullRequest(limit: number): string {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error('Invalid identity-resolution pull limit.')
+  }
+  return JSON.stringify({ contractVersion: '1.0', limit })
 }
 
 async function request(
