@@ -8,6 +8,8 @@ import type { FirstRunIpcHandlerDependencies } from '@main/ipc/handlers/first-ru
 import { createFirstRunIpcHandlers } from '@main/ipc/handlers/first-run-handlers'
 import type { InstallationSettingsIpcHandlerDependencies } from '@main/ipc/handlers/installation-settings-handlers'
 import { createInstallationSettingsIpcHandlers } from '@main/ipc/handlers/installation-settings-handlers'
+import type { SyncAdministrationIpcHandlerDependencies } from '@main/ipc/handlers/sync-administration-handlers'
+import { createSyncAdministrationIpcHandlers } from '@main/ipc/handlers/sync-administration-handlers'
 import type { PatientIpcHandlerDependencies } from '@main/ipc/handlers/patient-handlers'
 import { createPatientIpcHandlers } from '@main/ipc/handlers/patient-handlers'
 import type { ReferralIpcHandlerDependencies } from '@main/ipc/handlers/referral-handlers'
@@ -25,6 +27,7 @@ import { createScreeningSessionIpcHandlers } from '@main/ipc/handlers/screening-
 import {
   ipcChannels,
   type InstallationSettingsIpcChannel,
+  type SyncAdministrationIpcChannel,
   type ReferralIpcChannel,
   type ScreeningFoodIpcChannel,
   type ScreeningOtcIpcChannel,
@@ -83,6 +86,10 @@ const installationSettingsIpcChannels: readonly InstallationSettingsIpcChannel[]
   ipcChannels.installationSettings.listEligibleLocations,
   ipcChannels.installationSettings.assignInitialLocation,
   ipcChannels.installationSettings.reconfigureLocation
+])
+const syncAdministrationIpcChannels: readonly SyncAdministrationIpcChannel[] = Object.freeze([
+  ipcChannels.syncAdministration.getState,
+  ipcChannels.syncAdministration.configure
 ])
 const activeScreeningSessionRegistrations = new WeakMap<
   ApplicationIpcMain,
@@ -160,6 +167,7 @@ export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependen
   readonly screeningFood: ScreeningFoodIpcHandlerDependencies
   readonly screeningOtc: ScreeningOtcIpcHandlerDependencies
   readonly installationSettings: InstallationSettingsIpcHandlerDependencies
+  readonly syncAdministration: SyncAdministrationIpcHandlerDependencies
 }
 
 export function registerApplicationIpcHandlers(
@@ -183,6 +191,9 @@ export function registerApplicationIpcHandlers(
     const patientHandlers = createPatientIpcHandlers(dependencies.patient)
     const installationSettingsHandlers = createInstallationSettingsIpcHandlers(
       dependencies.installationSettings
+    )
+    const syncAdministrationHandlers = createSyncAdministrationIpcHandlers(
+      dependencies.syncAdministration
     )
 
     const registrations: ReadonlyArray<readonly [string, ApplicationIpcListener]> = [
@@ -225,7 +236,9 @@ export function registerApplicationIpcHandlers(
       [
         ipcChannels.installationSettings.reconfigureLocation,
         installationSettingsHandlers.reconfigureLocation
-      ]
+      ],
+      [ipcChannels.syncAdministration.getState, syncAdministrationHandlers.getState],
+      [ipcChannels.syncAdministration.configure, syncAdministrationHandlers.configure]
     ]
 
     for (const [channel, listener] of registrations) {
@@ -571,6 +584,9 @@ function disposeApplicationOwnedIpcHandlers(applicationIpcMain: ApplicationIpcMa
   applicationIpcMain.removeHandler(ipcChannels.patient.findDuplicates)
   applicationIpcMain.removeHandler(ipcChannels.patient.markNotDuplicate)
   for (const channel of installationSettingsIpcChannels) {
+    applicationIpcMain.removeHandler(channel)
+  }
+  for (const channel of syncAdministrationIpcChannels) {
     applicationIpcMain.removeHandler(channel)
   }
   disposeScreeningSessionIpcHandlers(applicationIpcMain)

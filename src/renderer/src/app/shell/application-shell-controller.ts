@@ -167,7 +167,10 @@ function createRouteForCommand(
     })
   }
 
-  if (definition.id === 'ADMINISTRATION_LOCATIONS') {
+  if (
+    definition.id === 'ADMINISTRATION_LOCATIONS' ||
+    definition.id === 'ADMINISTRATION_SYNC_CENTER'
+  ) {
     return Object.freeze({
       status: 'ADMINISTRATION',
       commandId: definition.id

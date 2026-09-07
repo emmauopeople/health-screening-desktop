@@ -83,6 +83,11 @@ import type { ScreeningLifestyleApi } from './screening-lifestyle-contracts'
 import type { ScreeningOtcApi } from './screening-otc-contracts'
 import type { ReferralApi } from './referral-contracts'
 import type {
+  SyncAdministrationConfigureRequest,
+  SyncAdministrationConfigureResult,
+  SyncAdministrationGetStateResult
+} from './sync-administration-contracts'
+import type {
   ScreeningSessionCloseRequest,
   ScreeningSessionCloseResult,
   ScreeningSessionCreateRequest,
@@ -245,5 +250,11 @@ export interface HealthScreeningApi {
     reconfigureLocation(
       request: InstallationSettingsReconfigureLocationRequest
     ): Promise<InstallationSettingsReconfigureLocationResult>
+  }
+  syncAdministration: {
+    getState(): Promise<SyncAdministrationGetStateResult>
+    configure(
+      request: SyncAdministrationConfigureRequest
+    ): Promise<SyncAdministrationConfigureResult>
   }
 }

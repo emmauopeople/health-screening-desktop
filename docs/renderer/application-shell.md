@@ -44,6 +44,11 @@ Screening Location workspace. The renderer catalog controls visibility only;
 P0-backed main-process handlers enforce `LOCAL_ADMIN` authorization for reading,
 assigning, and reconfiguring the installation location.
 
+`ADMINISTRATION_SYNC_CENTER` routes authorized local administrators to the
+HSW-013C synchronization configuration and minimum-necessary status workspace.
+The renderer cannot read credentials, payloads, identifiers, or raw transport
+errors and cannot start synchronization manually.
+
 ## Dashboard
 
 The dashboard is an honest empty operational surface. It renders deployment and

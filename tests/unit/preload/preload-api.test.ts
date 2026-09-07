@@ -132,7 +132,8 @@ describe('preload API factory', () => {
       'referrals',
       'screeningSessions',
       'screeningEncounters',
-      'installationSettings'
+      'installationSettings',
+      'syncAdministration'
     ])
     expect(Object.keys(api.app)).toEqual(['getInfo', 'getHealth'])
     expect(Object.keys(api.firstRun)).toEqual(['getState', 'initialize'])
@@ -166,6 +167,7 @@ describe('preload API factory', () => {
     expect(Object.isFrozen(api.screeningSessions)).toBe(true)
     expect(Object.isFrozen(api.screeningEncounters)).toBe(true)
     expect(Object.isFrozen(api.installationSettings)).toBe(true)
+    expect(Object.isFrozen(api.syncAdministration)).toBe(true)
     expect('invoke' in api).toBe(false)
     expect('send' in api).toBe(false)
     expect('on' in api).toBe(false)
@@ -178,6 +180,7 @@ describe('preload API factory', () => {
     expect('channel' in api.screeningSessions).toBe(false)
     expect('channel' in api.screeningEncounters).toBe(false)
     expect('channel' in api.installationSettings).toBe(false)
+    expect('channel' in api.syncAdministration).toBe(false)
   })
 
   it('exposes fixed installation-settings methods without arbitrary IPC access', () => {

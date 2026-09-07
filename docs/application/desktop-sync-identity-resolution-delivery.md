@@ -51,6 +51,7 @@ delivery evidence.
 
 ## Follow-up boundary
 
-HSW-013C may add administrator configuration and minimum-necessary status UI.
+HSW-013C adds administrator configuration and minimum-necessary status UI in
+[`desktop-sync-administration.md`](./desktop-sync-administration.md).
 Food, OTC, referral, addendum, and review-flag transport remain excluded until
 their central contracts are approved.

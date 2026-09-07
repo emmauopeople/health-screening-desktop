@@ -104,7 +104,8 @@ describe('application navigation catalog', () => {
       'SCREENING_SESSION_SUMMARY',
       'REFERRALS_REFERRAL_WORKLIST',
       'REPORTS_SESSION_REPORTS',
-      'ADMINISTRATION_LOCATIONS'
+      'ADMINISTRATION_LOCATIONS',
+      'ADMINISTRATION_SYNC_CENTER'
     ])
   })
 
