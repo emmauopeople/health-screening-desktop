@@ -254,6 +254,8 @@ describe('PatientReportsWorkspace', () => {
     expect(browserReport.textContent).toContain('Provider reviewed blood pressure management.')
     expect(browserReport.querySelector('[data-report-chart="blood-pressure"]')).toBeNull()
     expect(browserReport.querySelector('[data-report-chart="weight"]')).toBeNull()
+    expect(browserReport.querySelector('[data-report-table="lifestyle-overview"]')).toBeNull()
+    expect(browserReport.querySelector('[data-report-table="referral-overview"]')).toBeNull()
     expect(browserReport.querySelector('.clinical-report-masthead')).toBeNull()
     expect(browserReport.querySelector('.patient-report-page-footer')).toBeNull()
     expect(browserReport.textContent).not.toContain('Screening guidance is not a diagnosis')
@@ -312,11 +314,49 @@ describe('PatientReportsWorkspace', () => {
     expect(reportDocument(mounted.container).textContent).toContain('Lifestyle report')
     expect(reportDocument(mounted.container).textContent).not.toContain('Blood pressure screening')
     expect(reportDocument(mounted.container).querySelector('[data-report-chart]')).toBeNull()
+    const lifestyleOverview = reportDocument(mounted.container).querySelector(
+      '[data-report-table="lifestyle-overview"]'
+    )
+    if (!(lifestyleOverview instanceof HTMLElement)) {
+      throw new Error('Missing lifestyle overview')
+    }
+    expect(
+      Array.from(lifestyleOverview.querySelectorAll('th')).map((heading) => heading.textContent)
+    ).toEqual([
+      'Screening date',
+      'Alcohol use',
+      'Tobacco use',
+      'Physical activity',
+      'Work activity',
+      'Other activity',
+      'Open'
+    ])
+    expect(lifestyleOverview.querySelectorAll('tbody tr')).toHaveLength(2)
+    expect(lifestyleOverview.querySelector('tbody tr')?.textContent).toContain('NoNoYesYesNoOpen')
+    await clickButton(lifestyleOverview, 'Open')
+    expect(harness.onOpenEncounter).toHaveBeenCalledWith(encounterId)
 
     await clickButton(mounted.container, 'Referrals')
     expect(reportHeadings(mounted.container)).toEqual(['Referrals'])
     expect(reportDocument(mounted.container).textContent).toContain('Patient reached by phone')
     expect(reportDocument(mounted.container).textContent).toContain('Amlodipine')
+    expect(reportDocument(mounted.container).textContent).toContain('Complete referral details')
+
+    const referralOverview = reportDocument(mounted.container).querySelector(
+      '[data-report-table="referral-overview"]'
+    )
+    if (!(referralOverview instanceof HTMLElement)) throw new Error('Missing referral overview')
+    expect(
+      Array.from(referralOverview.querySelectorAll('th')).map((heading) => heading.textContent)
+    ).toEqual(['Date', 'Reason', 'Status', 'Treatment', 'Medication', 'Open'])
+    expect(referralOverview.textContent).toContain(
+      'Blood pressure screening referral - BP 130/91 mmHg'
+    )
+    expect(referralOverview.textContent).toContain('Contacted')
+    expect(referralOverview.textContent).toContain('Treatment modified, New medication')
+    expect(referralOverview.textContent).toContain('New medication: Amlodipine / 5 mg / Daily')
+    await clickButton(referralOverview, 'Open')
+    expect(harness.onOpenReferral).toHaveBeenCalledWith(referralId)
 
     const referralRecord = mounted.container.querySelector('.patient-report-referral-record')
     if (!(referralRecord instanceof HTMLElement)) throw new Error('Missing referral record')
@@ -324,6 +364,13 @@ describe('PatientReportsWorkspace', () => {
     await clickButton(referralRecord, 'Open encounter')
     expect(harness.onOpenReferral).toHaveBeenCalledWith(referralId)
     expect(harness.onOpenEncounter).toHaveBeenCalledWith(encounterId)
+
+    await clickButton(mounted.container, 'Print preview')
+    const referralPrintPreview = mounted.container.querySelector('[role="dialog"]')
+    expect(
+      referralPrintPreview?.querySelector('[data-report-table="referral-overview"]')
+    ).not.toBeNull()
+    expect(referralPrintPreview?.querySelector('.patient-report-referral-record')).not.toBeNull()
 
     await mounted.unmount()
   })

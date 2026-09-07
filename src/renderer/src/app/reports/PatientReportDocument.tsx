@@ -61,6 +61,7 @@ export function PatientReportDocument({
           referrals={report.referrals}
           timeZone={timeZone}
           interactive={!preview}
+          showOverview
           onOpenEncounter={onOpenEncounter}
           onOpenReferral={onOpenReferral}
         />
@@ -198,6 +199,7 @@ function GeneralReport({
         referrals={report.referrals}
         timeZone={timeZone}
         interactive={interactive}
+        showOverview={false}
         onOpenEncounter={onOpenEncounter}
         onOpenReferral={onOpenReferral}
       />
@@ -633,30 +635,75 @@ function LifestyleReport({
   const rows = report.encounterDetails.flatMap((detail) =>
     detail.lifestyle.map((item) => ({ detail, item }))
   )
+  const screeningRows = report.encounterDetails.filter((detail) => detail.lifestyle.length > 0)
   return (
     <ReportSection
       title="Lifestyle"
       empty={rows.length === 0}
       emptyMessage="No finalized lifestyle responses in this range."
     >
-      <ReportTable
-        headings={['Screening date', 'Lifestyle area', 'Reported response', 'Encounter']}
-      >
-        {rows.map(({ detail, item }) => (
-          <tr key={`${detail.encounter.id}-${item.questionCode}`}>
-            <td>{formatTimestamp(detail.encounter.completedAt, timeZone, false)}</td>
-            <td>{formatLifestyleQuestion(item.questionCode)}</td>
-            <td>{formatCode(item.responseCode)}</td>
-            <td>
-              {interactive ? (
-                <RecordLink onClick={() => onOpenEncounter(detail.encounter.id)}>Open</RecordLink>
-              ) : (
-                detail.encounter.patientCode
-              )}
-            </td>
-          </tr>
-        ))}
-      </ReportTable>
+      {report.kind === 'LIFESTYLE' ? (
+        <div
+          className="patient-report-overview-table patient-report-lifestyle-overview"
+          data-report-table="lifestyle-overview"
+        >
+          <ReportTable
+            headings={[
+              'Screening date',
+              'Alcohol use',
+              'Tobacco use',
+              'Physical activity',
+              'Work activity',
+              'Other activity',
+              'Open'
+            ]}
+          >
+            {screeningRows.map((detail) => {
+              const responses = new Map(
+                detail.lifestyle.map((item) => [item.questionCode, formatCode(item.responseCode)])
+              )
+              return (
+                <tr key={detail.encounter.id}>
+                  <td>{formatTimestamp(detail.encounter.completedAt, timeZone, false)}</td>
+                  <td>{responses.get('WEEKLY_ALCOHOL') ?? 'Not recorded'}</td>
+                  <td>{responses.get('WEEKLY_TOBACCO') ?? 'Not recorded'}</td>
+                  <td>{responses.get('WEEKLY_PHYSICAL_ACTIVITY') ?? 'Not recorded'}</td>
+                  <td>{responses.get('WEEKLY_WORK') ?? 'Not recorded'}</td>
+                  <td>{responses.get('WEEKLY_OTHER_ACTIVITY') ?? 'Not recorded'}</td>
+                  <td>
+                    {interactive ? (
+                      <RecordLink onClick={() => onOpenEncounter(detail.encounter.id)}>
+                        Open
+                      </RecordLink>
+                    ) : (
+                      detail.encounter.patientCode
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </ReportTable>
+        </div>
+      ) : (
+        <ReportTable
+          headings={['Screening date', 'Lifestyle area', 'Reported response', 'Encounter']}
+        >
+          {rows.map(({ detail, item }) => (
+            <tr key={`${detail.encounter.id}-${item.questionCode}`}>
+              <td>{formatTimestamp(detail.encounter.completedAt, timeZone, false)}</td>
+              <td>{formatLifestyleQuestion(item.questionCode)}</td>
+              <td>{formatCode(item.responseCode)}</td>
+              <td>
+                {interactive ? (
+                  <RecordLink onClick={() => onOpenEncounter(detail.encounter.id)}>Open</RecordLink>
+                ) : (
+                  detail.encounter.patientCode
+                )}
+              </td>
+            </tr>
+          ))}
+        </ReportTable>
+      )}
     </ReportSection>
   )
 }
@@ -757,12 +804,14 @@ function ReferralsReport({
   referrals,
   timeZone,
   interactive,
+  showOverview,
   onOpenEncounter,
   onOpenReferral
 }: {
   readonly referrals: readonly PublicReferralDetail[]
   readonly timeZone: string
   readonly interactive: boolean
+  readonly showOverview: boolean
   onOpenEncounter(encounterId: string): void
   onOpenReferral(referralId: string): void
 }): React.JSX.Element {
@@ -773,19 +822,70 @@ function ReferralsReport({
       empty={referrals.length === 0}
       emptyMessage="No referrals are active or had activity in this range."
     >
-      <div className="patient-report-referral-list">
-        {referrals.map((referral) => (
-          <ReferralRecord
-            key={referral.id}
-            referral={referral}
+      <>
+        {showOverview ? (
+          <ReferralOverview
+            referrals={referrals}
             timeZone={timeZone}
             interactive={interactive}
-            onOpenEncounter={onOpenEncounter}
             onOpenReferral={onOpenReferral}
           />
-        ))}
-      </div>
+        ) : null}
+        <div className="patient-report-referral-details">
+          {showOverview ? <h4>Complete referral details</h4> : null}
+          <div className="patient-report-referral-list">
+            {referrals.map((referral) => (
+              <ReferralRecord
+                key={referral.id}
+                referral={referral}
+                timeZone={timeZone}
+                interactive={interactive}
+                onOpenEncounter={onOpenEncounter}
+                onOpenReferral={onOpenReferral}
+              />
+            ))}
+          </div>
+        </div>
+      </>
     </ReportSection>
+  )
+}
+
+function ReferralOverview({
+  referrals,
+  timeZone,
+  interactive,
+  onOpenReferral
+}: {
+  readonly referrals: readonly PublicReferralDetail[]
+  readonly timeZone: string
+  readonly interactive: boolean
+  onOpenReferral(referralId: string): void
+}): React.JSX.Element {
+  return (
+    <div
+      className="patient-report-overview-table patient-report-referral-overview"
+      data-report-table="referral-overview"
+    >
+      <ReportTable headings={['Date', 'Reason', 'Status', 'Treatment', 'Medication', 'Open']}>
+        {referrals.map((referral) => (
+          <tr key={referral.id}>
+            <td>{formatTimestamp(referral.createdAt, timeZone, false)}</td>
+            <td>{formatReferralReason(referral)}</td>
+            <td>{formatCode(referral.status)}</td>
+            <td>{referralTreatmentSummary(referral)}</td>
+            <td>{referralMedicationSummary(referral)}</td>
+            <td>
+              {interactive ? (
+                <RecordLink onClick={() => onOpenReferral(referral.id)}>Open</RecordLink>
+              ) : (
+                referral.patientCode
+              )}
+            </td>
+          </tr>
+        ))}
+      </ReportTable>
+    </div>
   )
 }
 
@@ -1006,6 +1106,31 @@ function currentReportedMedications(referrals: readonly PublicReferralDetail[]):
     names.add(name)
     return true
   })
+}
+
+function referralTreatmentSummary(referral: PublicReferralDetail): string {
+  const actions = Array.from(
+    new Set(referral.followups.flatMap((followup) => followup.treatmentActions.map(formatCode)))
+  )
+  return actions.length === 0 ? 'None recorded' : actions.join(', ')
+}
+
+function referralMedicationSummary(referral: PublicReferralDetail): string {
+  const medications = Array.from(
+    new Set(
+      referral.followups.flatMap((followup) =>
+        followup.medicationChanges.map((medication) => {
+          const details = [
+            medication.medicationName,
+            medication.dosage,
+            medication.frequency
+          ].filter((value): value is string => value !== null)
+          return `${formatCode(medication.changeType)}: ${details.join(' / ')}`
+        })
+      )
+    )
+  )
+  return medications.length === 0 ? 'None recorded' : medications.join('; ')
 }
 
 function formatReferralReason(referral: PublicReferralDetail): string {

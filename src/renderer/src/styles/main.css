@@ -6413,6 +6413,62 @@ h1 {
   color: var(--color-muted);
 }
 
+.patient-report-overview-table .patient-report-table {
+  table-layout: fixed;
+}
+
+.patient-report-overview-table .patient-report-table td {
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.patient-report-lifestyle-overview .patient-report-table {
+  font-size: 0.74rem;
+}
+
+.patient-report-lifestyle-overview .patient-report-table th:first-child {
+  width: 15%;
+}
+
+.patient-report-lifestyle-overview .patient-report-table th:last-child {
+  width: 9%;
+}
+
+.patient-report-referral-overview .patient-report-table th:nth-child(1) {
+  width: 12%;
+}
+
+.patient-report-referral-overview .patient-report-table th:nth-child(2) {
+  width: 24%;
+}
+
+.patient-report-referral-overview .patient-report-table th:nth-child(3) {
+  width: 11%;
+}
+
+.patient-report-referral-overview .patient-report-table th:nth-child(4) {
+  width: 19%;
+}
+
+.patient-report-referral-overview .patient-report-table th:nth-child(5) {
+  width: 25%;
+}
+
+.patient-report-referral-overview .patient-report-table th:nth-child(6) {
+  width: 9%;
+}
+
+.patient-report-referral-overview + .patient-report-referral-details {
+  border-top: 1px solid var(--color-border);
+}
+
+.patient-report-referral-details > h4 {
+  margin: 0;
+  padding: 0.75rem 0.75rem 0;
+  color: var(--shell-primary);
+  font-size: 0.95rem;
+}
+
 .patient-report-referral-list {
   display: grid;
   gap: 0.75rem;
