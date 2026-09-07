@@ -62,6 +62,7 @@ export function PatientReportDocument({
           timeZone={timeZone}
           interactive={!preview}
           showOverview
+          showDetails
           onOpenEncounter={onOpenEncounter}
           onOpenReferral={onOpenReferral}
         />
@@ -199,7 +200,8 @@ function GeneralReport({
         referrals={report.referrals}
         timeZone={timeZone}
         interactive={interactive}
-        showOverview={false}
+        showOverview
+        showDetails={false}
         onOpenEncounter={onOpenEncounter}
         onOpenReferral={onOpenReferral}
       />
@@ -632,78 +634,54 @@ function LifestyleReport({
   readonly interactive: boolean
   onOpenEncounter(encounterId: string): void
 }): React.JSX.Element {
-  const rows = report.encounterDetails.flatMap((detail) =>
-    detail.lifestyle.map((item) => ({ detail, item }))
-  )
   const screeningRows = report.encounterDetails.filter((detail) => detail.lifestyle.length > 0)
   return (
     <ReportSection
       title="Lifestyle"
-      empty={rows.length === 0}
+      empty={screeningRows.length === 0}
       emptyMessage="No finalized lifestyle responses in this range."
     >
-      {report.kind === 'LIFESTYLE' ? (
-        <div
-          className="patient-report-overview-table patient-report-lifestyle-overview"
-          data-report-table="lifestyle-overview"
-        >
-          <ReportTable
-            headings={[
-              'Screening date',
-              'Alcohol use',
-              'Tobacco use',
-              'Physical activity',
-              'Work activity',
-              'Other activity',
-              'Open'
-            ]}
-          >
-            {screeningRows.map((detail) => {
-              const responses = new Map(
-                detail.lifestyle.map((item) => [item.questionCode, formatCode(item.responseCode)])
-              )
-              return (
-                <tr key={detail.encounter.id}>
-                  <td>{formatTimestamp(detail.encounter.completedAt, timeZone, false)}</td>
-                  <td>{responses.get('WEEKLY_ALCOHOL') ?? 'Not recorded'}</td>
-                  <td>{responses.get('WEEKLY_TOBACCO') ?? 'Not recorded'}</td>
-                  <td>{responses.get('WEEKLY_PHYSICAL_ACTIVITY') ?? 'Not recorded'}</td>
-                  <td>{responses.get('WEEKLY_WORK') ?? 'Not recorded'}</td>
-                  <td>{responses.get('WEEKLY_OTHER_ACTIVITY') ?? 'Not recorded'}</td>
-                  <td>
-                    {interactive ? (
-                      <RecordLink onClick={() => onOpenEncounter(detail.encounter.id)}>
-                        Open
-                      </RecordLink>
-                    ) : (
-                      detail.encounter.patientCode
-                    )}
-                  </td>
-                </tr>
-              )
-            })}
-          </ReportTable>
-        </div>
-      ) : (
+      <div
+        className="patient-report-overview-table patient-report-lifestyle-overview"
+        data-report-table="lifestyle-overview"
+      >
         <ReportTable
-          headings={['Screening date', 'Lifestyle area', 'Reported response', 'Encounter']}
+          headings={[
+            'Screening date',
+            'Alcohol use',
+            'Tobacco use',
+            'Physical activity',
+            'Work activity',
+            'Other activity',
+            'Open'
+          ]}
         >
-          {rows.map(({ detail, item }) => (
-            <tr key={`${detail.encounter.id}-${item.questionCode}`}>
-              <td>{formatTimestamp(detail.encounter.completedAt, timeZone, false)}</td>
-              <td>{formatLifestyleQuestion(item.questionCode)}</td>
-              <td>{formatCode(item.responseCode)}</td>
-              <td>
-                {interactive ? (
-                  <RecordLink onClick={() => onOpenEncounter(detail.encounter.id)}>Open</RecordLink>
-                ) : (
-                  detail.encounter.patientCode
-                )}
-              </td>
-            </tr>
-          ))}
+          {screeningRows.map((detail) => {
+            const responses = new Map(
+              detail.lifestyle.map((item) => [item.questionCode, formatCode(item.responseCode)])
+            )
+            return (
+              <tr key={detail.encounter.id}>
+                <td>{formatTimestamp(detail.encounter.completedAt, timeZone, false)}</td>
+                <td>{responses.get('WEEKLY_ALCOHOL') ?? 'Not recorded'}</td>
+                <td>{responses.get('WEEKLY_TOBACCO') ?? 'Not recorded'}</td>
+                <td>{responses.get('WEEKLY_PHYSICAL_ACTIVITY') ?? 'Not recorded'}</td>
+                <td>{responses.get('WEEKLY_WORK') ?? 'Not recorded'}</td>
+                <td>{responses.get('WEEKLY_OTHER_ACTIVITY') ?? 'Not recorded'}</td>
+                <td>
+                  {interactive ? (
+                    <RecordLink onClick={() => onOpenEncounter(detail.encounter.id)}>
+                      Open
+                    </RecordLink>
+                  ) : (
+                    detail.encounter.patientCode
+                  )}
+                </td>
+              </tr>
+            )
+          })}
         </ReportTable>
-      )}
+      </div>
     </ReportSection>
   )
 }
@@ -805,6 +783,7 @@ function ReferralsReport({
   timeZone,
   interactive,
   showOverview,
+  showDetails,
   onOpenEncounter,
   onOpenReferral
 }: {
@@ -812,13 +791,18 @@ function ReferralsReport({
   readonly timeZone: string
   readonly interactive: boolean
   readonly showOverview: boolean
+  readonly showDetails: boolean
   onOpenEncounter(encounterId: string): void
   onOpenReferral(referralId: string): void
 }): React.JSX.Element {
   return (
     <ReportSection
       title="Referrals"
-      subtitle="Includes every recorded status change, follow-up, action, and medication entry"
+      subtitle={
+        showDetails
+          ? 'Includes every recorded status change, follow-up, action, and medication entry'
+          : 'Referral overview for the selected date range'
+      }
       empty={referrals.length === 0}
       emptyMessage="No referrals are active or had activity in this range."
     >
@@ -831,21 +815,23 @@ function ReferralsReport({
             onOpenReferral={onOpenReferral}
           />
         ) : null}
-        <div className="patient-report-referral-details">
-          {showOverview ? <h4>Complete referral details</h4> : null}
-          <div className="patient-report-referral-list">
-            {referrals.map((referral) => (
-              <ReferralRecord
-                key={referral.id}
-                referral={referral}
-                timeZone={timeZone}
-                interactive={interactive}
-                onOpenEncounter={onOpenEncounter}
-                onOpenReferral={onOpenReferral}
-              />
-            ))}
+        {showDetails ? (
+          <div className="patient-report-referral-details">
+            <h4>Complete referral details</h4>
+            <div className="patient-report-referral-list">
+              {referrals.map((referral) => (
+                <ReferralRecord
+                  key={referral.id}
+                  referral={referral}
+                  timeZone={timeZone}
+                  interactive={interactive}
+                  onOpenEncounter={onOpenEncounter}
+                  onOpenReferral={onOpenReferral}
+                />
+              ))}
+            </div>
           </div>
-        </div>
+        ) : null}
       </>
     </ReportSection>
   )
@@ -1149,17 +1135,6 @@ function reportKindLabel(kind: PatientReportKind): string {
       : kind === 'LIFESTYLE'
         ? 'Lifestyle report'
         : 'Referrals report'
-}
-
-function formatLifestyleQuestion(value: string): string {
-  const labels: Record<string, string> = {
-    WEEKLY_ALCOHOL: 'Alcohol use',
-    WEEKLY_TOBACCO: 'Tobacco use',
-    WEEKLY_PHYSICAL_ACTIVITY: 'Physical activity',
-    WEEKLY_WORK: 'Work / job activity',
-    WEEKLY_OTHER_ACTIVITY: 'Other activity'
-  }
-  return labels[value] ?? formatCode(value)
 }
 
 function formatAction(value: PublicPatientHistoryEncounter['nextAction']): string {
