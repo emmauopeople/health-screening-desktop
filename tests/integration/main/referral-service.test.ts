@@ -50,6 +50,30 @@ describe('referral service', () => {
       expect(
         service.search({
           query: '',
+          patientId: ids.patient,
+          statuses: [],
+          urgency: null,
+          dueFrom: null,
+          dueTo: null,
+          page: 1,
+          pageSize: 25
+        })
+      ).toMatchObject({ status: 'LOADED', total: 1 })
+      expect(
+        service.search({
+          query: '',
+          patientId: '62000000-0000-4000-8000-000000000099',
+          statuses: [],
+          urgency: null,
+          dueFrom: null,
+          dueTo: null,
+          page: 1,
+          pageSize: 25
+        })
+      ).toMatchObject({ status: 'LOADED', total: 0 })
+      expect(
+        service.search({
+          query: '',
           statuses: [],
           urgency: null,
           dueFrom: null,

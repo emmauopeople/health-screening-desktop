@@ -5,6 +5,11 @@ import type {
   PublicReferralDetail
 } from '@shared/ipc'
 import type { PatientReportData, PatientReportKind } from './patient-report-model'
+import {
+  formatReferralReason,
+  referralMedicationSummary,
+  referralTreatmentSummary
+} from './referral-report-format'
 
 type PublicReferralFollowup = PublicReferralDetail['followups'][number]
 
@@ -875,7 +880,7 @@ function ReferralOverview({
   )
 }
 
-function ReferralRecord({
+export function ReferralRecord({
   referral,
   timeZone,
   interactive,
@@ -1092,39 +1097,6 @@ function currentReportedMedications(referrals: readonly PublicReferralDetail[]):
     names.add(name)
     return true
   })
-}
-
-function referralTreatmentSummary(referral: PublicReferralDetail): string {
-  const actions = Array.from(
-    new Set(referral.followups.flatMap((followup) => followup.treatmentActions.map(formatCode)))
-  )
-  return actions.length === 0 ? 'None recorded' : actions.join(', ')
-}
-
-function referralMedicationSummary(referral: PublicReferralDetail): string {
-  const medications = Array.from(
-    new Set(
-      referral.followups.flatMap((followup) =>
-        followup.medicationChanges.map((medication) => {
-          const details = [
-            medication.medicationName,
-            medication.dosage,
-            medication.frequency
-          ].filter((value): value is string => value !== null)
-          return `${formatCode(medication.changeType)}: ${details.join(' / ')}`
-        })
-      )
-    )
-  )
-  return medications.length === 0 ? 'None recorded' : medications.join('; ')
-}
-
-function formatReferralReason(referral: PublicReferralDetail): string {
-  const reason = referral.reasonText ?? referral.reasonCodes.map(formatCode).join(', ')
-  const bloodPressure = referral.triggeringBloodPressure
-  return bloodPressure === undefined || bloodPressure === null
-    ? reason
-    : `${reason} - BP ${bloodPressure.systolic}/${bloodPressure.diastolic} mmHg`
 }
 
 function reportKindLabel(kind: PatientReportKind): string {

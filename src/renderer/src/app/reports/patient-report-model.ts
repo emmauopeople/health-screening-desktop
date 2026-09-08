@@ -183,7 +183,8 @@ async function loadReferrals(
   let page = 1
   while (true) {
     const result = await api.referrals.search({
-      query: patient.patientCode,
+      query: '',
+      patientId: patient.id,
       statuses: ['OPEN', 'CONTACTED', 'SEEN', 'UNABLE_TO_CONFIRM', 'CLOSED'],
       urgency: null,
       dueFrom: null,
@@ -193,9 +194,7 @@ async function loadReferrals(
     })
     if (!result.ok) return failureFromCode(result.error.code)
     if (result.data.status !== 'LOADED') return failureFromControlledStatus(result.data.status)
-    referralIds.push(
-      ...result.data.items.filter((item) => item.patientId === patient.id).map((item) => item.id)
-    )
+    referralIds.push(...result.data.items.map((item) => item.id))
     if (page * pageSize >= result.data.total || result.data.items.length === 0) break
     page += 1
   }

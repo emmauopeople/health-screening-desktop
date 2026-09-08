@@ -236,7 +236,7 @@ describe('PatientReportsWorkspace', () => {
       pageSize: 100
     })
     expect(harness.searchReferrals).toHaveBeenCalledWith(
-      expect.objectContaining({ query: 'PT-000003', pageSize: 100 })
+      expect.objectContaining({ query: '', patientId, pageSize: 100 })
     )
     expect(harness.getEncounterDetail).toHaveBeenCalledTimes(2)
     expect(harness.getReferralDetail).toHaveBeenCalledWith({ referralId })

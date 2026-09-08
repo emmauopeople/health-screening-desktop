@@ -202,6 +202,13 @@ function createRouteForCommand(
     })
   }
 
+  if (definition.id === 'REPORTS_REFERRAL_REPORTS') {
+    return Object.freeze({
+      status: 'REFERRAL_REPORTS',
+      commandId: definition.id
+    })
+  }
+
   if (definition.id === 'HOME_OPEN_REFERRALS' || definition.id === 'REFERRALS_REFERRAL_WORKLIST') {
     return Object.freeze({
       status: 'REFERRALS',
