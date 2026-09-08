@@ -25,6 +25,18 @@ export {
   type SyncSnapshotRepository
 } from './sync-snapshot'
 export {
+  createAuditReportRepository,
+  type AuditReportActorFilter,
+  type AuditReportActorRecord,
+  type AuditReportContextRecord,
+  type AuditReportDeploymentRecord,
+  type AuditReportEventRecord,
+  type AuditReportPageSize,
+  type AuditReportRepository,
+  type AuditReportSearchInput,
+  type AuditReportSearchResult
+} from './audit-report'
+export {
   createAuditEventRepository,
   parseAuditActionCode,
   parseAuditEntityType,

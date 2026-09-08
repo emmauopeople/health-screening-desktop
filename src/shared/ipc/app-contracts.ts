@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import type { AuditReportApi } from './audit-report-contracts'
+
 import type {
   AuthChangeRequiredPasswordRequest,
   AuthChangeRequiredPasswordResult,
@@ -180,6 +182,7 @@ export interface HealthScreeningApi {
     ): Promise<PatientMarkNotDuplicateResult>
   }
   referrals: ReferralApi
+  auditReports?: AuditReportApi
   screeningSessions: {
     getWorkspaceContext(): Promise<ScreeningSessionGetWorkspaceContextResult>
     ensureCurrent(): Promise<ScreeningSessionEnsureCurrentResult>
