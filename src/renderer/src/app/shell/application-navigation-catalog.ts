@@ -202,14 +202,7 @@ const commandDefinitions = [
     'AVAILABLE',
     null
   ),
-  command(
-    'REPORTS_AUDIT_REPORTS',
-    'REPORTS',
-    'Audit Reports',
-    adminOnlyRoles,
-    'PLANNED',
-    plannedOwners.reporting
-  ),
+  command('REPORTS_AUDIT_REPORTS', 'REPORTS', 'Audit Reports', adminOnlyRoles, 'AVAILABLE', null),
   command(
     'REPORTS_EXPORT_PRINT',
     'REPORTS',

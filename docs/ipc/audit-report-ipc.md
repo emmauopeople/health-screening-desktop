@@ -13,5 +13,5 @@ unexpected result fields fail closed. The preload exposes no arbitrary channel n
 listener, Electron object, database handle, or repository object.
 
 The production lifecycle registers and disposes both channels with ownership protection and
-partial-registration rollback. HSD-066A deliberately leaves the Audit Reports navigation command
-in its planned state until HSD-066B adds the administrator UI and PDF preview.
+partial-registration rollback. HSD-066B consumes this fixed boundary through the administrator-only
+Audit Reports workspace and its print preview.
