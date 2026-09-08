@@ -16,7 +16,7 @@ export interface StoredSyncOperationalStatus {
   readonly queuedBatchCount: number
   readonly inFlightBatchCount: number
   readonly pendingAcknowledgmentCount: number
-  readonly lastSuccessfulSyncAt: UtcTimestamp | null
+  readonly lastCompletedBatchAt: UtcTimestamp | null
   readonly nextRetryAt: UtcTimestamp | null
 }
 

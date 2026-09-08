@@ -130,6 +130,38 @@ describe('application shell controller', () => {
     })
   })
 
+  it('routes Patient Reports as the default available Reports workspace', () => {
+    const controller = createApplicationShellController({ role: 'NURSE' })
+
+    controller.openMenu('REPORTS')
+
+    expect(controller.getSnapshot()).toEqual({
+      activeMenu: 'REPORTS',
+      commandPanelMenu: 'REPORTS',
+      selectedCommandId: 'REPORTS_PATIENT_REPORTS',
+      route: {
+        status: 'PATIENT_REPORTS',
+        commandId: 'REPORTS_PATIENT_REPORTS'
+      }
+    })
+  })
+
+  it('routes Referral Reports as an available Reports workspace', () => {
+    const controller = createApplicationShellController({ role: 'NURSE' })
+
+    controller.selectCommand('REPORTS_REFERRAL_REPORTS')
+
+    expect(controller.getSnapshot()).toEqual({
+      activeMenu: 'REPORTS',
+      commandPanelMenu: 'REPORTS',
+      selectedCommandId: 'REPORTS_REFERRAL_REPORTS',
+      route: {
+        status: 'REFERRAL_REPORTS',
+        commandId: 'REPORTS_REFERRAL_REPORTS'
+      }
+    })
+  })
+
   it('ignores commands hidden from the fixed role', () => {
     const controller = createApplicationShellController({ role: 'TRAINED_SCREENER' })
     const before = controller.getSnapshot()

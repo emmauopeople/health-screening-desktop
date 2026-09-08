@@ -359,6 +359,23 @@ describe('application shell DOM integration', () => {
     await mounted.unmount()
   })
 
+  it('opens the available patient-scoped Referral Reports workspace', async () => {
+    const harness = createAppApi(activeSession(1))
+    const mounted = await mountApp(harness.api)
+
+    await clickButton(mounted, 'Reports')
+    await clickButton(mounted, 'Referral Reports')
+
+    expectWorkspaceHeading(mounted, 'Referral Reports')
+    expect(text(mounted)).toContain('Search / select patient')
+    expect(text(mounted)).toContain('Print scope')
+    expect(commandButtonByText(mounted, 'Referral Reports').getAttribute('aria-current')).toBe(
+      'page'
+    )
+
+    await mounted.unmount()
+  })
+
   it('navigates primary menu clicks to default workspaces and keeps the default command current', async () => {
     const mounted = await mountApp(createAppApi(activeSession(1)).api)
 
@@ -394,6 +411,12 @@ describe('application shell DOM integration', () => {
 
     await clickButton(mounted, 'Reports')
     expectWorkspaceHeading(mounted, 'Patient Reports')
+    expect(text(mounted)).toContain('Local patient reporting')
+    expect(
+      mounted.container
+        .querySelector('.patient-reports-search')
+        ?.closest('.patient-reports-list-panel')
+    ).not.toBeNull()
     expect(commandPanel(mounted)?.getAttribute('aria-label')).toBe('Reports commands')
     expect(commandButtonByText(mounted, 'Patient Reports').getAttribute('aria-current')).toBe(
       'page'

@@ -13,6 +13,7 @@ import { createRendererNavigationPolicy } from '@main/app/navigation-policy'
 import { registerApplicationShutdown } from '@main/app/shutdown'
 import {
   createProductionFirstRunBootstrapService,
+  createProductionAuditReportService,
   createProductionCurrentScreeningSessionService,
   createProductionInstallationLocationService,
   createProductionLocalAuthenticationSessionService,
@@ -191,6 +192,10 @@ export function startApplicationLifecycle(): void {
         credentialProtector: syncCredentialProtector,
         logger: console
       })
+      const auditReportService = createProductionAuditReportService({
+        connection: databaseRuntime.getConnection(),
+        authenticationSessionService
+      })
       const syncWorkerScheduler = createSyncWorkerScheduler(
         createProductionSyncWorkerService({
           connection: databaseRuntime.getConnection(),
@@ -231,6 +236,11 @@ export function startApplicationLifecycle(): void {
         referrals: {
           navigationPolicy,
           referralService,
+          logger: console
+        },
+        auditReports: {
+          navigationPolicy,
+          auditReportService,
           logger: console
         },
         screeningSessions: {

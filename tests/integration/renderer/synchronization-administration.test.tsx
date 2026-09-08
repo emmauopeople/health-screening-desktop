@@ -139,7 +139,7 @@ function createApi(): MockApi {
             state: 'RETRY_SCHEDULED' as const,
             pendingChangeCount: 3,
             pendingAcknowledgmentCount: 1,
-            lastSuccessfulSyncAt: null,
+            lastCompletedBatchAt: null,
             nextRetryAt: '2026-09-04T12:05:00.000Z'
           }
         })

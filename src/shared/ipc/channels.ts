@@ -46,6 +46,10 @@ export const ipcChannels = {
     updateStatus: 'health-screening:referrals:update-status',
     recordFollowup: 'health-screening:referrals:record-followup'
   },
+  auditReports: {
+    getContext: 'health-screening:audit-reports:get-context',
+    search: 'health-screening:audit-reports:search'
+  },
   screeningEncounters: {
     start: 'health-screening:screening-encounters:start',
     complete: 'health-screening:screening-encounters:complete',
@@ -98,6 +102,8 @@ export type FirstRunIpcChannel = (typeof ipcChannels.firstRun)[keyof typeof ipcC
 export type AuthenticationIpcChannel = (typeof ipcChannels.auth)[keyof typeof ipcChannels.auth]
 export type PatientIpcChannel = (typeof ipcChannels.patient)[keyof typeof ipcChannels.patient]
 export type ReferralIpcChannel = (typeof ipcChannels.referrals)[keyof typeof ipcChannels.referrals]
+export type AuditReportIpcChannel =
+  (typeof ipcChannels.auditReports)[keyof typeof ipcChannels.auditReports]
 export type ScreeningSessionIpcChannel =
   (typeof ipcChannels.screeningSessions)[keyof typeof ipcChannels.screeningSessions]
 export type ScreeningEncounterIpcChannel =

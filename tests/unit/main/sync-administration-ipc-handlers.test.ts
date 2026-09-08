@@ -25,7 +25,7 @@ describe('synchronization administration IPC handlers', () => {
           state: 'NOT_CONFIGURED',
           pendingChangeCount: 3,
           pendingAcknowledgmentCount: 0,
-          lastSuccessfulSyncAt: null,
+          lastCompletedBatchAt: null,
           nextRetryAt: null
         }
       }
@@ -118,7 +118,7 @@ function createHarness(authError?: Error): {
         state: 'NOT_CONFIGURED' as const,
         pendingChangeCount: 3,
         pendingAcknowledgmentCount: 0,
-        lastSuccessfulSyncAt: null,
+        lastCompletedBatchAt: null,
         nextRetryAt: null
       }
     })),

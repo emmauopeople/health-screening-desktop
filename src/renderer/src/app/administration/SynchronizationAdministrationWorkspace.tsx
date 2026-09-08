@@ -201,8 +201,8 @@ export function SynchronizationAdministrationWorkspace({
               value={String(state.activity.pendingAcknowledgmentCount)}
             />
             <StatusCard
-              label="Last successful sync"
-              value={formatTimestamp(state.activity.lastSuccessfulSyncAt)}
+              label="Last completed batch"
+              value={formatTimestamp(state.activity.lastCompletedBatchAt)}
             />
           </div>
 

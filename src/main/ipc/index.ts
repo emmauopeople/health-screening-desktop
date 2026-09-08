@@ -1,12 +1,15 @@
 export {
+  disposeAuditReportIpcHandlers,
   disposeApplicationIpcHandlers,
   disposeScreeningEncounterIpcHandlers,
   disposeScreeningOtcIpcHandlers,
   disposeReferralIpcHandlers,
   registerApplicationIpcHandlers,
+  registerAuditReportIpcHandlers,
   registerScreeningEncounterIpcHandlers,
   registerScreeningOtcIpcHandlers,
   registerReferralIpcHandlers,
+  ApplicationIpcRegistrationError,
   type ApplicationIpcDisposer,
   type ApplicationIpcHandlerDependencies,
   type ApplicationIpcMain

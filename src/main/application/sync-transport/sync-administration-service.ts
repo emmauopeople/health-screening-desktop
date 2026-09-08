@@ -135,7 +135,7 @@ function toActivity(
     state,
     pendingChangeCount: stored.pendingChangeCount,
     pendingAcknowledgmentCount: stored.pendingAcknowledgmentCount,
-    lastSuccessfulSyncAt: stored.lastSuccessfulSyncAt,
+    lastCompletedBatchAt: stored.lastCompletedBatchAt,
     nextRetryAt: stored.nextRetryAt
   })
 }

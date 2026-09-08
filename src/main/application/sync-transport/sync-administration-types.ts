@@ -16,7 +16,7 @@ export interface SyncAdministrationActivity {
   readonly state: SyncAdministrationActivityState
   readonly pendingChangeCount: number
   readonly pendingAcknowledgmentCount: number
-  readonly lastSuccessfulSyncAt: UtcTimestamp | null
+  readonly lastCompletedBatchAt: UtcTimestamp | null
   readonly nextRetryAt: UtcTimestamp | null
 }
 

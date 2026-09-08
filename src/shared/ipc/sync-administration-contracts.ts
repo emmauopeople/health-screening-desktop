@@ -38,7 +38,7 @@ export const publicSyncAdministrationActivitySchema = z
     state: syncAdministrationActivityStateSchema,
     pendingChangeCount: z.number().int().min(0).safe(),
     pendingAcknowledgmentCount: z.number().int().min(0).safe(),
-    lastSuccessfulSyncAt: utcTimestampSchema.nullable(),
+    lastCompletedBatchAt: utcTimestampSchema.nullable(),
     nextRetryAt: utcTimestampSchema.nullable()
   })
   .strict()

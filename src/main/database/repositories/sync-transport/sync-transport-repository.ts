@@ -76,7 +76,7 @@ export function createSyncTransportBatchRepository(
                (SELECT COUNT(*) FROM sync_identity_resolution_deliveries
                 WHERE acknowledged_at IS NULL) AS pending_acknowledgment_count,
                (SELECT MAX(completed_at) FROM sync_transport_batches
-                WHERE status = 'COMPLETED') AS last_successful_sync_at,
+                WHERE status = 'COMPLETED') AS last_completed_batch_at,
                (SELECT MIN(next_attempt_at) FROM sync_transport_batches
                 WHERE status = 'RETRY_WAIT') AS next_retry_at`
           )
@@ -87,7 +87,7 @@ export function createSyncTransportBatchRepository(
           queuedBatchCount: parseCount(row.queued_batch_count),
           inFlightBatchCount: parseCount(row.in_flight_batch_count),
           pendingAcknowledgmentCount: parseCount(row.pending_acknowledgment_count),
-          lastSuccessfulSyncAt: parseNullableTimestamp(row.last_successful_sync_at),
+          lastCompletedBatchAt: parseNullableTimestamp(row.last_completed_batch_at),
           nextRetryAt: parseNullableTimestamp(row.next_retry_at)
         })
       } catch (error) {

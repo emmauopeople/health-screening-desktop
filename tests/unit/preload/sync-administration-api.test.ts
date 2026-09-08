@@ -16,7 +16,7 @@ describe('synchronization administration preload API', () => {
               state: 'NOT_CONFIGURED' as const,
               pendingChangeCount: 2,
               pendingAcknowledgmentCount: 0,
-              lastSuccessfulSyncAt: null,
+              lastCompletedBatchAt: null,
               nextRetryAt: null
             }
           })

@@ -135,6 +135,7 @@ export function createProductionReferralService({
           parsed.data.statuses.length === 0 ? null : JSON.stringify(parsed.data.statuses)
         const values = {
           locationId: auth.locationId,
+          patientId: parsed.data.patientId ?? null,
           screeningSessionId: parsed.data.screeningSessionId ?? null,
           query: `%${escapeLike(parsed.data.query.toLowerCase())}%`,
           emptyQuery: parsed.data.query === '' ? 1 : 0,
@@ -372,6 +373,7 @@ const summaryColumns = `
  referral.status, referral.record_version, referral.created_at, referral.updated_at,
  (SELECT MAX(contact_date) FROM followups WHERE referral_id = referral.id) AS last_contact_date`
 const searchWhere = `WHERE encounter.location_id = @locationId
+ AND (@patientId IS NULL OR referral.patient_id = @patientId)
  AND (@screeningSessionId IS NULL OR encounter.screening_session_id = @screeningSessionId)
  AND (@emptyQuery = 1 OR lower(patient.display_name) LIKE @query ESCAPE '\\'
       OR lower(patient.patient_code) LIKE @query ESCAPE '\\')

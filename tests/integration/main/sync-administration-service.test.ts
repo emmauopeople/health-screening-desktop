@@ -79,6 +79,7 @@ describe('synchronization administration service', () => {
     harness.service.configure({ apiBaseUrl: 'https://sync.example.org', installationToken: token })
     insertOutbox(harness.connection)
     insertRetryBatch(harness.connection)
+    insertCompletedBatch(harness.connection)
 
     const result = harness.service.getState()
     expect(result).toEqual({
@@ -93,7 +94,7 @@ describe('synchronization administration service', () => {
         state: 'RETRY_SCHEDULED',
         pendingChangeCount: 1,
         pendingAcknowledgmentCount: 0,
-        lastSuccessfulSyncAt: null,
+        lastCompletedBatchAt: '2026-09-04T11:55:00.000Z',
         nextRetryAt: '2026-09-04T12:05:00.000Z'
       }
     })
@@ -221,5 +222,22 @@ function insertRetryBatch(connection: Database.Database): void {
       createHash('sha256').update(requestJson).digest('hex'),
       now,
       '2026-09-04T12:05:00.000Z'
+    )
+}
+
+function insertCompletedBatch(connection: Database.Database): void {
+  const requestJson = '{}'
+  connection
+    .prepare(
+      `INSERT INTO sync_transport_batches (
+       id, request_json, request_sha256, status, attempt_count, created_at, completed_at
+     ) VALUES (?, ?, ?, 'COMPLETED', 1, ?, ?)`
+    )
+    .run(
+      '70000000-0000-4000-8000-000000000001',
+      requestJson,
+      createHash('sha256').update(requestJson).digest('hex'),
+      '2026-09-04T11:50:00.000Z',
+      '2026-09-04T11:55:00.000Z'
     )
 }

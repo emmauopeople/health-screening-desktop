@@ -1,6 +1,7 @@
 export {
   ipcChannels,
   type AppIpcChannel,
+  type AuditReportIpcChannel,
   type AuthenticationIpcChannel,
   type FirstRunIpcChannel,
   type PatientIpcChannel,
@@ -36,6 +37,32 @@ export {
   type SyncAdministrationGetStateRequest,
   type SyncAdministrationGetStateResult
 } from './sync-administration-contracts'
+export {
+  auditReportActionCodeSchema,
+  auditReportActorFilterSchema,
+  auditReportEntityTypeSchema,
+  auditReportGetContextRequestSchema,
+  auditReportGetContextResultSchema,
+  auditReportPageSizeSchema,
+  auditReportSearchRequestSchema,
+  auditReportSearchResultSchema,
+  auditReportUtcTimestampSchema,
+  auditReportUuidSchema,
+  publicAuditMetadataSchema,
+  publicAuditReportActorSchema,
+  publicAuditReportDeploymentSchema,
+  publicAuditReportEventSchema,
+  type AuditReportActorFilter,
+  type AuditReportApi,
+  type AuditReportGetContextRequest,
+  type AuditReportGetContextResult,
+  type AuditReportSearchRequest,
+  type AuditReportSearchResult,
+  type PublicAuditMetadata,
+  type PublicAuditReportActor,
+  type PublicAuditReportDeployment,
+  type PublicAuditReportEvent
+} from './audit-report-contracts'
 export {
   publicReferralDetailSchema,
   publicReferralFollowupSchema,
