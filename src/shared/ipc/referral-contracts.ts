@@ -121,6 +121,7 @@ export const publicReferralDetailSchema = publicReferralSummarySchema.extend({
 export const referralSearchRequestSchema = z
   .object({
     query: z.string().trim().max(100),
+    patientId: referralUuidSchema.nullable().optional(),
     screeningSessionId: referralUuidSchema.nullable().optional(),
     statuses: z.array(referralStatusSchema).max(5),
     urgency: referralUrgencySchema.nullable(),

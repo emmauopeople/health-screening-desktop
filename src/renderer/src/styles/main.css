@@ -6979,10 +6979,265 @@ h1 {
   font-weight: 700;
 }
 
+.referral-reports-workspace {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.referral-reports-heading {
+  flex: 0 0 auto;
+}
+
+.referral-reports-heading h1 {
+  margin: 0;
+}
+
+.referral-reports-layout {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(38rem, 1.08fr) minmax(30rem, 0.92fr);
+  gap: 0.85rem;
+  overflow: hidden;
+}
+
+.referral-reports-list-panel,
+.referral-reports-detail-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+  background: var(--color-panel);
+}
+
+.referral-reports-list-panel,
+.referral-reports-detail-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.referral-reports-patient-selector {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 0.35rem;
+  border-bottom: 1px solid var(--color-border);
+  padding: 0.65rem;
+  background: #f8fafc;
+}
+
+.referral-reports-patient-selector label {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.referral-reports-patient-selector input,
+.referral-reports-patient-selector select {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 0.4rem;
+  padding: 0.42rem 0.55rem;
+  background: #ffffff;
+  color: var(--color-ink);
+}
+
+.referral-reports-patient-selector > span {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.referral-reports-patient-selector > span[role='alert'] {
+  color: #b42318;
+}
+
+.referral-reports-patient-identity {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 0.8fr);
+  border-bottom: 1px solid var(--color-border);
+  background: #ffffff;
+}
+
+.referral-reports-patient-identity > div {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+  padding: 0.65rem;
+}
+
+.referral-reports-patient-identity > div + div {
+  border-left: 1px solid var(--color-border);
+}
+
+.referral-reports-patient-identity span {
+  color: var(--color-muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.referral-reports-patient-identity strong {
+  overflow-wrap: anywhere;
+  color: var(--shell-primary);
+}
+
+.referral-reports-list-summary {
+  flex: 0 0 auto;
+  padding: 0.5rem 0.65rem;
+}
+
+.referral-reports-table-scroll,
+.referral-reports-detail-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
+.referral-reports-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.78rem;
+}
+
+.referral-reports-table th,
+.referral-reports-table td {
+  overflow-wrap: anywhere;
+  border-top: 1px solid var(--color-border);
+  padding: 0.55rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.referral-reports-table th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  background: var(--shell-primary);
+  color: #ffffff;
+}
+
+.referral-reports-table th:nth-child(1) {
+  width: 12%;
+}
+
+.referral-reports-table th:nth-child(2) {
+  width: 25%;
+}
+
+.referral-reports-table th:nth-child(3) {
+  width: 13%;
+}
+
+.referral-reports-table th:nth-child(4) {
+  width: 20%;
+}
+
+.referral-reports-table th:nth-child(5) {
+  width: 30%;
+}
+
+.referral-reports-table tbody tr {
+  cursor: pointer;
+}
+
+.referral-reports-table tbody tr:hover,
+.referral-reports-table tbody tr:focus,
+.referral-reports-table tbody tr.is-selected {
+  background: #e6f3f5;
+  outline: none;
+}
+
+.referral-reports-table tbody tr.is-selected {
+  box-shadow: inset 4px 0 0 var(--shell-accent);
+}
+
+.referral-reports-table td span {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--color-muted);
+  font-size: 0.72rem;
+}
+
+.referral-reports-empty,
+.referral-reports-empty-detail {
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.referral-reports-empty-detail,
+.referral-reports-error {
+  display: flex;
+  min-height: 12rem;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.referral-reports-error {
+  flex-direction: column;
+  gap: 1rem;
+  color: #b42318;
+}
+
+.referral-reports-print-controls {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(10rem, 0.7fr) minmax(18rem, 1.3fr) auto;
+  gap: 0.8rem;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+  padding: 0.65rem 0.75rem;
+  background: #f8fafc;
+}
+
+.referral-reports-print-controls > div:first-child {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.referral-reports-print-controls > div:first-child span {
+  color: var(--color-muted);
+  font-size: 0.75rem;
+}
+
+.referral-reports-print-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.85rem;
+}
+
+.referral-reports-print-options label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.referral-reports-detail-scroll {
+  padding: 0.75rem;
+}
+
 @media (max-width: 1100px) {
   .patient-reports-layout,
-  .session-reports-layout {
+  .session-reports-layout,
+  .referral-reports-layout {
     grid-template-columns: minmax(19rem, 0.85fr) minmax(24rem, 1.15fr);
+  }
+
+  .referral-reports-print-controls {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -7011,6 +7266,8 @@ h1 {
   .patient-reports-heading,
   .patient-reports-search,
   .patient-reports-list-panel,
+  .referral-reports-heading,
+  .referral-reports-layout,
   .session-reports-heading,
   .session-reports-filters,
   .session-reports-list-panel,
@@ -7026,6 +7283,7 @@ h1 {
   .patient-reports-workspace,
   .patient-reports-layout,
   .patient-reports-detail-panel,
+  .referral-reports-workspace,
   .session-reports-workspace,
   .session-reports-layout,
   .session-reports-detail-panel {
@@ -7049,6 +7307,7 @@ h1 {
   .patient-reports-workspace,
   .patient-reports-layout,
   .patient-reports-detail-panel,
+  .referral-reports-workspace,
   .session-reports-layout,
   .session-reports-detail-panel {
     display: block;
@@ -7109,6 +7368,8 @@ h1 {
 
   .patient-reports-workspace > .patient-reports-heading,
   .patient-reports-workspace > .patient-reports-layout,
+  .referral-reports-workspace > .referral-reports-heading,
+  .referral-reports-workspace > .referral-reports-layout,
   .patient-report-preview-toolbar {
     display: none !important;
   }

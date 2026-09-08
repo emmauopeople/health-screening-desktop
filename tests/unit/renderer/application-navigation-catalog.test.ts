@@ -105,6 +105,7 @@ describe('application navigation catalog', () => {
       'REFERRALS_REFERRAL_WORKLIST',
       'REPORTS_PATIENT_REPORTS',
       'REPORTS_SESSION_REPORTS',
+      'REPORTS_REFERRAL_REPORTS',
       'ADMINISTRATION_LOCATIONS'
     ])
   })

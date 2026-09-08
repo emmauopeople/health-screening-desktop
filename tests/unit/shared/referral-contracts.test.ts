@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { referralRecordFollowupRequestSchema } from '@shared/ipc'
+import { referralRecordFollowupRequestSchema, referralSearchRequestSchema } from '@shared/ipc'
 
 const validRequest = {
   referralId: '11111111-1111-4111-8111-111111111111',
@@ -64,6 +64,26 @@ describe('referral follow-up treatment action contract', () => {
     ).toBe(false)
     expect(
       referralRecordFollowupRequestSchema.safeParse({ ...validRequest, route: 'ORAL' }).success
+    ).toBe(false)
+  })
+})
+
+describe('referral search contract', () => {
+  const searchRequest = {
+    query: '',
+    patientId: '11111111-1111-4111-8111-111111111111',
+    statuses: [],
+    urgency: null,
+    dueFrom: null,
+    dueTo: null,
+    page: 1,
+    pageSize: 100
+  } as const
+
+  it('accepts an exact optional patient filter and rejects malformed identities', () => {
+    expect(referralSearchRequestSchema.safeParse(searchRequest).success).toBe(true)
+    expect(
+      referralSearchRequestSchema.safeParse({ ...searchRequest, patientId: 'not-a-uuid' }).success
     ).toBe(false)
   })
 })

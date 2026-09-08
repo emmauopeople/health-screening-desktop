@@ -13,6 +13,7 @@ import { InstallationLocationAdministrationWorkspace } from '../administration/I
 import { PatientRegistryWorkspace } from '../patients/PatientRegistryWorkspace'
 import { ReferralWorklistWorkspace } from '../referrals/ReferralWorklistWorkspace'
 import { PatientReportsWorkspace } from '../reports/PatientReportsWorkspace'
+import { ReferralReportsWorkspace } from '../reports/ReferralReportsWorkspace'
 import { SessionReportsWorkspace } from '../reports/SessionReportsWorkspace'
 import { ManageEncountersWorkspace } from '../screening/manage/ManageEncountersWorkspace'
 import { SessionSummaryWorkspace } from '../screening/summary/SessionSummaryWorkspace'
@@ -247,6 +248,24 @@ export function ApplicationWorkspace({
           onOpenReferrals={(sessionId) => {
             setRequestedReferralId(null)
             setRequestedReferralSessionId(sessionId)
+            onSelectCommand('REFERRALS_REFERRAL_WORKLIST')
+          }}
+        />
+      ) : route.status === 'REFERRAL_REPORTS' ? (
+        <ReferralReportsWorkspace
+          api={api}
+          timeZone={context.timeZone}
+          reportedBy={user.displayName}
+          headingId={workspaceHeadingId}
+          headingRef={headingRef}
+          onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
+          onOpenEncounter={(encounterId) => {
+            setRequestedManagedEncounterId(encounterId)
+            onSelectCommand('SCREENING_MANAGE_ENCOUNTERS')
+          }}
+          onOpenReferral={(referralId) => {
+            setRequestedReferralSessionId(null)
+            setRequestedReferralId(referralId)
             onSelectCommand('REFERRALS_REFERRAL_WORKLIST')
           }}
         />
