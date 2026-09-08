@@ -117,4 +117,5 @@ HSD-013 deliberately defers event-emission services, first-run orchestration,
 session auditing, authorization, audit-review UI, filtering, export,
 retention, sync, FHIR publication, remote logging, hash chains, signatures,
 encryption, backup, restore, reporting, printing, and clinical workflow
-behavior.
+behavior. HSD-066A later adds filtered read-only reporting through a separate
+`AuditReportRepository`; the append-only HSD-013 writer remains unchanged.

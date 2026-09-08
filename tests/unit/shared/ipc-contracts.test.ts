@@ -100,6 +100,10 @@ describe('shared IPC contracts', () => {
         updateStatus: 'health-screening:referrals:update-status',
         recordFollowup: 'health-screening:referrals:record-followup'
       },
+      auditReports: {
+        getContext: 'health-screening:audit-reports:get-context',
+        search: 'health-screening:audit-reports:search'
+      },
       screeningSessions: {
         getWorkspaceContext: 'health-screening:screening-sessions:get-workspace-context',
         ensureCurrent: 'health-screening:screening-sessions:ensure-current',
@@ -157,7 +161,7 @@ describe('shared IPC contracts', () => {
     })
     const allChannels = flattenChannelStrings(ipcChannels)
 
-    expect(allChannels).toHaveLength(64)
+    expect(allChannels).toHaveLength(66)
     expect(new Set(allChannels).size).toBe(allChannels.length)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.lifestyle.complete)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.complete)
@@ -171,6 +175,8 @@ describe('shared IPC contracts', () => {
     expect(allChannels).toContain(ipcChannels.screeningEncounters.management.resolveFlag)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.management.voidEmptyDraft)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.management.cancelDraft)
+    expect(allChannels).toContain(ipcChannels.auditReports.getContext)
+    expect(allChannels).toContain(ipcChannels.auditReports.search)
   })
 
   it('keeps patient requests strict and main-process-authored', () => {

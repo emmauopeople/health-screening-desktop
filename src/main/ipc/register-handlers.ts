@@ -4,6 +4,8 @@ import type { AuthenticationIpcHandlerDependencies } from '@main/ipc/authenticat
 import { createAuthenticationIpcHandlers } from '@main/ipc/authentication'
 import type { AppIpcHandlerDependencies } from '@main/ipc/handlers/app-handlers'
 import { createAppIpcHandlers } from '@main/ipc/handlers/app-handlers'
+import type { AuditReportIpcHandlerDependencies } from '@main/ipc/handlers/audit-report-handlers'
+import { createAuditReportIpcHandlers } from '@main/ipc/handlers/audit-report-handlers'
 import type { FirstRunIpcHandlerDependencies } from '@main/ipc/handlers/first-run-handlers'
 import { createFirstRunIpcHandlers } from '@main/ipc/handlers/first-run-handlers'
 import type { InstallationSettingsIpcHandlerDependencies } from '@main/ipc/handlers/installation-settings-handlers'
@@ -24,6 +26,7 @@ import type { ScreeningSessionIpcHandlerDependencies } from '@main/ipc/handlers/
 import { createScreeningSessionIpcHandlers } from '@main/ipc/handlers/screening-session-handlers'
 import {
   ipcChannels,
+  type AuditReportIpcChannel,
   type InstallationSettingsIpcChannel,
   type ReferralIpcChannel,
   type ScreeningFoodIpcChannel,
@@ -56,6 +59,9 @@ interface ScreeningOtcRegistrationOwnership {
   readonly id: symbol
 }
 interface ReferralRegistrationOwnership {
+  readonly id: symbol
+}
+interface AuditReportRegistrationOwnership {
   readonly id: symbol
 }
 
@@ -148,12 +154,21 @@ const referralIpcChannels: readonly ReferralIpcChannel[] = Object.freeze([
   ipcChannels.referrals.recordFollowup
 ])
 const activeReferralRegistrations = new WeakMap<ApplicationIpcMain, ReferralRegistrationOwnership>()
+const auditReportIpcChannels: readonly AuditReportIpcChannel[] = Object.freeze([
+  ipcChannels.auditReports.getContext,
+  ipcChannels.auditReports.search
+])
+const activeAuditReportRegistrations = new WeakMap<
+  ApplicationIpcMain,
+  AuditReportRegistrationOwnership
+>()
 
 export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependencies {
   readonly firstRun: FirstRunIpcHandlerDependencies
   readonly auth: AuthenticationIpcHandlerDependencies
   readonly patient: PatientIpcHandlerDependencies
   readonly referrals?: ReferralIpcHandlerDependencies
+  readonly auditReports?: AuditReportIpcHandlerDependencies
   readonly screeningSessions: ScreeningSessionIpcHandlerDependencies
   readonly screeningEncounters: ScreeningEncounterIpcHandlerDependencies
   readonly screeningLifestyle: ScreeningLifestyleIpcHandlerDependencies
@@ -175,6 +190,7 @@ export function registerApplicationIpcHandlers(
   let disposeScreeningFoodHandlers: ApplicationIpcDisposer | undefined
   let disposeScreeningOtcHandlers: ApplicationIpcDisposer | undefined
   let disposeReferralHandlers: ApplicationIpcDisposer | undefined
+  let disposeAuditReportHandlers: ApplicationIpcDisposer | undefined
 
   try {
     const appHandlers = createAppIpcHandlers(dependencies)
@@ -258,7 +274,13 @@ export function registerApplicationIpcHandlers(
         applicationIpcMain,
         dependencies.referrals
       )
+    if (dependencies.auditReports !== undefined)
+      disposeAuditReportHandlers = registerAuditReportIpcHandlers(
+        applicationIpcMain,
+        dependencies.auditReports
+      )
   } catch {
+    disposeAuditReportHandlers?.()
     disposeReferralHandlers?.()
     disposeScreeningOtcHandlers?.()
     disposeScreeningFoodHandlers?.()
@@ -313,6 +335,41 @@ export function registerReferralIpcHandlers(
     if (activeReferralRegistrations.get(applicationIpcMain) !== ownership) return
     disposeReferralIpcHandlers(applicationIpcMain)
   }
+}
+
+export function registerAuditReportIpcHandlers(
+  applicationIpcMain: ApplicationIpcMain,
+  dependencies: AuditReportIpcHandlerDependencies
+): ApplicationIpcDisposer {
+  if (activeAuditReportRegistrations.has(applicationIpcMain)) {
+    throw new ApplicationIpcRegistrationError()
+  }
+  const ownership = Object.freeze({ id: Symbol('audit-report-ipc-registration') })
+  const handlers = createAuditReportIpcHandlers(dependencies)
+  const registrations: ReadonlyArray<readonly [AuditReportIpcChannel, ApplicationIpcListener]> = [
+    [ipcChannels.auditReports.getContext, handlers.getContext],
+    [ipcChannels.auditReports.search, handlers.search]
+  ]
+  const installed: AuditReportIpcChannel[] = []
+  try {
+    for (const [channel, listener] of registrations) {
+      applicationIpcMain.handle(channel, listener)
+      installed.push(channel)
+    }
+  } catch {
+    for (const channel of installed.reverse()) applicationIpcMain.removeHandler(channel)
+    throw new ApplicationIpcRegistrationError()
+  }
+  activeAuditReportRegistrations.set(applicationIpcMain, ownership)
+  return () => {
+    if (activeAuditReportRegistrations.get(applicationIpcMain) !== ownership) return
+    disposeAuditReportIpcHandlers(applicationIpcMain)
+  }
+}
+
+export function disposeAuditReportIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
+  for (const channel of auditReportIpcChannels) applicationIpcMain.removeHandler(channel)
+  activeAuditReportRegistrations.delete(applicationIpcMain)
 }
 
 export function disposeReferralIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
@@ -579,6 +636,7 @@ function disposeApplicationOwnedIpcHandlers(applicationIpcMain: ApplicationIpcMa
   disposeScreeningFoodIpcHandlers(applicationIpcMain)
   disposeScreeningOtcIpcHandlers(applicationIpcMain)
   disposeReferralIpcHandlers(applicationIpcMain)
+  disposeAuditReportIpcHandlers(applicationIpcMain)
 }
 
 export function disposeScreeningLifestyleIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {

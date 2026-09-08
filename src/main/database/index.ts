@@ -41,6 +41,16 @@ export {
   type SynchronousTransactionResult
 } from './transaction'
 export {
+  createAuditReportRepository,
+  type AuditReportActorFilter,
+  type AuditReportActorRecord,
+  type AuditReportContextRecord,
+  type AuditReportDeploymentRecord,
+  type AuditReportEventRecord,
+  type AuditReportPageSize,
+  type AuditReportRepository,
+  type AuditReportSearchInput,
+  type AuditReportSearchResult,
   AuditEventAlreadyExistsError,
   createInstallationRepository,
   createAuditEventRepository,
