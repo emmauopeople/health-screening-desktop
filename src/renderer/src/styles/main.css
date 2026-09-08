@@ -7038,8 +7038,7 @@ h1 {
   text-transform: uppercase;
 }
 
-.referral-reports-patient-selector input,
-.referral-reports-patient-selector select {
+.referral-reports-patient-selector input {
   width: 100%;
   min-width: 0;
   min-height: 36px;
@@ -7048,6 +7047,79 @@ h1 {
   padding: 0.42rem 0.55rem;
   background: #ffffff;
   color: var(--color-ink);
+}
+
+.referral-reports-combobox {
+  position: relative;
+  min-width: 0;
+}
+
+.referral-reports-combobox input {
+  padding-right: 2.3rem;
+}
+
+.referral-reports-combobox-arrow {
+  position: absolute;
+  top: 50%;
+  right: 0.85rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  transform: translateY(-65%) rotate(45deg);
+  border-right: 2px solid var(--color-muted);
+  border-bottom: 2px solid var(--color-muted);
+  pointer-events: none;
+}
+
+.referral-reports-combobox ul {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.2rem);
+  right: 0;
+  left: 0;
+  max-height: 18rem;
+  overflow-y: auto;
+  margin: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 0.4rem;
+  padding: 0.25rem;
+  background: #ffffff;
+  box-shadow: 0 0.65rem 1.5rem rgb(15 34 52 / 18%);
+  list-style: none;
+}
+
+.referral-reports-combobox li {
+  margin: 0;
+}
+
+.referral-reports-combobox li > button {
+  display: grid;
+  width: 100%;
+  gap: 0.15rem;
+  border: 0;
+  border-radius: 0.3rem;
+  padding: 0.55rem 0.6rem;
+  background: transparent;
+  color: var(--color-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.referral-reports-combobox li > button:hover,
+.referral-reports-combobox li > button.is-active,
+.referral-reports-combobox li > button[aria-selected='true'] {
+  background: #e6f3f5;
+}
+
+.referral-reports-combobox li > button span {
+  color: var(--color-muted);
+  font-size: 0.75rem;
+}
+
+.referral-reports-combobox-state {
+  padding: 0.65rem;
+  color: var(--color-muted);
+  font-size: 0.8rem;
 }
 
 .referral-reports-patient-selector > span {

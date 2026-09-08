@@ -90,12 +90,29 @@ describe('ReferralReportsWorkspace', () => {
     const harness = createHarness()
     const mounted = await mount(harness)
 
-    const patientSelect = mounted.container.querySelector<HTMLSelectElement>(
-      'select[aria-label="Select patient"]'
+    const patientCombobox =
+      mounted.container.querySelector<HTMLInputElement>('input[role="combobox"]')
+    expect(patientCombobox).not.toBeNull()
+    await focusInput(patientCombobox!)
+    expect(mounted.container.querySelector('[role="listbox"]')?.textContent).toContain(
+      'Suzana FuavesanPT-000003 - DOB Jan 15, 1998'
     )
-    expect(patientSelect).not.toBeNull()
-    expect(patientSelect?.textContent).toContain('Suzana Fuavesan - PT-000003')
-    await changeSelect(patientSelect!, patientId)
+
+    await changeInput(patientCombobox!, 'Su')
+    await waitForSearch()
+    expect(harness.searchPatients).toHaveBeenCalledTimes(1)
+    expect(mounted.container.textContent).toContain('Filtering begins after 3 characters.')
+
+    await changeInput(patientCombobox!, 'Suz')
+    await waitForSearch()
+    expect(harness.searchPatients).toHaveBeenLastCalledWith({
+      query: 'Suz',
+      page: 1,
+      pageSize: 100
+    })
+    await clickPatientOption(mounted.container, 'Suzana Fuavesan')
+    expect(patientCombobox?.value).toBe('Suzana Fuavesan - PT-000003')
+    expect(patientCombobox?.getAttribute('aria-expanded')).toBe('false')
 
     expect(harness.searchReferrals).toHaveBeenCalledWith({
       query: '',
@@ -139,10 +156,10 @@ describe('ReferralReportsWorkspace', () => {
     const printSpy = vi.spyOn(window, 'print').mockImplementation(() => undefined)
     const harness = createHarness()
     const mounted = await mount(harness)
-    const patientSelect = mounted.container.querySelector<HTMLSelectElement>(
-      'select[aria-label="Select patient"]'
-    )
-    await changeSelect(patientSelect!, patientId)
+    const patientCombobox =
+      mounted.container.querySelector<HTMLInputElement>('input[role="combobox"]')
+    await focusInput(patientCombobox!)
+    await clickPatientOption(mounted.container, 'Suzana Fuavesan')
 
     await clickButton(mounted.container, 'Print preview')
     let dialog = mounted.container.querySelector('[role="dialog"]')
@@ -166,6 +183,7 @@ describe('ReferralReportsWorkspace', () => {
 
 interface Harness {
   readonly api: HealthScreeningApi
+  readonly searchPatients: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['search']>>
   readonly searchReferrals: ReturnType<typeof vi.fn<HealthScreeningApi['referrals']['search']>>
   readonly onOpenEncounter: ReturnType<typeof vi.fn<(encounterId: string) => void>>
   readonly onOpenReferral: ReturnType<typeof vi.fn<(referralId: string) => void>>
@@ -200,6 +218,7 @@ function createHarness(): Harness {
     )
   )
   return {
+    searchPatients,
     searchReferrals,
     onOpenEncounter: vi.fn<(encounterId: string) => void>(),
     onOpenReferral: vi.fn<(referralId: string) => void>(),
@@ -345,14 +364,38 @@ async function mount(harness: Harness): Promise<{
   }
 }
 
-async function changeSelect(select: HTMLSelectElement, value: string): Promise<void> {
+async function focusInput(input: HTMLInputElement): Promise<void> {
   await act(async () => {
-    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
-    setter?.call(select, value)
-    select.dispatchEvent(new Event('change', { bubbles: true }))
+    input.focus()
+    await flush()
+  })
+}
+
+async function changeInput(input: HTMLInputElement, value: string): Promise<void> {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+  })
+}
+
+async function clickPatientOption(container: Element, text: string): Promise<void> {
+  const option = Array.from(container.querySelectorAll('[role="option"]')).find((item) =>
+    item.textContent?.includes(text)
+  )
+  if (!(option instanceof HTMLButtonElement)) throw new Error(`Missing patient option: ${text}`)
+  await act(async () => {
+    option.click()
     await flush()
   })
   await act(flush)
+}
+
+async function waitForSearch(): Promise<void> {
+  await act(async () => {
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 300))
+  })
 }
 
 async function clickRow(container: Element, text: string): Promise<void> {

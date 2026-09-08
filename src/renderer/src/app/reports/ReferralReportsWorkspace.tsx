@@ -67,6 +67,8 @@ export function ReferralReportsWorkspace({
     status: 'LOADING',
     previous: null
   })
+  const [patientListOpen, setPatientListOpen] = useState(false)
+  const [activePatientIndex, setActivePatientIndex] = useState(0)
   const [selectedPatient, setSelectedPatient] = useState<PublicPatientSummary | null>(null)
   const [reportState, setReportState] = useState<ReferralReportState>({ status: 'IDLE' })
   const [selectedReferralId, setSelectedReferralId] = useState<string | null>(null)
@@ -144,13 +146,14 @@ export function ReferralReportsWorkspace({
 
   useEffect(() => {
     const normalizedQuery = query.trim()
+    if (selectedPatient !== null && query === patientOptionLabel(selectedPatient)) return
     if (normalizedQuery.length > 0 && normalizedQuery.length < 3) return
     const timeout = window.setTimeout(
       () => void loadPatients(normalizedQuery),
       normalizedQuery.length === 0 ? 0 : 250
     )
     return () => window.clearTimeout(timeout)
-  }, [loadPatients, query])
+  }, [loadPatients, query, selectedPatient])
 
   useEffect(() => {
     if (!previewOpen) return
@@ -194,15 +197,55 @@ export function ReferralReportsWorkspace({
       ? null
       : createPrintableReferralReport(reportData, printableReferrals, timeZone)
 
-  const selectPatient = (patientId: string): void => {
-    const patient = patientOptions.find((item) => item.id === patientId) ?? null
+  const selectPatient = (patient: PublicPatientSummary): void => {
     setSelectedPatient(patient)
+    setQuery(patientOptionLabel(patient))
+    setPatientListOpen(false)
+    setActivePatientIndex(0)
     setSelectedReferralId(null)
-    if (patient === null) {
-      setReportState({ status: 'IDLE' })
+    void loadReport(patient)
+  }
+
+  const clearSelectedPatient = (): void => {
+    setSelectedPatient(null)
+    setSelectedReferralId(null)
+    setPreviewOpen(false)
+    setReportState({ status: 'IDLE' })
+  }
+
+  const updatePatientQuery = (value: string): void => {
+    if (selectedPatient !== null && value !== patientOptionLabel(selectedPatient)) {
+      clearSelectedPatient()
+    }
+    setQuery(value)
+    setPatientListOpen(true)
+    setActivePatientIndex(0)
+  }
+
+  const handlePatientKeyDown = (event: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (event.key === 'Escape') {
+      setPatientListOpen(false)
       return
     }
-    void loadReport(patient)
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      setPatientListOpen(true)
+      if (patientOptions.length === 0) return
+      setActivePatientIndex((current) =>
+        event.key === 'ArrowDown'
+          ? (current + 1) % patientOptions.length
+          : (current - 1 + patientOptions.length) % patientOptions.length
+      )
+      return
+    }
+    if (
+      event.key === 'Enter' &&
+      patientListOpen &&
+      patientOptions[activePatientIndex] !== undefined
+    ) {
+      event.preventDefault()
+      selectPatient(patientOptions[activePatientIndex]!)
+    }
   }
 
   return (
@@ -218,30 +261,71 @@ export function ReferralReportsWorkspace({
 
       <div className="referral-reports-layout">
         <section className="referral-reports-list-panel" aria-label="Patient referral history">
-          <div className="referral-reports-patient-selector">
+          <div
+            className="referral-reports-patient-selector"
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setPatientListOpen(false)
+            }}
+          >
             <label htmlFor="referral-report-patient-search">Search / select patient</label>
-            <input
-              id="referral-report-patient-search"
-              type="search"
-              value={query}
-              placeholder="Enter at least 3 letters or a patient ID"
-              onChange={(event) => setQuery(event.currentTarget.value)}
-            />
-            <select
-              aria-label="Select patient"
-              value={selectedPatient?.id ?? ''}
-              disabled={patientState.status === 'LOADING' && patientPage === null}
-              onChange={(event) => selectPatient(event.currentTarget.value)}
-            >
-              <option value="">Select a patient</option>
-              {patientOptions.map((patient) => (
-                <option key={patient.id} value={patient.id}>
-                  {`${patient.displayName} - ${patient.patientCode}`}
-                </option>
-              ))}
-            </select>
+            <div className="referral-reports-combobox">
+              <input
+                id="referral-report-patient-search"
+                type="text"
+                role="combobox"
+                autoComplete="off"
+                aria-autocomplete="list"
+                aria-controls="referral-report-patient-options"
+                aria-expanded={patientListOpen}
+                aria-activedescendant={
+                  patientListOpen && patientOptions[activePatientIndex] !== undefined
+                    ? `referral-report-patient-${patientOptions[activePatientIndex]!.id}`
+                    : undefined
+                }
+                value={query}
+                placeholder="Click to choose or type at least 3 letters"
+                onFocus={() => setPatientListOpen(true)}
+                onClick={() => setPatientListOpen(true)}
+                onChange={(event) => updatePatientQuery(event.currentTarget.value)}
+                onKeyDown={handlePatientKeyDown}
+              />
+              <span className="referral-reports-combobox-arrow" aria-hidden="true" />
+              {patientListOpen ? (
+                <ul id="referral-report-patient-options" role="listbox">
+                  {patientState.status === 'LOADING' && patientPage === null ? (
+                    <li className="referral-reports-combobox-state">Loading patients...</li>
+                  ) : query.trim().length > 0 &&
+                    query.trim().length < 3 &&
+                    selectedPatient === null ? (
+                    <li className="referral-reports-combobox-state">
+                      Type one more character to search.
+                    </li>
+                  ) : patientOptions.length === 0 ? (
+                    <li className="referral-reports-combobox-state">No matching patients.</li>
+                  ) : (
+                    patientOptions.map((patient, index) => (
+                      <li key={patient.id}>
+                        <button
+                          id={`referral-report-patient-${patient.id}`}
+                          type="button"
+                          role="option"
+                          aria-selected={patient.id === selectedPatient?.id}
+                          className={index === activePatientIndex ? 'is-active' : undefined}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onMouseEnter={() => setActivePatientIndex(index)}
+                          onClick={() => selectPatient(patient)}
+                        >
+                          <strong>{patient.displayName}</strong>
+                          <span>{`${patient.patientCode} - DOB ${formatPatientBirth(patient)}`}</span>
+                        </button>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              ) : null}
+            </div>
             {query.trim().length > 0 && query.trim().length < 3 ? (
-              <span>Enter at least 3 characters to filter the patient dropdown.</span>
+              <span>Filtering begins after 3 characters.</span>
             ) : patientState.status === 'ERROR' ? (
               <span role="alert">{patientState.message}</span>
             ) : patientPage !== null && patientPage.total > patientPageSize ? (
@@ -541,6 +625,10 @@ function PrintIcon(): React.JSX.Element {
       <path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M7 14h10v7H7z" />
     </svg>
   )
+}
+
+function patientOptionLabel(patient: PublicPatientSummary): string {
+  return `${patient.displayName} - ${patient.patientCode}`
 }
 
 function formatPatientBirth(patient: PublicPatientSummary): string {
