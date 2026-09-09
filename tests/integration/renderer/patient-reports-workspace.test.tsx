@@ -323,8 +323,10 @@ describe('PatientReportsWorkspace', () => {
     )
     expect(bloodPressureChart?.getAttribute('aria-label')).toContain('2 readings')
     expect(bloodPressureChart?.querySelectorAll('.patient-report-trend-line')).toHaveLength(2)
+    expect(bloodPressureChart?.closest('.patient-report-section')).toBeNull()
     expect(weightChart?.getAttribute('aria-label')).toContain('2 readings')
     expect(weightChart?.querySelectorAll('.patient-report-trend-line')).toHaveLength(1)
+    expect(weightChart?.closest('.patient-report-section')).toBeNull()
 
     await clickButton(mounted.container, 'Print preview')
     const printPreview = mounted.container.querySelector('[role="dialog"]')

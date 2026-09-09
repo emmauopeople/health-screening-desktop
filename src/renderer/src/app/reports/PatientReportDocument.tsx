@@ -283,8 +283,12 @@ function VitalsReport({
     }))
   )
   return (
-    <ReportSection title="Vitals" empty={rows.length === 0} emptyMessage="No vitals in this range.">
-      <>
+    <>
+      <ReportSection
+        title="Vitals"
+        empty={rows.length === 0}
+        emptyMessage="No vitals in this range."
+      >
         <ReportTable
           headings={[
             'Date',
@@ -310,11 +314,11 @@ function VitalsReport({
             </tr>
           ))}
         </ReportTable>
-        {report.kind === 'VITALS' || report.kind === 'GENERAL' ? (
-          <VitalsTrendCharts report={report} timeZone={timeZone} />
-        ) : null}
-      </>
-    </ReportSection>
+      </ReportSection>
+      {rows.length > 0 && (report.kind === 'VITALS' || report.kind === 'GENERAL') ? (
+        <VitalsTrendCharts report={report} timeZone={timeZone} />
+      ) : null}
+    </>
   )
 }
 
