@@ -38,8 +38,9 @@ Search accepts:
 - pages of 25, 50, or 100 rows.
 
 An entity ID requires an entity type. Events are ordered by `occurred_at DESC, id DESC`; the total
-is calculated from the same predicates even when the requested page is empty. HSD-066B can convert
-deployment-local date controls into the UTC half-open bounds by using the context time zone.
+is calculated from the same predicates even when the requested page is empty. The HSD-066B
+renderer converts deployment-local date controls into UTC half-open bounds using the configured
+time zone.
 
 ## Context
 

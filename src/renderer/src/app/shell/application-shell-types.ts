@@ -85,6 +85,10 @@ export type ApplicationWorkspaceRoute =
       readonly commandId: 'REPORTS_REFERRAL_REPORTS'
     }
   | {
+      readonly status: 'AUDIT_REPORTS'
+      readonly commandId: 'REPORTS_AUDIT_REPORTS'
+    }
+  | {
       readonly status: 'REFERRALS'
       readonly commandId: 'HOME_OPEN_REFERRALS' | 'REFERRALS_REFERRAL_WORKLIST'
     }

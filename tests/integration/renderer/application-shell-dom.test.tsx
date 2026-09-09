@@ -13,6 +13,7 @@ import {
   type AuthLockResult,
   type AuthLogoutResult,
   type AuthRecordActivityResult,
+  type AuditReportApi,
   type AuthenticationSessionChangedListener,
   type FirstRunGetStateResult,
   type HealthScreeningApi,
@@ -372,6 +373,25 @@ describe('application shell DOM integration', () => {
     expect(commandButtonByText(mounted, 'Referral Reports').getAttribute('aria-current')).toBe(
       'page'
     )
+
+    await mounted.unmount()
+  })
+
+  it('opens the administrator-only Audit Reports workspace', async () => {
+    const harness = createAppApi(activeSession(1))
+    const mounted = await mountApp(harness.api)
+
+    await clickButton(mounted, 'Reports')
+    await clickButton(mounted, 'Audit Reports')
+
+    expectWorkspaceHeading(mounted, 'Audit Reports')
+    expect(text(mounted)).toContain('Read-only local activity for this deployment.')
+    expect(text(mounted)).toContain('Apply filters')
+    expect(harness.api.auditReports.getContext).toHaveBeenCalledOnce()
+    expect(harness.api.auditReports.search).toHaveBeenCalledWith(
+      expect.objectContaining({ actor: { kind: 'ALL' }, page: 1, pageSize: 25 })
+    )
+    expect(commandButtonByText(mounted, 'Audit Reports').getAttribute('aria-current')).toBe('page')
 
     await mounted.unmount()
   })
@@ -1325,6 +1345,10 @@ type MockedHealthScreeningApi = HealthScreeningApi & {
     updateStatus: ReturnType<typeof vi.fn<HealthScreeningApi['referrals']['updateStatus']>>
     recordFollowup: ReturnType<typeof vi.fn<HealthScreeningApi['referrals']['recordFollowup']>>
   } & HealthScreeningApi['referrals']
+  auditReports: {
+    getContext: ReturnType<typeof vi.fn<AuditReportApi['getContext']>>
+    search: ReturnType<typeof vi.fn<AuditReportApi['search']>>
+  } & AuditReportApi
   screeningSessions: {
     getWorkspaceContext: ReturnType<
       typeof vi.fn<HealthScreeningApi['screeningSessions']['getWorkspaceContext']>
@@ -1508,6 +1532,35 @@ function createAppApi(initialSession: PublicAuthenticationSession): AppApiHarnes
       ),
       recordFollowup: vi.fn(() =>
         Promise.resolve(createIpcSuccess({ status: 'REFERRAL_NOT_FOUND' }))
+      )
+    },
+    auditReports: {
+      getContext: vi.fn(() =>
+        Promise.resolve(
+          createIpcSuccess({
+            status: 'LOADED',
+            deployment: {
+              id: '66666666-6666-4666-8666-666666666666',
+              name: 'Local Deployment',
+              timeZone: 'Africa/Douala'
+            },
+            actors: [],
+            actions: [],
+            entityTypes: [],
+            hasSystemEvents: false
+          })
+        )
+      ),
+      search: vi.fn((request) =>
+        Promise.resolve(
+          createIpcSuccess({
+            status: 'LOADED',
+            items: [],
+            total: 0,
+            page: request.page,
+            pageSize: request.pageSize
+          })
+        )
       )
     },
     screeningSessions: {

@@ -162,6 +162,30 @@ describe('application shell controller', () => {
     })
   })
 
+  it('routes Audit Reports only for the local administrator', () => {
+    const administrator = createApplicationShellController({ role: 'LOCAL_ADMIN' })
+    const nurse = createApplicationShellController({ role: 'NURSE' })
+
+    administrator.selectCommand('REPORTS_AUDIT_REPORTS')
+    nurse.selectCommand('REPORTS_AUDIT_REPORTS')
+
+    expect(administrator.getSnapshot()).toEqual({
+      activeMenu: 'REPORTS',
+      commandPanelMenu: 'REPORTS',
+      selectedCommandId: 'REPORTS_AUDIT_REPORTS',
+      route: {
+        status: 'AUDIT_REPORTS',
+        commandId: 'REPORTS_AUDIT_REPORTS'
+      }
+    })
+    expect(nurse.getSnapshot()).toEqual({
+      activeMenu: 'HOME',
+      commandPanelMenu: 'HOME',
+      selectedCommandId: 'HOME_DASHBOARD',
+      route: { status: 'DASHBOARD', commandId: 'HOME_DASHBOARD' }
+    })
+  })
+
   it('ignores commands hidden from the fixed role', () => {
     const controller = createApplicationShellController({ role: 'TRAINED_SCREENER' })
     const before = controller.getSnapshot()

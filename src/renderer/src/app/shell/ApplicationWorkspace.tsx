@@ -14,6 +14,7 @@ import { InstallationLocationAdministrationWorkspace } from '../administration/I
 import { SynchronizationAdministrationWorkspace } from '../administration/SynchronizationAdministrationWorkspace'
 import { PatientRegistryWorkspace } from '../patients/PatientRegistryWorkspace'
 import { ReferralWorklistWorkspace } from '../referrals/ReferralWorklistWorkspace'
+import { AuditReportsWorkspace } from '../reports/AuditReportsWorkspace'
 import { PatientReportsWorkspace } from '../reports/PatientReportsWorkspace'
 import { ReferralReportsWorkspace } from '../reports/ReferralReportsWorkspace'
 import { SessionReportsWorkspace } from '../reports/SessionReportsWorkspace'
@@ -284,6 +285,15 @@ export function ApplicationWorkspace({
             setRequestedReferralId(referralId)
             onSelectCommand('REFERRALS_REFERRAL_WORKLIST')
           }}
+        />
+      ) : route.status === 'AUDIT_REPORTS' ? (
+        <AuditReportsWorkspace
+          api={api.auditReports}
+          timeZone={context.timeZone}
+          reportedBy={user.displayName}
+          headingId={workspaceHeadingId}
+          headingRef={headingRef}
+          onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
         />
       ) : (
         <PlannedModuleWorkspace
