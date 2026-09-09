@@ -13,6 +13,7 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
     "test": "vitest run",
+    "test:acceptance:release-1": "vitest run --config vitest.acceptance.config.ts",
     "test:unit": "vitest run",
     "test:watch": "vitest",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",

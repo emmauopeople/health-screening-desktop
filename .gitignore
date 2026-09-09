@@ -8,4 +8,5 @@ out
 *.sqlite3
 *-wal
 *-shm
+/artifacts/release-1-acceptance.json
 ~$*.docx
