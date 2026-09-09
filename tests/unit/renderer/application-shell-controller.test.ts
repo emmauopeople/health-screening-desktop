@@ -162,6 +162,22 @@ describe('application shell controller', () => {
     })
   })
 
+  it('routes Export / Print as an available patient PDF workspace', () => {
+    const controller = createApplicationShellController({ role: 'NURSE' })
+
+    controller.selectCommand('REPORTS_EXPORT_PRINT')
+
+    expect(controller.getSnapshot()).toEqual({
+      activeMenu: 'REPORTS',
+      commandPanelMenu: 'REPORTS',
+      selectedCommandId: 'REPORTS_EXPORT_PRINT',
+      route: {
+        status: 'EXPORT_PRINT',
+        commandId: 'REPORTS_EXPORT_PRINT'
+      }
+    })
+  })
+
   it('routes Audit Reports only for the local administrator', () => {
     const administrator = createApplicationShellController({ role: 'LOCAL_ADMIN' })
     const nurse = createApplicationShellController({ role: 'NURSE' })

@@ -7,8 +7,8 @@ import type {
 import type { PatientReportData, PatientReportKind } from './patient-report-model'
 import {
   formatReferralReason,
-  referralMedicationSummary,
-  referralTreatmentSummary
+  referralInitialTreatmentSummary,
+  referralMedicationSummary
 } from './referral-report-format'
 
 type PublicReferralFollowup = PublicReferralDetail['followups'][number]
@@ -285,7 +285,16 @@ function VitalsReport({
   return (
     <ReportSection title="Vitals" empty={rows.length === 0} emptyMessage="No vitals in this range.">
       <>
-        <ReportTable headings={['Date', 'BP', 'HR', 'Weight', 'Recommendation', 'Encounter']}>
+        <ReportTable
+          headings={[
+            'Date',
+            'BP',
+            'HR',
+            'Weight',
+            'Recommendation',
+            ...(interactive ? ['Open'] : [])
+          ]}
+        >
           {rows.map(({ detail, vital, encounter }) => (
             <tr key={`${detail.encounter.id}-${vital.sequenceNumber}`}>
               <td>{formatTimestamp(vital.measuredAt, timeZone)}</td>
@@ -293,17 +302,15 @@ function VitalsReport({
               <td>{vital.pulse === null ? '-' : `${vital.pulse} bpm`}</td>
               <td>{encounter?.weightKg == null ? '-' : `${encounter.weightKg} kg`}</td>
               <td>{encounter === undefined ? '-' : formatAction(encounter.nextAction)}</td>
-              <td>
-                {interactive ? (
+              {interactive ? (
+                <td>
                   <RecordLink onClick={() => onOpenEncounter(detail.encounter.id)}>Open</RecordLink>
-                ) : (
-                  detail.encounter.patientCode
-                )}
-              </td>
+                </td>
+              ) : null}
             </tr>
           ))}
         </ReportTable>
-        {report.kind === 'VITALS' ? (
+        {report.kind === 'VITALS' || report.kind === 'GENERAL' ? (
           <VitalsTrendCharts report={report} timeZone={timeZone} />
         ) : null}
       </>
@@ -658,7 +665,7 @@ function LifestyleReport({
             'Physical activity',
             'Work activity',
             'Other activity',
-            'Open'
+            ...(interactive ? ['Open'] : [])
           ]}
         >
           {screeningRows.map((detail) => {
@@ -673,15 +680,13 @@ function LifestyleReport({
                 <td>{responses.get('WEEKLY_PHYSICAL_ACTIVITY') ?? 'Not recorded'}</td>
                 <td>{responses.get('WEEKLY_WORK') ?? 'Not recorded'}</td>
                 <td>{responses.get('WEEKLY_OTHER_ACTIVITY') ?? 'Not recorded'}</td>
-                <td>
-                  {interactive ? (
+                {interactive ? (
+                  <td>
                     <RecordLink onClick={() => onOpenEncounter(detail.encounter.id)}>
                       Open
                     </RecordLink>
-                  ) : (
-                    detail.encounter.patientCode
-                  )}
-                </td>
+                  </td>
+                ) : null}
               </tr>
             )
           })}
@@ -858,21 +863,28 @@ function ReferralOverview({
       className="patient-report-overview-table patient-report-referral-overview"
       data-report-table="referral-overview"
     >
-      <ReportTable headings={['Date', 'Reason', 'Status', 'Treatment', 'Medication', 'Open']}>
+      <ReportTable
+        headings={[
+          'Date',
+          'Reason',
+          'Status',
+          'Initial treatment',
+          'Medication',
+          ...(interactive ? ['Open'] : [])
+        ]}
+      >
         {referrals.map((referral) => (
           <tr key={referral.id}>
             <td>{formatTimestamp(referral.createdAt, timeZone, false)}</td>
             <td>{formatReferralReason(referral)}</td>
             <td>{formatCode(referral.status)}</td>
-            <td>{referralTreatmentSummary(referral)}</td>
+            <td>{referralInitialTreatmentSummary(referral)}</td>
             <td>{referralMedicationSummary(referral)}</td>
-            <td>
-              {interactive ? (
+            {interactive ? (
+              <td>
                 <RecordLink onClick={() => onOpenReferral(referral.id)}>Open</RecordLink>
-              ) : (
-                referral.patientCode
-              )}
-            </td>
+              </td>
+            ) : null}
           </tr>
         ))}
       </ReportTable>

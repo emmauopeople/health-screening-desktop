@@ -23,6 +23,7 @@ import { createAuditReportApi } from './audit-report-api'
 import { createInstallationSettingsApi } from './installation-settings-api'
 import { createPatientApi } from './patient-api'
 import { createReferralApi } from './referral-api'
+import { createReportDocumentApi } from './report-document-api'
 import { createScreeningEncounterApi } from './screening-encounter-api'
 import { createScreeningSessionApi } from './screening-session-api'
 import { createSyncAdministrationApi } from './sync-administration-api'
@@ -83,6 +84,7 @@ export function createHealthScreeningApi(
     patient: createPatientApi(invoke),
     referrals: createReferralApi(invoke),
     auditReports: createAuditReportApi(invoke),
+    reportDocuments: createReportDocumentApi(invoke),
     screeningSessions: createScreeningSessionApi(invoke),
     screeningEncounters: createScreeningEncounterApi(invoke),
     installationSettings: createInstallationSettingsApi(invoke),

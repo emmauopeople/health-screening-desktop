@@ -208,8 +208,8 @@ const commandDefinitions = [
     'REPORTS',
     'Export / Print',
     nurseAndAdminRoles,
-    'PLANNED',
-    plannedOwners.reporting
+    'AVAILABLE',
+    null
   ),
   command(
     'ADMINISTRATION_USERS',

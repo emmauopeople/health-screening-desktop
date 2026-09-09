@@ -158,6 +158,10 @@ describe('shared IPC contracts', () => {
         assignInitialLocation: 'health-screening:installation-settings:assign-initial-location',
         reconfigureLocation: 'health-screening:installation-settings:reconfigure-location'
       },
+      reportDocuments: {
+        savePdf: 'health-screening:report-documents:save-pdf',
+        print: 'health-screening:report-documents:print'
+      },
       syncAdministration: {
         getState: 'health-screening:sync-administration:get-state',
         configure: 'health-screening:sync-administration:configure'
@@ -165,7 +169,7 @@ describe('shared IPC contracts', () => {
     })
     const allChannels = flattenChannelStrings(ipcChannels)
 
-    expect(allChannels).toHaveLength(68)
+    expect(allChannels).toHaveLength(70)
     expect(new Set(allChannels).size).toBe(allChannels.length)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.lifestyle.complete)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.complete)

@@ -153,7 +153,6 @@ describe('ReferralReportsWorkspace', () => {
   })
 
   it('previews either one selected referral or every referral for the patient', async () => {
-    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => undefined)
     const harness = createHarness()
     const mounted = await mount(harness)
     const patientCombobox =
@@ -167,6 +166,7 @@ describe('ReferralReportsWorkspace', () => {
     expect(dialog?.querySelectorAll('.patient-report-referral-record')).toHaveLength(1)
     expect(dialog?.textContent).toContain('Community Health Screening')
     expect(dialog?.textContent).toContain('Reported by Nurse E.')
+    expect(dialog?.textContent).not.toContain(firstEncounterId)
     await clickButton(dialog!, 'Close')
 
     await checkRadio(mounted.container, 'ALL')
@@ -174,8 +174,18 @@ describe('ReferralReportsWorkspace', () => {
     dialog = mounted.container.querySelector('[role="dialog"]')
     expect(dialog?.textContent).toContain('All 2 referrals for Suzana Fuavesan')
     expect(dialog?.querySelectorAll('.patient-report-referral-record')).toHaveLength(2)
+    await clickButton(dialog!, 'Save PDF')
+    expect(harness.savePdf).toHaveBeenCalledWith({
+      patientId,
+      reportKind: 'REFERRALS',
+      suggestedFileName: 'CHS-referral-report-PT-000003-all.pdf'
+    })
     await clickButton(dialog!, 'Print')
-    expect(printSpy).toHaveBeenCalledOnce()
+    expect(harness.print).toHaveBeenCalledWith({
+      patientId,
+      reportKind: 'REFERRALS',
+      suggestedFileName: 'CHS-referral-report-PT-000003-all.pdf'
+    })
 
     await mounted.unmount()
   })
@@ -185,6 +195,8 @@ interface Harness {
   readonly api: HealthScreeningApi
   readonly searchPatients: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['search']>>
   readonly searchReferrals: ReturnType<typeof vi.fn<HealthScreeningApi['referrals']['search']>>
+  readonly savePdf: ReturnType<typeof vi.fn<HealthScreeningApi['reportDocuments']['savePdf']>>
+  readonly print: ReturnType<typeof vi.fn<HealthScreeningApi['reportDocuments']['print']>>
   readonly onOpenEncounter: ReturnType<typeof vi.fn<(encounterId: string) => void>>
   readonly onOpenReferral: ReturnType<typeof vi.fn<(referralId: string) => void>>
 }
@@ -217,14 +229,23 @@ function createHarness(): Harness {
       })
     )
   )
+  const savePdf = vi.fn<HealthScreeningApi['reportDocuments']['savePdf']>((request) =>
+    Promise.resolve(createIpcSuccess({ status: 'SAVED', fileName: request.suggestedFileName }))
+  )
+  const print = vi.fn<HealthScreeningApi['reportDocuments']['print']>(() =>
+    Promise.resolve(createIpcSuccess({ status: 'PRINTED' }))
+  )
   return {
     searchPatients,
     searchReferrals,
+    savePdf,
+    print,
     onOpenEncounter: vi.fn<(encounterId: string) => void>(),
     onOpenReferral: vi.fn<(referralId: string) => void>(),
     api: {
       patient: { search: searchPatients, get: getPatient },
-      referrals: { search: searchReferrals, getDetail }
+      referrals: { search: searchReferrals, getDetail },
+      reportDocuments: { savePdf, print }
     } as unknown as HealthScreeningApi
   }
 }

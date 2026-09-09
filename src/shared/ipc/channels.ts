@@ -50,6 +50,10 @@ export const ipcChannels = {
     getContext: 'health-screening:audit-reports:get-context',
     search: 'health-screening:audit-reports:search'
   },
+  reportDocuments: {
+    savePdf: 'health-screening:report-documents:save-pdf',
+    print: 'health-screening:report-documents:print'
+  },
   screeningEncounters: {
     start: 'health-screening:screening-encounters:start',
     complete: 'health-screening:screening-encounters:complete',
@@ -104,6 +108,8 @@ export type PatientIpcChannel = (typeof ipcChannels.patient)[keyof typeof ipcCha
 export type ReferralIpcChannel = (typeof ipcChannels.referrals)[keyof typeof ipcChannels.referrals]
 export type AuditReportIpcChannel =
   (typeof ipcChannels.auditReports)[keyof typeof ipcChannels.auditReports]
+export type ReportDocumentIpcChannel =
+  (typeof ipcChannels.reportDocuments)[keyof typeof ipcChannels.reportDocuments]
 export type ScreeningSessionIpcChannel =
   (typeof ipcChannels.screeningSessions)[keyof typeof ipcChannels.screeningSessions]
 export type ScreeningEncounterIpcChannel =

@@ -11,9 +11,11 @@ import type {
   HealthScreeningApi,
   PatientErrorCode,
   PublicPatientSummary,
+  ReportDocumentRequest,
   ScreeningSessionErrorCode
 } from '@shared/ipc'
 import { PatientReportDocument } from './PatientReportDocument'
+import { ReportDocumentActions } from './ReportDocumentActions'
 import {
   createPresetDateRange,
   isValidDateRange,
@@ -30,6 +32,7 @@ interface PatientReportsWorkspaceProps {
   readonly reportedBy: string
   readonly headingId: string
   readonly headingRef: RefObject<HTMLHeadingElement | null>
+  readonly workspaceMode?: 'PATIENT_REPORTS' | 'EXPORT_PRINT'
   onAuthenticationFailure(code: PatientErrorCode | ScreeningSessionErrorCode): void
   onOpenEncounter(encounterId: string): void
   onOpenReferral(referralId: string): void
@@ -66,6 +69,7 @@ export function PatientReportsWorkspace({
   reportedBy,
   headingId,
   headingRef,
+  workspaceMode = 'PATIENT_REPORTS',
   onAuthenticationFailure,
   onOpenEncounter,
   onOpenReferral
@@ -231,9 +235,13 @@ export function PatientReportsWorkspace({
     <section className="patient-reports-workspace" aria-labelledby={headingId}>
       <header className="patient-reports-heading">
         <div>
-          <p className="application-workspace-kicker">Local patient reporting</p>
+          <p className="application-workspace-kicker">
+            {workspaceMode === 'EXPORT_PRINT'
+              ? 'Portable patient documents'
+              : 'Local patient reporting'}
+          </p>
           <h1 ref={headingRef} id={headingId} tabIndex={-1}>
-            Patient Reports
+            {workspaceMode === 'EXPORT_PRINT' ? 'Export / Print' : 'Patient Reports'}
           </h1>
         </div>
       </header>
@@ -386,10 +394,12 @@ export function PatientReportsWorkspace({
       {previewOpen && reportState.status === 'READY' ? (
         <PrintPreview
           report={reportState.report}
+          reportDocumentApi={api.reportDocuments}
           timeZone={timeZone}
           reportedBy={reportedBy}
           printButtonRef={printButtonRef}
           onClose={() => setPreviewOpen(false)}
+          onAuthenticationFailure={onAuthenticationFailure}
           onOpenEncounter={onOpenEncounter}
           onOpenReferral={onOpenReferral}
         />
@@ -499,18 +509,22 @@ function ReportControls({
 
 function PrintPreview({
   report,
+  reportDocumentApi,
   timeZone,
   reportedBy,
   printButtonRef,
   onClose,
+  onAuthenticationFailure,
   onOpenEncounter,
   onOpenReferral
 }: {
   readonly report: PatientReportData
+  readonly reportDocumentApi: HealthScreeningApi['reportDocuments']
   readonly timeZone: string
   readonly reportedBy: string
   readonly printButtonRef: RefObject<HTMLButtonElement | null>
   onClose(): void
+  onAuthenticationFailure(code: PatientErrorCode | ScreeningSessionErrorCode): void
   onOpenEncounter(encounterId: string): void
   onOpenReferral(referralId: string): void
 }): React.JSX.Element {
@@ -528,17 +542,12 @@ function PrintPreview({
             <span>Review the complete report before printing or saving as PDF.</span>
           </div>
           <div>
-            <button
-              ref={printButtonRef}
-              className="button button-primary"
-              type="button"
-              onClick={() =>
-                printReport(`CHS-${report.kind.toLowerCase()}-${report.patient.patientCode}`)
-              }
-            >
-              <PrintIcon />
-              Print
-            </button>
+            <ReportDocumentActions
+              api={reportDocumentApi}
+              request={createReportDocumentRequest(report)}
+              primaryButtonRef={printButtonRef}
+              onAuthenticationFailure={onAuthenticationFailure}
+            />
             <button className="button button-secondary" type="button" onClick={onClose}>
               Close
             </button>
@@ -562,14 +571,6 @@ function PrintPreview({
   )
 }
 
-function PrintIcon(): React.JSX.Element {
-  return (
-    <svg className="patient-report-print-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M7 14h10v7H7z" />
-    </svg>
-  )
-}
-
 function formatPatientBirth(patient: PublicPatientSummary): string {
   if (patient.dateOfBirth !== null) return formatLocalDate(patient.dateOfBirth)
   if (patient.approximateAgeYears === null) return 'Not recorded'
@@ -587,9 +588,14 @@ function formatLocalDate(value: string): string {
   )
 }
 
-function printReport(fileName: string): void {
-  const previousTitle = document.title
-  document.title = fileName
-  window.print()
-  document.title = previousTitle
+function createReportDocumentRequest(report: PatientReportData): ReportDocumentRequest {
+  return {
+    patientId: report.patient.id,
+    reportKind: report.kind,
+    suggestedFileName: `CHS-${report.kind.toLowerCase()}-${safeFileSegment(report.patient.patientCode)}-${report.range.from}-to-${report.range.to}.pdf`
+  } as const
+}
+
+function safeFileSegment(value: string): string {
+  return value.replace(/[^A-Za-z0-9._-]+/gu, '-').replace(/^-+|-+$/gu, '') || 'patient'
 }

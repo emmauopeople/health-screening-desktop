@@ -80,6 +80,8 @@ const applicationOwnedHandlerChannels = Object.freeze([
   ipcChannels.patient.listRecent,
   ipcChannels.patient.findDuplicates,
   ipcChannels.patient.markNotDuplicate,
+  ipcChannels.reportDocuments.savePdf,
+  ipcChannels.reportDocuments.print,
   ipcChannels.screeningSessions.getWorkspaceContext,
   ipcChannels.screeningSessions.ensureCurrent,
   ipcChannels.screeningSessions.create,
@@ -217,7 +219,7 @@ describe('application IPC handler registration', () => {
 
     const dispose = registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(65)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(67)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
@@ -248,6 +250,8 @@ describe('application IPC handler registration', () => {
       'health-screening:referrals:record-followup',
       'health-screening:referrals:search',
       'health-screening:referrals:update-status',
+      'health-screening:report-documents:print',
+      'health-screening:report-documents:save-pdf',
       'health-screening:screening-encounters:complete',
       'health-screening:screening-encounters:food:get-workspace',
       'health-screening:screening-encounters:food:save-draft',
@@ -544,7 +548,7 @@ describe('application IPC handler registration', () => {
     registerApplicationIpcHandlers(ipcMain, createDependencies())
     registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(130)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(134)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getHealth)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
@@ -579,6 +583,8 @@ describe('application IPC handler registration', () => {
       'health-screening:referrals:record-followup',
       'health-screening:referrals:search',
       'health-screening:referrals:update-status',
+      'health-screening:report-documents:print',
+      'health-screening:report-documents:save-pdf',
       'health-screening:screening-encounters:complete',
       'health-screening:screening-encounters:food:get-workspace',
       'health-screening:screening-encounters:food:save-draft',
@@ -1155,6 +1161,15 @@ function createDependencies(): ApplicationIpcHandlerDependencies {
         getDetail: vi.fn(() => ({ status: 'UNAVAILABLE' as const })),
         updateStatus: vi.fn(() => ({ status: 'UNAVAILABLE' as const })),
         recordFollowup: vi.fn(() => ({ status: 'UNAVAILABLE' as const }))
+      },
+      logger: createLogger()
+    },
+    reportDocuments: {
+      navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
+      authenticationSessionService: createAuthenticationSessionService(),
+      reportDocumentService: {
+        savePdf: vi.fn(async () => ({ status: 'UNAVAILABLE' as const })),
+        print: vi.fn(async () => ({ status: 'UNAVAILABLE' as const }))
       },
       logger: createLogger()
     },

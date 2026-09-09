@@ -377,6 +377,22 @@ describe('application shell DOM integration', () => {
     await mounted.unmount()
   })
 
+  it('opens Export / Print as the available patient PDF workspace', async () => {
+    const harness = createAppApi(activeSession(1))
+    const mounted = await mountApp(harness.api)
+
+    await clickButton(mounted, 'Reports')
+    await clickButton(mounted, 'Export / Print')
+
+    expectWorkspaceHeading(mounted, 'Export / Print')
+    expect(text(mounted)).toContain('Portable patient documents')
+    expect(text(mounted)).toContain('Search patients')
+    expect(text(mounted)).not.toContain('Not available in this build.')
+    expect(commandButtonByText(mounted, 'Export / Print').getAttribute('aria-current')).toBe('page')
+
+    await mounted.unmount()
+  })
+
   it('opens the administrator-only Audit Reports workspace', async () => {
     const harness = createAppApi(activeSession(1))
     const mounted = await mountApp(harness.api)
@@ -1562,6 +1578,12 @@ function createAppApi(initialSession: PublicAuthenticationSession): AppApiHarnes
           })
         )
       )
+    },
+    reportDocuments: {
+      savePdf: vi.fn((request) =>
+        Promise.resolve(createIpcSuccess({ status: 'SAVED', fileName: request.suggestedFileName }))
+      ),
+      print: vi.fn(() => Promise.resolve(createIpcSuccess({ status: 'PRINTED' })))
     },
     screeningSessions: {
       getWorkspaceContext: vi.fn(() =>
