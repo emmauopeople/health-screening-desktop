@@ -25,6 +25,7 @@ import { createPatientApi } from './patient-api'
 import { createReferralApi } from './referral-api'
 import { createScreeningEncounterApi } from './screening-encounter-api'
 import { createScreeningSessionApi } from './screening-session-api'
+import { createSyncAdministrationApi } from './sync-administration-api'
 
 export type { IpcInvoke, IpcSubscribe }
 
@@ -84,7 +85,8 @@ export function createHealthScreeningApi(
     auditReports: createAuditReportApi(invoke),
     screeningSessions: createScreeningSessionApi(invoke),
     screeningEncounters: createScreeningEncounterApi(invoke),
-    installationSettings: createInstallationSettingsApi(invoke)
+    installationSettings: createInstallationSettingsApi(invoke),
+    syncAdministration: createSyncAdministrationApi(invoke)
   })
 }
 

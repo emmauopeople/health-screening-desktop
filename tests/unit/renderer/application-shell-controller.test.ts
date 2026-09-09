@@ -114,6 +114,22 @@ describe('application shell controller', () => {
     })
   })
 
+  it('routes the available administrator Sync Center workspace', () => {
+    const controller = createApplicationShellController({ role: 'LOCAL_ADMIN' })
+
+    controller.selectCommand('ADMINISTRATION_SYNC_CENTER')
+
+    expect(controller.getSnapshot()).toEqual({
+      activeMenu: 'ADMINISTRATION',
+      commandPanelMenu: 'ADMINISTRATION',
+      selectedCommandId: 'ADMINISTRATION_SYNC_CENTER',
+      route: {
+        status: 'ADMINISTRATION',
+        commandId: 'ADMINISTRATION_SYNC_CENTER'
+      }
+    })
+  })
+
   it('routes Patient Reports as the default available Reports workspace', () => {
     const controller = createApplicationShellController({ role: 'NURSE' })
 

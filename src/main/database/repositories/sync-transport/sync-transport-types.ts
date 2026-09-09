@@ -11,6 +11,15 @@ export interface StoredSyncTransportConfiguration {
   readonly updatedAt: UtcTimestamp
 }
 
+export interface StoredSyncOperationalStatus {
+  readonly pendingChangeCount: number
+  readonly queuedBatchCount: number
+  readonly inFlightBatchCount: number
+  readonly pendingAcknowledgmentCount: number
+  readonly lastCompletedBatchAt: UtcTimestamp | null
+  readonly nextRetryAt: UtcTimestamp | null
+}
+
 export interface PreparedSyncTransportBatch {
   readonly id: EntityId
   readonly requestJson: string
@@ -50,6 +59,7 @@ export interface RescheduleSyncTransportBatchInput {
 
 export interface SyncTransportBatchRepository {
   getConfiguration(): StoredSyncTransportConfiguration | null
+  getOperationalStatus(): StoredSyncOperationalStatus
   upsertConfiguration(
     connection: DatabaseTransactionConnection,
     configuration: StoredSyncTransportConfiguration

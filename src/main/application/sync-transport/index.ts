@@ -4,6 +4,20 @@ export {
   sanitizeSyncErrorCode
 } from './sync-transport-service'
 export { createSyncSnapshotPreparationService } from './sync-snapshot-preparation-service'
+export { createSyncAdministrationService } from './sync-administration-service'
+export {
+  createProductionSyncAdministrationService,
+  type ProductionSyncAdministrationServiceOptions
+} from './sync-administration-composition'
+export type {
+  ConfigureSyncAdministrationResult,
+  GetSyncAdministrationStateResult,
+  SyncAdministrationActivity,
+  SyncAdministrationActivityState,
+  SyncAdministrationConfiguration,
+  SyncAdministrationService,
+  SyncAdministrationServiceDependencies
+} from './sync-administration-types'
 export {
   addMilliseconds,
   createCanonicalBatchRequest,

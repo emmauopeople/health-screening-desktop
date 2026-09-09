@@ -6,10 +6,12 @@ import type {
   PatientErrorCode,
   PublicPatientDetail,
   PublicPatientSummary,
-  ScreeningSessionErrorCode
+  ScreeningSessionErrorCode,
+  SyncAdministrationErrorCode
 } from '@shared/ipc'
 
 import { InstallationLocationAdministrationWorkspace } from '../administration/InstallationLocationAdministrationWorkspace'
+import { SynchronizationAdministrationWorkspace } from '../administration/SynchronizationAdministrationWorkspace'
 import { PatientRegistryWorkspace } from '../patients/PatientRegistryWorkspace'
 import { ReferralWorklistWorkspace } from '../referrals/ReferralWorklistWorkspace'
 import { PatientReportsWorkspace } from '../reports/PatientReportsWorkspace'
@@ -42,7 +44,11 @@ interface ApplicationWorkspaceProps {
   readonly headingRef: RefObject<HTMLHeadingElement | null>
   onSelectCommand(commandId: ApplicationCommandId): void
   onProtectedWorkspaceAuthenticationFailure(
-    code: PatientErrorCode | ScreeningSessionErrorCode | InstallationSettingsErrorCode
+    code:
+      | PatientErrorCode
+      | ScreeningSessionErrorCode
+      | InstallationSettingsErrorCode
+      | SyncAdministrationErrorCode
   ): void
   registerNavigationGuard(guard: PatientWorkspaceNavigationGuard | null): void
 }
@@ -169,13 +175,23 @@ export function ApplicationWorkspace({
           }}
         />
       ) : route.status === 'ADMINISTRATION' ? (
-        <InstallationLocationAdministrationWorkspace
-          api={api}
-          headingId={workspaceHeadingId}
-          headingRef={headingRef}
-          userRole={user.role}
-          onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
-        />
+        route.commandId === 'ADMINISTRATION_SYNC_CENTER' ? (
+          <SynchronizationAdministrationWorkspace
+            api={api}
+            headingId={workspaceHeadingId}
+            headingRef={headingRef}
+            userRole={user.role}
+            onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
+          />
+        ) : (
+          <InstallationLocationAdministrationWorkspace
+            api={api}
+            headingId={workspaceHeadingId}
+            headingRef={headingRef}
+            userRole={user.role}
+            onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
+          />
+        )
       ) : route.status === 'MANAGE_ENCOUNTERS' ? (
         <ManageEncountersWorkspace
           api={api}
