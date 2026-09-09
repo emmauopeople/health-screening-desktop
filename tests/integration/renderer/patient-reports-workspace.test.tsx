@@ -252,8 +252,7 @@ describe('PatientReportsWorkspace', () => {
     expect(browserReport.textContent).toContain('Amlodipine')
     expect(browserReport.textContent).toContain('Treatment modified, New medication')
     expect(browserReport.textContent).not.toContain('Provider reviewed blood pressure management.')
-    expect(browserReport.querySelector('[data-report-chart="blood-pressure"]')).not.toBeNull()
-    expect(browserReport.querySelector('[data-report-chart="weight"]')).not.toBeNull()
+    expect(browserReport.querySelector('[data-report-chart]')).toBeNull()
     expect(browserReport.querySelector('[data-report-table="lifestyle-overview"]')).not.toBeNull()
     expect(browserReport.querySelector('[data-report-table="referral-overview"]')).not.toBeNull()
     expect(browserReport.querySelector('.patient-report-referral-record')).toBeNull()
@@ -315,31 +314,11 @@ describe('PatientReportsWorkspace', () => {
     await clickButton(mounted.container, 'Vitals')
     expect(reportHeadings(mounted.container)).toEqual(['Vitals'])
     expect(reportDocument(mounted.container).textContent).toContain('Vitals report')
-    const bloodPressureChart = reportDocument(mounted.container).querySelector(
-      '[data-report-chart="blood-pressure"]'
-    )
-    const weightChart = reportDocument(mounted.container).querySelector(
-      '[data-report-chart="weight"]'
-    )
-    expect(bloodPressureChart?.getAttribute('aria-label')).toContain('2 readings')
-    expect(bloodPressureChart?.querySelectorAll('.patient-report-trend-line')).toHaveLength(2)
-    expect(bloodPressureChart?.closest('.patient-report-section')).toBeNull()
-    expect(weightChart?.getAttribute('aria-label')).toContain('2 readings')
-    expect(weightChart?.querySelectorAll('.patient-report-trend-line')).toHaveLength(1)
-    expect(weightChart?.closest('.patient-report-section')).toBeNull()
+    expect(reportDocument(mounted.container).querySelector('[data-report-chart]')).toBeNull()
 
     await clickButton(mounted.container, 'Print preview')
     const printPreview = mounted.container.querySelector('[role="dialog"]')
-    const printableBloodPressureChart = printPreview?.querySelector(
-      '[data-report-chart="blood-pressure"]'
-    )
-    const printableWeightChart = printPreview?.querySelector('[data-report-chart="weight"]')
-    expect(printableBloodPressureChart?.getAttribute('data-report-chart-type')).toBe('bar')
-    expect(printableBloodPressureChart?.querySelectorAll('.patient-report-bar')).toHaveLength(4)
-    expect(printableBloodPressureChart?.querySelector('svg')).toBeNull()
-    expect(printableWeightChart?.getAttribute('data-report-chart-type')).toBe('bar')
-    expect(printableWeightChart?.querySelectorAll('.patient-report-bar')).toHaveLength(2)
-    expect(printableWeightChart?.querySelector('svg')).toBeNull()
+    expect(printPreview?.querySelector('[data-report-chart]')).toBeNull()
     await clickButton(mounted.container, 'Close')
 
     await clickButton(mounted.container, 'Lifestyle')
