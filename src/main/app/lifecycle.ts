@@ -11,6 +11,7 @@ import {
 } from '@main/app/main-window'
 import { createRendererNavigationPolicy } from '@main/app/navigation-policy'
 import { registerApplicationShutdown } from '@main/app/shutdown'
+import { createElectronReportDocumentService } from '@main/application/report-documents/electron-report-document-service'
 import {
   createProductionFirstRunBootstrapService,
   createProductionAuditReportService,
@@ -196,6 +197,7 @@ export function startApplicationLifecycle(): void {
         connection: databaseRuntime.getConnection(),
         authenticationSessionService
       })
+      const reportDocumentService = createElectronReportDocumentService()
       const syncWorkerScheduler = createSyncWorkerScheduler(
         createProductionSyncWorkerService({
           connection: databaseRuntime.getConnection(),
@@ -241,6 +243,12 @@ export function startApplicationLifecycle(): void {
         auditReports: {
           navigationPolicy,
           auditReportService,
+          logger: console
+        },
+        reportDocuments: {
+          navigationPolicy,
+          authenticationSessionService,
+          reportDocumentService,
           logger: console
         },
         screeningSessions: {

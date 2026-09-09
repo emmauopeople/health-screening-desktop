@@ -252,8 +252,7 @@ describe('PatientReportsWorkspace', () => {
     expect(browserReport.textContent).toContain('Amlodipine')
     expect(browserReport.textContent).toContain('Treatment modified, New medication')
     expect(browserReport.textContent).not.toContain('Provider reviewed blood pressure management.')
-    expect(browserReport.querySelector('[data-report-chart="blood-pressure"]')).toBeNull()
-    expect(browserReport.querySelector('[data-report-chart="weight"]')).toBeNull()
+    expect(browserReport.querySelector('[data-report-chart]')).toBeNull()
     expect(browserReport.querySelector('[data-report-table="lifestyle-overview"]')).not.toBeNull()
     expect(browserReport.querySelector('[data-report-table="referral-overview"]')).not.toBeNull()
     expect(browserReport.querySelector('.patient-report-referral-record')).toBeNull()
@@ -278,11 +277,30 @@ describe('PatientReportsWorkspace', () => {
     expect(pageFooter?.textContent).toContain('Reported by Nurse E.')
     expect(dialog?.textContent).toContain('Screening guidance is not a diagnosis')
     expect(dialog?.textContent).not.toContain('Generated from verified local data')
+    expect(dialog?.textContent).not.toContain(encounterId)
+    expect(dialog?.textContent).not.toContain(secondEncounterId)
+    expect(
+      Array.from(dialog?.querySelectorAll('[data-report-table="vitals"] th') ?? []).map(
+        (heading) => heading.textContent
+      )
+    ).not.toContain('Open')
 
-    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => undefined)
     const previousTitle = document.title
+    await clickButton(mounted.container, 'Save PDF')
+    expect(harness.savePdf).toHaveBeenCalledWith({
+      patientId,
+      reportKind: 'GENERAL',
+      suggestedFileName: 'CHS-general-PT-000003-2026-08-06-to-2026-09-04.pdf'
+    })
+    expect(mounted.container.textContent).toContain(
+      'PDF saved as CHS-general-PT-000003-2026-08-06-to-2026-09-04.pdf.'
+    )
     await clickButton(mounted.container, 'Print')
-    expect(printSpy).toHaveBeenCalledOnce()
+    expect(harness.print).toHaveBeenCalledWith({
+      patientId,
+      reportKind: 'GENERAL',
+      suggestedFileName: 'CHS-general-PT-000003-2026-08-06-to-2026-09-04.pdf'
+    })
     expect(document.title).toBe(previousTitle)
 
     await mounted.unmount()
@@ -296,21 +314,11 @@ describe('PatientReportsWorkspace', () => {
     await clickButton(mounted.container, 'Vitals')
     expect(reportHeadings(mounted.container)).toEqual(['Vitals'])
     expect(reportDocument(mounted.container).textContent).toContain('Vitals report')
-    const bloodPressureChart = reportDocument(mounted.container).querySelector(
-      '[data-report-chart="blood-pressure"]'
-    )
-    const weightChart = reportDocument(mounted.container).querySelector(
-      '[data-report-chart="weight"]'
-    )
-    expect(bloodPressureChart?.getAttribute('aria-label')).toContain('2 readings')
-    expect(bloodPressureChart?.querySelectorAll('.patient-report-trend-line')).toHaveLength(2)
-    expect(weightChart?.getAttribute('aria-label')).toContain('2 readings')
-    expect(weightChart?.querySelectorAll('.patient-report-trend-line')).toHaveLength(1)
+    expect(reportDocument(mounted.container).querySelector('[data-report-chart]')).toBeNull()
 
     await clickButton(mounted.container, 'Print preview')
     const printPreview = mounted.container.querySelector('[role="dialog"]')
-    expect(printPreview?.querySelector('[data-report-chart="blood-pressure"]')).not.toBeNull()
-    expect(printPreview?.querySelector('[data-report-chart="weight"]')).not.toBeNull()
+    expect(printPreview?.querySelector('[data-report-chart]')).toBeNull()
     await clickButton(mounted.container, 'Close')
 
     await clickButton(mounted.container, 'Lifestyle')
@@ -352,7 +360,7 @@ describe('PatientReportsWorkspace', () => {
     if (!(referralOverview instanceof HTMLElement)) throw new Error('Missing referral overview')
     expect(
       Array.from(referralOverview.querySelectorAll('th')).map((heading) => heading.textContent)
-    ).toEqual(['Date', 'Reason', 'Status', 'Treatment', 'Medication', 'Open'])
+    ).toEqual(['Date', 'Reason', 'Status', 'Initial treatment', 'Medication', 'Open'])
     expect(referralOverview.textContent).toContain(
       'Blood pressure screening referral - BP 130/91 mmHg'
     )
@@ -375,6 +383,12 @@ describe('PatientReportsWorkspace', () => {
       referralPrintPreview?.querySelector('[data-report-table="referral-overview"]')
     ).not.toBeNull()
     expect(referralPrintPreview?.querySelector('.patient-report-referral-record')).not.toBeNull()
+    expect(referralPrintPreview?.textContent).not.toContain(encounterId)
+    expect(
+      Array.from(
+        referralPrintPreview?.querySelectorAll('[data-report-table="referral-overview"] th') ?? []
+      ).map((heading) => heading.textContent)
+    ).toEqual(['Date', 'Reason', 'Status', 'Initial treatment', 'Medication'])
 
     await mounted.unmount()
   })
@@ -407,6 +421,8 @@ interface Harness {
   >
   readonly searchReferrals: ReturnType<typeof vi.fn<HealthScreeningApi['referrals']['search']>>
   readonly getReferralDetail: ReturnType<typeof vi.fn<HealthScreeningApi['referrals']['getDetail']>>
+  readonly savePdf: ReturnType<typeof vi.fn<HealthScreeningApi['reportDocuments']['savePdf']>>
+  readonly print: ReturnType<typeof vi.fn<HealthScreeningApi['reportDocuments']['print']>>
   readonly onOpenEncounter: ReturnType<typeof vi.fn<(encounterId: string) => void>>
   readonly onOpenReferral: ReturnType<typeof vi.fn<(referralId: string) => void>>
 }
@@ -450,12 +466,20 @@ function createHarness(): Harness {
   const getReferralDetail = vi.fn<HealthScreeningApi['referrals']['getDetail']>(() =>
     Promise.resolve(createIpcSuccess({ status: 'LOADED', detail: referralDetail }))
   )
+  const savePdf = vi.fn<HealthScreeningApi['reportDocuments']['savePdf']>((request) =>
+    Promise.resolve(createIpcSuccess({ status: 'SAVED', fileName: request.suggestedFileName }))
+  )
+  const print = vi.fn<HealthScreeningApi['reportDocuments']['print']>(() =>
+    Promise.resolve(createIpcSuccess({ status: 'PRINTED' }))
+  )
   return {
     searchPatients,
     getPatientHistory,
     getEncounterDetail,
     searchReferrals,
     getReferralDetail,
+    savePdf,
+    print,
     onOpenEncounter: vi.fn(),
     onOpenReferral: vi.fn(),
     api: {
@@ -463,7 +487,8 @@ function createHarness(): Harness {
       screeningEncounters: {
         management: { getPatientHistory, getDetail: getEncounterDetail }
       },
-      referrals: { search: searchReferrals, getDetail: getReferralDetail }
+      referrals: { search: searchReferrals, getDetail: getReferralDetail },
+      reportDocuments: { savePdf, print }
     } as unknown as HealthScreeningApi
   }
 }

@@ -131,6 +131,7 @@ describe('preload API factory', () => {
       'patient',
       'referrals',
       'auditReports',
+      'reportDocuments',
       'screeningSessions',
       'screeningEncounters',
       'installationSettings',
@@ -166,6 +167,7 @@ describe('preload API factory', () => {
     expect(Object.isFrozen(api.auth)).toBe(true)
     expect(Object.isFrozen(api.patient)).toBe(true)
     expect(Object.isFrozen(api.auditReports)).toBe(true)
+    expect(Object.isFrozen(api.reportDocuments)).toBe(true)
     expect(Object.isFrozen(api.screeningSessions)).toBe(true)
     expect(Object.isFrozen(api.screeningEncounters)).toBe(true)
     expect(Object.isFrozen(api.installationSettings)).toBe(true)
@@ -180,6 +182,7 @@ describe('preload API factory', () => {
     expect('channel' in api.auth).toBe(false)
     expect('channel' in api.patient).toBe(false)
     expect('channel' in api.auditReports!).toBe(false)
+    expect('channel' in api.reportDocuments).toBe(false)
     expect('channel' in api.screeningSessions).toBe(false)
     expect('channel' in api.screeningEncounters).toBe(false)
     expect('channel' in api.installationSettings).toBe(false)

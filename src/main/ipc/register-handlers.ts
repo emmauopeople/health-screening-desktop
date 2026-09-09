@@ -16,6 +16,8 @@ import type { PatientIpcHandlerDependencies } from '@main/ipc/handlers/patient-h
 import { createPatientIpcHandlers } from '@main/ipc/handlers/patient-handlers'
 import type { ReferralIpcHandlerDependencies } from '@main/ipc/handlers/referral-handlers'
 import { createReferralIpcHandlers } from '@main/ipc/handlers/referral-handlers'
+import type { ReportDocumentIpcHandlerDependencies } from '@main/ipc/handlers/report-document-handlers'
+import { createReportDocumentIpcHandlers } from '@main/ipc/handlers/report-document-handlers'
 import type { ScreeningEncounterIpcHandlerDependencies } from '@main/ipc/handlers/screening-encounter-handlers'
 import { createScreeningEncounterIpcHandlers } from '@main/ipc/handlers/screening-encounter-handlers'
 import type { ScreeningFoodIpcHandlerDependencies } from '@main/ipc/handlers/screening-food-handlers'
@@ -32,6 +34,7 @@ import {
   type InstallationSettingsIpcChannel,
   type SyncAdministrationIpcChannel,
   type ReferralIpcChannel,
+  type ReportDocumentIpcChannel,
   type ScreeningFoodIpcChannel,
   type ScreeningOtcIpcChannel,
   type ScreeningEncounterIpcChannel,
@@ -165,6 +168,10 @@ const auditReportIpcChannels: readonly AuditReportIpcChannel[] = Object.freeze([
   ipcChannels.auditReports.getContext,
   ipcChannels.auditReports.search
 ])
+const reportDocumentIpcChannels: readonly ReportDocumentIpcChannel[] = Object.freeze([
+  ipcChannels.reportDocuments.savePdf,
+  ipcChannels.reportDocuments.print
+])
 const activeAuditReportRegistrations = new WeakMap<
   ApplicationIpcMain,
   AuditReportRegistrationOwnership
@@ -176,6 +183,7 @@ export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependen
   readonly patient: PatientIpcHandlerDependencies
   readonly referrals?: ReferralIpcHandlerDependencies
   readonly auditReports?: AuditReportIpcHandlerDependencies
+  readonly reportDocuments: ReportDocumentIpcHandlerDependencies
   readonly screeningSessions: ScreeningSessionIpcHandlerDependencies
   readonly screeningEncounters: ScreeningEncounterIpcHandlerDependencies
   readonly screeningLifestyle: ScreeningLifestyleIpcHandlerDependencies
@@ -211,6 +219,7 @@ export function registerApplicationIpcHandlers(
     const syncAdministrationHandlers = createSyncAdministrationIpcHandlers(
       dependencies.syncAdministration
     )
+    const reportDocumentHandlers = createReportDocumentIpcHandlers(dependencies.reportDocuments)
 
     const registrations: ReadonlyArray<readonly [string, ApplicationIpcListener]> = [
       [ipcChannels.app.getInfo, appHandlers.getInfo],
@@ -254,7 +263,9 @@ export function registerApplicationIpcHandlers(
         installationSettingsHandlers.reconfigureLocation
       ],
       [ipcChannels.syncAdministration.getState, syncAdministrationHandlers.getState],
-      [ipcChannels.syncAdministration.configure, syncAdministrationHandlers.configure]
+      [ipcChannels.syncAdministration.configure, syncAdministrationHandlers.configure],
+      [ipcChannels.reportDocuments.savePdf, reportDocumentHandlers.savePdf],
+      [ipcChannels.reportDocuments.print, reportDocumentHandlers.print]
     ]
 
     for (const [channel, listener] of registrations) {
@@ -644,6 +655,9 @@ function disposeApplicationOwnedIpcHandlers(applicationIpcMain: ApplicationIpcMa
     applicationIpcMain.removeHandler(channel)
   }
   for (const channel of syncAdministrationIpcChannels) {
+    applicationIpcMain.removeHandler(channel)
+  }
+  for (const channel of reportDocumentIpcChannels) {
     applicationIpcMain.removeHandler(channel)
   }
   disposeScreeningSessionIpcHandlers(applicationIpcMain)

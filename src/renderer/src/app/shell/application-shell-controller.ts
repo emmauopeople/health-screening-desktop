@@ -219,6 +219,13 @@ function createRouteForCommand(
     })
   }
 
+  if (definition.id === 'REPORTS_EXPORT_PRINT') {
+    return Object.freeze({
+      status: 'EXPORT_PRINT',
+      commandId: definition.id
+    })
+  }
+
   if (definition.id === 'HOME_OPEN_REFERRALS' || definition.id === 'REFERRALS_REFERRAL_WORKLIST') {
     return Object.freeze({
       status: 'REFERRALS',

@@ -2,6 +2,7 @@ export {
   ipcChannels,
   type AppIpcChannel,
   type AuditReportIpcChannel,
+  type ReportDocumentIpcChannel,
   type AuthenticationIpcChannel,
   type FirstRunIpcChannel,
   type PatientIpcChannel,
@@ -15,6 +16,25 @@ export {
   type SyncAdministrationIpcChannel,
   type ScreeningSessionIpcChannel
 } from './channels'
+export {
+  reportDocumentActionDataSchema,
+  reportDocumentActionResultSchema,
+  reportDocumentErrorCodeSchema,
+  reportDocumentFailureSchema,
+  reportDocumentFileNameSchema,
+  reportDocumentKindSchema,
+  reportDocumentPatientIdSchema,
+  reportDocumentRequestSchema,
+  reportDocumentSafeErrorMessages,
+  savedReportDocumentFileNameSchema,
+  createReportDocumentFailure,
+  type ReportDocumentActionData,
+  type ReportDocumentActionResult,
+  type ReportDocumentApi,
+  type ReportDocumentErrorCode,
+  type ReportDocumentKind,
+  type ReportDocumentRequest
+} from './report-document-contracts'
 export {
   createSyncAdministrationFailure,
   publicSyncAdministrationActivitySchema,

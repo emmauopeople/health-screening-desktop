@@ -295,6 +295,25 @@ export function ApplicationWorkspace({
           headingRef={headingRef}
           onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
         />
+      ) : route.status === 'EXPORT_PRINT' ? (
+        <PatientReportsWorkspace
+          api={api}
+          timeZone={context.timeZone}
+          reportedBy={user.displayName}
+          headingId={workspaceHeadingId}
+          headingRef={headingRef}
+          workspaceMode="EXPORT_PRINT"
+          onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
+          onOpenEncounter={(encounterId) => {
+            setRequestedManagedEncounterId(encounterId)
+            onSelectCommand('SCREENING_MANAGE_ENCOUNTERS')
+          }}
+          onOpenReferral={(referralId) => {
+            setRequestedReferralSessionId(null)
+            setRequestedReferralId(referralId)
+            onSelectCommand('REFERRALS_REFERRAL_WORKLIST')
+          }}
+        />
       ) : (
         <PlannedModuleWorkspace
           route={route}

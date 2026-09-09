@@ -7,6 +7,7 @@ import type {
   ScreeningSessionErrorCode
 } from '@shared/ipc'
 import { PatientReportDocument, ReferralRecord } from './PatientReportDocument'
+import { ReportDocumentActions } from './ReportDocumentActions'
 import {
   formatReferralReason,
   referralMedicationSummary,
@@ -440,11 +441,13 @@ export function ReferralReportsWorkspace({
       {previewOpen && printableReport !== null ? (
         <ReferralPrintPreview
           report={printableReport}
+          reportDocumentApi={api.reportDocuments}
           scope={printScope}
           reportedBy={reportedBy}
           timeZone={timeZone}
           printButtonRef={printButtonRef}
           onClose={() => setPreviewOpen(false)}
+          onAuthenticationFailure={onAuthenticationFailure}
         />
       ) : null}
     </section>
@@ -548,18 +551,22 @@ function PrintControls({
 
 function ReferralPrintPreview({
   report,
+  reportDocumentApi,
   scope,
   reportedBy,
   timeZone,
   printButtonRef,
-  onClose
+  onClose,
+  onAuthenticationFailure
 }: {
   readonly report: ReturnType<typeof createPrintableReferralReport>
+  readonly reportDocumentApi: HealthScreeningApi['reportDocuments']
   readonly scope: PrintScope
   readonly reportedBy: string
   readonly timeZone: string
   readonly printButtonRef: RefObject<HTMLButtonElement | null>
   onClose(): void
+  onAuthenticationFailure(code: PatientErrorCode | ScreeningSessionErrorCode): void
 }): React.JSX.Element {
   return (
     <div className="patient-report-preview-backdrop">
@@ -579,19 +586,16 @@ function ReferralPrintPreview({
             </span>
           </div>
           <div>
-            <button
-              ref={printButtonRef}
-              className="button button-primary"
-              type="button"
-              onClick={() =>
-                printReport(
-                  `CHS-referral-report-${report.patient.patientCode}-${scope.toLowerCase()}`
-                )
-              }
-            >
-              <PrintIcon />
-              Print
-            </button>
+            <ReportDocumentActions
+              api={reportDocumentApi}
+              request={{
+                patientId: report.patient.id,
+                reportKind: 'REFERRALS',
+                suggestedFileName: `CHS-referral-report-${safeFileSegment(report.patient.patientCode)}-${scope.toLowerCase()}.pdf`
+              }}
+              primaryButtonRef={printButtonRef}
+              onAuthenticationFailure={onAuthenticationFailure}
+            />
             <button className="button button-secondary" type="button" onClick={onClose}>
               Close
             </button>
@@ -617,14 +621,6 @@ function ReferralPrintPreview({
 
 function EmptyDetail({ children }: { readonly children: React.ReactNode }): React.JSX.Element {
   return <div className="referral-reports-empty-detail">{children}</div>
-}
-
-function PrintIcon(): React.JSX.Element {
-  return (
-    <svg className="patient-report-print-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M7 14h10v7H7z" />
-    </svg>
-  )
 }
 
 function patientOptionLabel(patient: PublicPatientSummary): string {
@@ -655,9 +651,6 @@ function formatCode(value: string): string {
     .replace(/^./u, (letter) => letter.toUpperCase())
 }
 
-function printReport(fileName: string): void {
-  const previousTitle = document.title
-  document.title = fileName
-  window.print()
-  document.title = previousTitle
+function safeFileSegment(value: string): string {
+  return value.replace(/[^A-Za-z0-9._-]+/gu, '-').replace(/^-+|-+$/gu, '') || 'patient'
 }

@@ -7,6 +7,19 @@ export function referralTreatmentSummary(referral: PublicReferralDetail): string
   return actions.length === 0 ? 'None recorded' : actions.join(', ')
 }
 
+export function referralInitialTreatmentSummary(referral: PublicReferralDetail): string {
+  const initialTreatment = [...referral.followups]
+    .sort(
+      (left, right) =>
+        left.contactDate.localeCompare(right.contactDate) ||
+        left.recordedAt.localeCompare(right.recordedAt)
+    )
+    .find((followup) => followup.treatmentActions.length > 0)
+  return initialTreatment === undefined
+    ? 'None recorded'
+    : initialTreatment.treatmentActions.map(formatCode).join(', ')
+}
+
 export function referralMedicationSummary(referral: PublicReferralDetail): string {
   const medications = Array.from(
     new Set(

@@ -7,6 +7,7 @@ import {
   createIpcSuccess,
   createInstallationSettingsFailure,
   createPatientFailure,
+  createReportDocumentFailure,
   createScreeningSessionFailure,
   type AppGetHealthResult,
   type AppGetInfoResult,
@@ -574,6 +575,10 @@ function createApi({
       getDetail: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
       updateStatus: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const })),
       recordFollowup: vi.fn(async () => createIpcSuccess({ status: 'UNAVAILABLE' as const }))
+    },
+    reportDocuments: {
+      savePdf: vi.fn(async () => createReportDocumentFailure('IPC_UNAVAILABLE')),
+      print: vi.fn(async () => createReportDocumentFailure('IPC_UNAVAILABLE'))
     },
     screeningSessions: {
       getWorkspaceContext: vi.fn(async () => createScreeningSessionFailure('IPC_UNAVAILABLE')),

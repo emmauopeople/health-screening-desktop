@@ -6391,7 +6391,8 @@ h1 {
 .patient-report-trends {
   display: grid;
   gap: 0.75rem;
-  border-top: 1px solid var(--color-border);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
   padding: 0.85rem 0.75rem 0.75rem;
 }
 
@@ -6712,6 +6713,26 @@ h1 {
   font-size: 0.8rem;
 }
 
+.patient-report-document-actions {
+  display: grid;
+  gap: 0.2rem;
+  justify-items: end;
+}
+
+.patient-report-document-actions > div {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.patient-report-document-status {
+  max-width: 24rem;
+  color: var(--shell-secondary-text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: right;
+}
+
 .patient-report-preview-scroll {
   min-height: 0;
   flex: 1 1 auto;
@@ -6725,6 +6746,11 @@ h1 {
   margin: 0 auto;
   background: #ffffff;
   box-shadow: 0 0.25rem 1.25rem rgb(0 0 0 / 20%);
+}
+
+.patient-report-document.is-print-preview .patient-report-lifestyle-overview .patient-report-table,
+.patient-report-document.is-print-preview .patient-report-referral-overview .patient-report-table {
+  table-layout: auto;
 }
 
 .patient-report-print-masthead {
@@ -8055,7 +8081,12 @@ h1 {
   }
 
   .patient-report-document.is-print-preview {
+    display: block;
     page: patient-report;
+  }
+
+  .patient-report-document.is-print-preview > * + * {
+    margin-top: 0.85rem;
   }
 
   .patient-report-page-footer {
@@ -8080,6 +8111,40 @@ h1 {
   .audit-report-document-filters,
   .audit-report-print-table tr {
     break-inside: avoid;
+  }
+
+  .patient-report-trends {
+    display: block;
+    border: 0;
+    padding: 0;
+    break-before: page;
+    page-break-before: always;
+  }
+
+  .patient-report-trends > h4 {
+    margin-bottom: 4mm;
+  }
+
+  .patient-report-line-chart {
+    height: 64mm;
+    overflow: visible;
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+  }
+
+  .patient-report-line-chart + .patient-report-line-chart {
+    margin-top: 5mm;
+  }
+
+  .patient-report-line-chart svg {
+    width: 100%;
+    height: 54mm;
+    max-height: 54mm;
+  }
+
+  .patient-report-line-chart.patient-report-chart-empty {
+    height: auto;
+    min-height: 20mm;
   }
 
   .patient-report-line-chart,
