@@ -316,7 +316,7 @@ function VitalsReport({
         </ReportTable>
       </ReportSection>
       {rows.length > 0 && (report.kind === 'VITALS' || report.kind === 'GENERAL') ? (
-        <VitalsTrendCharts report={report} timeZone={timeZone} />
+        <VitalsTrendCharts report={report} timeZone={timeZone} printSafe={!interactive} />
       ) : null}
     </>
   )
@@ -329,10 +329,12 @@ interface ReportTrendPoint {
 
 function VitalsTrendCharts({
   report,
-  timeZone
+  timeZone,
+  printSafe
 }: {
   readonly report: PatientReportData
   readonly timeZone: string
+  readonly printSafe: boolean
 }): React.JSX.Element {
   const bloodPressureReadings = report.encounterDetails
     .flatMap((detail) =>
@@ -361,16 +363,156 @@ function VitalsTrendCharts({
   return (
     <section className="patient-report-trends" aria-label="Vital-sign trends">
       <h4>Vital-sign trends</h4>
-      <BloodPressureLineChart readings={bloodPressureReadings} timeZone={timeZone} />
-      <SingleSeriesLineChart
-        title="Weight trend"
-        unit="kg"
-        emptyMessage="No weight readings in this range."
-        readings={weightReadings}
-        timeZone={timeZone}
-      />
+      {printSafe ? (
+        <>
+          <BloodPressureBarChart readings={bloodPressureReadings} timeZone={timeZone} />
+          <SingleSeriesBarChart
+            title="Weight trend"
+            unit="kg"
+            emptyMessage="No weight readings in this range."
+            readings={weightReadings}
+            timeZone={timeZone}
+          />
+        </>
+      ) : (
+        <>
+          <BloodPressureLineChart readings={bloodPressureReadings} timeZone={timeZone} />
+          <SingleSeriesLineChart
+            title="Weight trend"
+            unit="kg"
+            emptyMessage="No weight readings in this range."
+            readings={weightReadings}
+            timeZone={timeZone}
+          />
+        </>
+      )}
     </section>
   )
+}
+
+function BloodPressureBarChart({
+  readings,
+  timeZone
+}: {
+  readonly readings: readonly {
+    readonly timestamp: string
+    readonly systolic: number
+    readonly diastolic: number
+  }[]
+  readonly timeZone: string
+}): React.JSX.Element {
+  const maximum = roundedBarMaximum(
+    readings.flatMap((reading) => [reading.systolic, reading.diastolic]),
+    20
+  )
+
+  return (
+    <div
+      className="patient-report-bar-chart patient-report-bp-chart"
+      data-report-chart="blood-pressure"
+      data-report-chart-type="bar"
+      role="img"
+      aria-label={`Blood pressure bar graph with ${readings.length} ${readings.length === 1 ? 'reading' : 'readings'}`}
+    >
+      <ChartHeading title="Blood pressure trend" unit="mmHg">
+        <span data-series="systolic">Systolic</span>
+        <span data-series="diastolic">Diastolic</span>
+      </ChartHeading>
+      <div className="patient-report-bar-plot">
+        <span className="patient-report-bar-scale">{`Scale 0-${maximum}`}</span>
+        <div className="patient-report-bar-groups">
+          {readings.map((reading, index) => (
+            <div className="patient-report-bar-group" key={`${reading.timestamp}-${index}`}>
+              <div className="patient-report-bars">
+                <ReportBar value={reading.systolic} maximum={maximum} series="systolic" />
+                <ReportBar value={reading.diastolic} maximum={maximum} series="diastolic" />
+              </div>
+              <span>{formatTrendDate(reading.timestamp, timeZone)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SingleSeriesBarChart({
+  title,
+  unit,
+  emptyMessage,
+  readings,
+  timeZone
+}: {
+  readonly title: string
+  readonly unit: string
+  readonly emptyMessage: string
+  readonly readings: readonly ReportTrendPoint[]
+  readonly timeZone: string
+}): React.JSX.Element {
+  if (readings.length === 0) {
+    return (
+      <div
+        className="patient-report-bar-chart patient-report-chart-empty"
+        data-report-chart="weight"
+      >
+        <ChartHeading title={title} unit={unit} />
+        <p>{emptyMessage}</p>
+      </div>
+    )
+  }
+
+  const maximum = roundedBarMaximum(
+    readings.map((reading) => reading.value),
+    10
+  )
+  return (
+    <div
+      className="patient-report-bar-chart patient-report-weight-chart"
+      data-report-chart="weight"
+      data-report-chart-type="bar"
+      role="img"
+      aria-label={`${title} bar graph with ${readings.length} ${readings.length === 1 ? 'reading' : 'readings'}`}
+    >
+      <ChartHeading title={title} unit={unit} />
+      <div className="patient-report-bar-plot">
+        <span className="patient-report-bar-scale">{`Scale 0-${maximum}`}</span>
+        <div className="patient-report-bar-groups">
+          {readings.map((reading, index) => (
+            <div className="patient-report-bar-group" key={`${reading.timestamp}-${index}`}>
+              <div className="patient-report-bars">
+                <ReportBar value={reading.value} maximum={maximum} series="weight" />
+              </div>
+              <span>{formatTrendDate(reading.timestamp, timeZone)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReportBar({
+  value,
+  maximum,
+  series
+}: {
+  readonly value: number
+  readonly maximum: number
+  readonly series: 'systolic' | 'diastolic' | 'weight'
+}): React.JSX.Element {
+  return (
+    <span
+      className={`patient-report-bar is-${series}`}
+      style={{ height: `${Math.max(2, (value / maximum) * 100)}%` }}
+    >
+      <strong>{formatTrendWeight(value)}</strong>
+    </span>
+  )
+}
+
+function roundedBarMaximum(values: readonly number[], step: number): number {
+  const maximum = Math.max(step, ...values)
+  return Math.ceil(maximum / step) * step
 }
 
 function BloodPressureLineChart({

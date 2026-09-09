@@ -330,8 +330,16 @@ describe('PatientReportsWorkspace', () => {
 
     await clickButton(mounted.container, 'Print preview')
     const printPreview = mounted.container.querySelector('[role="dialog"]')
-    expect(printPreview?.querySelector('[data-report-chart="blood-pressure"]')).not.toBeNull()
-    expect(printPreview?.querySelector('[data-report-chart="weight"]')).not.toBeNull()
+    const printableBloodPressureChart = printPreview?.querySelector(
+      '[data-report-chart="blood-pressure"]'
+    )
+    const printableWeightChart = printPreview?.querySelector('[data-report-chart="weight"]')
+    expect(printableBloodPressureChart?.getAttribute('data-report-chart-type')).toBe('bar')
+    expect(printableBloodPressureChart?.querySelectorAll('.patient-report-bar')).toHaveLength(4)
+    expect(printableBloodPressureChart?.querySelector('svg')).toBeNull()
+    expect(printableWeightChart?.getAttribute('data-report-chart-type')).toBe('bar')
+    expect(printableWeightChart?.querySelectorAll('.patient-report-bar')).toHaveLength(2)
+    expect(printableWeightChart?.querySelector('svg')).toBeNull()
     await clickButton(mounted.container, 'Close')
 
     await clickButton(mounted.container, 'Lifestyle')
