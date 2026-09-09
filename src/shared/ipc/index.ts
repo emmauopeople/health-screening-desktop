@@ -12,8 +12,31 @@ export {
   type ScreeningEncounterManagementIpcChannel,
   type ScreeningLifestyleIpcChannel,
   type InstallationSettingsIpcChannel,
+  type SyncAdministrationIpcChannel,
   type ScreeningSessionIpcChannel
 } from './channels'
+export {
+  createSyncAdministrationFailure,
+  publicSyncAdministrationActivitySchema,
+  publicSyncAdministrationConfigurationSchema,
+  syncAdministrationActivityStateSchema,
+  syncAdministrationConfigureRequestSchema,
+  syncAdministrationConfigureResultSchema,
+  syncAdministrationConfigureSuccessDataSchema,
+  syncAdministrationErrorCodeSchema,
+  syncAdministrationFailureSchema,
+  syncAdministrationGetStateRequestSchema,
+  syncAdministrationGetStateResultSchema,
+  syncAdministrationGetStateSuccessDataSchema,
+  syncAdministrationSafeErrorMessages,
+  type PublicSyncAdministrationActivity,
+  type PublicSyncAdministrationConfiguration,
+  type SyncAdministrationConfigureRequest,
+  type SyncAdministrationConfigureResult,
+  type SyncAdministrationErrorCode,
+  type SyncAdministrationGetStateRequest,
+  type SyncAdministrationGetStateResult
+} from './sync-administration-contracts'
 export {
   auditReportActionCodeSchema,
   auditReportActorFilterSchema,

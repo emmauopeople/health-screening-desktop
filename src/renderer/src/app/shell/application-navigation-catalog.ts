@@ -240,8 +240,8 @@ const commandDefinitions = [
     'ADMINISTRATION',
     'Sync Center',
     adminOnlyRoles,
-    'PLANNED',
-    plannedOwners.sync
+    'AVAILABLE',
+    null
   ),
   command(
     'ADMINISTRATION_BACKUP_RESTORE',

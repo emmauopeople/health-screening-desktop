@@ -59,5 +59,7 @@ HSW-013B3 adds local CHS Medical ID application and installation-scoped
 reviewer-resolution pull and acknowledgment in
 [`desktop-sync-identity-resolution-delivery.md`](./desktop-sync-identity-resolution-delivery.md).
 Administrator configuration and minimum-necessary synchronization status UI
-remain HSW-013C work. Food, OTC, referral, addendum, and review-flag transport
-remain blocked until their central contracts are frozen.
+are implemented by HSW-013C in
+[`desktop-sync-administration.md`](./desktop-sync-administration.md). Food, OTC,
+referral, addendum, and review-flag transport remain blocked until their central
+contracts are frozen.

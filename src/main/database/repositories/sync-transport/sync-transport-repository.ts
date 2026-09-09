@@ -21,6 +21,7 @@ import type {
   InsertPreparedSyncTransportBatchInput,
   PreparedSyncTransportBatch,
   RescheduleSyncTransportBatchInput,
+  StoredSyncOperationalStatus,
   StoredSyncTransportConfiguration,
   SyncTransportBatchRepository,
   SyncTransportBatchStatus
@@ -55,6 +56,40 @@ export function createSyncTransportBatchRepository(
           .prepare('SELECT value_json, updated_at FROM app_settings WHERE key = ?')
           .get(configurationKey) as { value_json?: unknown; updated_at?: unknown } | undefined
         return row === undefined ? null : decodeConfiguration(row)
+      } catch (error) {
+        if (error instanceof RepositoryDataIntegrityError) throw error
+        throw new RepositoryReadError(getRepositoryErrorType(error))
+      }
+    },
+
+    getOperationalStatus(): StoredSyncOperationalStatus {
+      try {
+        const row = connection
+          .prepare(
+            `SELECT
+               (SELECT COUNT(*) FROM sync_outbox
+                WHERE status IN ('PENDING', 'FAILED', 'IN_FLIGHT')) AS pending_change_count,
+               (SELECT COUNT(*) FROM sync_transport_batches
+                WHERE status IN ('PREPARED', 'RETRY_WAIT')) AS queued_batch_count,
+               (SELECT COUNT(*) FROM sync_transport_batches
+                WHERE status = 'IN_FLIGHT') AS in_flight_batch_count,
+               (SELECT COUNT(*) FROM sync_identity_resolution_deliveries
+                WHERE acknowledged_at IS NULL) AS pending_acknowledgment_count,
+               (SELECT MAX(completed_at) FROM sync_transport_batches
+                WHERE status = 'COMPLETED') AS last_completed_batch_at,
+               (SELECT MIN(next_attempt_at) FROM sync_transport_batches
+                WHERE status = 'RETRY_WAIT') AS next_retry_at`
+          )
+          .get() as Record<string, unknown> | undefined
+        if (row === undefined) throw new RepositoryDataIntegrityError()
+        return Object.freeze({
+          pendingChangeCount: parseCount(row.pending_change_count),
+          queuedBatchCount: parseCount(row.queued_batch_count),
+          inFlightBatchCount: parseCount(row.in_flight_batch_count),
+          pendingAcknowledgmentCount: parseCount(row.pending_acknowledgment_count),
+          lastCompletedBatchAt: parseNullableTimestamp(row.last_completed_batch_at),
+          nextRetryAt: parseNullableTimestamp(row.next_retry_at)
+        })
       } catch (error) {
         if (error instanceof RepositoryDataIntegrityError) throw error
         throw new RepositoryReadError(getRepositoryErrorType(error))
@@ -250,6 +285,13 @@ export function createSyncTransportBatchRepository(
       }
     }
   })
+}
+
+function parseCount(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new RepositoryDataIntegrityError()
+  }
+  return value
 }
 
 function encodeConfiguration(configuration: StoredSyncTransportConfiguration): string {

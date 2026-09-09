@@ -638,6 +638,22 @@ function createApi({
         createInstallationSettingsFailure('IPC_UNAVAILABLE')
       ),
       reconfigureLocation: vi.fn(async () => createInstallationSettingsFailure('IPC_UNAVAILABLE'))
+    },
+    syncAdministration: {
+      getState: vi.fn(async () => ({
+        ok: false as const,
+        error: {
+          code: 'IPC_UNAVAILABLE' as const,
+          message: 'The desktop service is unavailable.' as const
+        }
+      })),
+      configure: vi.fn(async () => ({
+        ok: false as const,
+        error: {
+          code: 'IPC_UNAVAILABLE' as const,
+          message: 'The desktop service is unavailable.' as const
+        }
+      }))
     }
   }
 }

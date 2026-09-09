@@ -62,7 +62,7 @@ export type ApplicationWorkspaceRoute =
     }
   | {
       readonly status: 'ADMINISTRATION'
-      readonly commandId: 'ADMINISTRATION_LOCATIONS'
+      readonly commandId: 'ADMINISTRATION_LOCATIONS' | 'ADMINISTRATION_SYNC_CENTER'
     }
   | {
       readonly status: 'MANAGE_ENCOUNTERS'

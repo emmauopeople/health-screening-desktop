@@ -30,6 +30,7 @@ import {
   createProductionScreeningVitalsDraftService,
   createProductionScreeningSessionService,
   createProductionScreeningSessionWorkspaceContextService,
+  createProductionSyncAdministrationService,
   createProductionSyncWorkerService,
   createSyncWorkerScheduler
 } from '@main/application'
@@ -184,6 +185,13 @@ export function startApplicationLifecycle(): void {
         installationLocationService,
         logger: console
       })
+      const syncCredentialProtector = createElectronSyncCredentialProtector()
+      const syncAdministrationService = createProductionSyncAdministrationService({
+        connection: databaseRuntime.getConnection(),
+        authenticationSessionService,
+        credentialProtector: syncCredentialProtector,
+        logger: console
+      })
       const auditReportService = createProductionAuditReportService({
         connection: databaseRuntime.getConnection(),
         authenticationSessionService
@@ -193,7 +201,7 @@ export function startApplicationLifecycle(): void {
           connection: databaseRuntime.getConnection(),
           desktopApplicationVersion: app.getVersion(),
           desktopSchemaVersion: targetSchemaVersion,
-          credentialProtector: createElectronSyncCredentialProtector(),
+          credentialProtector: syncCredentialProtector,
           logger: console
         })
       )
@@ -271,6 +279,12 @@ export function startApplicationLifecycle(): void {
           authenticationSessionService,
           installationLocationService,
           locationRepository,
+          logger: console
+        },
+        syncAdministration: {
+          navigationPolicy,
+          authenticationSessionService,
+          syncAdministrationService,
           logger: console
         },
         logger: console

@@ -90,6 +90,10 @@ export const ipcChannels = {
     listEligibleLocations: 'health-screening:installation-settings:list-eligible-locations',
     assignInitialLocation: 'health-screening:installation-settings:assign-initial-location',
     reconfigureLocation: 'health-screening:installation-settings:reconfigure-location'
+  },
+  syncAdministration: {
+    getState: 'health-screening:sync-administration:get-state',
+    configure: 'health-screening:sync-administration:configure'
   }
 } as const
 
@@ -121,3 +125,5 @@ export type ScreeningEncounterManagementIpcChannel =
   (typeof ipcChannels.screeningEncounters.management)[keyof typeof ipcChannels.screeningEncounters.management]
 export type InstallationSettingsIpcChannel =
   (typeof ipcChannels.installationSettings)[keyof typeof ipcChannels.installationSettings]
+export type SyncAdministrationIpcChannel =
+  (typeof ipcChannels.syncAdministration)[keyof typeof ipcChannels.syncAdministration]

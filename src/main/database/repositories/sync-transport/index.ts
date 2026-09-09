@@ -11,6 +11,7 @@ export type {
   InsertPreparedSyncTransportBatchInput,
   PreparedSyncTransportBatch,
   RescheduleSyncTransportBatchInput,
+  StoredSyncOperationalStatus,
   StoredSyncTransportConfiguration,
   SyncTransportBatchRepository,
   SyncTransportBatchStatus
