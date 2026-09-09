@@ -33,7 +33,7 @@ describe('application navigation catalog', () => {
         'Screening',
         ['Patients', 'New Screening', 'Draft Encounters', 'Manage Encounters', 'Session Summary']
       ],
-      ['Referrals', ['Referral Worklist', 'Follow-up Due', 'Closed Referrals', 'Print Queue']],
+      ['Referrals', ['Referral Worklist', 'Follow-up Due', 'Close Referral', 'Print Queue']],
       [
         'Reports',
         [
@@ -62,7 +62,7 @@ describe('application navigation catalog', () => {
         'Screening',
         ['Patients', 'New Screening', 'Draft Encounters', 'Manage Encounters', 'Session Summary']
       ],
-      ['Referrals', ['Referral Worklist', 'Follow-up Due', 'Closed Referrals', 'Print Queue']],
+      ['Referrals', ['Referral Worklist', 'Follow-up Due', 'Close Referral', 'Print Queue']],
       ['Reports', ['Patient Reports', 'Session Reports', 'Referral Reports', 'Export / Print']]
     ])
     expect(labelsForRole('TRAINED_SCREENER')).toEqual([
@@ -103,6 +103,9 @@ describe('application navigation catalog', () => {
       'SCREENING_MANAGE_ENCOUNTERS',
       'SCREENING_SESSION_SUMMARY',
       'REFERRALS_REFERRAL_WORKLIST',
+      'REFERRALS_FOLLOW_UP_DUE',
+      'REFERRALS_CLOSED_REFERRALS',
+      'REFERRALS_PRINT_QUEUE',
       'REPORTS_PATIENT_REPORTS',
       'REPORTS_SESSION_REPORTS',
       'REPORTS_REFERRAL_REPORTS',

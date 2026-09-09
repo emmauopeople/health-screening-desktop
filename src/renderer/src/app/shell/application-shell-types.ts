@@ -94,7 +94,12 @@ export type ApplicationWorkspaceRoute =
     }
   | {
       readonly status: 'REFERRALS'
-      readonly commandId: 'HOME_OPEN_REFERRALS' | 'REFERRALS_REFERRAL_WORKLIST'
+      readonly commandId:
+        | 'HOME_OPEN_REFERRALS'
+        | 'REFERRALS_REFERRAL_WORKLIST'
+        | 'REFERRALS_FOLLOW_UP_DUE'
+        | 'REFERRALS_CLOSED_REFERRALS'
+        | 'REFERRALS_PRINT_QUEUE'
     }
   | {
       readonly status: 'PLANNED_MODULE'

@@ -162,6 +162,19 @@ describe('application shell controller', () => {
     })
   })
 
+  it('routes each referral workflow tab to the shared referrals workspace', () => {
+    const controller = createApplicationShellController({ role: 'NURSE' })
+
+    for (const commandId of [
+      'REFERRALS_FOLLOW_UP_DUE',
+      'REFERRALS_CLOSED_REFERRALS',
+      'REFERRALS_PRINT_QUEUE'
+    ] as const) {
+      controller.selectCommand(commandId)
+      expect(controller.getSnapshot().route).toEqual({ status: 'REFERRALS', commandId })
+    }
+  })
+
   it('routes Export / Print as an available patient PDF workspace', () => {
     const controller = createApplicationShellController({ role: 'NURSE' })
 

@@ -159,24 +159,24 @@ const commandDefinitions = [
     'REFERRALS',
     'Follow-up Due',
     nurseAndAdminRoles,
-    'PLANNED',
-    plannedOwners.referrals
+    'AVAILABLE',
+    null
   ),
   command(
     'REFERRALS_CLOSED_REFERRALS',
     'REFERRALS',
-    'Closed Referrals',
+    'Close Referral',
     nurseAndAdminRoles,
-    'PLANNED',
-    plannedOwners.referrals
+    'AVAILABLE',
+    null
   ),
   command(
     'REFERRALS_PRINT_QUEUE',
     'REFERRALS',
     'Print Queue',
     nurseAndAdminRoles,
-    'PLANNED',
-    plannedOwners.reporting
+    'AVAILABLE',
+    null
   ),
   command(
     'REPORTS_PATIENT_REPORTS',
