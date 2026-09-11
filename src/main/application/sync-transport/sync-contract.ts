@@ -21,7 +21,9 @@ const resourceType = z.enum([
   'SCREENING_SESSION',
   'SCREENING_ENCOUNTER',
   'VITALS',
-  'LIFESTYLE'
+  'LIFESTYLE',
+  'FOOD',
+  'OTC'
 ])
 const medicalId = z
   .string()

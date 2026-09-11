@@ -63,3 +63,9 @@ are implemented by HSW-013C in
 [`desktop-sync-administration.md`](./desktop-sync-administration.md). Food, OTC,
 referral, addendum, and review-flag transport remain blocked until their central
 contracts are frozen.
+
+## Food and OTC extension
+
+[HSW-019A](desktop-sync-food-otc.md) adds finalized Food/OTC transport and supersedes
+the Food/OTC exclusion in the historical increment description above. Other
+excluded domains remain separate follow-up increments.

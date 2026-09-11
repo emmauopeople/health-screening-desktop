@@ -1,7 +1,10 @@
+import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
+import { databaseMigrations } from '@main/database/migrations/migration-manifest'
+import { runDatabaseMigrations } from '@main/database/migrations/migration-runner'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createSyncSnapshotPreparationService } from '@main/application/sync-transport'
@@ -50,6 +53,150 @@ afterEach(async () => {
 })
 
 describe('sync snapshot materialization', () => {
+  it('backfills finalized Food/OTC on upgrade, preserves source data and does not duplicate work on restart', async () => {
+    const harness = await createHarness(21)
+    const c = harness.connection
+    insertClinicalFoundation(c)
+    c.prepare(
+      "UPDATE screening_encounters SET status = 'COMPLETED', completed_at = ? WHERE id = ?"
+    ).run(now, encounterId)
+    c.prepare(
+      `INSERT INTO food_logs (id, encounter_id, food_code, food_name, food_name_normalized,
+      frequency_code, notes, source_type, recorded_by, recorded_at)
+      VALUES (?, ?, 'BEANS', 'Beans', 'beans', NULL, NULL, 'PATIENT_REPORTED', ?, ?)`
+    ).run(readingId, encounterId, nurseId, now)
+    c.prepare(
+      `INSERT INTO otc_medication_logs (id, encounter_id, product_name, product_name_normalized,
+      reason_for_use, dose_text, frequency_text, duration_text, source_of_medication,
+      currently_taking, source_type, recorded_by, recorded_at)
+      VALUES (?, ?, 'Synthetic product', 'synthetic product', 'Reported reason', 'Reported dose',
+      NULL, NULL, NULL, NULL, 'PATIENT_REPORTED', ?, ?)`
+    ).run(vitalsId, encounterId, nurseId, now)
+    const before = c.prepare('SELECT * FROM food_logs').all()
+    const migrate = createProductionDatabaseMigrationRunner({
+      applicationVersion: '1.0.0',
+      logger: { info: vi.fn(), error: vi.fn() },
+      clock: { now: () => now }
+    })
+    expect(migrate(c).appliedVersions).toEqual([22])
+    expect(migrate(c).appliedVersions).toEqual([])
+    expect(c.prepare('SELECT * FROM food_logs').all()).toEqual(before)
+    expect(readTableCount(c, 'sync_outbox')).toBe(2)
+    expect(harness.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED', recordCount: 2 })
+    const stored = c.prepare('SELECT request_json FROM sync_transport_batches').get() as {
+      request_json: string
+    }
+    const batch = JSON.parse(stored.request_json)
+    expect(batch.records.map((r: { resourceType: string }) => r.resourceType)).toEqual([
+      'FOOD',
+      'OTC'
+    ])
+    expect(batch.records[0]).toMatchObject({
+      localResourceId: encounterId,
+      sourceRevision: 1,
+      payload: {
+        response: null,
+        periodStart: null,
+        periodEnd: null,
+        rows: [{ foodName: 'Beans', frequencyCode: null, preparationNote: null }]
+      }
+    })
+    expect(batch.records[1]).toMatchObject({
+      payload: {
+        rows: [
+          {
+            productName: 'Synthetic product',
+            reasonForUse: 'Reported reason',
+            doseText: 'Reported dose',
+            currentlyTaking: null
+          }
+        ]
+      }
+    })
+    expect(batch.actors.map((a: { localActorId: string }) => a.localActorId)).toEqual([nurseId])
+  })
+
+  it('splits large finalized snapshots below the wire limit and leaves remaining work pending', async () => {
+    const harness = await createHarness()
+    const c = harness.connection
+    insertClinicalFoundation(c)
+    for (let index = 0; index < 3; index++) {
+      const patient = randomUUID()
+      const encounter = randomUUID()
+      c.prepare(
+        `INSERT INTO patients (id, patient_code, display_name, name_normalized,
+        status, created_by, created_at, updated_by, updated_at, row_version)
+        VALUES (?, ?, 'Synthetic Patient', 'synthetic patient', 'ACTIVE', ?, ?, ?, ?, 1)`
+      ).run(patient, `PT-LARGE-${index}`, adminId, now, adminId, now)
+      c.prepare(
+        `INSERT INTO screening_encounters (id, patient_id, screening_session_id,
+        location_id, protocol_version_id, status, started_at, completed_at, source_type,
+        recorded_by, record_version, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'COMPLETED', ?, ?, 'LOCAL', ?, 1, ?, ?)`
+      ).run(encounter, patient, sessionId, locationId, protocolId, now, now, nurseId, now, now)
+      const insert = c.prepare(`INSERT INTO otc_medication_logs (id, encounter_id,
+        product_name, product_name_normalized, reason_for_use, dose_text, frequency_text,
+        duration_text, source_of_medication, currently_taking, source_type, recorded_by, recorded_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'PATIENT_REPORTED', ?, ?)`)
+      for (let row = 0; row < 100; row++) {
+        const name = '藥'.repeat(150) + row
+        const text = '例'.repeat(160)
+        insert.run(
+          randomUUID(),
+          encounter,
+          name,
+          name,
+          '例'.repeat(500),
+          text,
+          text,
+          text,
+          text,
+          nurseId,
+          now
+        )
+      }
+      insertSignal(
+        c,
+        randomUUID(),
+        'SCREENING_ENCOUNTER',
+        encounter,
+        'SCREENING_OTC_FINALIZED',
+        index
+      )
+    }
+    expect(harness.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED' })
+    const stored = c.prepare('SELECT request_json FROM sync_transport_batches').get() as {
+      request_json: string
+    }
+    expect(Buffer.byteLength(stored.request_json, 'utf8')).toBeLessThan(1024 * 1024)
+    const included = JSON.parse(stored.request_json).records.length as number
+    expect(included).toBeGreaterThan(0)
+    expect(included).toBeLessThan(3)
+    expect(readTableCount(c, 'sync_transport_batch_items')).toBe(included)
+    expect(readTableCount(c, 'sync_outbox')).toBe(3)
+    expect(
+      c.prepare("SELECT count(*) AS count FROM sync_outbox WHERE status = 'PENDING'").get()
+    ).toEqual({ count: 3 - included })
+  })
+
+  it('never uploads a Food/OTC snapshot for an incomplete encounter', async () => {
+    const harness = await createHarness()
+    insertClinicalFoundation(harness.connection)
+    insertSignal(
+      harness.connection,
+      patientSignalOne,
+      'SCREENING_ENCOUNTER',
+      encounterId,
+      'SCREENING_FOOD_FINALIZED',
+      1
+    )
+    expect(harness.service.prepareNextBatch()).toEqual({ status: 'IDLE' })
+    expect(readTableCount(harness.connection, 'sync_transport_batches')).toBe(0)
+    expect(readOutboxStatuses(harness.connection)).toEqual([
+      { id: patientSignalOne, status: 'PENDING' }
+    ])
+  })
+
   it('coalesces current SQLite snapshots in dependency order and excludes unsupported signals', async () => {
     const harness = await createHarness()
     insertClinicalFoundation(harness.connection)
@@ -285,18 +432,20 @@ describe('sync snapshot materialization', () => {
   })
 })
 
-async function createHarness(): Promise<{
+async function createHarness(version = 22): Promise<{
   readonly connection: Database.Database
   readonly service: ReturnType<typeof createSyncSnapshotPreparationService>
 }> {
   const directory = await mkdtemp(join(tmpdir(), 'hsw013b1-sync-snapshot-'))
   const connection = new Database(join(directory, 'health-screening.sqlite3'))
   connection.pragma('foreign_keys = ON')
-  createProductionDatabaseMigrationRunner({
+  runDatabaseMigrations({
+    connection,
+    migrations: databaseMigrations.filter((m) => m.version <= version),
     applicationVersion: '1.0.0',
     logger: { info: vi.fn(), error: vi.fn() },
     clock: { now: () => now }
-  })(connection)
+  })
   cleanup.push(async () => {
     if (connection.open) connection.close()
     await rm(directory, { recursive: true, force: true })
@@ -314,7 +463,7 @@ async function createHarness(): Promise<{
       batchRepository: createSyncTransportBatchRepository(connection),
       transactionExecutor,
       desktopApplicationVersion: '1.0.0',
-      desktopSchemaVersion: 19
+      desktopSchemaVersion: version
     })
   }
 }

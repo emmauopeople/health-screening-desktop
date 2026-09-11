@@ -3,7 +3,7 @@ import type { EntityId } from '@main/foundation/entity-id'
 import type { UtcTimestamp } from '@main/foundation/utc-clock'
 
 export type MaterializedSyncResourceType =
-  'PATIENT' | 'SCREENING_SESSION' | 'SCREENING_ENCOUNTER' | 'VITALS' | 'LIFESTYLE'
+  'PATIENT' | 'SCREENING_SESSION' | 'SCREENING_ENCOUNTER' | 'VITALS' | 'LIFESTYLE' | 'FOOD' | 'OTC'
 
 export type MaterializedSyncJsonValue =
   | null
@@ -27,7 +27,13 @@ export interface MaterializedSyncRecord {
   readonly localResourceId: EntityId
   readonly sourceRevision: number
   readonly schemaVersion:
-    'patient.v1' | 'screening-session.v1' | 'screening-encounter.v1' | 'vitals.v1' | 'lifestyle.v1'
+    | 'patient.v1'
+    | 'screening-session.v1'
+    | 'screening-encounter.v1'
+    | 'vitals.v1'
+    | 'lifestyle.v1'
+    | 'food.v1'
+    | 'otc.v1'
   readonly operation: 'UPSERT'
   readonly capturedAt: UtcTimestamp
   readonly sourceActorLocalId: EntityId

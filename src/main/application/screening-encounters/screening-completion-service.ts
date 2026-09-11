@@ -318,6 +318,20 @@ export function createScreeningCompletionService(
             payload: metadata
           })
 
+          for (const domain of ['food', 'otc'] as const) {
+            dependencies.screeningEncounterOutboxRepository.insert(context.connection, {
+              id: context.newEntityId(),
+              aggregateId: encounter.id,
+              operation: domain === 'food' ? 'SCREENING_FOOD_FINALIZED' : 'SCREENING_OTC_FINALIZED',
+              payloadSchemaVersion:
+                domain === 'food'
+                  ? 'screening-encounter.food-finalized.v1'
+                  : 'screening-encounter.otc-finalized.v1',
+              createdAt: completedAt,
+              payload: { encounter_id: encounter.id }
+            })
+          }
+
           return Object.freeze({
             status: 'COMPLETED' as const,
             encounter: toCompletedSummary(completedEncounter)

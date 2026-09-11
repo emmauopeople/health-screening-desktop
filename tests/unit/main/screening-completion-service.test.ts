@@ -67,7 +67,19 @@ describe('screening completion service', () => {
       expect.objectContaining({ status: 'COMPLETE', expectedRowVersion: 3 })
     )
     expect(harness.auditEventRepository.insert).toHaveBeenCalledOnce()
-    expect(harness.outboxRepository.insert).toHaveBeenCalledOnce()
+    expect(harness.outboxRepository.insert).toHaveBeenCalledTimes(3)
+    expect(harness.outboxRepository.insert.mock.calls.slice(1).map((call) => call[1])).toEqual([
+      expect.objectContaining({
+        operation: 'SCREENING_FOOD_FINALIZED',
+        aggregateId: ids.encounter,
+        payload: { encounter_id: ids.encounter }
+      }),
+      expect.objectContaining({
+        operation: 'SCREENING_OTC_FINALIZED',
+        aggregateId: ids.encounter,
+        payload: { encounter_id: ids.encounter }
+      })
+    ])
     expect(harness.referralRepository.createAutomaticReferral).not.toHaveBeenCalled()
 
     const auditInput = harness.auditEventRepository.insert.mock.calls[0]?.[1]

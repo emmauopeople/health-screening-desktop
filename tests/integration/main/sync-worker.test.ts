@@ -130,6 +130,65 @@ describe('HSW-013B desktop synchronization worker', () => {
     harness.connection.close()
   })
 
+  it('applies Food/OTC independently and clears superseded drafts only after acceptance', async () => {
+    const harness = createHarness([
+      'a0000000-0000-4000-8000-000000000001',
+      'a0000000-0000-4000-8000-000000000002',
+      'a0000000-0000-4000-8000-000000000003'
+    ])
+    seedCompleteGraph(harness.connection)
+    const foodSignal = 'e1000000-0000-4000-8000-000000000001'
+    const otcSignal = 'e1000000-0000-4000-8000-000000000002'
+    const foodDraftSignal = 'e1000000-0000-4000-8000-000000000003'
+    const otcDraftSignal = 'e1000000-0000-4000-8000-000000000004'
+    for (const [id, operation] of [
+      [foodSignal, 'SCREENING_FOOD_FINALIZED'],
+      [otcSignal, 'SCREENING_OTC_FINALIZED'],
+      [foodDraftSignal, 'SCREENING_FOOD_DRAFT_SAVED'],
+      [otcDraftSignal, 'SCREENING_OTC_DRAFT_SAVED']
+    ]) {
+      insertOutbox(harness.connection, id!, 'SCREENING_ENCOUNTER', encounterId, operation!, at)
+    }
+    configure(harness.foundation)
+    const worker = createWorker(
+      harness,
+      httpClient({
+        submitBatch: async (_credential, requestJson) => {
+          const responseBody = JSON.parse(acceptedResponse(requestJson))
+          responseBody.batchStatus = 'PARTIAL'
+          const otc = responseBody.outcomes.find(
+            (o: { resourceType: string }) => o.resourceType === 'OTC'
+          )
+          otc.status = 'RETRY'
+          otc.canonicalResourceId = null
+          otc.errors = [{ code: 'DEPENDENCY_NOT_AVAILABLE', path: '', retryable: true }]
+          return response(200, JSON.stringify(responseBody))
+        }
+      })
+    )
+    await expect(worker.runOnce()).resolves.toMatchObject({ status: 'SYNCED', recordCount: 7 })
+    const status = (id: string): string =>
+      (
+        harness.connection.prepare('SELECT status FROM sync_outbox WHERE id = ?').get(id) as {
+          status: string
+        }
+      ).status
+    expect(status(foodSignal)).toBe('SENT')
+    expect(status(foodDraftSignal)).toBe('SENT')
+    expect(status(otcSignal)).toBe('FAILED')
+    expect(status(otcDraftSignal)).toBe('PENDING')
+    // The existing fixture's excluded signal is also a Food draft notification.
+    expect(status(excludedOutbox)).toBe('SENT')
+    expect(
+      harness.connection
+        .prepare(
+          "SELECT resource_type FROM sync_transport_resource_mappings WHERE resource_type IN ('FOOD','OTC')"
+        )
+        .all()
+    ).toEqual([{ resource_type: 'FOOD' }])
+    harness.connection.close()
+  })
+
   it('stores an immutable response, terminal outcomes, and canonical mappings atomically', async () => {
     const harness = createHarness([
       'a0000000-0000-4000-8000-000000000001',

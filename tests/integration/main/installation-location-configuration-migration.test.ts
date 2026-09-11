@@ -10,7 +10,7 @@ import {
 } from '@main/database'
 import { databaseMigrations } from '@main/database/migrations/migration-manifest'
 import { runDatabaseMigrations } from '@main/database/migrations/migration-runner'
-import { validateSchemaVersion21 } from '@main/database/migrations'
+import { validateSchemaVersion22 } from '@main/database/migrations'
 
 const now = '2026-08-10T12:00:00.000Z'
 const installationId = '61000000-0000-4000-8000-000000000001'
@@ -31,14 +31,16 @@ describe('installation location configuration migration', () => {
 
       expect(summary).toEqual({
         previousVersion: 0,
-        currentVersion: 21,
-        appliedVersions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+        currentVersion: 22,
+        appliedVersions: [
+          1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22
+        ]
       })
-      expect(readUserVersion(connection)).toBe(21)
-      expect(readTableCount(connection, 'schema_migrations')).toBe(21)
+      expect(readUserVersion(connection)).toBe(22)
+      expect(readTableCount(connection, 'schema_migrations')).toBe(22)
       expect(hasTable(connection, 'installation_location_configuration')).toBe(true)
       expect(readTableCount(connection, 'installation_location_configuration')).toBe(0)
-      expect(() => validateSchemaVersion21(connection, 'compatibility')).not.toThrow()
+      expect(() => validateSchemaVersion22(connection, 'compatibility')).not.toThrow()
     })
   })
 
@@ -52,16 +54,16 @@ describe('installation location configuration migration', () => {
 
       expect(summary).toEqual({
         previousVersion: 5,
-        currentVersion: 21,
-        appliedVersions: [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+        currentVersion: 22,
+        appliedVersions: [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
       })
-      expect(readUserVersion(connection)).toBe(21)
+      expect(readUserVersion(connection)).toBe(22)
       expect(readOperationalCounts(connection)).toEqual({
         ...beforeCounts,
         installation_location_configuration: 0
       })
       expect(readConfigurationRows(connection)).toEqual([])
-      expect(() => validateSchemaVersion21(connection, 'compatibility')).not.toThrow()
+      expect(() => validateSchemaVersion22(connection, 'compatibility')).not.toThrow()
     })
   })
 
@@ -101,7 +103,7 @@ describe('installation location configuration migration', () => {
 
       connection.exec('DROP INDEX ix_installation_location_configuration_location')
 
-      expect(() => validateSchemaVersion21(connection, 'compatibility')).toThrow(
+      expect(() => validateSchemaVersion22(connection, 'compatibility')).toThrow(
         MigrationCompatibilityError
       )
     })
@@ -111,7 +113,7 @@ describe('installation location configuration migration', () => {
 
       connection.exec('DROP TABLE installation_location_configuration')
 
-      expect(() => validateSchemaVersion21(connection, 'compatibility')).toThrow(
+      expect(() => validateSchemaVersion22(connection, 'compatibility')).toThrow(
         MigrationCompatibilityError
       )
     })

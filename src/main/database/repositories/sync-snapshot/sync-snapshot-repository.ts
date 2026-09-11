@@ -28,16 +28,22 @@ import type {
 const maximumSignals = 500
 const maximumRecords = 100
 const maximumActors = 50
+// Reserve room below the 1 MiB wire limit for actors and the transport envelope.
+const maximumRecordBytes = 900 * 1024
 
 const resourceOrder: Readonly<Record<MaterializedSyncResourceType, number>> = Object.freeze({
   PATIENT: 0,
   SCREENING_SESSION: 1,
   SCREENING_ENCOUNTER: 2,
   VITALS: 3,
-  LIFESTYLE: 4
+  LIFESTYLE: 4,
+  FOOD: 5,
+  OTC: 6
 })
 
 const operationResource = new Map<string, MaterializedSyncResourceType>([
+  ['SCREENING_FOOD_FINALIZED', 'FOOD'],
+  ['SCREENING_OTC_FINALIZED', 'OTC'],
   ['PATIENT_CREATED', 'PATIENT'],
   ['PATIENT_DEMOGRAPHICS_AMENDED', 'PATIENT'],
   ['PATIENT_ACKNOWLEDGMENT_RECORDED', 'PATIENT'],
@@ -109,23 +115,27 @@ export function createSyncSnapshotRepository(
         const selected: MaterializedCandidate[] = []
         const actorIds = new Set<EntityId>()
         let signalCount = 0
+        let recordBytes = 0
 
         for (const candidate of candidates) {
           const nextActorIds = new Set([...actorIds, ...candidate.actorIds])
+          const candidateBytes = Buffer.byteLength(JSON.stringify(candidate.record), 'utf8') + 1
           if (
             selected.length >= maximumRecords ||
             signalCount + candidate.outboxIds.length > maximumSignals ||
-            nextActorIds.size > maximumActors
+            nextActorIds.size > maximumActors ||
+            recordBytes + candidateBytes > maximumRecordBytes
           ) {
             break
           }
           selected.push(candidate)
           signalCount += candidate.outboxIds.length
+          recordBytes += candidateBytes
           candidate.actorIds.forEach((actorId) => actorIds.add(actorId))
         }
 
         if (selected.length === 0) {
-          if (candidates[0] !== undefined && candidates[0].actorIds.size > maximumActors) {
+          if (candidates[0] !== undefined) {
             throw new RepositoryDataIntegrityError()
           }
           return null
@@ -236,13 +246,21 @@ function materializeCandidate(
           ? materializeEncounter(connection, installation, group.aggregateId, latestSignal)
           : group.resourceType === 'VITALS'
             ? materializeVitals(connection, installation, group.aggregateId, latestSignal)
-            : materializeLifestyle(
-                connection,
-                lifestyleRepository,
-                installation,
-                group.aggregateId,
-                latestSignal
-              )
+            : group.resourceType === 'FOOD' || group.resourceType === 'OTC'
+              ? materializeReportedIntake(
+                  connection,
+                  installation,
+                  group.aggregateId,
+                  latestSignal,
+                  group.resourceType
+                )
+              : materializeLifestyle(
+                  connection,
+                  lifestyleRepository,
+                  installation,
+                  group.aggregateId,
+                  latestSignal
+                )
 
   if (materialized === null) return null
   return Object.freeze({
@@ -707,6 +725,113 @@ function materializeLifestyle(
       })
     },
     actorIds
+  )
+}
+
+function materializeReportedIntake(
+  connection: DatabaseTransactionConnection,
+  installation: InstallationContext,
+  encounterId: EntityId,
+  signal: OutboxSignal,
+  resourceType: 'FOOD' | 'OTC'
+): Pick<MaterializedCandidate, 'record' | 'actorIds'> | null {
+  const encounter = requiredRow(
+    connection,
+    'SELECT * FROM screening_encounters WHERE id = ?',
+    encounterId
+  )
+  requireLocation(encounter.location_id, installation.locationId)
+  if (encounter.source_type !== 'LOCAL') return null
+  if (encounter.status === 'DRAFT' || encounter.completed_at === null) return null
+  const completedAt = parseUtcTimestamp(encounter.completed_at)
+  const table = resourceType === 'FOOD' ? 'food_logs' : 'otc_medication_logs'
+  const rows = connection
+    .prepare<[string], Record<string, unknown>>(
+      `SELECT * FROM ${table} WHERE encounter_id = ? ORDER BY id LIMIT 101`
+    )
+    .all(encounterId)
+  if (rows.length > 100) throw new RepositoryDataIntegrityError()
+  const audit = connection
+    .prepare<[string, string], { user_id: unknown }>(
+      `SELECT user_id FROM audit_log WHERE entity_id = ? AND action = 'SCREENING_ENCOUNTER_COMPLETED'
+     AND occurred_at = ? ORDER BY id LIMIT 1`
+    )
+    .get(encounterId, completedAt)
+  const actorId = parseEntityId(audit?.user_id ?? rows[0]?.recorded_by ?? encounter.recorded_by)
+  const draftTable = resourceType === 'FOOD' ? 'food_drafts' : 'otc_drafts'
+  const draft = connection
+    .prepare<[string], Record<string, unknown>>(
+      `SELECT * FROM ${draftTable} WHERE encounter_id = ?`
+    )
+    .get(encounterId)
+  if (
+    draft &&
+    (draft.patient_id !== encounter.patient_id ||
+      draft.location_id !== installation.locationId ||
+      draft.installation_id !== installation.installationId ||
+      draft.screening_session_id !== encounter.screening_session_id)
+  ) {
+    throw new RepositoryDataIntegrityError()
+  }
+  const payloadRows = rows.map((row) => {
+    const common = {
+      localRowId: parseEntityId(row.id),
+      recordedByLocalActorId: parseEntityId(row.recorded_by),
+      recordedAt: parseUtcTimestamp(row.recorded_at),
+      sourceType: requiredEnum(row.source_type, ['PATIENT_REPORTED'])
+    }
+    if (common.recordedAt !== completedAt) throw new RepositoryDataIntegrityError()
+    return resourceType === 'FOOD'
+      ? {
+          ...common,
+          foodCode: nullableString(row.food_code),
+          foodName: requiredString(row.food_name),
+          frequencyCode:
+            row.frequency_code === null
+              ? null
+              : requiredEnum(row.frequency_code, [
+                  '1_DAY',
+                  '2_TO_3_DAYS',
+                  '4_TO_6_DAYS',
+                  'EVERY_DAY'
+                ]),
+          preparationNote: nullableString(row.notes)
+        }
+      : {
+          ...common,
+          productName: requiredString(row.product_name),
+          reasonForUse: requiredString(row.reason_for_use),
+          doseText: nullableString(row.dose_text),
+          frequencyText: nullableString(row.frequency_text),
+          durationText: nullableString(row.duration_text),
+          sourceOfMedication: nullableString(row.source_of_medication),
+          currentlyTaking:
+            row.currently_taking === null ? null : sqliteBoolean(row.currently_taking)
+        }
+  })
+  return candidateRecord(
+    {
+      recordId: signal.id,
+      resourceType,
+      localResourceId: encounterId,
+      sourceRevision: 1,
+      schemaVersion: resourceType === 'FOOD' ? 'food.v1' : 'otc.v1',
+      operation: 'UPSERT',
+      capturedAt: completedAt,
+      sourceActorLocalId: actorId,
+      payload: jsonObject({
+        localEncounterId: encounterId,
+        completedAt,
+        recordedByLocalActorId: actorId,
+        periodStart: draft ? requiredString(draft.period_start) : null,
+        periodEnd: draft ? requiredString(draft.period_end) : null,
+        response: draft
+          ? nullableString(draft[resourceType === 'FOOD' ? 'food_response' : 'otc_response'])
+          : null,
+        rows: payloadRows
+      })
+    },
+    [actorId, ...payloadRows.map((row) => row.recordedByLocalActorId)]
   )
 }
 
