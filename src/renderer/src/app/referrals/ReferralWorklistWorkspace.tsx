@@ -17,11 +17,19 @@ import type {
   ReferralTreatmentAction,
   ReferralUrgency
 } from '@shared/ipc'
+import { PatientReportDocument } from '../reports/PatientReportDocument'
+import { createPrintableReferralReport } from '../reports/referral-report-model'
+import { ReportDocumentActions } from '../reports/ReportDocumentActions'
+
+export type ReferralWorkspaceMode = 'WORKLIST' | 'FOLLOW_UP_DUE' | 'CLOSE_REFERRAL' | 'PRINT_QUEUE'
 
 interface ReferralWorklistWorkspaceProps {
   readonly api: HealthScreeningApi
+  readonly mode?: ReferralWorkspaceMode
   readonly headingId: string
   readonly headingRef: RefObject<HTMLHeadingElement | null>
+  readonly reportedBy?: string
+  readonly timeZone?: string
   readonly requestedReferralId?: string | null
   readonly requestedSessionId?: string | null
   onRequestedReferralConsumed?(): void
@@ -39,8 +47,11 @@ const pageSize = 25 as const
 
 export function ReferralWorklistWorkspace({
   api,
+  mode = 'WORKLIST',
   headingId,
   headingRef,
+  reportedBy = '',
+  timeZone = 'UTC',
   requestedReferralId = null,
   requestedSessionId = null,
   onRequestedReferralConsumed,
@@ -63,10 +74,21 @@ export function ReferralWorklistWorkspace({
   const [mutating, setMutating] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [showFollowup, setShowFollowup] = useState(false)
+  const [printReport, setPrintReport] = useState<ReturnType<
+    typeof createPrintableReferralReport
+  > | null>(null)
+  const [preparingPrint, setPreparingPrint] = useState(false)
+  const printButtonRef = useRef<HTMLButtonElement>(null)
   const requestIdRef = useRef(0)
   const requestedReferralIdRef = useRef<string | null>(requestedReferralId)
 
-  const dates = useMemo(() => resolveDueRange(dueFilter), [dueFilter])
+  const dates = useMemo(
+    () =>
+      mode === 'FOLLOW_UP_DUE'
+        ? { from: null, to: dateOnly(new Date()) }
+        : resolveDueRange(dueFilter),
+    [dueFilter, mode]
+  )
 
   const handleControlledFailure = useCallback(
     (status: string): void => {
@@ -111,11 +133,13 @@ export function ReferralWorklistWorkspace({
         query: normalized,
         screeningSessionId: requestedSessionId,
         statuses:
-          statusFilter === 'ACTIVE'
+          mode !== 'WORKLIST'
             ? [...activeStatuses]
-            : statusFilter === 'ALL'
-              ? []
-              : [statusFilter],
+            : statusFilter === 'ACTIVE'
+              ? [...activeStatuses]
+              : statusFilter === 'ALL'
+                ? []
+                : [statusFilter],
         urgency: urgency === 'ALL' ? null : urgency,
         dueFrom: dates.from,
         dueTo: dates.to,
@@ -162,6 +186,7 @@ export function ReferralWorklistWorkspace({
       onAuthenticationFailure,
       query,
       requestedSessionId,
+      mode,
       statusFilter,
       urgency
     ]
@@ -200,6 +225,26 @@ export function ReferralWorklistWorkspace({
   const search = (event: FormEvent): void => {
     event.preventDefault()
     void load(1)
+  }
+
+  const openPrintPreview = async (): Promise<void> => {
+    if (detail === null || preparingPrint) return
+    setPreparingPrint(true)
+    const patientResult = await api.patient.get({ patientId: detail.patientId })
+    if (!patientResult.ok) {
+      if (patientResult.error.code === 'IPC_FORBIDDEN') onAuthenticationFailure('IPC_FORBIDDEN')
+      setMessage(patientResult.error.message)
+    } else {
+      setPrintReport(
+        createPrintableReferralReport(
+          { patient: patientResult.data, referrals: [detail] },
+          [detail],
+          timeZone
+        )
+      )
+      setMessage(null)
+    }
+    setPreparingPrint(false)
   }
 
   const updateStatus = async (status: ReferralStatus, reason: string | null): Promise<void> => {
@@ -242,7 +287,7 @@ export function ReferralWorklistWorkspace({
     <section className="referral-workspace" aria-labelledby={headingId}>
       <header className="application-workspace-heading referral-workspace-heading">
         <h1 ref={headingRef} id={headingId} tabIndex={-1}>
-          Referral Worklist
+          {workspaceHeading(mode)}
         </h1>
       </header>
 
@@ -275,21 +320,23 @@ export function ReferralWorklistWorkspace({
             Search
           </button>
         </div>
-        <label>
-          <span>Status</span>
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.currentTarget.value as StatusFilter)}
-          >
-            <option value="ACTIVE">Active</option>
-            <option value="ALL">All</option>
-            <option value="OPEN">Open</option>
-            <option value="CONTACTED">Contacted</option>
-            <option value="SEEN">Seen</option>
-            <option value="UNABLE_TO_CONFIRM">Unable to confirm</option>
-            <option value="CLOSED">Closed</option>
-          </select>
-        </label>
+        {mode === 'WORKLIST' ? (
+          <label>
+            <span>Status</span>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.currentTarget.value as StatusFilter)}
+            >
+              <option value="ACTIVE">Active</option>
+              <option value="ALL">All</option>
+              <option value="OPEN">Open</option>
+              <option value="CONTACTED">Contacted</option>
+              <option value="SEEN">Seen</option>
+              <option value="UNABLE_TO_CONFIRM">Unable to confirm</option>
+              <option value="CLOSED">Closed</option>
+            </select>
+          </label>
+        ) : null}
         <label>
           <span>Urgency</span>
           <select
@@ -301,18 +348,20 @@ export function ReferralWorklistWorkspace({
             <option value="STANDARD">Standard</option>
           </select>
         </label>
-        <label>
-          <span>Due</span>
-          <select
-            value={dueFilter}
-            onChange={(event) => setDueFilter(event.currentTarget.value as DueFilter)}
-          >
-            <option value="ALL">All dates</option>
-            <option value="OVERDUE">Overdue</option>
-            <option value="NEXT_14_DAYS">Next 14 days</option>
-            <option value="NEXT_30_DAYS">Next 30 days</option>
-          </select>
-        </label>
+        {mode === 'WORKLIST' ? (
+          <label>
+            <span>Due</span>
+            <select
+              value={dueFilter}
+              onChange={(event) => setDueFilter(event.currentTarget.value as DueFilter)}
+            >
+              <option value="ALL">All dates</option>
+              <option value="OVERDUE">Overdue</option>
+              <option value="NEXT_14_DAYS">Next 14 days</option>
+              <option value="NEXT_30_DAYS">Next 30 days</option>
+            </select>
+          </label>
+        ) : null}
         <button
           className="button button-secondary referral-clear-button"
           type="button"
@@ -427,13 +476,16 @@ export function ReferralWorklistWorkspace({
             <p>Select a referral to view details.</p>
           ) : (
             <ReferralDetail
-              key={`${detail.id}:${detail.recordVersion}`}
+              key={`${mode}:${detail.id}:${detail.recordVersion}`}
               detail={detail}
               disabled={mutating}
+              mode={mode}
+              preparingPrint={preparingPrint}
               showFollowup={showFollowup}
               onShowFollowup={setShowFollowup}
               onOpenPatient={() => onOpenPatient(detail.patientId)}
               onOpenEncounter={() => onOpenEncounter(detail.encounterId)}
+              onOpenPrintPreview={() => void openPrintPreview()}
               onUpdateStatus={(status, reason) => void updateStatus(status, reason)}
               onRecordFollowup={(request) => {
                 setMutating(true)
@@ -449,6 +501,17 @@ export function ReferralWorklistWorkspace({
           )}
         </section>
       </div>
+      {printReport === null ? null : (
+        <ReferralPrintPreview
+          report={printReport}
+          reportedBy={reportedBy}
+          timeZone={timeZone}
+          reportDocumentApi={api.reportDocuments}
+          printButtonRef={printButtonRef}
+          onClose={() => setPrintReport(null)}
+          onAuthenticationFailure={onAuthenticationFailure}
+        />
+      )}
     </section>
   )
 }
@@ -456,10 +519,13 @@ export function ReferralWorklistWorkspace({
 interface ReferralDetailProps {
   readonly detail: PublicReferralDetail
   readonly disabled: boolean
+  readonly mode: ReferralWorkspaceMode
+  readonly preparingPrint: boolean
   readonly showFollowup: boolean
   onShowFollowup(value: boolean): void
   onOpenPatient(): void
   onOpenEncounter(): void
+  onOpenPrintPreview(): void
   onUpdateStatus(status: ReferralStatus, reason: string | null): void
   onRecordFollowup(
     request: Omit<
@@ -472,14 +538,19 @@ interface ReferralDetailProps {
 function ReferralDetail({
   detail,
   disabled,
+  mode,
+  preparingPrint,
   showFollowup,
   onShowFollowup,
   onOpenPatient,
   onOpenEncounter,
+  onOpenPrintPreview,
   onUpdateStatus,
   onRecordFollowup
 }: ReferralDetailProps): React.JSX.Element {
-  const [nextStatus, setNextStatus] = useState<ReferralStatus>(detail.status)
+  const [nextStatus, setNextStatus] = useState<ReferralStatus>(
+    mode === 'CLOSE_REFERRAL' ? 'CLOSED' : detail.status
+  )
   const [statusReason, setStatusReason] = useState('')
 
   return (
@@ -504,14 +575,26 @@ function ReferralDetail({
         )}
       </div>
       <div className="referral-actions">
-        <button
-          type="button"
-          className="button button-primary"
-          disabled={disabled || detail.status === 'CLOSED'}
-          onClick={() => onShowFollowup(!showFollowup)}
-        >
-          Record follow-up
-        </button>
+        {mode === 'WORKLIST' || mode === 'FOLLOW_UP_DUE' ? (
+          <button
+            type="button"
+            className="button button-primary"
+            disabled={disabled || detail.status === 'CLOSED'}
+            onClick={() => onShowFollowup(!showFollowup)}
+          >
+            Record follow-up
+          </button>
+        ) : null}
+        {mode === 'PRINT_QUEUE' ? (
+          <button
+            type="button"
+            className="button button-primary"
+            disabled={preparingPrint}
+            onClick={onOpenPrintPreview}
+          >
+            {preparingPrint ? 'Preparing preview...' : 'Open print preview'}
+          </button>
+        ) : null}
         <button type="button" className="button button-secondary" onClick={onOpenPatient}>
           Open patient
         </button>
@@ -519,47 +602,58 @@ function ReferralDetail({
           Open screening
         </button>
       </div>
-      {showFollowup ? (
+      {showFollowup && (mode === 'WORKLIST' || mode === 'FOLLOW_UP_DUE') ? (
         <FollowupForm
           disabled={disabled}
           onCancel={() => onShowFollowup(false)}
           onSubmit={onRecordFollowup}
         />
       ) : null}
-      <section className="referral-status-action" aria-labelledby="referral-status-action-title">
-        <h3 id="referral-status-action-title">Update status</h3>
-        <select
-          value={nextStatus}
-          disabled={disabled || detail.status === 'CLOSED'}
-          onChange={(event) => setNextStatus(event.currentTarget.value as ReferralStatus)}
-        >
-          {activeStatuses.map((status) => (
-            <option key={status} value={status}>
-              {formatLabel(status)}
-            </option>
-          ))}
-          <option value="CLOSED">Closed</option>
-        </select>
-        <input
-          value={statusReason}
-          maxLength={1000}
-          placeholder={nextStatus === 'CLOSED' ? 'Closure reason (required)' : 'Reason (optional)'}
-          onChange={(event) => setStatusReason(event.currentTarget.value)}
-        />
-        <button
-          type="button"
-          className="button button-secondary"
-          disabled={
-            disabled ||
-            detail.status === 'CLOSED' ||
-            nextStatus === detail.status ||
-            (nextStatus === 'CLOSED' && statusReason.trim().length === 0)
-          }
-          onClick={() => onUpdateStatus(nextStatus, statusReason.trim() || null)}
-        >
-          Save status
-        </button>
-      </section>
+      {mode === 'PRINT_QUEUE' ? null : (
+        <section className="referral-status-action" aria-labelledby="referral-status-action-title">
+          <h3 id="referral-status-action-title">
+            {mode === 'CLOSE_REFERRAL' ? 'Close referral' : 'Update status'}
+          </h3>
+          {mode === 'CLOSE_REFERRAL' ? null : (
+            <select
+              value={nextStatus}
+              disabled={disabled || detail.status === 'CLOSED'}
+              onChange={(event) => setNextStatus(event.currentTarget.value as ReferralStatus)}
+            >
+              {activeStatuses.map((status) => (
+                <option key={status} value={status}>
+                  {formatLabel(status)}
+                </option>
+              ))}
+              <option value="CLOSED">Closed</option>
+            </select>
+          )}
+          <input
+            value={statusReason}
+            maxLength={1000}
+            aria-label={mode === 'CLOSE_REFERRAL' ? 'Closure reason' : 'Status reason'}
+            placeholder={
+              nextStatus === 'CLOSED' ? 'Closure reason (required)' : 'Reason (optional)'
+            }
+            onChange={(event) => setStatusReason(event.currentTarget.value)}
+          />
+          <button
+            type="button"
+            className={
+              mode === 'CLOSE_REFERRAL' ? 'button button-primary' : 'button button-secondary'
+            }
+            disabled={
+              disabled ||
+              detail.status === 'CLOSED' ||
+              nextStatus === detail.status ||
+              (nextStatus === 'CLOSED' && statusReason.trim().length === 0)
+            }
+            onClick={() => onUpdateStatus(nextStatus, statusReason.trim() || null)}
+          >
+            {mode === 'CLOSE_REFERRAL' ? 'Close referral' : 'Save status'}
+          </button>
+        </section>
+      )}
       <History detail={detail} />
     </div>
   )
@@ -914,6 +1008,81 @@ function History({ detail }: { readonly detail: PublicReferralDetail }): React.J
       </section>
     </div>
   )
+}
+
+function ReferralPrintPreview({
+  report,
+  reportedBy,
+  timeZone,
+  reportDocumentApi,
+  printButtonRef,
+  onClose,
+  onAuthenticationFailure
+}: {
+  readonly report: ReturnType<typeof createPrintableReferralReport>
+  readonly reportedBy: string
+  readonly timeZone: string
+  readonly reportDocumentApi: HealthScreeningApi['reportDocuments']
+  readonly printButtonRef: RefObject<HTMLButtonElement | null>
+  onClose(): void
+  onAuthenticationFailure(code: PatientErrorCode): void
+}): React.JSX.Element {
+  return (
+    <div className="patient-report-preview-backdrop">
+      <section
+        className="patient-report-preview-window"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Referral print preview"
+      >
+        <header className="patient-report-preview-toolbar">
+          <div>
+            <strong>Referral print preview</strong>
+            <span>{report.patient.displayName}</span>
+          </div>
+          <div>
+            <ReportDocumentActions
+              api={reportDocumentApi}
+              request={{
+                patientId: report.patient.id,
+                reportKind: 'REFERRALS',
+                suggestedFileName: `CHS-referral-${safeFileSegment(report.patient.patientCode)}.pdf`
+              }}
+              primaryButtonRef={printButtonRef}
+              onAuthenticationFailure={onAuthenticationFailure}
+            />
+            <button className="button button-secondary" type="button" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </header>
+        <div className="patient-report-preview-scroll">
+          <div className="patient-report-preview-page">
+            <PatientReportDocument
+              report={report}
+              timeZone={timeZone}
+              reportedBy={reportedBy}
+              preview
+              onOpenEncounter={() => undefined}
+              onOpenReferral={() => undefined}
+              onOpenPrintPreview={() => undefined}
+            />
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function workspaceHeading(mode: ReferralWorkspaceMode): string {
+  if (mode === 'FOLLOW_UP_DUE') return 'Follow-up Due'
+  if (mode === 'CLOSE_REFERRAL') return 'Close Referral'
+  if (mode === 'PRINT_QUEUE') return 'Print Queue'
+  return 'Referral Worklist'
+}
+
+function safeFileSegment(value: string): string {
+  return value.replaceAll(/[^A-Za-z0-9_-]/gu, '-').replaceAll(/-+/gu, '-')
 }
 
 function resolveDueRange(filter: DueFilter): { from: string | null; to: string | null } {

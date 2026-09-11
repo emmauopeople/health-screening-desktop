@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createIpcSuccess,
   type HealthScreeningApi,
+  type PublicPatientDetail,
   type PublicReferralDetail,
   type PublicReferralSummary
 } from '@shared/ipc'
@@ -49,6 +50,36 @@ const detail: PublicReferralDetail = {
     }
   ],
   followups: []
+}
+const patientDetail: PublicPatientDetail = {
+  id: patientId,
+  patientCode: summary.patientCode,
+  displayName: summary.patientDisplayName,
+  givenName: 'Grace',
+  familyName: 'N.',
+  otherNames: null,
+  dateOfBirth: '1975-04-12',
+  approximateAgeYears: null,
+  ageAsOfDate: null,
+  sex: 'FEMALE',
+  village: 'Babungo',
+  quarter: null,
+  phone: null,
+  status: 'ACTIVE',
+  rowVersion: 1,
+  updatedAt: '2026-08-27T10:35:00.000Z',
+  alternateContactName: null,
+  alternateContactPhone: null,
+  residenceNotes: null,
+  acknowledgment: {
+    status: 'NOT_REQUESTED',
+    recordedAt: null,
+    recordedByDisplayName: null
+  },
+  createdAt: '2026-08-27T10:35:00.000Z',
+  createdByDisplayName: 'Nurse E.',
+  updatedByDisplayName: 'Nurse E.',
+  clinicalStatus: 'NOT_AVAILABLE'
 }
 
 describe('ReferralWorklistWorkspace', () => {
@@ -212,6 +243,82 @@ describe('ReferralWorklistWorkspace', () => {
 
     await mounted.unmount()
   })
+
+  it('loads active referrals due today or earlier in Follow-up Due', async () => {
+    const harness = createHarness()
+    const mounted = await mount(harness.api, vi.fn(), vi.fn(), null, 'FOLLOW_UP_DUE')
+
+    expect(mounted.container.querySelector('h1')?.textContent).toBe('Follow-up Due')
+    expect(harness.search).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statuses: ['OPEN', 'CONTACTED', 'SEEN', 'UNABLE_TO_CONFIRM'],
+        dueFrom: null,
+        dueTo: new Date().toISOString().slice(0, 10)
+      })
+    )
+    expect(mounted.container.textContent).toContain('Record follow-up')
+    expect(
+      Array.from(mounted.container.querySelectorAll('label')).some(
+        (label) => label.textContent === 'Due'
+      )
+    ).toBe(false)
+
+    await mounted.unmount()
+  })
+
+  it('closes an active referral only after a closure reason is entered', async () => {
+    const harness = createHarness()
+    harness.updateStatus.mockResolvedValue(
+      createIpcSuccess({
+        status: 'UPDATED',
+        detail: { ...detail, status: 'CLOSED', closureReason: 'Care completed', recordVersion: 2 }
+      })
+    )
+    const mounted = await mount(harness.api, vi.fn(), vi.fn(), null, 'CLOSE_REFERRAL')
+
+    expect(mounted.container.querySelector('h1')?.textContent).toBe('Close Referral')
+    expect(mounted.container.textContent).not.toContain('Record follow-up')
+    const closeButton = button(mounted.container, 'Close referral')
+    expect(closeButton.disabled).toBe(true)
+    const reason = mounted.container.querySelector<HTMLInputElement>(
+      'input[aria-label="Closure reason"]'
+    )
+    if (reason === null) throw new Error('Missing closure reason')
+    await input(reason, 'Care completed')
+    expect(closeButton.disabled).toBe(false)
+    await click(mounted.container, 'Close referral')
+    expect(harness.updateStatus).toHaveBeenCalledWith({
+      referralId,
+      expectedVersion: 1,
+      status: 'CLOSED',
+      reason: 'Care completed'
+    })
+
+    await mounted.unmount()
+  })
+
+  it('opens a read-only patient-specific referral PDF from Print Queue', async () => {
+    const harness = createHarness()
+    const mounted = await mount(harness.api, vi.fn(), vi.fn(), null, 'PRINT_QUEUE')
+
+    expect(mounted.container.querySelector('h1')?.textContent).toBe('Print Queue')
+    expect(mounted.container.textContent).not.toContain('Update status')
+    expect(mounted.container.textContent).not.toContain('Record follow-up')
+    await click(mounted.container, 'Open print preview')
+    expect(harness.getPatient).toHaveBeenCalledWith({ patientId })
+    const preview = mounted.container.querySelector('[role="dialog"]')
+    expect(preview?.textContent).toContain('Referral print preview')
+    expect(preview?.textContent).toContain('Bp screening urgent referral - BP 178/112 mmHg')
+    expect(preview?.querySelector('[data-report-chart]')).toBeNull()
+    await click(mounted.container, 'Save PDF')
+    expect(harness.savePdf).toHaveBeenCalledWith({
+      patientId,
+      reportKind: 'REFERRALS',
+      suggestedFileName: 'CHS-referral-BAB-000184.pdf'
+    })
+
+    await mounted.unmount()
+  })
 })
 
 interface ReferralHarness {
@@ -221,6 +328,8 @@ interface ReferralHarness {
   readonly recordFollowup: ReturnType<
     typeof vi.fn<HealthScreeningApi['referrals']['recordFollowup']>
   >
+  readonly getPatient: ReturnType<typeof vi.fn<HealthScreeningApi['patient']['get']>>
+  readonly savePdf: ReturnType<typeof vi.fn<HealthScreeningApi['reportDocuments']['savePdf']>>
   readonly api: HealthScreeningApi
 }
 
@@ -244,13 +353,26 @@ function createHarness(): ReferralHarness {
   const recordFollowup = vi.fn<HealthScreeningApi['referrals']['recordFollowup']>(() =>
     Promise.resolve(createIpcSuccess({ status: 'UPDATED', detail }))
   )
+  const getPatient = vi.fn<HealthScreeningApi['patient']['get']>(() =>
+    Promise.resolve(createIpcSuccess(patientDetail))
+  )
+  const savePdf = vi.fn<HealthScreeningApi['reportDocuments']['savePdf']>(() =>
+    Promise.resolve(createIpcSuccess({ status: 'SAVED', fileName: 'referral.pdf' }))
+  )
   return {
     search,
     getDetail,
     updateStatus,
     recordFollowup,
+    getPatient,
+    savePdf,
     api: {
-      referrals: { search, getDetail, updateStatus, recordFollowup }
+      patient: { get: getPatient },
+      referrals: { search, getDetail, updateStatus, recordFollowup },
+      reportDocuments: {
+        savePdf,
+        print: vi.fn(async () => createIpcSuccess({ status: 'PRINTED' as const }))
+      }
     } as unknown as HealthScreeningApi
   }
 }
@@ -262,7 +384,8 @@ async function mount(
   requestedReferral: {
     readonly requestedReferralId: string
     onRequestedReferralConsumed(): void
-  } | null = null
+  } | null = null,
+  mode: 'WORKLIST' | 'FOLLOW_UP_DUE' | 'CLOSE_REFERRAL' | 'PRINT_QUEUE' = 'WORKLIST'
 ): Promise<MountedWorkspace> {
   const container = document.createElement('div')
   document.body.append(container)
@@ -271,6 +394,7 @@ async function mount(
     root.render(
       createElement(ReferralWorklistWorkspace, {
         api,
+        mode,
         headingId: 'referral-heading',
         headingRef: { current: null },
         requestedReferralId: requestedReferral?.requestedReferralId,
@@ -292,6 +416,14 @@ async function mount(
       })
     }
   }
+}
+
+function button(container: HTMLElement, label: string): HTMLButtonElement {
+  const match = Array.from(container.querySelectorAll('button')).find(
+    (candidate) => candidate.textContent?.trim() === label
+  )
+  if (match === undefined) throw new Error(`Missing button ${label}`)
+  return match
 }
 
 async function change(element: HTMLSelectElement, value: string): Promise<void> {
@@ -333,12 +465,9 @@ async function check(container: HTMLElement, label: string): Promise<void> {
 }
 
 async function click(container: HTMLElement, label: string): Promise<void> {
-  const button = Array.from(container.querySelectorAll('button')).find(
-    (candidate) => candidate.textContent?.trim() === label
-  )
-  if (button === undefined) throw new Error(`Missing button ${label}`)
+  const target = button(container, label)
   await act(async () => {
-    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await flush()
   })
   await act(flush)

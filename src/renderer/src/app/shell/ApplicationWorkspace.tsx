@@ -153,8 +153,11 @@ export function ApplicationWorkspace({
       ) : route.status === 'REFERRALS' ? (
         <ReferralWorklistWorkspace
           api={api}
+          mode={referralWorkspaceMode(route.commandId)}
           headingId={workspaceHeadingId}
           headingRef={headingRef}
+          reportedBy={user.displayName}
+          timeZone={context.timeZone}
           requestedReferralId={requestedReferralId}
           requestedSessionId={requestedReferralSessionId}
           onRequestedReferralConsumed={() => setRequestedReferralId(null)}
@@ -324,4 +327,13 @@ export function ApplicationWorkspace({
       )}
     </main>
   )
+}
+
+function referralWorkspaceMode(
+  commandId: Extract<ApplicationWorkspaceRoute, { status: 'REFERRALS' }>['commandId']
+): 'WORKLIST' | 'FOLLOW_UP_DUE' | 'CLOSE_REFERRAL' | 'PRINT_QUEUE' {
+  if (commandId === 'REFERRALS_FOLLOW_UP_DUE') return 'FOLLOW_UP_DUE'
+  if (commandId === 'REFERRALS_CLOSED_REFERRALS') return 'CLOSE_REFERRAL'
+  if (commandId === 'REFERRALS_PRINT_QUEUE') return 'PRINT_QUEUE'
+  return 'WORKLIST'
 }
