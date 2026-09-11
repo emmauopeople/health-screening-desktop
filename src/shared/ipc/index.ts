@@ -1,3 +1,4 @@
+export * from './user-administration-contracts'
 export {
   ipcChannels,
   type AppIpcChannel,

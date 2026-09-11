@@ -1,3 +1,4 @@
+import type { UserAdministrationApi } from './user-administration-contracts'
 import { z } from 'zod'
 
 import type { AuditReportApi } from './audit-report-contracts'
@@ -188,6 +189,7 @@ export interface HealthScreeningApi {
     ): Promise<PatientMarkNotDuplicateResult>
   }
   referrals: ReferralApi
+  userAdministration?: UserAdministrationApi
   auditReports?: AuditReportApi
   reportDocuments: ReportDocumentApi
   screeningSessions: {

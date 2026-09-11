@@ -1,3 +1,4 @@
+import { createUserAdministrationService } from '@main/application/user-administration/user-administration-service'
 import { app, ipcMain, session } from 'electron'
 import { join } from 'node:path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
@@ -197,6 +198,10 @@ export function startApplicationLifecycle(): void {
         connection: databaseRuntime.getConnection(),
         authenticationSessionService
       })
+      const userAdministrationService = createUserAdministrationService({
+        connection: databaseRuntime.getConnection(),
+        authenticationSessionService
+      })
       const reportDocumentService = createElectronReportDocumentService()
       const syncWorkerScheduler = createSyncWorkerScheduler(
         createProductionSyncWorkerService({
@@ -240,6 +245,7 @@ export function startApplicationLifecycle(): void {
           referralService,
           logger: console
         },
+        userAdministration: { navigationPolicy, service: userAdministrationService },
         auditReports: {
           navigationPolicy,
           auditReportService,

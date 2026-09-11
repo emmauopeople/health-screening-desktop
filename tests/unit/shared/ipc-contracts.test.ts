@@ -100,6 +100,10 @@ describe('shared IPC contracts', () => {
         updateStatus: 'health-screening:referrals:update-status',
         recordFollowup: 'health-screening:referrals:record-followup'
       },
+      userAdministration: {
+        search: 'health-screening:user-administration:search',
+        mutate: 'health-screening:user-administration:mutate'
+      },
       auditReports: {
         getContext: 'health-screening:audit-reports:get-context',
         search: 'health-screening:audit-reports:search'
@@ -169,7 +173,7 @@ describe('shared IPC contracts', () => {
     })
     const allChannels = flattenChannelStrings(ipcChannels)
 
-    expect(allChannels).toHaveLength(70)
+    expect(allChannels).toHaveLength(72)
     expect(new Set(allChannels).size).toBe(allChannels.length)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.lifestyle.complete)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.complete)

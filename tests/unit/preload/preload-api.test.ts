@@ -131,6 +131,7 @@ describe('preload API factory', () => {
       'patient',
       'referrals',
       'auditReports',
+      'userAdministration',
       'reportDocuments',
       'screeningSessions',
       'screeningEncounters',

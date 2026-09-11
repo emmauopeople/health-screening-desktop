@@ -213,6 +213,34 @@ describe('application IPC handlers', () => {
 })
 
 describe('application IPC handler registration', () => {
+  it('owns Users channels and rolls back partial registration', () => {
+    const ipcMain = createMockIpcMain({
+      throwOnHandleChannel: ipcChannels.userAdministration.mutate
+    })
+    const unrelated = vi.fn()
+    ipcMain.handlers.set('unrelated:channel', unrelated)
+    const dependencies: ApplicationIpcHandlerDependencies = {
+      ...createDependencies(),
+      userAdministration: {
+        navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
+        service: {
+          search: () => ({ status: 'UNAVAILABLE' }),
+          mutate: async () => ({ status: 'UNAVAILABLE' })
+        }
+      }
+    }
+    expect(() => registerApplicationIpcHandlers(ipcMain, dependencies)).toThrow(
+      ApplicationIpcRegistrationError
+    )
+    expect([...ipcMain.handlers.entries()]).toEqual([['unrelated:channel', unrelated]])
+    ipcMain.setThrowOnHandleChannel(undefined)
+    const dispose = registerApplicationIpcHandlers(ipcMain, dependencies)
+    expect(ipcMain.handlers.has(ipcChannels.userAdministration.search)).toBe(true)
+    expect(ipcMain.handlers.has(ipcChannels.userAdministration.mutate)).toBe(true)
+    dispose()
+    expect([...ipcMain.handlers.entries()]).toEqual([['unrelated:channel', unrelated]])
+  })
+
   it('registers exactly the owned handlers and preserves unrelated handlers', () => {
     const ipcMain = createMockIpcMain()
     ipcMain.handlers.set('unrelated:channel', vi.fn())

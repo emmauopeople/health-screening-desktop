@@ -198,6 +198,10 @@ function createRouteForCommand(
     })
   }
 
+  if (definition.id === 'ADMINISTRATION_USERS') {
+    return Object.freeze({ status: 'USERS_ADMINISTRATION', commandId: definition.id })
+  }
+
   if (definition.id === 'REPORTS_PATIENT_REPORTS') {
     return Object.freeze({
       status: 'PATIENT_REPORTS',
