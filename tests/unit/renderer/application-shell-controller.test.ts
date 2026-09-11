@@ -215,6 +215,19 @@ describe('application shell controller', () => {
     })
   })
 
+  it('opens Users only for local administrators', () => {
+    const admin = createApplicationShellController({ role: 'LOCAL_ADMIN' })
+    admin.selectCommand('ADMINISTRATION_USERS')
+    expect(admin.getSnapshot().route).toEqual({
+      status: 'USERS_ADMINISTRATION',
+      commandId: 'ADMINISTRATION_USERS'
+    })
+    const nurse = createApplicationShellController({ role: 'NURSE' })
+    const before = nurse.getSnapshot()
+    nurse.selectCommand('ADMINISTRATION_USERS')
+    expect(nurse.getSnapshot()).toBe(before)
+  })
+
   it('ignores commands hidden from the fixed role', () => {
     const controller = createApplicationShellController({ role: 'TRAINED_SCREENER' })
     const before = controller.getSnapshot()

@@ -1,3 +1,4 @@
+import { UsersAdministrationWorkspace } from '../administration/UsersAdministrationWorkspace'
 import type { RefObject } from 'react'
 import { useState } from 'react'
 import type {
@@ -177,6 +178,16 @@ export function ApplicationWorkspace({
             setRequestedManagedEncounterId(encounterId)
             onSelectCommand('SCREENING_MANAGE_ENCOUNTERS')
           }}
+        />
+      ) : route.status === 'USERS_ADMINISTRATION' ? (
+        <UsersAdministrationWorkspace
+          api={api.userAdministration}
+          userRole={user.role}
+          timeZone={context.timeZone}
+          headingId={workspaceHeadingId}
+          headingRef={headingRef}
+          onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
+          registerNavigationGuard={registerNavigationGuard}
         />
       ) : route.status === 'ADMINISTRATION' ? (
         route.commandId === 'ADMINISTRATION_SYNC_CENTER' ? (

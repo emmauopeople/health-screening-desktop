@@ -46,6 +46,10 @@ export const ipcChannels = {
     updateStatus: 'health-screening:referrals:update-status',
     recordFollowup: 'health-screening:referrals:record-followup'
   },
+  userAdministration: {
+    search: 'health-screening:user-administration:search',
+    mutate: 'health-screening:user-administration:mutate'
+  },
   auditReports: {
     getContext: 'health-screening:audit-reports:get-context',
     search: 'health-screening:audit-reports:search'

@@ -1,0 +1,165 @@
+.users-workspace {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  gap: 0.8rem;
+}
+.users-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.users-toolbar label,
+.users-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+.users-toolbar label:first-child {
+  flex: 1;
+  min-width: 15rem;
+  max-width: 30rem;
+}
+.users-panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 1rem;
+  min-height: 0;
+  flex: 1;
+}
+.users-list,
+.users-detail {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: white;
+}
+.users-list {
+  display: flex;
+  flex-direction: column;
+}
+.users-scroll {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+.users-detail {
+  overflow: auto;
+  padding: 1rem;
+}
+.users-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.users-scroll th {
+  position: sticky;
+  top: 0;
+  background: #edf3f7;
+  text-align: left;
+}
+.users-scroll td,
+.users-scroll th {
+  padding: 0.65rem;
+  border-bottom: 1px solid var(--color-border);
+  overflow-wrap: anywhere;
+}
+.users-scroll tr[aria-selected='true'] {
+  background: #e7f2fa;
+}
+.users-select {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  width: 100%;
+}
+.users-select strong,
+.users-select span,
+.users-scroll small {
+  display: block;
+}
+.users-select span,
+.users-scroll small {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+}
+.users-pagination,
+.users-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.users-pagination {
+  padding: 0.65rem;
+  border-top: 1px solid var(--color-border);
+  font-size: 0.8rem;
+}
+.users-pagination span {
+  margin-right: auto;
+}
+.users-detail dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+.users-detail dt {
+  font-weight: 600;
+}
+.users-detail dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.users-form fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.users-form input,
+.users-form textarea,
+.users-form select {
+  width: 100%;
+  min-width: 0;
+}
+.users-form textarea {
+  min-height: 5rem;
+}
+@media (max-width: 850px) {
+  .users-panels {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+  .users-list,
+  .users-detail {
+    min-height: 20rem;
+  }
+}
+
+.users-toolbar input,
+.users-toolbar select,
+.users-form input,
+.users-form select,
+.users-form textarea {
+  border: 1px solid var(--color-border);
+  border-radius: 0.35rem;
+  padding: 0.5rem 0.65rem;
+  background: #fff;
+  color: inherit;
+  font-weight: 400;
+}
+.users-form fieldset:disabled {
+  opacity: 0.7;
+}

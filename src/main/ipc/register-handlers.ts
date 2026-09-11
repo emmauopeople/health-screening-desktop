@@ -1,3 +1,7 @@
+import {
+  createUserAdministrationHandlers,
+  type UserAdministrationIpcDependencies
+} from './handlers/user-administration-handlers'
 import type { IpcMain } from 'electron'
 
 import type { AuthenticationIpcHandlerDependencies } from '@main/ipc/authentication'
@@ -182,6 +186,7 @@ export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependen
   readonly auth: AuthenticationIpcHandlerDependencies
   readonly patient: PatientIpcHandlerDependencies
   readonly referrals?: ReferralIpcHandlerDependencies
+  readonly userAdministration?: UserAdministrationIpcDependencies
   readonly auditReports?: AuditReportIpcHandlerDependencies
   readonly reportDocuments: ReportDocumentIpcHandlerDependencies
   readonly screeningSessions: ScreeningSessionIpcHandlerDependencies
@@ -268,6 +273,16 @@ export function registerApplicationIpcHandlers(
       [ipcChannels.reportDocuments.print, reportDocumentHandlers.print]
     ]
 
+    if (dependencies.userAdministration !== undefined) {
+      const handlers = createUserAdministrationHandlers(dependencies.userAdministration)
+      for (const [channel, listener] of [
+        [ipcChannels.userAdministration.search, handlers.search],
+        [ipcChannels.userAdministration.mutate, handlers.mutate]
+      ] as const) {
+        applicationIpcMain.handle(channel, listener)
+        installedChannels.push(channel)
+      }
+    }
     for (const [channel, listener] of registrations) {
       applicationIpcMain.handle(channel, listener)
       installedChannels.push(channel)
@@ -630,6 +645,8 @@ function disposeApplicationIpcRegistration(
 }
 
 function disposeApplicationOwnedIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
+  applicationIpcMain.removeHandler(ipcChannels.userAdministration.search)
+  applicationIpcMain.removeHandler(ipcChannels.userAdministration.mutate)
   applicationIpcMain.removeHandler(ipcChannels.app.getInfo)
   applicationIpcMain.removeHandler(ipcChannels.app.getHealth)
   applicationIpcMain.removeHandler(ipcChannels.firstRun.getState)

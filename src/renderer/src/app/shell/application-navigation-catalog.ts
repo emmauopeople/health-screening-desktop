@@ -211,14 +211,7 @@ const commandDefinitions = [
     'AVAILABLE',
     null
   ),
-  command(
-    'ADMINISTRATION_USERS',
-    'ADMINISTRATION',
-    'Users',
-    adminOnlyRoles,
-    'PLANNED',
-    plannedOwners.administration
-  ),
+  command('ADMINISTRATION_USERS', 'ADMINISTRATION', 'Users', adminOnlyRoles, 'AVAILABLE', null),
   command(
     'ADMINISTRATION_LOCATIONS',
     'ADMINISTRATION',

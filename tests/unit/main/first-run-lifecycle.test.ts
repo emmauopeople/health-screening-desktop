@@ -55,7 +55,7 @@ describe('first-run IPC lifecycle and scope', () => {
     expect(lifecycle).toContain('patientRegistryService,')
     expect(lifecycle).toContain('patientDemographicAmendmentService,')
     expect(lifecycle).toContain('patientAcknowledgmentService,')
-    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(20)
+    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(21)
   })
 
   it('composes screening-session IPC services from the initialized database runtime', () => {
@@ -87,7 +87,20 @@ describe('first-run IPC lifecycle and scope', () => {
     expect(lifecycle).toContain('screeningSessionService,')
     expect(lifecycle).toContain('currentScreeningSessionService,')
     expect(lifecycle).toContain('screeningSessionWorkspaceContextService,')
-    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(20)
+    expect(lifecycle.match(/connection: databaseRuntime\.getConnection\(\)/gu)?.length).toBe(21)
+  })
+
+  it('composes Users administration after initialization and before IPC registration', () => {
+    const lifecycle = readSource('src/main/app/lifecycle.ts')
+    const service = 'const userAdministrationService = createUserAdministrationService'
+    expect(lifecycle).toContain(service)
+    expect(lifecycle.indexOf('databaseRuntime.initialize()')).toBeLessThan(
+      lifecycle.indexOf(service)
+    )
+    expect(lifecycle.indexOf(service)).toBeLessThan(
+      lifecycle.indexOf('const disposeIpcHandlers = registerApplicationIpcHandlers')
+    )
+    expect(lifecycle).toContain('service: userAdministrationService')
   })
 
   it('composes audit-report IPC from the initialized database runtime', () => {

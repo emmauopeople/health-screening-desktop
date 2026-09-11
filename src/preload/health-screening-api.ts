@@ -1,3 +1,4 @@
+import { createUserAdministrationApi } from './user-administration-api'
 import {
   appGetHealthRequestSchema,
   appGetHealthResultSchema,
@@ -84,6 +85,7 @@ export function createHealthScreeningApi(
     patient: createPatientApi(invoke),
     referrals: createReferralApi(invoke),
     auditReports: createAuditReportApi(invoke),
+    userAdministration: createUserAdministrationApi(invoke),
     reportDocuments: createReportDocumentApi(invoke),
     screeningSessions: createScreeningSessionApi(invoke),
     screeningEncounters: createScreeningEncounterApi(invoke),
