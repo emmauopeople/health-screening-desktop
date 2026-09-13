@@ -393,24 +393,33 @@ describe('application shell DOM integration', () => {
     await mounted.unmount()
   })
 
-  it('opens the administrator-only Audit Reports workspace', async () => {
-    const harness = createAppApi(activeSession(1))
-    const mounted = await mountApp(harness.api)
-
-    await clickButton(mounted, 'Reports')
-    await clickButton(mounted, 'Audit Reports')
-
-    expectWorkspaceHeading(mounted, 'Audit Reports')
-    expect(text(mounted)).toContain('Read-only local activity for this deployment.')
-    expect(text(mounted)).toContain('Apply filters')
-    expect(harness.api.auditReports.getContext).toHaveBeenCalledOnce()
-    expect(harness.api.auditReports.search).toHaveBeenCalledWith(
-      expect.objectContaining({ actor: { kind: 'ALL' }, page: 1, pageSize: 25 })
-    )
-    expect(commandButtonByText(mounted, 'Audit Reports').getAttribute('aria-current')).toBe('page')
-
-    await mounted.unmount()
-  })
+  it.each([
+    { menu: 'Reports', command: 'Audit Reports', heading: 'Audit Reports' },
+    { menu: 'Administration', command: 'Audit', heading: 'Audit' }
+  ])(
+    'opens $menu → $command as an administrator audit workspace',
+    async ({ menu, command, heading }) => {
+      const harness = createAppApi(activeSession(1))
+      const mounted = await mountApp(harness.api)
+      await clickButton(mounted, menu)
+      await clickButton(mounted, command)
+      expectWorkspaceHeading(mounted, heading)
+      expect(text(mounted)).toContain('Read-only local activity for this deployment.')
+      expect(text(mounted)).toContain('Apply filters')
+      expect(harness.api.auditReports.getContext).toHaveBeenCalledOnce()
+      expect(harness.api.auditReports.search).toHaveBeenCalledWith(
+        expect.objectContaining({ actor: { kind: 'ALL' }, page: 1, pageSize: 25 })
+      )
+      expect(commandButtonByText(mounted, command).getAttribute('aria-current')).toBe('page')
+      expect(menuButton(mounted, menu).getAttribute('aria-current')).toBe('page')
+      // Changing audit entry point mounts a fresh viewer with its own heading and filters.
+      await clickButton(mounted, menu === 'Reports' ? 'Administration' : 'Reports')
+      await clickButton(mounted, menu === 'Reports' ? 'Audit' : 'Audit Reports')
+      expectWorkspaceHeading(mounted, menu === 'Reports' ? 'Audit' : 'Audit Reports')
+      expect(harness.api.auditReports.getContext).toHaveBeenCalledTimes(2)
+      await mounted.unmount()
+    }
+  )
 
   it('navigates primary menu clicks to default workspaces and keeps the default command current', async () => {
     const mounted = await mountApp(createAppApi(activeSession(1)).api)

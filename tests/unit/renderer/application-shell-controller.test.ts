@@ -228,6 +228,27 @@ describe('application shell controller', () => {
     expect(nurse.getSnapshot()).toBe(before)
   })
 
+  it('keeps Administration selected for the Audit route', () => {
+    const controller = createApplicationShellController({ role: 'LOCAL_ADMIN' })
+    controller.selectCommand('ADMINISTRATION_AUDIT')
+    expect(controller.getSnapshot()).toEqual({
+      activeMenu: 'ADMINISTRATION',
+      commandPanelMenu: 'ADMINISTRATION',
+      selectedCommandId: 'ADMINISTRATION_AUDIT',
+      route: { status: 'AUDIT_REPORTS', commandId: 'ADMINISTRATION_AUDIT' }
+    })
+  })
+  it.each(['NURSE', 'TRAINED_SCREENER'] as const)(
+    'hides both audit entry points from %s',
+    (role) => {
+      const controller = createApplicationShellController({ role })
+      const before = controller.getSnapshot()
+      controller.selectCommand('ADMINISTRATION_AUDIT')
+      controller.selectCommand('REPORTS_AUDIT_REPORTS')
+      expect(controller.getSnapshot()).toBe(before)
+    }
+  )
+
   it('ignores commands hidden from the fixed role', () => {
     const controller = createApplicationShellController({ role: 'TRAINED_SCREENER' })
     const before = controller.getSnapshot()

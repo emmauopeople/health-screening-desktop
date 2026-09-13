@@ -23,6 +23,7 @@ import {
 } from './audit-report-model'
 
 interface AuditReportsWorkspaceProps {
+  readonly workspaceMode?: 'REPORTS' | 'ADMINISTRATION'
   readonly api: AuditReportApi | undefined
   readonly timeZone: string
   readonly reportedBy: string
@@ -76,6 +77,7 @@ const rangePresets: readonly {
 ]
 
 export function AuditReportsWorkspace({
+  workspaceMode = 'REPORTS',
   api,
   timeZone,
   reportedBy,
@@ -89,6 +91,8 @@ export function AuditReportsWorkspace({
     [initialDraft, timeZone]
   )
   const requestRef = useRef(0)
+  const refreshTargetRef = useRef<{ page: number; filters: AppliedAuditReportFilters } | null>(null)
+  const [refreshVersion, setRefreshVersion] = useState(0)
   const printButtonRef = useRef<HTMLButtonElement | null>(null)
   const [contextState, setContextState] = useState<ContextState>({ status: 'LOADING' })
   const [pageState, setPageState] = useState<PageState>({ status: 'LOADING', previous: null })
@@ -126,10 +130,9 @@ export function AuditReportsWorkspace({
       }
       const requestId = requestRef.current + 1
       requestRef.current = requestId
-      setPageState((current) => ({
-        status: 'LOADING',
-        previous: current.status === 'READY' ? current.page : current.previous
-      }))
+      // An older result page must not be shown or printed under newly applied filters.
+      setPageState({ status: 'LOADING', previous: null })
+      setPreviewOpen(false)
       try {
         const result = await api.search({ ...filters.request, page })
         if (requestRef.current !== requestId) return
@@ -184,6 +187,7 @@ export function AuditReportsWorkspace({
 
   useEffect(() => {
     let active = true
+    const target = refreshTargetRef.current
     const load = async (): Promise<void> => {
       if (api === undefined || initialApplied === null) {
         if (active) {
@@ -220,7 +224,7 @@ export function AuditReportsWorkspace({
             hasSystemEvents: result.data.hasSystemEvents
           })
         })
-        void loadPage(1, initialApplied)
+        void loadPage(target?.page ?? 1, target?.filters ?? initialApplied)
       } catch {
         if (active) {
           setContextState({ status: 'ERROR', message: 'Audit report filters could not be loaded.' })
@@ -232,7 +236,14 @@ export function AuditReportsWorkspace({
       active = false
       requestRef.current += 1
     }
-  }, [api, handleControlledStatus, initialApplied, loadPage, onAuthenticationFailure])
+  }, [
+    api,
+    handleControlledStatus,
+    initialApplied,
+    loadPage,
+    onAuthenticationFailure,
+    refreshVersion
+  ])
 
   useEffect(() => {
     if (!previewOpen) return
@@ -282,6 +293,14 @@ export function AuditReportsWorkspace({
     setPreviewOpen(false)
     if (nextApplied !== null) void loadPage(1, nextApplied)
   }
+  const refresh = (): void => {
+    if (applied === null) return
+    refreshTargetRef.current = { page: page?.page ?? 1, filters: applied }
+    setContextState({ status: 'LOADING' })
+    setPageState({ status: 'LOADING', previous: null })
+    setPreviewOpen(false)
+    setRefreshVersion((current) => current + 1)
+  }
   const openPreview = (): void => {
     setPreviewGeneratedAt(new Date().toISOString())
     setPreviewOpen(true)
@@ -291,12 +310,28 @@ export function AuditReportsWorkspace({
     <section className="audit-reports-workspace" aria-labelledby={headingId}>
       <header className="audit-reports-heading">
         <div>
-          <p className="application-workspace-kicker">Administrator reporting</p>
+          <p className="application-workspace-kicker">
+            {workspaceMode === 'ADMINISTRATION' ? 'Administration' : 'Administrator reporting'}
+          </p>
           <h1 ref={headingRef} id={headingId} tabIndex={-1}>
-            Audit Reports
+            {workspaceMode === 'ADMINISTRATION' ? 'Audit' : 'Audit Reports'}
           </h1>
         </div>
-        <p>Read-only local activity for this deployment.</p>
+        <div>
+          <p>Read-only local activity for this deployment.</p>
+          <button
+            className="button button-secondary"
+            type="button"
+            disabled={
+              api === undefined ||
+              contextState.status === 'LOADING' ||
+              (contextState.status === 'READY' && pageState.status === 'LOADING')
+            }
+            onClick={refresh}
+          >
+            {contextState.status === 'ERROR' ? 'Retry loading audit' : 'Refresh'}
+          </button>
+        </div>
       </header>
 
       <AuditReportFilters
@@ -438,6 +473,7 @@ function AuditReportFilters({
           <button
             key={preset.value}
             type="button"
+            disabled={disabled}
             aria-pressed={draft.rangePreset === preset.value}
             onClick={() => onPreset(preset.value)}
           >
@@ -451,7 +487,7 @@ function AuditReportFilters({
           <input
             type="date"
             value={draft.range.from}
-            disabled={draft.rangePreset === 'ALL_TIME'}
+            disabled={disabled || draft.rangePreset === 'ALL_TIME'}
             onChange={(event) =>
               onUpdate({
                 rangePreset: 'CUSTOM',
@@ -465,7 +501,7 @@ function AuditReportFilters({
           <input
             type="date"
             value={draft.range.to}
-            disabled={draft.rangePreset === 'ALL_TIME'}
+            disabled={disabled || draft.rangePreset === 'ALL_TIME'}
             onChange={(event) =>
               onUpdate({
                 rangePreset: 'CUSTOM',
@@ -477,6 +513,7 @@ function AuditReportFilters({
         <label>
           Actor
           <select
+            disabled={disabled}
             value={draft.actor}
             onChange={(event) => onUpdate({ actor: event.currentTarget.value })}
           >
@@ -492,6 +529,7 @@ function AuditReportFilters({
         <label>
           Action
           <select
+            disabled={disabled}
             value={draft.action}
             onChange={(event) => onUpdate({ action: event.currentTarget.value })}
           >
@@ -506,6 +544,7 @@ function AuditReportFilters({
         <label>
           Entity type
           <select
+            disabled={disabled}
             value={draft.entityType}
             onChange={(event) =>
               onUpdate({
@@ -528,7 +567,7 @@ function AuditReportFilters({
             type="text"
             value={draft.entityId}
             placeholder="Exact UUID"
-            disabled={draft.entityType === ''}
+            disabled={disabled || draft.entityType === ''}
             onChange={(event) => onUpdate({ entityId: event.currentTarget.value })}
           />
         </label>
@@ -536,12 +575,13 @@ function AuditReportFilters({
           Search
           <input
             type="search"
+            disabled={disabled}
             value={draft.query}
             maxLength={100}
             placeholder="Action, entity, actor, or username"
             onChange={(event) => onUpdate({ query: event.currentTarget.value })}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') {
+              if (event.key === 'Enter' && !disabled) {
                 event.preventDefault()
                 onApply()
               }
@@ -551,6 +591,7 @@ function AuditReportFilters({
         <label>
           Rows
           <select
+            disabled={disabled}
             value={draft.pageSize}
             onChange={(event) =>
               onUpdate({ pageSize: Number(event.currentTarget.value) as 25 | 50 | 100 })

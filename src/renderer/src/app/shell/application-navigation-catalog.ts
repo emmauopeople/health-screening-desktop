@@ -244,14 +244,7 @@ const commandDefinitions = [
     'PLANNED',
     plannedOwners.administration
   ),
-  command(
-    'ADMINISTRATION_AUDIT',
-    'ADMINISTRATION',
-    'Audit',
-    adminOnlyRoles,
-    'PLANNED',
-    plannedOwners.administration
-  )
+  command('ADMINISTRATION_AUDIT', 'ADMINISTRATION', 'Audit', adminOnlyRoles, 'AVAILABLE', null)
 ] as const
 
 export const applicationCommandDefinitions: readonly ApplicationCommandDefinition[] = Object.freeze(

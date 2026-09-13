@@ -36,3 +36,11 @@ Authentication-required and forbidden service states return to the existing prot
 routing boundary. Invalid filters remain in the workspace with a controlled message. IPC,
 unavailable, or malformed-result failures display only controlled retryable copy and never expose
 raw exceptions, SQL, filesystem paths, or audit-row internals.
+
+## Administration → Audit (HSD-070)
+
+The Administration Audit command now opens the same protected audit viewer under the Administration menu, with the heading “Audit”. Reports → Audit Reports remains available. Both entry points require LOCAL_ADMIN and use the existing read-only service; there are no audit edit, delete, or clear actions.
+
+Refresh reloads filter options (including newly recorded actors/actions) and the current result page using the applied filters. Unsaved filter drafts remain separate. Initial context failures offer a retry. Starting a new page request clears the old result/detail and closes print preview, so stale events cannot be printed under different filters. Switching between the two menu entry points starts a fresh viewer.
+
+This completes the Administration tab using the existing date, actor/system, action, entity, search, pagination, detail and bounded-page print-preview features. It adds no database, IPC, audit-writer or synchronization changes.

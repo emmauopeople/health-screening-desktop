@@ -113,7 +113,8 @@ describe('application navigation catalog', () => {
       'REPORTS_EXPORT_PRINT',
       'ADMINISTRATION_USERS',
       'ADMINISTRATION_LOCATIONS',
-      'ADMINISTRATION_SYNC_CENTER'
+      'ADMINISTRATION_SYNC_CENTER',
+      'ADMINISTRATION_AUDIT'
     ])
   })
 
