@@ -17,6 +17,11 @@ import {
 } from '@main/database'
 import { createEntityIdGenerator, parseEntityId } from '@main/foundation/entity-id'
 import { createUtcClock } from '@main/foundation/utc-clock'
+import {
+  createSyncWorkerMonitor,
+  type SyncWorkerMonitor
+} from '@main/application/sync-transport/sync-worker-monitor'
+import { syncAdministrationGetStateSuccessDataSchema } from '@shared/ipc/sync-administration-contracts'
 
 const installationId = '10000000-0000-4000-8000-000000000001'
 const adminId = '20000000-0000-4000-8000-000000000001'
@@ -32,6 +37,32 @@ afterEach(() => {
 })
 
 describe('synchronization administration service', () => {
+  it('exposes a safe pre-send failure and clears it when configuration is updated', () => {
+    const monitor = createSyncWorkerMonitor(() => now)
+    const harness = createHarness([auditOne, auditTwo], undefined, monitor)
+    monitor.record('NOT_CONFIGURED', 'CREDENTIAL')
+    expect(harness.service.getState()).toMatchObject({ activity: { state: 'NOT_CONFIGURED' } })
+    harness.service.configure({ apiBaseUrl: 'https://sync.example.org', installationToken: token })
+    monitor.record('UNAVAILABLE', 'SNAPSHOT')
+    const blocked = harness.service.getState()
+    expect(blocked).toMatchObject({
+      activity: {
+        state: 'BLOCKED',
+        workerCheck: { checkedAt: now, status: 'UNAVAILABLE', phase: 'SNAPSHOT' }
+      }
+    })
+    expect(syncAdministrationGetStateSuccessDataSchema.safeParse(blocked).success).toBe(true)
+    monitor.record('RUNNING', 'SNAPSHOT')
+    expect(harness.service.getState()).toMatchObject({ activity: { state: 'SYNCHRONIZING' } })
+    monitor.record('IDLE', 'IDENTITY_PULL')
+    expect(harness.service.getState()).toMatchObject({ activity: { state: 'UP_TO_DATE' } })
+    monitor.record('NOT_CONFIGURED', 'CREDENTIAL')
+    expect(harness.service.getState()).toMatchObject({ activity: { state: 'BLOCKED' } })
+    harness.service.configure({ apiBaseUrl: 'https://sync.example.org', installationToken: token })
+    expect(monitor.getLatest()).toBeUndefined()
+    expect(harness.service.getState()).toMatchObject({ activity: { state: 'UP_TO_DATE' } })
+  })
+
   it('atomically protects and audits configuration without exposing the token', () => {
     const harness = createHarness([auditOne, auditTwo])
 
@@ -133,7 +164,8 @@ describe('synchronization administration service', () => {
 
 function createHarness(
   ids: string[],
-  authError?: Error
+  authError?: Error,
+  workerMonitor?: SyncWorkerMonitor
 ): {
   readonly connection: Database.Database
   readonly service: ReturnType<typeof createSyncAdministrationService>
@@ -174,7 +206,8 @@ function createHarness(
       clock: createUtcClock(() => now),
       logger: { error: vi.fn() }
     }),
-    credentialProtector: protector as SyncCredentialProtector
+    credentialProtector: protector as SyncCredentialProtector,
+    workerMonitor
   })
   return { connection, service, protector }
 }

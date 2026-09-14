@@ -22,6 +22,10 @@ import {
 } from '@main/database'
 import { createEntityIdGenerator } from '@main/foundation/entity-id'
 import { createUtcClock, parseUtcTimestamp, type UtcTimestamp } from '@main/foundation/utc-clock'
+import {
+  createSyncWorkerMonitor,
+  type SyncWorkerMonitor
+} from '@main/application/sync-transport/sync-worker-monitor'
 
 const at = parseUtcTimestamp('2026-09-03T12:00:00.000Z')
 const actorId = '10000000-0000-4000-8000-000000000001'
@@ -44,6 +48,85 @@ const lifestyleOutbox = '90000000-0000-4000-8000-000000000007'
 const excludedOutbox = '90000000-0000-4000-8000-000000000008'
 
 describe('HSW-013B desktop synchronization worker', () => {
+  it('reports a preparation failure before any HTTP attempt and recovers on the next run', async () => {
+    const harness = createHarness([])
+    try {
+      seedCompleteGraph(harness.connection)
+      configure(harness.foundation)
+      harness.connection.prepare("UPDATE patients SET sex = 'INVALID'").run()
+      const submitBatch = vi.fn(async () => response(503, problem(503, 'UNAVAILABLE')))
+      const monitor = createSyncWorkerMonitor(() => at)
+      const worker = createWorker(harness, httpClient({ submitBatch }), monitor)
+
+      expect(await worker.runOnce()).toEqual({ status: 'UNAVAILABLE' })
+      expect(monitor.getLatest()).toEqual({
+        checkedAt: at,
+        status: 'UNAVAILABLE',
+        phase: 'SNAPSHOT'
+      })
+      expect(submitBatch).not.toHaveBeenCalled()
+      expect(
+        harness.connection.prepare('SELECT COUNT(*) AS count FROM sync_transport_batches').get()
+      ).toEqual({ count: 0 })
+      expect(readStatuses(harness.connection)).toEqual(Array(8).fill('PENDING'))
+
+      harness.connection.prepare("UPDATE patients SET sex = 'UNKNOWN'").run()
+      expect(await worker.runOnce()).toMatchObject({ status: 'RETRY_SCHEDULED' })
+      expect(submitBatch).toHaveBeenCalledOnce()
+      expect(monitor.getLatest()).toEqual({
+        checkedAt: at,
+        status: 'RETRY_SCHEDULED',
+        phase: 'UPLOAD'
+      })
+      expect(JSON.stringify(monitor.getLatest())).not.toContain(token)
+    } finally {
+      harness.connection.close()
+    }
+  })
+
+  it('reports credential loading failure without exposing exceptions or stopping later runs', async () => {
+    const harness = createHarness([])
+    try {
+      const monitor = createSyncWorkerMonitor(() => at)
+      const worker = createWorker(harness, httpClient({}), monitor)
+      expect(await worker.runOnce()).toEqual({ status: 'NOT_CONFIGURED' })
+      expect(monitor.getLatest()).toEqual({
+        checkedAt: at,
+        status: 'NOT_CONFIGURED',
+        phase: 'CREDENTIAL'
+      })
+      const failingHarness = {
+        ...harness,
+        foundation: {
+          ...harness.foundation,
+          loadCredentialForTransport: () => {
+            throw new Error(`secret ${token}`)
+          }
+        }
+      }
+      expect(await createWorker(failingHarness, httpClient({}), monitor).runOnce()).toEqual({
+        status: 'UNAVAILABLE'
+      })
+      expect(monitor.getLatest()).toEqual({
+        checkedAt: at,
+        status: 'UNAVAILABLE',
+        phase: 'CREDENTIAL'
+      })
+      expect(JSON.stringify(monitor.getLatest())).not.toContain(token)
+      const brokenObserver = {
+        ...monitor,
+        record: () => {
+          throw new Error('monitor failed')
+        }
+      }
+      expect(await createWorker(harness, httpClient({}), brokenObserver).runOnce()).toEqual({
+        status: 'NOT_CONFIGURED'
+      })
+    } finally {
+      harness.connection.close()
+    }
+  })
+
   it('coalesces audit signals into dependency-ordered full snapshots without deferred resources', () => {
     const harness = createHarness(['01000000-0000-4000-8000-000000000001'])
     seedCompleteGraph(harness.connection)
@@ -589,14 +672,19 @@ function createHarness(ids: string[]): WorkerHarness {
   return { connection, now, transactionExecutor, foundation }
 }
 
-function createWorker(harness: WorkerHarness, httpClient: SyncHttpClient): SyncWorkerService {
+function createWorker(
+  harness: WorkerHarness,
+  httpClient: SyncHttpClient,
+  workerMonitor?: SyncWorkerMonitor
+): SyncWorkerService {
   return createSyncWorkerService({
     foundation: harness.foundation,
     preparation: createPreparation(harness),
     httpClient,
     repository: createSyncWorkerRepository(harness.connection),
     transactionExecutor: harness.transactionExecutor,
-    random: () => 0.5
+    random: () => 0.5,
+    workerMonitor
   })
 }
 

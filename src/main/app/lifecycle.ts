@@ -45,6 +45,7 @@ import {
   type DatabaseRuntime
 } from '@main/database'
 import { createAuthenticationSessionPublisher } from '@main/ipc/authentication'
+import { createSyncWorkerMonitor } from '@main/application/sync-transport/sync-worker-monitor'
 import { createElectronSyncCredentialProtector } from '@main/application/sync-transport/electron-credential-protector'
 import { registerApplicationIpcHandlers } from '@main/ipc/register-handlers'
 import { configureSessionSecurity } from '@main/security/session-security'
@@ -186,11 +187,13 @@ export function startApplicationLifecycle(): void {
         installationLocationService,
         logger: console
       })
+      const workerMonitor = createSyncWorkerMonitor()
       const syncCredentialProtector = createElectronSyncCredentialProtector()
       const syncAdministrationService = createProductionSyncAdministrationService({
         connection: databaseRuntime.getConnection(),
         authenticationSessionService,
         credentialProtector: syncCredentialProtector,
+        workerMonitor,
         logger: console
       })
       const auditReportService = createProductionAuditReportService({
@@ -204,6 +207,7 @@ export function startApplicationLifecycle(): void {
           desktopApplicationVersion: app.getVersion(),
           desktopSchemaVersion: targetSchemaVersion,
           credentialProtector: syncCredentialProtector,
+          workerMonitor,
           logger: console
         })
       )

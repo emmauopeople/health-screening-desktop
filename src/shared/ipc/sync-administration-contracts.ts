@@ -16,8 +16,34 @@ export const syncAdministrationActivityStateSchema = z.enum([
   'UP_TO_DATE',
   'PENDING',
   'SYNCHRONIZING',
-  'RETRY_SCHEDULED'
+  'RETRY_SCHEDULED',
+  'BLOCKED'
 ])
+
+export const syncWorkerCheckSchema = z
+  .object({
+    checkedAt: utcTimestampSchema,
+    status: z.enum([
+      'RUNNING',
+      'SYNCED',
+      'IDLE',
+      'RETRY_SCHEDULED',
+      'NOT_CONFIGURED',
+      'UNAVAILABLE'
+    ]),
+    phase: z.enum([
+      'STARTING',
+      'CREDENTIAL',
+      'BATCH_CLAIM',
+      'SNAPSHOT',
+      'UPLOAD',
+      'RESPONSE',
+      'IDENTITY_PULL'
+    ])
+  })
+  .strict()
+
+export type SyncWorkerCheck = z.infer<typeof syncWorkerCheckSchema>
 
 const configuredSyncAdministrationConfigurationSchema = z
   .object({
@@ -39,7 +65,8 @@ export const publicSyncAdministrationActivitySchema = z
     pendingChangeCount: z.number().int().min(0).safe(),
     pendingAcknowledgmentCount: z.number().int().min(0).safe(),
     lastCompletedBatchAt: utcTimestampSchema.nullable(),
-    nextRetryAt: utcTimestampSchema.nullable()
+    nextRetryAt: utcTimestampSchema.nullable(),
+    workerCheck: syncWorkerCheckSchema.optional()
   })
   .strict()
 

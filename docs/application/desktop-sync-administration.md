@@ -15,7 +15,8 @@ The Sync Center shows only:
 - the central API origin and a bounded credential prefix;
 - pending local-change and acknowledgment totals;
 - automatic retry time, when scheduled; and
-- the last completed batch time.
+- the last completed batch time; and
+- the latest worker check time and a controlled failure message, when applicable.
 
 It never returns the installation token, protected credential bytes, request or
 response payloads, hashes, local or central patient identifiers, reviewer
@@ -40,11 +41,25 @@ one transaction. Audit metadata contains no complete credential.
 Operational status is derived from existing `sync_outbox`,
 `sync_transport_batches`, and identity-resolution acknowledgment rows. The
 renderer can distinguish not configured, up to date, pending, synchronizing,
-and retry scheduled states. It can refresh the summary, but cannot initiate,
+retry scheduled, and blocked states. It can refresh the summary, but cannot initiate,
 cancel, retry, inspect, or alter synchronization work.
 
 The existing worker continues to run once at startup and every five minutes.
 No new database migration is required.
+
+The main process shares an in-memory worker monitor with the administrator service.
+It records only a UTC timestamp, a closed status code, and a closed phase code.
+It holds no credentials, exception text, record identifiers, or clinical values.
+This makes credential-loading and snapshot-preparation failures visible even when
+no batch or attempt row exists yet. Refresh status to see the latest check.
+The monitor resets when the process restarts or configuration is saved successfully;
+it is not a durable attempt history. A later run replaces the previous status.
+
+An empty batch/attempt history with pending outbox signals locates the blockage
+before transport, but does not identify the cause. One corrected preparation bug
+rejected the valid patient sex `UNKNOWN`; both that value and legacy `NULL` now
+transport as `UNKNOWN` without changing the local patient row. Malformed values
+still fail preparation transactionally and leave all signals pending.
 
 ## Verification
 

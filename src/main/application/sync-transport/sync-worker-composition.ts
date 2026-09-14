@@ -13,6 +13,7 @@ import { createSyncHttpClient, type SyncHttpClientOptions } from './sync-http-cl
 import { createSyncSnapshotPreparationService } from './sync-snapshot-preparation-service'
 import { createSyncTransportFoundationService } from './sync-transport-service'
 import type { SyncCredentialProtector } from './sync-transport-types'
+import type { SyncWorkerMonitor } from './sync-worker-monitor'
 import { createSyncWorkerService, type SyncWorkerService } from './sync-worker-service'
 
 export interface ProductionSyncWorkerServiceOptions {
@@ -21,6 +22,7 @@ export interface ProductionSyncWorkerServiceOptions {
   readonly desktopSchemaVersion: number
   readonly credentialProtector: SyncCredentialProtector
   readonly httpClientOptions?: SyncHttpClientOptions
+  readonly workerMonitor?: SyncWorkerMonitor
   readonly logger?: DatabaseTransactionLogger
 }
 
@@ -30,7 +32,8 @@ export function createProductionSyncWorkerService({
   desktopSchemaVersion,
   credentialProtector,
   httpClientOptions,
-  logger
+  logger,
+  workerMonitor
 }: ProductionSyncWorkerServiceOptions): SyncWorkerService {
   const transactionExecutor = createDatabaseTransactionExecutor({
     connection,
@@ -54,7 +57,8 @@ export function createProductionSyncWorkerService({
     }),
     httpClient: createSyncHttpClient(httpClientOptions),
     repository: createSyncWorkerRepository(connection),
-    transactionExecutor
+    transactionExecutor,
+    workerMonitor
   })
 }
 

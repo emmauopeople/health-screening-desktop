@@ -4,6 +4,7 @@
 import { act, createElement, createRef } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { utcTimestampSchema } from '@shared/ipc/authentication-contracts'
 
 import { SynchronizationAdministrationWorkspace } from '../../../src/renderer/src/app/administration/SynchronizationAdministrationWorkspace'
 import {
@@ -14,7 +15,7 @@ import {
 } from '@shared/ipc'
 
 const token = `chs_inst_v1_${'A'.repeat(43)}`
-const now = '2026-09-04T12:00:00.000Z'
+const now = utcTimestampSchema.parse('2026-09-04T12:00:00.000Z')
 
 describe('synchronization administration workspace', () => {
   beforeEach(() => {
@@ -36,6 +37,39 @@ describe('synchronization administration workspace', () => {
     expect(mounted.container.textContent).toContain('There is no manual sync action.')
     expect(mounted.container.textContent).not.toContain(token)
     expect(mounted.container.querySelector('button')?.textContent).not.toBe('Run sync')
+    await mounted.unmount()
+  })
+
+  it('shows pre-send failures and removes the failure after a healthy refresh', async () => {
+    const mounted = await mountWorkspace()
+    mounted.api.syncAdministration.getState.mockResolvedValueOnce(
+      createIpcSuccess({
+        status: 'READY',
+        configuration: {
+          status: 'CONFIGURED',
+          apiBaseUrl: 'http://127.0.0.1:3000',
+          tokenPrefix: token.slice(0, 20),
+          updatedAt: now
+        },
+        activity: {
+          state: 'BLOCKED',
+          pendingChangeCount: 842,
+          pendingAcknowledgmentCount: 0,
+          lastCompletedBatchAt: null,
+          nextRetryAt: null,
+          workerCheck: { checkedAt: now, status: 'UNAVAILABLE', phase: 'SNAPSHOT' }
+        }
+      })
+    )
+    await click(mounted.container, 'Refresh status')
+    expect(mounted.container.textContent).toContain('Synchronization blocked')
+    expect(mounted.container.querySelector('[role="alert"]')?.textContent).toContain(
+      'could not prepare local records for upload'
+    )
+    expect(mounted.container.textContent).toContain('Last worker check:')
+    expect(mounted.container.textContent).not.toContain(token)
+    await click(mounted.container, 'Refresh status')
+    expect(mounted.container.querySelector('[role="alert"]')).toBeNull()
     await mounted.unmount()
   })
 

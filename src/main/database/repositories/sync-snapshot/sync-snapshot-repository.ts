@@ -297,7 +297,8 @@ function materializePatient(
   const knownChsMedicalId =
     identifiers[0] === undefined ? null : requiredString(identifiers[0].identifier_value)
   const actorId = parseEntityId(row.updated_by)
-  const sex = row.sex === null ? 'UNKNOWN' : requiredEnum(row.sex, ['FEMALE', 'MALE', 'OTHER'])
+  const sex =
+    row.sex === null ? 'UNKNOWN' : requiredEnum(row.sex, ['FEMALE', 'MALE', 'OTHER', 'UNKNOWN'])
   const acknowledgmentStatus =
     row.acknowledgment_status === null
       ? 'NOT_REQUESTED'

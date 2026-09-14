@@ -53,6 +53,28 @@ afterEach(async () => {
 })
 
 describe('sync snapshot materialization', () => {
+  it.each(['UNKNOWN', null])(
+    'transports patient sex %s without blocking the batch',
+    async (sex) => {
+      const harness = await createHarness()
+      const c = harness.connection
+      insertClinicalFoundation(c)
+      c.prepare('UPDATE patients SET sex = ? WHERE id = ?').run(sex, patientId)
+      insertSignal(c, patientSignalOne, 'PATIENT', patientId, 'PATIENT_CREATED', 1)
+      insertSignal(c, sessionSignal, 'SCREENING_SESSION', sessionId, 'SCREENING_SESSION_CREATED', 2)
+
+      expect(harness.service.prepareNextBatch()).toMatchObject({
+        status: 'PREPARED',
+        recordCount: 2
+      })
+      expect(readStoredRequest(c).records[0]).toMatchObject({
+        resourceType: 'PATIENT',
+        payload: { sex: 'UNKNOWN' }
+      })
+      expect(c.prepare('SELECT sex FROM patients WHERE id = ?').get(patientId)).toEqual({ sex })
+    }
+  )
+
   it('backfills finalized Food/OTC on upgrade, preserves source data and does not duplicate work on restart', async () => {
     const harness = await createHarness(21)
     const c = harness.connection
