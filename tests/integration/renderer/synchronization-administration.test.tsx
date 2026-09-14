@@ -57,7 +57,12 @@ describe('synchronization administration workspace', () => {
           pendingAcknowledgmentCount: 0,
           lastCompletedBatchAt: null,
           nextRetryAt: null,
-          workerCheck: { checkedAt: now, status: 'UNAVAILABLE', phase: 'SNAPSHOT' }
+          workerCheck: {
+            checkedAt: now,
+            status: 'UNAVAILABLE',
+            phase: 'SNAPSHOT',
+            diagnostic: { stage: 'PATIENT', rule: 'INVALID_VALUE', field: 'phone' }
+          }
         }
       })
     )
@@ -67,6 +72,7 @@ describe('synchronization administration workspace', () => {
       'could not prepare local records for upload'
     )
     expect(mounted.container.textContent).toContain('Last worker check:')
+    expect(mounted.container.textContent).toContain('Support code: PATIENT / INVALID_VALUE / phone')
     expect(mounted.container.textContent).not.toContain(token)
     await click(mounted.container, 'Refresh status')
     expect(mounted.container.querySelector('[role="alert"]')).toBeNull()

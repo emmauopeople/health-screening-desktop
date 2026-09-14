@@ -62,7 +62,8 @@ describe('HSW-013B desktop synchronization worker', () => {
       expect(monitor.getLatest()).toEqual({
         checkedAt: at,
         status: 'UNAVAILABLE',
-        phase: 'SNAPSHOT'
+        phase: 'SNAPSHOT',
+        diagnostic: { stage: 'PATIENT', rule: 'INVALID_VALUE', field: 'sex' }
       })
       expect(submitBatch).not.toHaveBeenCalled()
       expect(
@@ -679,7 +680,7 @@ function createWorker(
 ): SyncWorkerService {
   return createSyncWorkerService({
     foundation: harness.foundation,
-    preparation: createPreparation(harness),
+    preparation: createPreparation(harness, workerMonitor),
     httpClient,
     repository: createSyncWorkerRepository(harness.connection),
     transactionExecutor: harness.transactionExecutor,
@@ -688,13 +689,17 @@ function createWorker(
   })
 }
 
-function createPreparation(harness: WorkerHarness): SyncSnapshotPreparationService {
+function createPreparation(
+  harness: WorkerHarness,
+  workerMonitor?: SyncWorkerMonitor
+): SyncSnapshotPreparationService {
   return createSyncSnapshotPreparationService({
     snapshotRepository: createSyncSnapshotRepository(harness.connection),
     batchRepository: createSyncTransportBatchRepository(harness.connection),
     transactionExecutor: harness.transactionExecutor,
     desktopApplicationVersion: '1.0.0',
-    desktopSchemaVersion: 21
+    desktopSchemaVersion: 21,
+    onFailure: (diagnostic) => workerMonitor?.record('UNAVAILABLE', 'SNAPSHOT', diagnostic)
   })
 }
 

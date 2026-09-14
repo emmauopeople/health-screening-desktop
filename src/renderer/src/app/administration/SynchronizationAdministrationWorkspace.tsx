@@ -215,6 +215,18 @@ export function SynchronizationAdministrationWorkspace({
               {state.activity.state === 'BLOCKED'
                 ? ` ${workerFailureMessage(state.activity.workerCheck.phase)}`
                 : null}
+              {state.activity.state === 'BLOCKED' && state.activity.workerCheck.diagnostic ? (
+                <div>
+                  Support code:{' '}
+                  {[
+                    state.activity.workerCheck.diagnostic.stage,
+                    state.activity.workerCheck.diagnostic.rule,
+                    state.activity.workerCheck.diagnostic.field
+                  ]
+                    .filter(Boolean)
+                    .join(' / ')}
+                </div>
+              ) : null}
             </div>
           ) : null}
 

@@ -1,3 +1,4 @@
+import type { SyncSnapshotDiagnostic } from '@shared/sync-snapshot-diagnostics'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -53,6 +54,44 @@ afterEach(async () => {
 })
 
 describe('sync snapshot materialization', () => {
+  it.each([
+    {
+      sql: "UPDATE patients SET sex = 'INVALID'",
+      operation: 'PATIENT_CREATED',
+      aggregate: patientId,
+      stage: 'PATIENT',
+      field: 'sex'
+    },
+    {
+      sql: "UPDATE patients SET phone = ''",
+      operation: 'PATIENT_CREATED',
+      aggregate: patientId,
+      stage: 'PATIENT',
+      field: 'phone'
+    },
+    {
+      sql: "UPDATE screening_sessions SET updated_at = 'invalid'",
+      operation: 'SCREENING_SESSION_CREATED',
+      aggregate: sessionId,
+      stage: 'SCREENING_SESSION',
+      field: 'updated_at'
+    }
+  ])(
+    'reports only the failing stage and field $stage/$field',
+    async ({ sql, operation, aggregate, stage, field }) => {
+      const harness = await createHarness()
+      insertClinicalFoundation(harness.connection)
+      harness.connection.exec(sql)
+      insertSignal(harness.connection, patientSignalOne, stage, aggregate, operation, 1)
+      expect(harness.service.prepareNextBatch()).toEqual({ status: 'UNAVAILABLE' })
+      expect(harness.diagnostics).toEqual([{ stage, rule: 'INVALID_VALUE', field }])
+      expect(readTableCount(harness.connection, 'sync_transport_batches')).toBe(0)
+      expect(readOutboxStatuses(harness.connection)).toEqual([
+        { id: patientSignalOne, status: 'PENDING' }
+      ])
+    }
+  )
+
   it.each(['UNKNOWN', null])(
     'transports patient sex %s without blocking the batch',
     async (sex) => {
@@ -447,6 +486,7 @@ describe('sync snapshot materialization', () => {
 
     expect(harness.service.prepareNextBatch()).toEqual({ status: 'UNAVAILABLE' })
     expect(readTableCount(harness.connection, 'sync_transport_batches')).toBe(0)
+    expect(harness.diagnostics).toEqual([{ stage: 'BATCH_INSERT', rule: 'BATCH_WRITE' }])
     expect(readTableCount(harness.connection, 'sync_transport_batch_items')).toBe(0)
     expect(readOutboxStatuses(harness.connection)).toEqual([
       { id: patientSignalOne, status: 'PENDING' }
@@ -456,6 +496,7 @@ describe('sync snapshot materialization', () => {
 
 async function createHarness(version = 22): Promise<{
   readonly connection: Database.Database
+  readonly diagnostics: SyncSnapshotDiagnostic[]
   readonly service: ReturnType<typeof createSyncSnapshotPreparationService>
 }> {
   const directory = await mkdtemp(join(tmpdir(), 'hsw013b1-sync-snapshot-'))
@@ -478,14 +519,17 @@ async function createHarness(version = 22): Promise<{
     idGenerator: createEntityIdGenerator(() => batchId),
     logger: { error: vi.fn() }
   })
+  const diagnostics: SyncSnapshotDiagnostic[] = []
   return {
     connection,
+    diagnostics,
     service: createSyncSnapshotPreparationService({
       snapshotRepository: createSyncSnapshotRepository(connection),
       batchRepository: createSyncTransportBatchRepository(connection),
       transactionExecutor,
       desktopApplicationVersion: '1.0.0',
-      desktopSchemaVersion: version
+      desktopSchemaVersion: version,
+      onFailure: (diagnostic) => diagnostics.push(diagnostic)
     })
   }
 }

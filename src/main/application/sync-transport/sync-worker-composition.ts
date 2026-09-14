@@ -53,7 +53,8 @@ export function createProductionSyncWorkerService({
       batchRepository,
       transactionExecutor,
       desktopApplicationVersion,
-      desktopSchemaVersion
+      desktopSchemaVersion,
+      onFailure: (diagnostic) => workerMonitor?.record('UNAVAILABLE', 'SNAPSHOT', diagnostic)
     }),
     httpClient: createSyncHttpClient(httpClientOptions),
     repository: createSyncWorkerRepository(connection),

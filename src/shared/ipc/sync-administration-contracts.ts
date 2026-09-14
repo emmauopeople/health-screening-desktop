@@ -1,3 +1,4 @@
+import { syncSnapshotDiagnosticSchema } from '../sync-snapshot-diagnostics'
 import { z } from 'zod'
 
 import { utcTimestampSchema } from './authentication-contracts'
@@ -39,7 +40,8 @@ export const syncWorkerCheckSchema = z
       'UPLOAD',
       'RESPONSE',
       'IDENTITY_PULL'
-    ])
+    ]),
+    diagnostic: syncSnapshotDiagnosticSchema.optional()
   })
   .strict()
 

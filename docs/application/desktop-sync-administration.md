@@ -55,6 +55,15 @@ no batch or attempt row exists yet. Refresh status to see the latest check.
 The monitor resets when the process restarts or configuration is saved successfully;
 it is not a durable attempt history. A later run replaces the previous status.
 
+Snapshot failures also display a support code. Its stage identifies installation
+context, outbox reading, the resource being materialized, actor loading, input
+validation, serialization, or batch insertion. Its rule and optional field name
+come from closed allowlists. The code contains no patient ID, field value, SQL,
+exception message, or credential. Record the full code when reporting a blocked
+sync; it narrows the failure without requiring an upload of the local database.
+Diagnostics are captured before transaction error sanitization and do not change
+rollback, validation, or retry behavior. The next worker run clears stale details.
+
 An empty batch/attempt history with pending outbox signals locates the blockage
 before transport, but does not identify the cause. One corrected preparation bug
 rejected the valid patient sex `UNKNOWN`; both that value and legacy `NULL` now
