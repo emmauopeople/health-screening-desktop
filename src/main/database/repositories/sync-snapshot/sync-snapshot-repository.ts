@@ -14,6 +14,7 @@ import {
   type LifestyleDraftRecord
 } from '@main/database/repositories/lifestyle'
 import { parseLocalUserRole, parseUserDisplayName } from '@main/database/repositories/local-user'
+import { parsePatientAcknowledgmentHistoryStatus } from '@main/database/repositories/patient/patient-acknowledgment-validation'
 import { RepositoryDataIntegrityError } from '@main/database/repositories/repository-errors'
 import { parseEntityId, type EntityId } from '@main/foundation/entity-id'
 import { parseUtcTimestamp, type UtcTimestamp } from '@main/foundation/utc-clock'
@@ -323,7 +324,7 @@ function materializePatient(
     row.acknowledgment_status === null
       ? 'NOT_REQUESTED'
       : snapshotField('acknowledgment_status', () =>
-          requiredEnum(row.acknowledgment_status, ['ACKNOWLEDGED', 'DECLINED'])
+          parsePatientAcknowledgmentHistoryStatus(row.acknowledgment_status)
         )
 
   return candidateRecord(

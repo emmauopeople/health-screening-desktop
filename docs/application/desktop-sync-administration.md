@@ -70,6 +70,13 @@ rejected the valid patient sex `UNKNOWN`; both that value and legacy `NULL` now
 transport as `UNKNOWN` without changing the local patient row. Malformed values
 still fail preparation transactionally and leave all signals pending.
 
+Patient acknowledgment snapshots use the same history-status validator as the
+patient repository. A stored `NOT_REQUESTED` event is valid and remains
+`NOT_REQUESTED` in transport, as does the absence of an acknowledgment event.
+`ACKNOWLEDGED` and `DECLINED` retain their meaning. This fixes the blocked support
+code `PATIENT / INVALID_VALUE / acknowledgment_status` for valid `NOT_REQUESTED`
+rows without modifying acknowledgment history or requiring a database migration.
+
 ## Verification
 
 Automated evidence covers protected and audited configuration, fail-closed role

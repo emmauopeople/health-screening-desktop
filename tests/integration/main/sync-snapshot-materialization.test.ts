@@ -54,6 +54,40 @@ afterEach(async () => {
 })
 
 describe('sync snapshot materialization', () => {
+  it.each(['NOT_REQUESTED', 'ACKNOWLEDGED', 'DECLINED', null])(
+    'transports stored acknowledgment %s without changing its meaning or history',
+    async (status) => {
+      const harness = await createHarness()
+      const c = harness.connection
+      insertClinicalFoundation(c, status)
+      const before = c.prepare('SELECT * FROM consent_records').all()
+      insertSignal(c, patientSignalOne, 'PATIENT', patientId, 'PATIENT_CREATED', 1)
+      insertSignal(c, sessionSignal, 'SCREENING_SESSION', sessionId, 'SCREENING_SESSION_CREATED', 2)
+      expect(harness.service.prepareNextBatch()).toMatchObject({
+        status: 'PREPARED',
+        recordCount: 2
+      })
+      expect(readStoredRequest(c).records[0]).toMatchObject({
+        resourceType: 'PATIENT',
+        payload: { acknowledgmentStatus: status ?? 'NOT_REQUESTED' }
+      })
+      expect(c.prepare('SELECT * FROM consent_records').all()).toEqual(before)
+    }
+  )
+
+  it('keeps malformed acknowledgment values blocked with every signal pending', async () => {
+    const harness = await createHarness()
+    const c = harness.connection
+    insertClinicalFoundation(c, 'INVALID')
+    insertSignal(c, patientSignalOne, 'PATIENT', patientId, 'PATIENT_CREATED', 1)
+    expect(harness.service.prepareNextBatch()).toEqual({ status: 'UNAVAILABLE' })
+    expect(harness.diagnostics).toEqual([
+      { stage: 'PATIENT', rule: 'INVALID_VALUE', field: 'acknowledgment_status' }
+    ])
+    expect(readTableCount(c, 'sync_transport_batches')).toBe(0)
+    expect(readOutboxStatuses(c)).toEqual([{ id: patientSignalOne, status: 'PENDING' }])
+  })
+
   it.each([
     {
       sql: "UPDATE patients SET sex = 'INVALID'",
@@ -534,7 +568,10 @@ async function createHarness(version = 22): Promise<{
   }
 }
 
-function insertClinicalFoundation(connection: Database.Database): void {
+function insertClinicalFoundation(
+  connection: Database.Database,
+  acknowledgmentStatus: string | null = 'ACKNOWLEDGED'
+): void {
   connection
     .prepare(
       `INSERT INTO installation
@@ -569,15 +606,16 @@ function insertClinicalFoundation(connection: Database.Database): void {
                  'synthetic patient', 'FEMALE', '1985-04-12', 'ACTIVE', ?, ?, ?, ?, 2)`
     )
     .run(patientId, adminId, now, adminId, now)
-  connection
-    .prepare(
-      `INSERT INTO consent_records (
+  if (acknowledgmentStatus !== null)
+    connection
+      .prepare(
+        `INSERT INTO consent_records (
          id, patient_id, consent_type, status, source_type, recorded_by, recorded_at,
          patient_prior_row_version, patient_resulting_row_version
        ) VALUES ('e0000000-0000-4000-8000-000000000001', ?,
-                 'PATIENT_REGISTRY_ACKNOWLEDGMENT', 'ACKNOWLEDGED', 'LOCAL', ?, ?, 1, 2)`
-    )
-    .run(patientId, adminId, now)
+                 'PATIENT_REGISTRY_ACKNOWLEDGMENT', ?, 'LOCAL', ?, ?, 1, 2)`
+      )
+      .run(patientId, acknowledgmentStatus, adminId, now)
   connection
     .prepare(
       `INSERT INTO screening_sessions (
