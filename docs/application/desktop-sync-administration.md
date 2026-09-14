@@ -77,6 +77,25 @@ patient repository. A stored `NOT_REQUESTED` event is valid and remains
 code `PATIENT / INVALID_VALUE / acknowledgment_status` for valid `NOT_REQUESTED`
 rows without modifying acknowledgment history or requiring a database migration.
 
+## Read-only delivery diagnostics
+
+With Node 24, run `node scripts/diagnose-sync.mjs` on Windows. It opens the normal
+`APPDATA` desktop database read-only; an explicit database path can be supplied
+with `--db`. It does not send requests or retry records. It prints aggregate
+outcomes from saved batch responses, pending finalized Food/OTC counts, and
+measurement-time comparison categories. Patient identifiers, clinical values,
+timestamps, and exception details are not printed.
+
+Time comparisons use the latest accepted encounter snapshots in local batch
+history and each reading's recorded time zone. They distinguish a first reading
+in the encounter's starting minute from readings before that minute or after
+the completion minute. This is diagnostic evidence, not authorization to change
+clinical timestamps. A later accepted encounter revision may differ from the
+one present when an earlier reading was rejected. Local snapshot outcome counts
+need not equal PostgreSQL's counts of record revisions.
+
+Run the diagnostic checks with `node --test scripts/test/diagnose-sync.test.mjs`.
+
 ## Verification
 
 Automated evidence covers protected and audited configuration, fail-closed role
