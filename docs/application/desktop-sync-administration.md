@@ -159,6 +159,23 @@ need not equal PostgreSQL's counts of record revisions.
 
 Run the diagnostic checks with `node --test scripts/test/diagnose-sync.test.mjs`.
 
+The report also groups outstanding signals by `PENDING`, `FAILED`, and `IN_FLIGHT`;
+their total corresponds to the Sync Center count at the time of the read.
+`pendingLifestyleContexts` shows current local draft/encounter states, including
+whether a signal records completion. A historical completion signal can belong
+to a draft that has since been reopened. `COMPLETE` alone does not prove every
+transport prerequisite is satisfied. Encounter counts are distinct within each
+group and must not be summed across groups as unique encounters.
+
+`failedSignalContexts` correlates failed encounter/Vitals signals with the latest
+saved patient and encounter outcomes and the presence of a local patient identity
+link. These are current context observations, not proof of the original failure
+cause. `latestSnapshotErrors` counts error occurrences on the latest saved
+rejected/retry snapshots. Only recognized error codes are printed; other codes
+are grouped as `OTHER`, and absent context is labeled `MISSING`. No patient IDs,
+record IDs, free text, or identity-link values are included. The script does not
+resolve identity reviews, complete drafts, alter timestamps, or clear the queue.
+
 ## Verification
 
 Automated evidence covers protected and audited configuration, fail-closed role
