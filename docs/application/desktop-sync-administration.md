@@ -110,6 +110,36 @@ After an update, use the next startup or scheduled worker run, then check latest
 outcomes with the diagnostic script. Historical rejection queries still include
 the original rejection. No database migration or central API update is required.
 
+## Local response application recovery
+
+`The worker could not save the central response locally` identifies a failure
+after an API response was received. It does not mean all pending records are
+waiting for an initial upload. The Sync Center count includes `PENDING`,
+`FAILED`, and `IN_FLIGHT` outbox signals; the diagnostic script's
+`pendingOrFailedSignals` excludes `IN_FLIGHT`, so those counts can differ.
+
+An older worker selected Vitals draft-save and Lifestyle draft/baseline/reopen
+signals for a snapshot, but matched responses only to step-completed signals.
+Without a matching completion signal, saving the response rolled back. With a
+completion signal present, the batch could finish while its other signals stayed
+in flight. Preparation and response application now share one operation catalog
+and apply each outcome to all matching signals reserved by that batch. Events
+outside the batch, other resource domains, and new events remain separate.
+
+On a configured worker run, up to 25 completed batches with leftover
+Vitals/Lifestyle signals are reconciled transactionally using their saved
+requests and responses. Both hashes and outcome/request correspondence are
+verified. Accepted or terminal outcomes become `SENT`; retryable outcomes become
+`FAILED` with a future retry time. A signal reserved by any unfinished batch is
+excluded from this historical reconciliation. Completed batch history, clinical
+rows, and resource/identity mappings are not rewritten. Repeated checks make no
+further changes to already-reconciled signals.
+
+An unfinished batch follows the existing lease-expiry and GET-response recovery
+path. Startup may first schedule recovery; the following scheduled run applies
+the saved API response. No database migration or manual queue reset is needed.
+Pending work for unsupported domains or genuine retries can remain after recovery.
+
 ## Read-only delivery diagnostics
 
 With Node 24, run `node scripts/diagnose-sync.mjs` on Windows. It opens the normal

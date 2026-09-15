@@ -17,6 +17,7 @@ import {
 import { parseLocalUserRole, parseUserDisplayName } from '@main/database/repositories/local-user'
 import { parsePatientAcknowledgmentHistoryStatus } from '@main/database/repositories/patient/patient-acknowledgment-validation'
 import { RepositoryDataIntegrityError } from '@main/database/repositories/repository-errors'
+import { syncSignalResources as operationResource } from '../sync-transport/sync-signal-resources'
 import { parseEntityId, type EntityId } from '@main/foundation/entity-id'
 import { parseUtcTimestamp, type UtcTimestamp } from '@main/foundation/utc-clock'
 
@@ -44,29 +45,6 @@ const resourceOrder: Readonly<Record<MaterializedSyncResourceType, number>> = Ob
   FOOD: 5,
   OTC: 6
 })
-
-const operationResource = new Map<string, MaterializedSyncResourceType>([
-  ['SCREENING_FOOD_FINALIZED', 'FOOD'],
-  ['SCREENING_OTC_FINALIZED', 'OTC'],
-  ['PATIENT_CREATED', 'PATIENT'],
-  ['PATIENT_SYNC_REPLAY_REQUESTED', 'PATIENT'],
-  ['PATIENT_DEMOGRAPHICS_AMENDED', 'PATIENT'],
-  ['PATIENT_ACKNOWLEDGMENT_RECORDED', 'PATIENT'],
-  ['SCREENING_SESSION_CREATED', 'SCREENING_SESSION'],
-  ['SCREENING_SESSION_CLOSED', 'SCREENING_SESSION'],
-  ['SCREENING_SESSION_REOPENED', 'SCREENING_SESSION'],
-  ['SCREENING_ENCOUNTER_STARTED', 'SCREENING_ENCOUNTER'],
-  ['SCREENING_ENCOUNTER_COMPLETED', 'SCREENING_ENCOUNTER'],
-  ['SCREENING_ENCOUNTER_VOIDED', 'SCREENING_ENCOUNTER'],
-  ['SCREENING_VITALS_DRAFT_SAVED', 'VITALS'],
-  ['SCREENING_VITALS_STEP_COMPLETED', 'VITALS'],
-  ['SCREENING_LIFESTYLE_ALCOHOL_BASELINE_CREATED', 'LIFESTYLE'],
-  ['SCREENING_LIFESTYLE_TOBACCO_BASELINE_CREATED', 'LIFESTYLE'],
-  ['SCREENING_LIFESTYLE_WORK_BASELINE_CREATED', 'LIFESTYLE'],
-  ['SCREENING_LIFESTYLE_DRAFT_SAVED', 'LIFESTYLE'],
-  ['SCREENING_LIFESTYLE_STEP_COMPLETED', 'LIFESTYLE'],
-  ['SCREENING_LIFESTYLE_REOPENED', 'LIFESTYLE']
-])
 
 interface OutboxSignal {
   readonly id: EntityId
