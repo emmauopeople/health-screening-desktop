@@ -54,6 +54,42 @@ afterEach(async () => {
 })
 
 describe('sync snapshot materialization', () => {
+  it('reuses identical patient records when audit signals span the 500-signal window', async () => {
+    const harness = await createHarness()
+    const c = harness.connection
+    insertClinicalFoundation(c)
+    for (let index = 0; index < 501; index++) {
+      insertSignal(c, randomUUID(), 'PATIENT', patientId, 'PATIENT_CREATED', 1)
+    }
+    expect(harness.service.prepareNextBatch()).toMatchObject({
+      status: 'PREPARED',
+      signalCount: 500
+    })
+    const first = readStoredRequest(c).records[0]
+    expect(harness.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED', signalCount: 1 })
+    const requests = c
+      .prepare('SELECT request_json FROM sync_transport_batches ORDER BY rowid')
+      .all() as { request_json: string }[]
+    expect(JSON.parse(requests[1]!.request_json).records[0]).toEqual(first)
+    expect(readTableCount(c, 'sync_transport_batch_items')).toBe(501)
+  })
+
+  it('blocks changed patient content at the same revision instead of replaying stale demographics', async () => {
+    const harness = await createHarness()
+    const c = harness.connection
+    insertClinicalFoundation(c)
+    insertSignal(c, patientSignalOne, 'PATIENT', patientId, 'PATIENT_CREATED', 1)
+    expect(harness.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED' })
+    c.prepare("UPDATE patients SET display_name = 'Changed without a revision' WHERE id = ?").run(
+      patientId
+    )
+    insertSignal(c, patientSignalTwo, 'PATIENT', patientId, 'PATIENT_DEMOGRAPHICS_AMENDED', 2)
+    expect(harness.service.prepareNextBatch()).toEqual({ status: 'UNAVAILABLE' })
+    expect(harness.diagnostics).toEqual([{ stage: 'PATIENT', rule: 'SNAPSHOT_REVISION_CONFLICT' }])
+    c.prepare('UPDATE patients SET row_version = row_version + 1 WHERE id = ?').run(patientId)
+    expect(harness.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED' })
+  })
+
   it.each(['NOT_REQUESTED', 'ACKNOWLEDGED', 'DECLINED', null])(
     'transports stored acknowledgment %s without changing its meaning or history',
     async (status) => {
@@ -547,10 +583,11 @@ async function createHarness(version = 22): Promise<{
     if (connection.open) connection.close()
     await rm(directory, { recursive: true, force: true })
   })
+  let generatedIds = 0
   const transactionExecutor = createDatabaseTransactionExecutor({
     connection,
     clock: createUtcClock(() => now),
-    idGenerator: createEntityIdGenerator(() => batchId),
+    idGenerator: createEntityIdGenerator(() => (generatedIds++ === 0 ? batchId : randomUUID())),
     logger: { error: vi.fn() }
   })
   const diagnostics: SyncSnapshotDiagnostic[] = []

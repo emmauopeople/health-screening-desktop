@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import { readPatientSnapshotHistory } from './patient-snapshot-history'
 import {
   SnapshotMaterializationError,
   SnapshotValueError,
@@ -48,6 +49,7 @@ const operationResource = new Map<string, MaterializedSyncResourceType>([
   ['SCREENING_FOOD_FINALIZED', 'FOOD'],
   ['SCREENING_OTC_FINALIZED', 'OTC'],
   ['PATIENT_CREATED', 'PATIENT'],
+  ['PATIENT_SYNC_REPLAY_REQUESTED', 'PATIENT'],
   ['PATIENT_DEMOGRAPHICS_AMENDED', 'PATIENT'],
   ['PATIENT_ACKNOWLEDGMENT_RECORDED', 'PATIENT'],
   ['SCREENING_SESSION_CREATED', 'SCREENING_SESSION'],
@@ -106,6 +108,9 @@ export function createSyncSnapshotRepository(
       let stage: SyncSnapshotDiagnostic['stage'] = 'INSTALLATION'
       try {
         const installation = readInstallationContext(scopedConnection)
+        stage = 'PATIENT'
+        const patientHistory = readPatientSnapshotHistory(scopedConnection, installation)
+        patientHistory.queueRepairs(now)
         stage = 'SIGNALS'
         const signals = readEligibleSignals(scopedConnection, parseUtcTimestamp(now))
         if (signals.length === 0) return null
@@ -113,7 +118,15 @@ export function createSyncSnapshotRepository(
         const candidates = groupSignals(signals)
           .map((group) => {
             stage = group.resourceType
-            return materializeCandidate(scopedConnection, lifestyleRepository, installation, group)
+            const candidate = materializeCandidate(
+              scopedConnection,
+              lifestyleRepository,
+              installation,
+              group
+            )
+            return candidate !== null && group.resourceType === 'PATIENT'
+              ? { ...candidate, record: patientHistory.stabilize(candidate.record) }
+              : candidate
           })
           .filter((candidate): candidate is MaterializedCandidate => candidate !== null)
           .sort(compareCandidates)

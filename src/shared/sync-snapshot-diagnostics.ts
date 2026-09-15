@@ -31,6 +31,7 @@ export const syncSnapshotDiagnosticSchema = z
       'MISSING_ACTOR',
       'BATCH_CAPACITY',
       'DATA_INTEGRITY',
+      'SNAPSHOT_REVISION_CONFLICT',
       'DATABASE_READ',
       'INPUT_INVALID',
       'JSON_BOUNDS',

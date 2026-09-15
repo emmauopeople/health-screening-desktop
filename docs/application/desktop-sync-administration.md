@@ -77,6 +77,39 @@ patient repository. A stored `NOT_REQUESTED` event is valid and remains
 code `PATIENT / INVALID_VALUE / acknowledgment_status` for valid `NOT_REQUESTED`
 rows without modifying acknowledgment history or requiring a database migration.
 
+## Patient snapshot replay
+
+The central API checks exact patient records for each source revision, including
+the record ID. Previously, separate slices of the outbox could choose different
+record IDs for the same revision. Applying a returned CHS Medical ID could also
+change `knownChsMedicalId` without changing that revision. These differences can
+produce `RECORD_PAYLOAD_MISMATCH` in a saved batch response without a new rejected
+row in the server's `sync_records` table.
+
+The desktop now preserves the first saved patient record for a revision when
+materializing later signals. It compares all fields before reuse. A null
+`knownChsMedicalId` can be preserved only when the local identity-link table
+confirms the current ID came from the server for that same patient revision.
+The assigned ID remains available locally. A changed clinical field at the same
+revision blocks preparation with `PATIENT / SNAPSHOT_REVISION_CONFLICT`;
+legitimate edits with a new revision continue through normal snapshot creation.
+
+At preparation time, the desktop also checks historical patient
+`RECORD_PAYLOAD_MISMATCH` rejections. It queues one technical
+`PATIENT_SYNC_REPLAY_REQUESTED` signal per rejected batch/record only when the
+first saved snapshot was accepted or unchanged, the rejected record differs
+only in the proven delivery fields above, and the patient still has that source
+revision. Current content is checked again during preparation. A failure rolls
+back the replay signal with the batch transaction. Original clinical rows,
+signals, requests, and rejected responses are preserved. The durable replay
+signal prevents repeated recovery work after restart.
+
+This recovery does not resolve identity-review cases, invalid measurement times,
+void-encounter content, or mismatches without sufficient matching local history.
+After an update, use the next startup or scheduled worker run, then check latest
+outcomes with the diagnostic script. Historical rejection queries still include
+the original rejection. No database migration or central API update is required.
+
 ## Read-only delivery diagnostics
 
 With Node 24, run `node scripts/diagnose-sync.mjs` on Windows. It opens the normal
