@@ -1,7 +1,11 @@
+import type { SyncSnapshotDiagnostic } from '@shared/sync-snapshot-diagnostics'
+import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
+import { databaseMigrations } from '@main/database/migrations/migration-manifest'
+import { runDatabaseMigrations } from '@main/database/migrations/migration-runner'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createSyncSnapshotPreparationService } from '@main/application/sync-transport'
@@ -50,6 +54,280 @@ afterEach(async () => {
 })
 
 describe('sync snapshot materialization', () => {
+  it('reuses identical patient records when audit signals span the 500-signal window', async () => {
+    const harness = await createHarness()
+    const c = harness.connection
+    insertClinicalFoundation(c)
+    for (let index = 0; index < 501; index++) {
+      insertSignal(c, randomUUID(), 'PATIENT', patientId, 'PATIENT_CREATED', 1)
+    }
+    expect(harness.service.prepareNextBatch()).toMatchObject({
+      status: 'PREPARED',
+      signalCount: 500
+    })
+    const first = readStoredRequest(c).records[0]
+    expect(harness.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED', signalCount: 1 })
+    const requests = c
+      .prepare('SELECT request_json FROM sync_transport_batches ORDER BY rowid')
+      .all() as { request_json: string }[]
+    expect(JSON.parse(requests[1]!.request_json).records[0]).toEqual(first)
+    expect(readTableCount(c, 'sync_transport_batch_items')).toBe(501)
+  })
+
+  it('blocks changed patient content at the same revision instead of replaying stale demographics', async () => {
+    const harness = await createHarness()
+    const c = harness.connection
+    insertClinicalFoundation(c)
+    insertSignal(c, patientSignalOne, 'PATIENT', patientId, 'PATIENT_CREATED', 1)
+    expect(harness.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED' })
+    c.prepare("UPDATE patients SET display_name = 'Changed without a revision' WHERE id = ?").run(
+      patientId
+    )
+    insertSignal(c, patientSignalTwo, 'PATIENT', patientId, 'PATIENT_DEMOGRAPHICS_AMENDED', 2)
+    expect(harness.service.prepareNextBatch()).toEqual({ status: 'UNAVAILABLE' })
+    expect(harness.diagnostics).toEqual([{ stage: 'PATIENT', rule: 'SNAPSHOT_REVISION_CONFLICT' }])
+    c.prepare('UPDATE patients SET row_version = row_version + 1 WHERE id = ?').run(patientId)
+    expect(harness.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED' })
+  })
+
+  it.each(['NOT_REQUESTED', 'ACKNOWLEDGED', 'DECLINED', null])(
+    'transports stored acknowledgment %s without changing its meaning or history',
+    async (status) => {
+      const harness = await createHarness()
+      const c = harness.connection
+      insertClinicalFoundation(c, status)
+      const before = c.prepare('SELECT * FROM consent_records').all()
+      insertSignal(c, patientSignalOne, 'PATIENT', patientId, 'PATIENT_CREATED', 1)
+      insertSignal(c, sessionSignal, 'SCREENING_SESSION', sessionId, 'SCREENING_SESSION_CREATED', 2)
+      expect(harness.service.prepareNextBatch()).toMatchObject({
+        status: 'PREPARED',
+        recordCount: 2
+      })
+      expect(readStoredRequest(c).records[0]).toMatchObject({
+        resourceType: 'PATIENT',
+        payload: { acknowledgmentStatus: status ?? 'NOT_REQUESTED' }
+      })
+      expect(c.prepare('SELECT * FROM consent_records').all()).toEqual(before)
+    }
+  )
+
+  it('keeps malformed acknowledgment values blocked with every signal pending', async () => {
+    const harness = await createHarness()
+    const c = harness.connection
+    insertClinicalFoundation(c, 'INVALID')
+    insertSignal(c, patientSignalOne, 'PATIENT', patientId, 'PATIENT_CREATED', 1)
+    expect(harness.service.prepareNextBatch()).toEqual({ status: 'UNAVAILABLE' })
+    expect(harness.diagnostics).toEqual([
+      { stage: 'PATIENT', rule: 'INVALID_VALUE', field: 'acknowledgment_status' }
+    ])
+    expect(readTableCount(c, 'sync_transport_batches')).toBe(0)
+    expect(readOutboxStatuses(c)).toEqual([{ id: patientSignalOne, status: 'PENDING' }])
+  })
+
+  it.each([
+    {
+      sql: "UPDATE patients SET sex = 'INVALID'",
+      operation: 'PATIENT_CREATED',
+      aggregate: patientId,
+      stage: 'PATIENT',
+      field: 'sex'
+    },
+    {
+      sql: "UPDATE patients SET phone = ''",
+      operation: 'PATIENT_CREATED',
+      aggregate: patientId,
+      stage: 'PATIENT',
+      field: 'phone'
+    },
+    {
+      sql: "UPDATE screening_sessions SET updated_at = 'invalid'",
+      operation: 'SCREENING_SESSION_CREATED',
+      aggregate: sessionId,
+      stage: 'SCREENING_SESSION',
+      field: 'updated_at'
+    }
+  ])(
+    'reports only the failing stage and field $stage/$field',
+    async ({ sql, operation, aggregate, stage, field }) => {
+      const harness = await createHarness()
+      insertClinicalFoundation(harness.connection)
+      harness.connection.exec(sql)
+      insertSignal(harness.connection, patientSignalOne, stage, aggregate, operation, 1)
+      expect(harness.service.prepareNextBatch()).toEqual({ status: 'UNAVAILABLE' })
+      expect(harness.diagnostics).toEqual([{ stage, rule: 'INVALID_VALUE', field }])
+      expect(readTableCount(harness.connection, 'sync_transport_batches')).toBe(0)
+      expect(readOutboxStatuses(harness.connection)).toEqual([
+        { id: patientSignalOne, status: 'PENDING' }
+      ])
+    }
+  )
+
+  it.each(['UNKNOWN', null])(
+    'transports patient sex %s without blocking the batch',
+    async (sex) => {
+      const harness = await createHarness()
+      const c = harness.connection
+      insertClinicalFoundation(c)
+      c.prepare('UPDATE patients SET sex = ? WHERE id = ?').run(sex, patientId)
+      insertSignal(c, patientSignalOne, 'PATIENT', patientId, 'PATIENT_CREATED', 1)
+      insertSignal(c, sessionSignal, 'SCREENING_SESSION', sessionId, 'SCREENING_SESSION_CREATED', 2)
+
+      expect(harness.service.prepareNextBatch()).toMatchObject({
+        status: 'PREPARED',
+        recordCount: 2
+      })
+      expect(readStoredRequest(c).records[0]).toMatchObject({
+        resourceType: 'PATIENT',
+        payload: { sex: 'UNKNOWN' }
+      })
+      expect(c.prepare('SELECT sex FROM patients WHERE id = ?').get(patientId)).toEqual({ sex })
+    }
+  )
+
+  it('backfills finalized Food/OTC on upgrade, preserves source data and does not duplicate work on restart', async () => {
+    const harness = await createHarness(21)
+    const c = harness.connection
+    insertClinicalFoundation(c)
+    c.prepare(
+      "UPDATE screening_encounters SET status = 'COMPLETED', completed_at = ? WHERE id = ?"
+    ).run(now, encounterId)
+    c.prepare(
+      `INSERT INTO food_logs (id, encounter_id, food_code, food_name, food_name_normalized,
+      frequency_code, notes, source_type, recorded_by, recorded_at)
+      VALUES (?, ?, 'BEANS', 'Beans', 'beans', NULL, NULL, 'PATIENT_REPORTED', ?, ?)`
+    ).run(readingId, encounterId, nurseId, now)
+    c.prepare(
+      `INSERT INTO otc_medication_logs (id, encounter_id, product_name, product_name_normalized,
+      reason_for_use, dose_text, frequency_text, duration_text, source_of_medication,
+      currently_taking, source_type, recorded_by, recorded_at)
+      VALUES (?, ?, 'Synthetic product', 'synthetic product', 'Reported reason', 'Reported dose',
+      NULL, NULL, NULL, NULL, 'PATIENT_REPORTED', ?, ?)`
+    ).run(vitalsId, encounterId, nurseId, now)
+    const before = c.prepare('SELECT * FROM food_logs').all()
+    const migrate = createProductionDatabaseMigrationRunner({
+      applicationVersion: '1.0.0',
+      logger: { info: vi.fn(), error: vi.fn() },
+      clock: { now: () => now }
+    })
+    expect(migrate(c).appliedVersions).toEqual([22])
+    expect(migrate(c).appliedVersions).toEqual([])
+    expect(c.prepare('SELECT * FROM food_logs').all()).toEqual(before)
+    expect(readTableCount(c, 'sync_outbox')).toBe(2)
+    expect(harness.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED', recordCount: 2 })
+    const stored = c.prepare('SELECT request_json FROM sync_transport_batches').get() as {
+      request_json: string
+    }
+    const batch = JSON.parse(stored.request_json)
+    expect(batch.records.map((r: { resourceType: string }) => r.resourceType)).toEqual([
+      'FOOD',
+      'OTC'
+    ])
+    expect(batch.records[0]).toMatchObject({
+      localResourceId: encounterId,
+      sourceRevision: 1,
+      payload: {
+        response: null,
+        periodStart: null,
+        periodEnd: null,
+        rows: [{ foodName: 'Beans', frequencyCode: null, preparationNote: null }]
+      }
+    })
+    expect(batch.records[1]).toMatchObject({
+      payload: {
+        rows: [
+          {
+            productName: 'Synthetic product',
+            reasonForUse: 'Reported reason',
+            doseText: 'Reported dose',
+            currentlyTaking: null
+          }
+        ]
+      }
+    })
+    expect(batch.actors.map((a: { localActorId: string }) => a.localActorId)).toEqual([nurseId])
+  })
+
+  it('splits large finalized snapshots below the wire limit and leaves remaining work pending', async () => {
+    const harness = await createHarness()
+    const c = harness.connection
+    insertClinicalFoundation(c)
+    for (let index = 0; index < 3; index++) {
+      const patient = randomUUID()
+      const encounter = randomUUID()
+      c.prepare(
+        `INSERT INTO patients (id, patient_code, display_name, name_normalized,
+        status, created_by, created_at, updated_by, updated_at, row_version)
+        VALUES (?, ?, 'Synthetic Patient', 'synthetic patient', 'ACTIVE', ?, ?, ?, ?, 1)`
+      ).run(patient, `PT-LARGE-${index}`, adminId, now, adminId, now)
+      c.prepare(
+        `INSERT INTO screening_encounters (id, patient_id, screening_session_id,
+        location_id, protocol_version_id, status, started_at, completed_at, source_type,
+        recorded_by, record_version, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'COMPLETED', ?, ?, 'LOCAL', ?, 1, ?, ?)`
+      ).run(encounter, patient, sessionId, locationId, protocolId, now, now, nurseId, now, now)
+      const insert = c.prepare(`INSERT INTO otc_medication_logs (id, encounter_id,
+        product_name, product_name_normalized, reason_for_use, dose_text, frequency_text,
+        duration_text, source_of_medication, currently_taking, source_type, recorded_by, recorded_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'PATIENT_REPORTED', ?, ?)`)
+      for (let row = 0; row < 100; row++) {
+        const name = '藥'.repeat(150) + row
+        const text = '例'.repeat(160)
+        insert.run(
+          randomUUID(),
+          encounter,
+          name,
+          name,
+          '例'.repeat(500),
+          text,
+          text,
+          text,
+          text,
+          nurseId,
+          now
+        )
+      }
+      insertSignal(
+        c,
+        randomUUID(),
+        'SCREENING_ENCOUNTER',
+        encounter,
+        'SCREENING_OTC_FINALIZED',
+        index
+      )
+    }
+    expect(harness.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED' })
+    const stored = c.prepare('SELECT request_json FROM sync_transport_batches').get() as {
+      request_json: string
+    }
+    expect(Buffer.byteLength(stored.request_json, 'utf8')).toBeLessThan(1024 * 1024)
+    const included = JSON.parse(stored.request_json).records.length as number
+    expect(included).toBeGreaterThan(0)
+    expect(included).toBeLessThan(3)
+    expect(readTableCount(c, 'sync_transport_batch_items')).toBe(included)
+    expect(readTableCount(c, 'sync_outbox')).toBe(3)
+    expect(
+      c.prepare("SELECT count(*) AS count FROM sync_outbox WHERE status = 'PENDING'").get()
+    ).toEqual({ count: 3 - included })
+  })
+
+  it('never uploads a Food/OTC snapshot for an incomplete encounter', async () => {
+    const harness = await createHarness()
+    insertClinicalFoundation(harness.connection)
+    insertSignal(
+      harness.connection,
+      patientSignalOne,
+      'SCREENING_ENCOUNTER',
+      encounterId,
+      'SCREENING_FOOD_FINALIZED',
+      1
+    )
+    expect(harness.service.prepareNextBatch()).toEqual({ status: 'IDLE' })
+    expect(readTableCount(harness.connection, 'sync_transport_batches')).toBe(0)
+    expect(readOutboxStatuses(harness.connection)).toEqual([
+      { id: patientSignalOne, status: 'PENDING' }
+    ])
+  })
+
   it('coalesces current SQLite snapshots in dependency order and excludes unsupported signals', async () => {
     const harness = await createHarness()
     insertClinicalFoundation(harness.connection)
@@ -278,6 +556,7 @@ describe('sync snapshot materialization', () => {
 
     expect(harness.service.prepareNextBatch()).toEqual({ status: 'UNAVAILABLE' })
     expect(readTableCount(harness.connection, 'sync_transport_batches')).toBe(0)
+    expect(harness.diagnostics).toEqual([{ stage: 'BATCH_INSERT', rule: 'BATCH_WRITE' }])
     expect(readTableCount(harness.connection, 'sync_transport_batch_items')).toBe(0)
     expect(readOutboxStatuses(harness.connection)).toEqual([
       { id: patientSignalOne, status: 'PENDING' }
@@ -285,41 +564,51 @@ describe('sync snapshot materialization', () => {
   })
 })
 
-async function createHarness(): Promise<{
+async function createHarness(version = 22): Promise<{
   readonly connection: Database.Database
+  readonly diagnostics: SyncSnapshotDiagnostic[]
   readonly service: ReturnType<typeof createSyncSnapshotPreparationService>
 }> {
   const directory = await mkdtemp(join(tmpdir(), 'hsw013b1-sync-snapshot-'))
   const connection = new Database(join(directory, 'health-screening.sqlite3'))
   connection.pragma('foreign_keys = ON')
-  createProductionDatabaseMigrationRunner({
+  runDatabaseMigrations({
+    connection,
+    migrations: databaseMigrations.filter((m) => m.version <= version),
     applicationVersion: '1.0.0',
     logger: { info: vi.fn(), error: vi.fn() },
     clock: { now: () => now }
-  })(connection)
+  })
   cleanup.push(async () => {
     if (connection.open) connection.close()
     await rm(directory, { recursive: true, force: true })
   })
+  let generatedIds = 0
   const transactionExecutor = createDatabaseTransactionExecutor({
     connection,
     clock: createUtcClock(() => now),
-    idGenerator: createEntityIdGenerator(() => batchId),
+    idGenerator: createEntityIdGenerator(() => (generatedIds++ === 0 ? batchId : randomUUID())),
     logger: { error: vi.fn() }
   })
+  const diagnostics: SyncSnapshotDiagnostic[] = []
   return {
     connection,
+    diagnostics,
     service: createSyncSnapshotPreparationService({
       snapshotRepository: createSyncSnapshotRepository(connection),
       batchRepository: createSyncTransportBatchRepository(connection),
       transactionExecutor,
       desktopApplicationVersion: '1.0.0',
-      desktopSchemaVersion: 19
+      desktopSchemaVersion: version,
+      onFailure: (diagnostic) => diagnostics.push(diagnostic)
     })
   }
 }
 
-function insertClinicalFoundation(connection: Database.Database): void {
+function insertClinicalFoundation(
+  connection: Database.Database,
+  acknowledgmentStatus: string | null = 'ACKNOWLEDGED'
+): void {
   connection
     .prepare(
       `INSERT INTO installation
@@ -354,15 +643,16 @@ function insertClinicalFoundation(connection: Database.Database): void {
                  'synthetic patient', 'FEMALE', '1985-04-12', 'ACTIVE', ?, ?, ?, ?, 2)`
     )
     .run(patientId, adminId, now, adminId, now)
-  connection
-    .prepare(
-      `INSERT INTO consent_records (
+  if (acknowledgmentStatus !== null)
+    connection
+      .prepare(
+        `INSERT INTO consent_records (
          id, patient_id, consent_type, status, source_type, recorded_by, recorded_at,
          patient_prior_row_version, patient_resulting_row_version
        ) VALUES ('e0000000-0000-4000-8000-000000000001', ?,
-                 'PATIENT_REGISTRY_ACKNOWLEDGMENT', 'ACKNOWLEDGED', 'LOCAL', ?, ?, 1, 2)`
-    )
-    .run(patientId, adminId, now)
+                 'PATIENT_REGISTRY_ACKNOWLEDGMENT', ?, 'LOCAL', ?, ?, 1, 2)`
+      )
+      .run(patientId, acknowledgmentStatus, adminId, now)
   connection
     .prepare(
       `INSERT INTO screening_sessions (

@@ -2,6 +2,7 @@ import type { SyncWorkerRepository } from '@main/database'
 import type { DatabaseTransactionExecutor } from '@main/database/transaction'
 import type { EntityId } from '@main/foundation/entity-id'
 import { parseUtcTimestamp } from '@main/foundation/utc-clock'
+import type { SyncWorkerCheck } from '@shared/ipc/sync-administration-contracts'
 
 import {
   parseIdentityResolutionAcknowledgmentResponse,
@@ -15,6 +16,7 @@ import type { SyncHttpClient, SyncHttpResult } from './sync-http-client'
 import type { SyncSnapshotPreparationService } from './sync-snapshot-preparation-types'
 import { addMilliseconds } from './sync-transport-validation'
 import type { SyncTransportFoundationService } from './sync-transport-types'
+import type { SyncWorkerMonitor } from './sync-worker-monitor'
 
 const identityPullLimit = 25
 const maximumRetryMs = 15 * 60_000
@@ -42,6 +44,7 @@ export interface SyncWorkerServiceDependencies {
   readonly repository: SyncWorkerRepository
   readonly transactionExecutor: DatabaseTransactionExecutor
   readonly random?: () => number
+  readonly workerMonitor?: SyncWorkerMonitor
 }
 
 export function createSyncWorkerService(
@@ -53,9 +56,25 @@ export function createSyncWorkerService(
     async runOnce(): Promise<SyncWorkerRunResult> {
       if (running) return Object.freeze({ status: 'BUSY' as const })
       running = true
+      let phase: SyncWorkerCheck['phase'] = 'STARTING'
+      const report = (status: SyncWorkerCheck['status']): void => {
+        try {
+          dependencies.workerMonitor?.record(status, phase)
+        } catch {
+          /* Diagnostics must not interrupt synchronization. */
+        }
+      }
+      const advance = (next: SyncWorkerCheck['phase']): void => {
+        phase = next
+        report('RUNNING')
+      }
+      report('RUNNING')
       try {
-        return await runWorker(dependencies, random)
+        const result = await runWorker(dependencies, random, advance)
+        if (result.status !== 'BUSY') report(result.status)
+        return result
       } catch {
+        report('UNAVAILABLE')
         return Object.freeze({ status: 'UNAVAILABLE' as const })
       } finally {
         running = false
@@ -66,16 +85,21 @@ export function createSyncWorkerService(
 
 async function runWorker(
   dependencies: SyncWorkerServiceDependencies,
-  random: () => number
+  random: () => number,
+  advance: (phase: SyncWorkerCheck['phase']) => void
 ): Promise<SyncWorkerRunResult> {
   dependencies.foundation.recoverExpiredLeases()
+  advance('CREDENTIAL')
   const credential = dependencies.foundation.loadCredentialForTransport()
   if (credential === null) return Object.freeze({ status: 'NOT_CONFIGURED' as const })
 
+  advance('BATCH_CLAIM')
   let claimed = dependencies.foundation.claimNextBatch()
   if (claimed.status === 'IDLE') {
+    advance('SNAPSHOT')
     const prepared = dependencies.preparation.prepareNextBatch()
     if (prepared.status === 'PREPARED') {
+      advance('BATCH_CLAIM')
       claimed = dependencies.foundation.claimNextBatch()
     } else if (prepared.status === 'UNAVAILABLE') {
       return Object.freeze({ status: 'UNAVAILABLE' as const })
@@ -83,6 +107,7 @@ async function runWorker(
   }
   if (claimed.status !== 'CLAIMED') {
     if (claimed.status === 'UNAVAILABLE') return Object.freeze({ status: 'UNAVAILABLE' as const })
+    advance('IDENTITY_PULL')
     const identityDeliveriesApplied = await synchronizeIdentityResolutions(dependencies, credential)
     return Object.freeze({ status: 'IDLE' as const, identityDeliveriesApplied })
   }
@@ -91,6 +116,7 @@ async function runWorker(
     { status: 'CLAIMED' }
   >
 
+  advance('UPLOAD')
   let response =
     activeClaim.attemptCount > 1
       ? await dependencies.httpClient.recoverBatch(credential, activeClaim.batchId)
@@ -107,6 +133,7 @@ async function runWorker(
     return scheduleRetry(dependencies.foundation, activeClaim, response, random)
   }
 
+  advance('RESPONSE')
   let parsed: SyncBatchResponse
   try {
     parsed = parseSyncBatchResponse(response.bodyText, activeClaim.requestJson)
@@ -149,6 +176,7 @@ async function runWorker(
     })
   })
 
+  advance('IDENTITY_PULL')
   const identityDeliveriesApplied = await synchronizeIdentityResolutions(dependencies, credential)
   return Object.freeze({
     status: 'SYNCED' as const,

@@ -206,6 +206,30 @@ export function SynchronizationAdministrationWorkspace({
             />
           </div>
 
+          {state.activity.workerCheck !== undefined ? (
+            <div
+              className="administration-message"
+              role={state.activity.state === 'BLOCKED' ? 'alert' : 'status'}
+            >
+              Last worker check: {formatTimestamp(state.activity.workerCheck.checkedAt)}.
+              {state.activity.state === 'BLOCKED'
+                ? ` ${workerFailureMessage(state.activity.workerCheck.phase)}`
+                : null}
+              {state.activity.state === 'BLOCKED' && state.activity.workerCheck.diagnostic ? (
+                <div>
+                  Support code:{' '}
+                  {[
+                    state.activity.workerCheck.diagnostic.stage,
+                    state.activity.workerCheck.diagnostic.rule,
+                    state.activity.workerCheck.diagnostic.field
+                  ]
+                    .filter(Boolean)
+                    .join(' / ')}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           {state.activity.nextRetryAt !== null ? (
             <div className="administration-message" role="status">
               Automatic retry scheduled for {formatTimestamp(state.activity.nextRetryAt)}.
@@ -346,9 +370,10 @@ function StatusCard({
 function normalizeActivityAfterConfiguration(
   activity: PublicSyncAdministrationActivity
 ): PublicSyncAdministrationActivity {
-  if (activity.state !== 'NOT_CONFIGURED') return activity
+  const cleared = { ...activity, workerCheck: undefined }
+  if (activity.state !== 'NOT_CONFIGURED' && activity.state !== 'BLOCKED') return cleared
   return {
-    ...activity,
+    ...cleared,
     state:
       activity.pendingChangeCount > 0 || activity.pendingAcknowledgmentCount > 0
         ? 'PENDING'
@@ -368,6 +393,28 @@ function activityLabel(state: PublicSyncAdministrationActivity['state']): string
       return 'Synchronizing'
     case 'RETRY_SCHEDULED':
       return 'Retry scheduled'
+    case 'BLOCKED':
+      return 'Synchronization blocked'
+  }
+}
+
+function workerFailureMessage(
+  phase: NonNullable<PublicSyncAdministrationActivity['workerCheck']>['phase']
+): string {
+  switch (phase) {
+    case 'CREDENTIAL':
+      return 'The worker could not load the saved credential. Check secure credential storage and update the configuration.'
+    case 'SNAPSHOT':
+      return 'The worker could not prepare local records for upload. Pending changes are retained. Contact support with this status.'
+    case 'BATCH_CLAIM':
+    case 'STARTING':
+      return 'The worker could not open the local synchronization queue. Contact support with this status.'
+    case 'UPLOAD':
+      return 'The worker could not finish sending a batch. Check the central API and refresh status after the next automatic run.'
+    case 'RESPONSE':
+      return 'The worker could not save the central response locally. Contact support with this status.'
+    case 'IDENTITY_PULL':
+      return 'The worker could not finish processing central identity updates. Contact support with this status.'
   }
 }
 

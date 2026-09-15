@@ -40,3 +40,9 @@ HSW-013B2 will add the authenticated HTTP client, response-schema validation, an
 or retry outcome application. HSW-013B3 will add installation-scoped identity-resolution pull,
 local CHS medical-ID commit, and acknowledgment delivery. Renderer and IPC surfaces remain out of
 scope for all three worker internals.
+
+## Food and OTC extension
+
+[HSW-019A](desktop-sync-food-otc.md) adds finalized Food/OTC transport and supersedes
+the Food/OTC exclusion in the historical increment description above. Other
+excluded domains remain separate follow-up increments.

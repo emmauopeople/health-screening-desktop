@@ -293,6 +293,28 @@ function applyOutcomeToOutbox(
              last_error_code = ?, last_error_message = NULL, sent_at = ?
          WHERE id = ? AND status = 'IN_FLIGHT'`
       )
+  if (
+    (outcome.resourceType === 'FOOD' || outcome.resourceType === 'OTC') &&
+    (outcome.status === 'ACCEPTED' || outcome.status === 'UNCHANGED')
+  ) {
+    connection
+      .prepare(
+        `UPDATE sync_outbox SET status = 'SENT', sent_at = ?,
+      last_error_code = NULL, last_error_message = NULL, next_attempt_at = NULL
+      WHERE aggregate_type = 'SCREENING_ENCOUNTER' AND aggregate_id = ?
+        AND operation = ? AND status IN ('PENDING', 'FAILED') AND created_at <= (
+          SELECT completed_at FROM screening_encounters WHERE id = ?
+        )`
+      )
+      .run(
+        input.completedAt,
+        outcome.localResourceId,
+        outcome.resourceType === 'FOOD'
+          ? 'SCREENING_FOOD_DRAFT_SAVED'
+          : 'SCREENING_OTC_DRAFT_SAVED',
+        outcome.localResourceId
+      )
+  }
   for (const outboxId of outboxIds) {
     const result = retryable
       ? statement.run(input.retryAt, errorCode, outboxId)
@@ -307,13 +329,17 @@ function matchingOutboxIds(
   outcome: SyncRecordOutcome
 ): readonly EntityId[] {
   const operationCondition =
-    outcome.resourceType === 'VITALS'
-      ? "outbox.operation = 'SCREENING_VITALS_STEP_COMPLETED'"
-      : outcome.resourceType === 'LIFESTYLE'
-        ? "outbox.operation = 'SCREENING_LIFESTYLE_STEP_COMPLETED'"
-        : outcome.resourceType === 'SCREENING_ENCOUNTER'
-          ? "outbox.operation IN ('SCREENING_ENCOUNTER_STARTED', 'SCREENING_ENCOUNTER_COMPLETED', 'SCREENING_ENCOUNTER_VOIDED')"
-          : '1 = 1'
+    outcome.resourceType === 'FOOD'
+      ? "outbox.operation = 'SCREENING_FOOD_FINALIZED'"
+      : outcome.resourceType === 'OTC'
+        ? "outbox.operation = 'SCREENING_OTC_FINALIZED'"
+        : outcome.resourceType === 'VITALS'
+          ? "outbox.operation = 'SCREENING_VITALS_STEP_COMPLETED'"
+          : outcome.resourceType === 'LIFESTYLE'
+            ? "outbox.operation = 'SCREENING_LIFESTYLE_STEP_COMPLETED'"
+            : outcome.resourceType === 'SCREENING_ENCOUNTER'
+              ? "outbox.operation IN ('SCREENING_ENCOUNTER_STARTED', 'SCREENING_ENCOUNTER_COMPLETED', 'SCREENING_ENCOUNTER_VOIDED')"
+              : '1 = 1'
   const aggregateType =
     outcome.resourceType === 'PATIENT'
       ? 'PATIENT'

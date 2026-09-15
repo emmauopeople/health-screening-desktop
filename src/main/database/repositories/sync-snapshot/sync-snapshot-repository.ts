@@ -1,4 +1,11 @@
 import type Database from 'better-sqlite3'
+import { readPatientSnapshotHistory } from './patient-snapshot-history'
+import {
+  SnapshotMaterializationError,
+  SnapshotValueError,
+  snapshotField
+} from './sync-snapshot-diagnostics'
+import type { SyncSnapshotDiagnostic } from '@shared/sync-snapshot-diagnostics'
 
 import type { DatabaseTransactionConnection } from '@main/database/transaction'
 import { assertActiveDatabaseTransactionConnection } from '@main/database/transaction/transaction-capability'
@@ -8,11 +15,8 @@ import {
   type LifestyleDraftRecord
 } from '@main/database/repositories/lifestyle'
 import { parseLocalUserRole, parseUserDisplayName } from '@main/database/repositories/local-user'
-import {
-  RepositoryDataIntegrityError,
-  RepositoryReadError,
-  getRepositoryErrorType
-} from '@main/database/repositories/repository-errors'
+import { parsePatientAcknowledgmentHistoryStatus } from '@main/database/repositories/patient/patient-acknowledgment-validation'
+import { RepositoryDataIntegrityError } from '@main/database/repositories/repository-errors'
 import { parseEntityId, type EntityId } from '@main/foundation/entity-id'
 import { parseUtcTimestamp, type UtcTimestamp } from '@main/foundation/utc-clock'
 
@@ -28,17 +32,24 @@ import type {
 const maximumSignals = 500
 const maximumRecords = 100
 const maximumActors = 50
+// Reserve room below the 1 MiB wire limit for actors and the transport envelope.
+const maximumRecordBytes = 900 * 1024
 
 const resourceOrder: Readonly<Record<MaterializedSyncResourceType, number>> = Object.freeze({
   PATIENT: 0,
   SCREENING_SESSION: 1,
   SCREENING_ENCOUNTER: 2,
   VITALS: 3,
-  LIFESTYLE: 4
+  LIFESTYLE: 4,
+  FOOD: 5,
+  OTC: 6
 })
 
 const operationResource = new Map<string, MaterializedSyncResourceType>([
+  ['SCREENING_FOOD_FINALIZED', 'FOOD'],
+  ['SCREENING_OTC_FINALIZED', 'OTC'],
   ['PATIENT_CREATED', 'PATIENT'],
+  ['PATIENT_SYNC_REPLAY_REQUESTED', 'PATIENT'],
   ['PATIENT_DEMOGRAPHICS_AMENDED', 'PATIENT'],
   ['PATIENT_ACKNOWLEDGMENT_RECORDED', 'PATIENT'],
   ['SCREENING_SESSION_CREATED', 'SCREENING_SESSION'],
@@ -94,54 +105,85 @@ export function createSyncSnapshotRepository(
       now: UtcTimestamp
     ): MaterializedSyncBatchSource | null {
       assertActiveDatabaseTransactionConnection(scopedConnection)
+      let stage: SyncSnapshotDiagnostic['stage'] = 'INSTALLATION'
       try {
         const installation = readInstallationContext(scopedConnection)
+        stage = 'PATIENT'
+        const patientHistory = readPatientSnapshotHistory(scopedConnection, installation)
+        patientHistory.queueRepairs(now)
+        stage = 'SIGNALS'
         const signals = readEligibleSignals(scopedConnection, parseUtcTimestamp(now))
         if (signals.length === 0) return null
 
         const candidates = groupSignals(signals)
-          .map((group) =>
-            materializeCandidate(scopedConnection, lifestyleRepository, installation, group)
-          )
+          .map((group) => {
+            stage = group.resourceType
+            const candidate = materializeCandidate(
+              scopedConnection,
+              lifestyleRepository,
+              installation,
+              group
+            )
+            return candidate !== null && group.resourceType === 'PATIENT'
+              ? { ...candidate, record: patientHistory.stabilize(candidate.record) }
+              : candidate
+          })
           .filter((candidate): candidate is MaterializedCandidate => candidate !== null)
           .sort(compareCandidates)
 
+        stage = 'SELECTION'
         const selected: MaterializedCandidate[] = []
         const actorIds = new Set<EntityId>()
         let signalCount = 0
+        let recordBytes = 0
 
         for (const candidate of candidates) {
           const nextActorIds = new Set([...actorIds, ...candidate.actorIds])
+          const candidateBytes = Buffer.byteLength(JSON.stringify(candidate.record), 'utf8') + 1
           if (
             selected.length >= maximumRecords ||
             signalCount + candidate.outboxIds.length > maximumSignals ||
-            nextActorIds.size > maximumActors
+            nextActorIds.size > maximumActors ||
+            recordBytes + candidateBytes > maximumRecordBytes
           ) {
             break
           }
           selected.push(candidate)
           signalCount += candidate.outboxIds.length
+          recordBytes += candidateBytes
           candidate.actorIds.forEach((actorId) => actorIds.add(actorId))
         }
 
         if (selected.length === 0) {
-          if (candidates[0] !== undefined && candidates[0].actorIds.size > maximumActors) {
-            throw new RepositoryDataIntegrityError()
+          if (candidates[0] !== undefined) {
+            throw new SnapshotValueError('BATCH_CAPACITY')
           }
           return null
         }
 
+        stage = 'ACTORS'
+        const actors = readActors(scopedConnection, actorIds)
         return Object.freeze({
           installationId: installation.installationId,
           locationId: installation.locationId,
           installationTimezone: installation.timezone,
-          actors: Object.freeze(readActors(scopedConnection, actorIds)),
+          actors: Object.freeze(actors),
           records: Object.freeze(selected.map((candidate) => candidate.record)),
           outboxIds: Object.freeze(selected.flatMap((candidate) => candidate.outboxIds))
         })
       } catch (error) {
-        if (error instanceof RepositoryDataIntegrityError) throw error
-        throw new RepositoryReadError(getRepositoryErrorType(error))
+        throw new SnapshotMaterializationError({
+          stage,
+          rule:
+            error instanceof SnapshotValueError
+              ? error.rule
+              : error instanceof RepositoryDataIntegrityError
+                ? 'DATA_INTEGRITY'
+                : 'DATABASE_READ',
+          ...(error instanceof SnapshotValueError && error.field !== undefined
+            ? { field: error.field }
+            : {})
+        })
       }
     }
   })
@@ -158,11 +200,11 @@ function readInstallationContext(connection: DatabaseTransactionConnection): Ins
        WHERE installation.singleton_id = 1 AND configuration.singleton_id = 1`
     )
     .get()
-  if (row === undefined) throw new RepositoryDataIntegrityError()
+  if (row === undefined) throw new SnapshotValueError('MISSING_ROW')
   return Object.freeze({
-    installationId: parseEntityId(row.installation_id),
-    locationId: parseEntityId(row.location_id),
-    timezone: parseIanaTimeZone(row.timezone)
+    installationId: snapshotField('installation_id', () => parseEntityId(row.installation_id)),
+    locationId: snapshotField('location_id', () => parseEntityId(row.location_id)),
+    timezone: snapshotField('timezone', () => parseIanaTimeZone(row.timezone))
   })
 }
 
@@ -191,10 +233,10 @@ function readEligibleSignals(
       const resourceType = operationResource.get(row.operation)
       if (resourceType === undefined) throw new RepositoryDataIntegrityError()
       return Object.freeze({
-        id: parseEntityId(row.id),
-        aggregateId: parseEntityId(row.aggregate_id),
+        id: snapshotField('id', () => parseEntityId(row.id)),
+        aggregateId: snapshotField('aggregate_id', () => parseEntityId(row.aggregate_id)),
         operation: row.operation,
-        createdAt: parseUtcTimestamp(row.created_at),
+        createdAt: snapshotField('created_at', () => parseUtcTimestamp(row.created_at)),
         resourceType
       })
     })
@@ -236,13 +278,21 @@ function materializeCandidate(
           ? materializeEncounter(connection, installation, group.aggregateId, latestSignal)
           : group.resourceType === 'VITALS'
             ? materializeVitals(connection, installation, group.aggregateId, latestSignal)
-            : materializeLifestyle(
-                connection,
-                lifestyleRepository,
-                installation,
-                group.aggregateId,
-                latestSignal
-              )
+            : group.resourceType === 'FOOD' || group.resourceType === 'OTC'
+              ? materializeReportedIntake(
+                  connection,
+                  installation,
+                  group.aggregateId,
+                  latestSignal,
+                  group.resourceType
+                )
+              : materializeLifestyle(
+                  connection,
+                  lifestyleRepository,
+                  installation,
+                  group.aggregateId,
+                  latestSignal
+                )
 
   if (materialized === null) return null
   return Object.freeze({
@@ -278,44 +328,55 @@ function materializePatient(
   if (identifiers.length > 1) throw new RepositoryDataIntegrityError()
   const knownChsMedicalId =
     identifiers[0] === undefined ? null : requiredString(identifiers[0].identifier_value)
-  const actorId = parseEntityId(row.updated_by)
-  const sex = row.sex === null ? 'UNKNOWN' : requiredEnum(row.sex, ['FEMALE', 'MALE', 'OTHER'])
+  const actorId = snapshotField('updated_by', () => parseEntityId(row.updated_by))
+  const sex =
+    row.sex === null
+      ? 'UNKNOWN'
+      : snapshotField('sex', () => requiredEnum(row.sex, ['FEMALE', 'MALE', 'OTHER', 'UNKNOWN']))
   const acknowledgmentStatus =
     row.acknowledgment_status === null
       ? 'NOT_REQUESTED'
-      : requiredEnum(row.acknowledgment_status, ['ACKNOWLEDGED', 'DECLINED'])
+      : snapshotField('acknowledgment_status', () =>
+          parsePatientAcknowledgmentHistoryStatus(row.acknowledgment_status)
+        )
 
   return candidateRecord(
     {
       recordId: signal.id,
       resourceType: 'PATIENT',
       localResourceId: patientId,
-      sourceRevision: positiveInteger(row.row_version),
+      sourceRevision: snapshotField('row_version', () => positiveInteger(row.row_version)),
       schemaVersion: 'patient.v1',
       operation: 'UPSERT',
-      capturedAt: parseUtcTimestamp(row.updated_at),
+      capturedAt: snapshotField('updated_at', () => parseUtcTimestamp(row.updated_at)),
       sourceActorLocalId: actorId,
       payload: jsonObject({
-        localPatientCode: requiredString(row.patient_code),
+        localPatientCode: snapshotField('patient_code', () => requiredString(row.patient_code)),
         knownChsMedicalId,
-        displayName: requiredString(row.display_name),
-        givenName: nullableString(row.given_name),
-        familyName: nullableString(row.family_name),
-        otherNames: nullableString(row.other_names),
-        dateOfBirth: nullableString(row.date_of_birth),
-        approximateAgeYears: nullableNumber(row.approximate_age_years),
-        ageAsOfDate: nullableString(row.age_as_of_date),
+        displayName: snapshotField('display_name', () => requiredString(row.display_name)),
+        givenName: snapshotField('given_name', () => nullableString(row.given_name)),
+        familyName: snapshotField('family_name', () => nullableString(row.family_name)),
+        otherNames: snapshotField('other_names', () => nullableString(row.other_names)),
+        dateOfBirth: snapshotField('date_of_birth', () => nullableString(row.date_of_birth)),
+        approximateAgeYears: snapshotField('approximate_age_years', () =>
+          nullableNumber(row.approximate_age_years)
+        ),
+        ageAsOfDate: snapshotField('age_as_of_date', () => nullableString(row.age_as_of_date)),
         sex,
-        phone: nullableString(row.phone),
-        alternateContactName: nullableString(row.alternate_contact_name),
-        alternateContactPhone: nullableString(row.alternate_contact_phone),
-        village: nullableString(row.village),
-        quarter: nullableString(row.quarter),
-        residenceNotes: nullableString(row.residence_notes),
-        status: requiredEnum(row.status, ['ACTIVE', 'INACTIVE']),
+        phone: snapshotField('phone', () => nullableString(row.phone)),
+        alternateContactName: snapshotField('alternate_contact_name', () =>
+          nullableString(row.alternate_contact_name)
+        ),
+        alternateContactPhone: snapshotField('alternate_contact_phone', () =>
+          nullableString(row.alternate_contact_phone)
+        ),
+        village: snapshotField('village', () => nullableString(row.village)),
+        quarter: snapshotField('quarter', () => nullableString(row.quarter)),
+        residenceNotes: snapshotField('residence_notes', () => nullableString(row.residence_notes)),
+        status: snapshotField('status', () => requiredEnum(row.status, ['ACTIVE', 'INACTIVE'])),
         acknowledgmentStatus,
-        createdAt: parseUtcTimestamp(row.created_at),
-        updatedAt: parseUtcTimestamp(row.updated_at)
+        createdAt: snapshotField('created_at', () => parseUtcTimestamp(row.created_at)),
+        updatedAt: snapshotField('updated_at', () => parseUtcTimestamp(row.updated_at))
       })
     },
     [actorId]
@@ -337,34 +398,42 @@ function materializeSession(
     sessionId
   )
   requireLocation(row.location_id, installation.locationId)
-  const sourceActorId = parseEntityId(row.updated_by)
-  const openedBy = parseEntityId(row.opened_by)
-  const closedBy = row.closed_by === null ? null : parseEntityId(row.closed_by)
+  const sourceActorId = snapshotField('updated_by', () => parseEntityId(row.updated_by))
+  const openedBy = snapshotField('opened_by', () => parseEntityId(row.opened_by))
+  const closedBy =
+    row.closed_by === null ? null : snapshotField('closed_by', () => parseEntityId(row.closed_by))
   return candidateRecord(
     {
       recordId: signal.id,
       resourceType: 'SCREENING_SESSION',
       localResourceId: sessionId,
-      sourceRevision: positiveInteger(row.row_version),
+      sourceRevision: snapshotField('row_version', () => positiveInteger(row.row_version)),
       schemaVersion: 'screening-session.v1',
       operation: 'UPSERT',
-      capturedAt: parseUtcTimestamp(row.updated_at),
+      capturedAt: snapshotField('updated_at', () => parseUtcTimestamp(row.updated_at)),
       sourceActorLocalId: sourceActorId,
       payload: jsonObject({
         localLocationId: installation.locationId,
-        localProtocolVersionId: parseEntityId(row.protocol_version_id),
-        protocolKey: requiredString(row.protocol_key),
-        protocolVersionLabel: requiredString(row.version_label),
-        protocolChecksum: requiredString(row.checksum),
-        sessionDate: requiredString(row.session_date),
-        status: requiredEnum(row.status, ['OPEN', 'CLOSED']),
-        notes: nullableString(row.notes),
+        localProtocolVersionId: snapshotField('protocol_version_id', () =>
+          parseEntityId(row.protocol_version_id)
+        ),
+        protocolKey: snapshotField('protocol_key', () => requiredString(row.protocol_key)),
+        protocolVersionLabel: snapshotField('version_label', () =>
+          requiredString(row.version_label)
+        ),
+        protocolChecksum: snapshotField('checksum', () => requiredString(row.checksum)),
+        sessionDate: snapshotField('session_date', () => requiredString(row.session_date)),
+        status: snapshotField('status', () => requiredEnum(row.status, ['OPEN', 'CLOSED'])),
+        notes: snapshotField('notes', () => nullableString(row.notes)),
         openedByLocalActorId: openedBy,
         closedByLocalActorId: closedBy,
-        openedAt: parseUtcTimestamp(row.opened_at),
-        closedAt: row.closed_at === null ? null : parseUtcTimestamp(row.closed_at),
-        createdAt: parseUtcTimestamp(row.created_at),
-        updatedAt: parseUtcTimestamp(row.updated_at)
+        openedAt: snapshotField('opened_at', () => parseUtcTimestamp(row.opened_at)),
+        closedAt:
+          row.closed_at === null
+            ? null
+            : snapshotField('closed_at', () => parseUtcTimestamp(row.closed_at)),
+        createdAt: snapshotField('created_at', () => parseUtcTimestamp(row.created_at)),
+        updatedAt: snapshotField('updated_at', () => parseUtcTimestamp(row.updated_at))
       })
     },
     closedBy === null ? [sourceActorId, openedBy] : [sourceActorId, openedBy, closedBy]
@@ -383,35 +452,48 @@ function materializeEncounter(
     encounterId
   )
   requireLocation(row.location_id, installation.locationId)
-  const actorId = parseEntityId(row.recorded_by)
+  const actorId = snapshotField('recorded_by', () => parseEntityId(row.recorded_by))
   return candidateRecord(
     {
       recordId: signal.id,
       resourceType: 'SCREENING_ENCOUNTER',
       localResourceId: encounterId,
-      sourceRevision: positiveInteger(row.record_version),
+      sourceRevision: snapshotField('record_version', () => positiveInteger(row.record_version)),
       schemaVersion: 'screening-encounter.v1',
       operation: 'UPSERT',
-      capturedAt: parseUtcTimestamp(row.updated_at),
+      capturedAt: snapshotField('updated_at', () => parseUtcTimestamp(row.updated_at)),
       sourceActorLocalId: actorId,
       payload: jsonObject({
-        localPatientId: parseEntityId(row.patient_id),
-        localScreeningSessionId: parseEntityId(row.screening_session_id),
+        localPatientId: snapshotField('patient_id', () => parseEntityId(row.patient_id)),
+        localScreeningSessionId: snapshotField('screening_session_id', () =>
+          parseEntityId(row.screening_session_id)
+        ),
         localLocationId: installation.locationId,
-        localProtocolVersionId: parseEntityId(row.protocol_version_id),
+        localProtocolVersionId: snapshotField('protocol_version_id', () =>
+          parseEntityId(row.protocol_version_id)
+        ),
         recordedByLocalActorId: actorId,
-        status: requiredEnum(row.status, ['DRAFT', 'COMPLETED', 'AMENDED', 'VOID']),
-        startedAt: parseUtcTimestamp(row.started_at),
-        completedAt: row.completed_at === null ? null : parseUtcTimestamp(row.completed_at),
-        sourceType: requiredEnum(row.source_type, ['LOCAL']),
+        status: snapshotField('status', () =>
+          requiredEnum(row.status, ['DRAFT', 'COMPLETED', 'AMENDED', 'VOID'])
+        ),
+        startedAt: snapshotField('started_at', () => parseUtcTimestamp(row.started_at)),
+        completedAt:
+          row.completed_at === null
+            ? null
+            : snapshotField('completed_at', () => parseUtcTimestamp(row.completed_at)),
+        sourceType: snapshotField('source_type', () => requiredEnum(row.source_type, ['LOCAL'])),
         amendmentOfLocalEncounterId:
           row.amendment_of_encounter_id === null
             ? null
-            : parseEntityId(row.amendment_of_encounter_id),
-        amendmentReason: nullableString(row.amendment_reason),
-        voidReason: nullableString(row.void_reason),
-        createdAt: parseUtcTimestamp(row.created_at),
-        updatedAt: parseUtcTimestamp(row.updated_at)
+            : snapshotField('amendment_of_encounter_id', () =>
+                parseEntityId(row.amendment_of_encounter_id)
+              ),
+        amendmentReason: snapshotField('amendment_reason', () =>
+          nullableString(row.amendment_reason)
+        ),
+        voidReason: snapshotField('void_reason', () => nullableString(row.void_reason)),
+        createdAt: snapshotField('created_at', () => parseUtcTimestamp(row.created_at)),
+        updatedAt: snapshotField('updated_at', () => parseUtcTimestamp(row.updated_at))
       })
     },
     [actorId]
@@ -440,14 +522,19 @@ function materializeVitals(
       `SELECT * FROM screening_vitals_draft_readings
        WHERE vitals_draft_id = ? ORDER BY sequence_number`
     )
-    .all(parseEntityId(row.id))
+    .all(snapshotField('id', () => parseEntityId(row.id)))
   if (readings.length === 0) return null
-  const sourceActorId = parseEntityId(row.updated_by)
-  const performedBy = parseEntityId(row.recorded_by)
-  const status = requiredEnum(row.status, ['DRAFT', 'VITALS_COMPLETE'])
+  const sourceActorId = snapshotField('updated_by', () => parseEntityId(row.updated_by))
+  const performedBy = snapshotField('recorded_by', () => parseEntityId(row.recorded_by))
+  const status = snapshotField('status', () =>
+    requiredEnum(row.status, ['DRAFT', 'VITALS_COMPLETE'])
+  )
   const payloadReadings = readings.map((reading, index) => {
-    if (positiveInteger(reading.sequence_number) !== index + 1) {
-      throw new RepositoryDataIntegrityError()
+    if (
+      snapshotField('sequence_number', () => positiveInteger(reading.sequence_number)) !==
+      index + 1
+    ) {
+      throw new SnapshotValueError('READING_ORDER', 'sequence_number')
     }
     if (
       status === 'VITALS_COMPLETE' &&
@@ -460,21 +547,29 @@ function materializeVitals(
         reading.measurement_time
       ].some((value) => value === null)
     ) {
-      throw new RepositoryDataIntegrityError()
+      throw new SnapshotValueError('INCOMPLETE_VITALS', 'readings')
     }
     return jsonObject({
-      localReadingId: parseEntityId(reading.id),
-      sequenceNumber: positiveInteger(reading.sequence_number),
-      systolic: nullableNumber(reading.systolic),
-      diastolic: nullableNumber(reading.diastolic),
-      pulse: nullableNumber(reading.pulse),
-      measurementSite: nullableString(reading.measurement_site),
-      patientPosition: nullableString(reading.patient_position),
-      measurementLocalDate: requiredString(row.session_date),
-      measurementLocalTime: nullableString(reading.measurement_time),
+      localReadingId: snapshotField('id', () => parseEntityId(reading.id)),
+      sequenceNumber: snapshotField('sequence_number', () =>
+        positiveInteger(reading.sequence_number)
+      ),
+      systolic: snapshotField('systolic', () => nullableNumber(reading.systolic)),
+      diastolic: snapshotField('diastolic', () => nullableNumber(reading.diastolic)),
+      pulse: snapshotField('pulse', () => nullableNumber(reading.pulse)),
+      measurementSite: snapshotField('measurement_site', () =>
+        nullableString(reading.measurement_site)
+      ),
+      patientPosition: snapshotField('patient_position', () =>
+        nullableString(reading.patient_position)
+      ),
+      measurementLocalDate: snapshotField('session_date', () => requiredString(row.session_date)),
+      measurementLocalTime: snapshotField('measurement_time', () =>
+        nullableString(reading.measurement_time)
+      ),
       measurementTimezone: installation.timezone,
-      createdAt: parseUtcTimestamp(reading.created_at),
-      updatedAt: parseUtcTimestamp(reading.updated_at)
+      createdAt: snapshotField('created_at', () => parseUtcTimestamp(reading.created_at)),
+      updatedAt: snapshotField('updated_at', () => parseUtcTimestamp(reading.updated_at))
     })
   })
 
@@ -482,21 +577,21 @@ function materializeVitals(
     {
       recordId: signal.id,
       resourceType: 'VITALS',
-      localResourceId: parseEntityId(row.id),
-      sourceRevision: positiveInteger(row.row_version),
+      localResourceId: snapshotField('id', () => parseEntityId(row.id)),
+      sourceRevision: snapshotField('row_version', () => positiveInteger(row.row_version)),
       schemaVersion: 'vitals.v1',
       operation: 'UPSERT',
-      capturedAt: parseUtcTimestamp(row.updated_at),
+      capturedAt: snapshotField('updated_at', () => parseUtcTimestamp(row.updated_at)),
       sourceActorLocalId: sourceActorId,
       payload: jsonObject({
         localEncounterId: encounterId,
         performedByLocalActorId: performedBy,
         status,
-        weightKg: nullableNumber(row.weight_kg),
-        waistCm: nullableNumber(row.waist_cm),
-        notes: nullableString(row.notes),
-        createdAt: parseUtcTimestamp(row.created_at),
-        updatedAt: parseUtcTimestamp(row.updated_at),
+        weightKg: snapshotField('weight_kg', () => nullableNumber(row.weight_kg)),
+        waistCm: snapshotField('waist_cm', () => nullableNumber(row.waist_cm)),
+        notes: snapshotField('notes', () => nullableString(row.notes)),
+        createdAt: snapshotField('created_at', () => parseUtcTimestamp(row.created_at)),
+        updatedAt: snapshotField('updated_at', () => parseUtcTimestamp(row.updated_at)),
         readings: payloadReadings
       })
     },
@@ -529,7 +624,7 @@ function materializeLifestyle(
     draft.work === null ||
     draft.otherActivityResponse === null
   ) {
-    throw new RepositoryDataIntegrityError()
+    throw new SnapshotValueError('INCOMPLETE_LIFESTYLE')
   }
   const alcoholBaseline = lifestyleRepository.findAlcoholBaselineByIdForWrite(
     connection,
@@ -550,7 +645,7 @@ function materializeLifestyle(
     draft.installationId
   )
   if (alcoholBaseline === null || tobaccoBaseline === null || workBaseline === null) {
-    throw new RepositoryDataIntegrityError()
+    throw new SnapshotValueError('MISSING_BASELINE')
   }
 
   const actorIds = collectLifestyleActorIds(draft, [alcoholBaseline, tobaccoBaseline, workBaseline])
@@ -710,6 +805,125 @@ function materializeLifestyle(
   )
 }
 
+function materializeReportedIntake(
+  connection: DatabaseTransactionConnection,
+  installation: InstallationContext,
+  encounterId: EntityId,
+  signal: OutboxSignal,
+  resourceType: 'FOOD' | 'OTC'
+): Pick<MaterializedCandidate, 'record' | 'actorIds'> | null {
+  const encounter = requiredRow(
+    connection,
+    'SELECT * FROM screening_encounters WHERE id = ?',
+    encounterId
+  )
+  requireLocation(encounter.location_id, installation.locationId)
+  if (encounter.source_type !== 'LOCAL') return null
+  if (encounter.status === 'DRAFT' || encounter.completed_at === null) return null
+  const completedAt = parseUtcTimestamp(encounter.completed_at)
+  const table = resourceType === 'FOOD' ? 'food_logs' : 'otc_medication_logs'
+  const rows = connection
+    .prepare<[string], Record<string, unknown>>(
+      `SELECT * FROM ${table} WHERE encounter_id = ? ORDER BY id LIMIT 101`
+    )
+    .all(encounterId)
+  if (rows.length > 100) throw new RepositoryDataIntegrityError()
+  const audit = connection
+    .prepare<[string, string], { user_id: unknown }>(
+      `SELECT user_id FROM audit_log WHERE entity_id = ? AND action = 'SCREENING_ENCOUNTER_COMPLETED'
+     AND occurred_at = ? ORDER BY id LIMIT 1`
+    )
+    .get(encounterId, completedAt)
+  const actorId = parseEntityId(audit?.user_id ?? rows[0]?.recorded_by ?? encounter.recorded_by)
+  const draftTable = resourceType === 'FOOD' ? 'food_drafts' : 'otc_drafts'
+  const draft = connection
+    .prepare<[string], Record<string, unknown>>(
+      `SELECT * FROM ${draftTable} WHERE encounter_id = ?`
+    )
+    .get(encounterId)
+  if (
+    draft &&
+    (draft.patient_id !== encounter.patient_id ||
+      draft.location_id !== installation.locationId ||
+      draft.installation_id !== installation.installationId ||
+      draft.screening_session_id !== encounter.screening_session_id)
+  ) {
+    throw new RepositoryDataIntegrityError()
+  }
+  const payloadRows = rows.map((row) => {
+    const common = {
+      localRowId: snapshotField('id', () => parseEntityId(row.id)),
+      recordedByLocalActorId: snapshotField('recorded_by', () => parseEntityId(row.recorded_by)),
+      recordedAt: snapshotField('recorded_at', () => parseUtcTimestamp(row.recorded_at)),
+      sourceType: snapshotField('source_type', () =>
+        requiredEnum(row.source_type, ['PATIENT_REPORTED'])
+      )
+    }
+    if (common.recordedAt !== completedAt) throw new RepositoryDataIntegrityError()
+    return resourceType === 'FOOD'
+      ? {
+          ...common,
+          foodCode: snapshotField('food_code', () => nullableString(row.food_code)),
+          foodName: snapshotField('food_name', () => requiredString(row.food_name)),
+          frequencyCode:
+            row.frequency_code === null
+              ? null
+              : snapshotField('frequency_code', () =>
+                  requiredEnum(row.frequency_code, [
+                    '1_DAY',
+                    '2_TO_3_DAYS',
+                    '4_TO_6_DAYS',
+                    'EVERY_DAY'
+                  ])
+                ),
+          preparationNote: snapshotField('notes', () => nullableString(row.notes))
+        }
+      : {
+          ...common,
+          productName: snapshotField('product_name', () => requiredString(row.product_name)),
+          reasonForUse: snapshotField('reason_for_use', () => requiredString(row.reason_for_use)),
+          doseText: snapshotField('dose_text', () => nullableString(row.dose_text)),
+          frequencyText: snapshotField('frequency_text', () => nullableString(row.frequency_text)),
+          durationText: snapshotField('duration_text', () => nullableString(row.duration_text)),
+          sourceOfMedication: snapshotField('source_of_medication', () =>
+            nullableString(row.source_of_medication)
+          ),
+          currentlyTaking:
+            row.currently_taking === null
+              ? null
+              : snapshotField('currently_taking', () => sqliteBoolean(row.currently_taking))
+        }
+  })
+  return candidateRecord(
+    {
+      recordId: signal.id,
+      resourceType,
+      localResourceId: encounterId,
+      sourceRevision: 1,
+      schemaVersion: resourceType === 'FOOD' ? 'food.v1' : 'otc.v1',
+      operation: 'UPSERT',
+      capturedAt: completedAt,
+      sourceActorLocalId: actorId,
+      payload: jsonObject({
+        localEncounterId: encounterId,
+        completedAt,
+        recordedByLocalActorId: actorId,
+        periodStart: draft
+          ? snapshotField('period_start', () => requiredString(draft.period_start))
+          : null,
+        periodEnd: draft
+          ? snapshotField('period_end', () => requiredString(draft.period_end))
+          : null,
+        response: draft
+          ? nullableString(draft[resourceType === 'FOOD' ? 'food_response' : 'otc_response'])
+          : null,
+        rows: payloadRows
+      })
+    },
+    [actorId, ...payloadRows.map((row) => row.recordedByLocalActorId)]
+  )
+}
+
 function collectLifestyleActorIds(
   draft: LifestyleDraftRecord,
   baselines: readonly {
@@ -748,14 +962,14 @@ function readActors(
        WHERE id IN (${placeholders}) ORDER BY id`
     )
     .all(...parameters)
-  if (rows.length !== orderedIds.length) throw new RepositoryDataIntegrityError()
+  if (rows.length !== orderedIds.length) throw new SnapshotValueError('MISSING_ACTOR')
   return rows.map((row) =>
     Object.freeze({
-      localActorId: parseEntityId(row.id),
-      displayName: parseUserDisplayName(row.display_name),
-      role: parseLocalUserRole(row.role),
-      active: sqliteBoolean(row.is_active),
-      updatedAt: parseUtcTimestamp(row.updated_at)
+      localActorId: snapshotField('id', () => parseEntityId(row.id)),
+      displayName: snapshotField('display_name', () => parseUserDisplayName(row.display_name)),
+      role: snapshotField('role', () => parseLocalUserRole(row.role)),
+      active: snapshotField('is_active', () => sqliteBoolean(row.is_active)),
+      updatedAt: snapshotField('updated_at', () => parseUtcTimestamp(row.updated_at))
     })
   )
 }
@@ -780,12 +994,13 @@ function requiredRow(
   id: EntityId
 ): Record<string, unknown> {
   const row = connection.prepare<[string], Record<string, unknown>>(sql).get(id)
-  if (row === undefined) throw new RepositoryDataIntegrityError()
+  if (row === undefined) throw new SnapshotValueError('MISSING_ROW')
   return row
 }
 
 function requireLocation(value: unknown, expected: EntityId): void {
-  if (parseEntityId(value) !== expected) throw new RepositoryDataIntegrityError()
+  if (parseEntityId(value) !== expected)
+    throw new SnapshotValueError('LOCATION_MISMATCH', 'location_id')
 }
 
 function requiredString(value: unknown): string {

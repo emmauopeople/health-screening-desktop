@@ -1,3 +1,4 @@
+import type { SyncSnapshotDiagnostic } from '@shared/sync-snapshot-diagnostics'
 import type { SyncSnapshotRepository, SyncTransportBatchRepository } from '@main/database'
 import type { DatabaseTransactionExecutor } from '@main/database/transaction'
 import type { EntityId } from '@main/foundation/entity-id'
@@ -22,4 +23,5 @@ export interface SyncSnapshotPreparationServiceDependencies {
   readonly transactionExecutor: DatabaseTransactionExecutor
   readonly desktopApplicationVersion: string
   readonly desktopSchemaVersion: number
+  readonly onFailure?: (diagnostic: SyncSnapshotDiagnostic) => void
 }

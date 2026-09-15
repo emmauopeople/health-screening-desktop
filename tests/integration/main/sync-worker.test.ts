@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from 'node:crypto'
 import Database from 'better-sqlite3'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -22,6 +23,10 @@ import {
 } from '@main/database'
 import { createEntityIdGenerator } from '@main/foundation/entity-id'
 import { createUtcClock, parseUtcTimestamp, type UtcTimestamp } from '@main/foundation/utc-clock'
+import {
+  createSyncWorkerMonitor,
+  type SyncWorkerMonitor
+} from '@main/application/sync-transport/sync-worker-monitor'
 
 const at = parseUtcTimestamp('2026-09-03T12:00:00.000Z')
 const actorId = '10000000-0000-4000-8000-000000000001'
@@ -44,6 +49,86 @@ const lifestyleOutbox = '90000000-0000-4000-8000-000000000007'
 const excludedOutbox = '90000000-0000-4000-8000-000000000008'
 
 describe('HSW-013B desktop synchronization worker', () => {
+  it('reports a preparation failure before any HTTP attempt and recovers on the next run', async () => {
+    const harness = createHarness([])
+    try {
+      seedCompleteGraph(harness.connection)
+      configure(harness.foundation)
+      harness.connection.prepare("UPDATE patients SET sex = 'INVALID'").run()
+      const submitBatch = vi.fn(async () => response(503, problem(503, 'UNAVAILABLE')))
+      const monitor = createSyncWorkerMonitor(() => at)
+      const worker = createWorker(harness, httpClient({ submitBatch }), monitor)
+
+      expect(await worker.runOnce()).toEqual({ status: 'UNAVAILABLE' })
+      expect(monitor.getLatest()).toEqual({
+        checkedAt: at,
+        status: 'UNAVAILABLE',
+        phase: 'SNAPSHOT',
+        diagnostic: { stage: 'PATIENT', rule: 'INVALID_VALUE', field: 'sex' }
+      })
+      expect(submitBatch).not.toHaveBeenCalled()
+      expect(
+        harness.connection.prepare('SELECT COUNT(*) AS count FROM sync_transport_batches').get()
+      ).toEqual({ count: 0 })
+      expect(readStatuses(harness.connection)).toEqual(Array(8).fill('PENDING'))
+
+      harness.connection.prepare("UPDATE patients SET sex = 'UNKNOWN'").run()
+      expect(await worker.runOnce()).toMatchObject({ status: 'RETRY_SCHEDULED' })
+      expect(submitBatch).toHaveBeenCalledOnce()
+      expect(monitor.getLatest()).toEqual({
+        checkedAt: at,
+        status: 'RETRY_SCHEDULED',
+        phase: 'UPLOAD'
+      })
+      expect(JSON.stringify(monitor.getLatest())).not.toContain(token)
+    } finally {
+      harness.connection.close()
+    }
+  })
+
+  it('reports credential loading failure without exposing exceptions or stopping later runs', async () => {
+    const harness = createHarness([])
+    try {
+      const monitor = createSyncWorkerMonitor(() => at)
+      const worker = createWorker(harness, httpClient({}), monitor)
+      expect(await worker.runOnce()).toEqual({ status: 'NOT_CONFIGURED' })
+      expect(monitor.getLatest()).toEqual({
+        checkedAt: at,
+        status: 'NOT_CONFIGURED',
+        phase: 'CREDENTIAL'
+      })
+      const failingHarness = {
+        ...harness,
+        foundation: {
+          ...harness.foundation,
+          loadCredentialForTransport: () => {
+            throw new Error(`secret ${token}`)
+          }
+        }
+      }
+      expect(await createWorker(failingHarness, httpClient({}), monitor).runOnce()).toEqual({
+        status: 'UNAVAILABLE'
+      })
+      expect(monitor.getLatest()).toEqual({
+        checkedAt: at,
+        status: 'UNAVAILABLE',
+        phase: 'CREDENTIAL'
+      })
+      expect(JSON.stringify(monitor.getLatest())).not.toContain(token)
+      const brokenObserver = {
+        ...monitor,
+        record: () => {
+          throw new Error('monitor failed')
+        }
+      }
+      expect(await createWorker(harness, httpClient({}), brokenObserver).runOnce()).toEqual({
+        status: 'NOT_CONFIGURED'
+      })
+    } finally {
+      harness.connection.close()
+    }
+  })
+
   it('coalesces audit signals into dependency-ordered full snapshots without deferred resources', () => {
     const harness = createHarness(['01000000-0000-4000-8000-000000000001'])
     seedCompleteGraph(harness.connection)
@@ -127,6 +212,65 @@ describe('HSW-013B desktop synchronization worker', () => {
       otherActivity: { weeklyResponse: 'NO', activities: [] }
     })
     expect(JSON.stringify(work)).not.toContain('password')
+    harness.connection.close()
+  })
+
+  it('applies Food/OTC independently and clears superseded drafts only after acceptance', async () => {
+    const harness = createHarness([
+      'a0000000-0000-4000-8000-000000000001',
+      'a0000000-0000-4000-8000-000000000002',
+      'a0000000-0000-4000-8000-000000000003'
+    ])
+    seedCompleteGraph(harness.connection)
+    const foodSignal = 'e1000000-0000-4000-8000-000000000001'
+    const otcSignal = 'e1000000-0000-4000-8000-000000000002'
+    const foodDraftSignal = 'e1000000-0000-4000-8000-000000000003'
+    const otcDraftSignal = 'e1000000-0000-4000-8000-000000000004'
+    for (const [id, operation] of [
+      [foodSignal, 'SCREENING_FOOD_FINALIZED'],
+      [otcSignal, 'SCREENING_OTC_FINALIZED'],
+      [foodDraftSignal, 'SCREENING_FOOD_DRAFT_SAVED'],
+      [otcDraftSignal, 'SCREENING_OTC_DRAFT_SAVED']
+    ]) {
+      insertOutbox(harness.connection, id!, 'SCREENING_ENCOUNTER', encounterId, operation!, at)
+    }
+    configure(harness.foundation)
+    const worker = createWorker(
+      harness,
+      httpClient({
+        submitBatch: async (_credential, requestJson) => {
+          const responseBody = JSON.parse(acceptedResponse(requestJson))
+          responseBody.batchStatus = 'PARTIAL'
+          const otc = responseBody.outcomes.find(
+            (o: { resourceType: string }) => o.resourceType === 'OTC'
+          )
+          otc.status = 'RETRY'
+          otc.canonicalResourceId = null
+          otc.errors = [{ code: 'DEPENDENCY_NOT_AVAILABLE', path: '', retryable: true }]
+          return response(200, JSON.stringify(responseBody))
+        }
+      })
+    )
+    await expect(worker.runOnce()).resolves.toMatchObject({ status: 'SYNCED', recordCount: 7 })
+    const status = (id: string): string =>
+      (
+        harness.connection.prepare('SELECT status FROM sync_outbox WHERE id = ?').get(id) as {
+          status: string
+        }
+      ).status
+    expect(status(foodSignal)).toBe('SENT')
+    expect(status(foodDraftSignal)).toBe('SENT')
+    expect(status(otcSignal)).toBe('FAILED')
+    expect(status(otcDraftSignal)).toBe('PENDING')
+    // The existing fixture's excluded signal is also a Food draft notification.
+    expect(status(excludedOutbox)).toBe('SENT')
+    expect(
+      harness.connection
+        .prepare(
+          "SELECT resource_type FROM sync_transport_resource_mappings WHERE resource_type IN ('FOOD','OTC')"
+        )
+        .all()
+    ).toEqual([{ resource_type: 'FOOD' }])
     harness.connection.close()
   })
 
@@ -325,6 +469,180 @@ describe('HSW-013B desktop synchronization worker', () => {
         .get(patientId)
     ).toEqual({ identifier_value: 'CHS-ABCD-EFGH-JKMN', status: 'ACTIVE' })
     harness.connection.close()
+  })
+
+  it('reuses the exact patient snapshot after a server Medical ID and a later outbox signal', async () => {
+    const harness = createHarness(Array.from({ length: 12 }, () => randomUUID()))
+    try {
+      seedPatientOnly(harness.connection)
+      configure(harness.foundation)
+      const requests: string[] = []
+      const worker = createWorker(
+        harness,
+        httpClient({
+          submitBatch: async (_credential, requestJson) => {
+            requests.push(requestJson)
+            return response(200, acceptedResponse(requestJson, true))
+          }
+        })
+      )
+      expect(await worker.runOnce()).toMatchObject({ status: 'SYNCED' })
+      insertOutbox(
+        harness.connection,
+        patientOutboxTwo,
+        'PATIENT',
+        patientId,
+        'PATIENT_CREATED',
+        at
+      )
+      expect(await worker.runOnce()).toMatchObject({ status: 'SYNCED' })
+      expect(requests).toHaveLength(2)
+      expect(JSON.parse(requests[1]!).records).toEqual(JSON.parse(requests[0]!).records)
+      expect(JSON.parse(requests[1]!).records[0].payload.knownChsMedicalId).toBeNull()
+      expect(readStatuses(harness.connection)).toEqual(['SENT', 'SENT'])
+      expect(
+        harness.connection
+          .prepare(
+            "SELECT identifier_value FROM patient_identifiers WHERE identifier_type = 'CHS_MEDICAL_ID'"
+          )
+          .get()
+      ).toEqual({ identifier_value: 'CHS-ABCD-EFGH-JKMN' })
+    } finally {
+      harness.connection.close()
+    }
+  })
+
+  it('recovers a proven legacy patient mismatch once, preserving clinical rows and rejected history', async () => {
+    const harness = createHarness(Array.from({ length: 20 }, () => randomUUID()))
+    try {
+      seedPatientOnly(harness.connection)
+      configure(harness.foundation)
+      const requests: string[] = []
+      const client = httpClient({
+        submitBatch: async (_credential, requestJson) => {
+          requests.push(requestJson)
+          const body = JSON.parse(acceptedResponse(requestJson, true))
+          if (requests.length > 1) body.outcomes[0].status = 'UNCHANGED'
+          return response(200, JSON.stringify(body))
+        }
+      })
+      expect(await createWorker(harness, client).runOnce()).toMatchObject({ status: 'SYNCED' })
+      const legacy = insertLegacyPatientMismatch(harness.connection, requests[0]!)
+      const patientBefore = harness.connection.prepare('SELECT * FROM patients').all()
+      const identifiersBefore = harness.connection
+        .prepare('SELECT * FROM patient_identifiers')
+        .all()
+
+      expect(await createWorker(harness, client).runOnce()).toMatchObject({ status: 'SYNCED' })
+      expect(JSON.parse(requests[1]!).records).toEqual(JSON.parse(requests[0]!).records)
+      expect(harness.connection.prepare('SELECT * FROM patients').all()).toEqual(patientBefore)
+      expect(harness.connection.prepare('SELECT * FROM patient_identifiers').all()).toEqual(
+        identifiersBefore
+      )
+      expect(
+        harness.connection
+          .prepare('SELECT response_json FROM sync_transport_batches WHERE id = ?')
+          .get(legacy.batchId)
+      ).toEqual({ response_json: legacy.responseJson })
+      expect(
+        harness.connection
+          .prepare('SELECT status, last_error_code FROM sync_outbox WHERE id = ?')
+          .get(legacy.recordId)
+      ).toEqual({ status: 'SENT', last_error_code: 'RECORD_PAYLOAD_MISMATCH' })
+      expect(
+        harness.connection
+          .prepare(
+            "SELECT status FROM sync_outbox WHERE operation = 'PATIENT_SYNC_REPLAY_REQUESTED'"
+          )
+          .all()
+      ).toEqual([{ status: 'SENT' }])
+      expect(await createWorker(harness, client).runOnce()).toMatchObject({ status: 'IDLE' })
+      expect(requests).toHaveLength(2)
+      expect(
+        harness.connection
+          .prepare(
+            "SELECT COUNT(*) AS count FROM sync_outbox WHERE operation = 'PATIENT_SYNC_REPLAY_REQUESTED'"
+          )
+          .get()
+      ).toEqual({ count: 1 })
+    } finally {
+      harness.connection.close()
+    }
+  })
+
+  it.each(['changed-payload', 'unverified-identity', 'newer-revision'] as const)(
+    'does not automatically replay a legacy patient mismatch with %s',
+    async (scenario) => {
+      const harness = createHarness(Array.from({ length: 12 }, () => randomUUID()))
+      try {
+        seedPatientOnly(harness.connection)
+        configure(harness.foundation)
+        let originalRequest = ''
+        const submitBatch = vi.fn(async (_credential: unknown, requestJson: string) => {
+          originalRequest = requestJson
+          return response(200, acceptedResponse(requestJson, true))
+        })
+        const worker = createWorker(harness, httpClient({ submitBatch }))
+        expect(await worker.runOnce()).toMatchObject({ status: 'SYNCED' })
+        insertLegacyPatientMismatch(
+          harness.connection,
+          originalRequest,
+          scenario === 'changed-payload'
+        )
+        if (scenario === 'unverified-identity')
+          harness.connection.prepare('DELETE FROM sync_patient_identity_links').run()
+        if (scenario === 'newer-revision')
+          harness.connection.prepare('UPDATE patients SET row_version = row_version + 1').run()
+        expect(await worker.runOnce()).toMatchObject({ status: 'IDLE' })
+        expect(submitBatch).toHaveBeenCalledOnce()
+        expect(
+          harness.connection
+            .prepare(
+              "SELECT COUNT(*) AS count FROM sync_outbox WHERE operation = 'PATIENT_SYNC_REPLAY_REQUESTED'"
+            )
+            .get()
+        ).toEqual({ count: 0 })
+      } finally {
+        harness.connection.close()
+      }
+    }
+  )
+
+  it('rolls back a replay request if current patient content changed without a revision', async () => {
+    const harness = createHarness(Array.from({ length: 12 }, () => randomUUID()))
+    try {
+      seedPatientOnly(harness.connection)
+      configure(harness.foundation)
+      let originalRequest = ''
+      const submitBatch = vi.fn(async (_credential: unknown, requestJson: string) => {
+        originalRequest = requestJson
+        return response(200, acceptedResponse(requestJson, true))
+      })
+      const monitor = createSyncWorkerMonitor(() => at)
+      const worker = createWorker(harness, httpClient({ submitBatch }), monitor)
+      expect(await worker.runOnce()).toMatchObject({ status: 'SYNCED' })
+      insertLegacyPatientMismatch(harness.connection, originalRequest)
+      harness.connection
+        .prepare("UPDATE patients SET display_name = 'Changed clinical content'")
+        .run()
+      expect(await worker.runOnce()).toEqual({ status: 'UNAVAILABLE' })
+      expect(monitor.getLatest()).toMatchObject({
+        diagnostic: { stage: 'PATIENT', rule: 'SNAPSHOT_REVISION_CONFLICT' }
+      })
+      expect(submitBatch).toHaveBeenCalledOnce()
+      expect(
+        harness.connection
+          .prepare(
+            "SELECT COUNT(*) AS count FROM sync_outbox WHERE operation = 'PATIENT_SYNC_REPLAY_REQUESTED'"
+          )
+          .get()
+      ).toEqual({ count: 0 })
+      expect(
+        harness.connection.prepare('SELECT COUNT(*) AS count FROM sync_transport_batches').get()
+      ).toEqual({ count: 2 })
+    } finally {
+      harness.connection.close()
+    }
   })
 
   it('commits a reviewer decision before retrying the exact durable acknowledgment after restart', async () => {
@@ -530,24 +848,33 @@ function createHarness(ids: string[]): WorkerHarness {
   return { connection, now, transactionExecutor, foundation }
 }
 
-function createWorker(harness: WorkerHarness, httpClient: SyncHttpClient): SyncWorkerService {
+function createWorker(
+  harness: WorkerHarness,
+  httpClient: SyncHttpClient,
+  workerMonitor?: SyncWorkerMonitor
+): SyncWorkerService {
   return createSyncWorkerService({
     foundation: harness.foundation,
-    preparation: createPreparation(harness),
+    preparation: createPreparation(harness, workerMonitor),
     httpClient,
     repository: createSyncWorkerRepository(harness.connection),
     transactionExecutor: harness.transactionExecutor,
-    random: () => 0.5
+    random: () => 0.5,
+    workerMonitor
   })
 }
 
-function createPreparation(harness: WorkerHarness): SyncSnapshotPreparationService {
+function createPreparation(
+  harness: WorkerHarness,
+  workerMonitor?: SyncWorkerMonitor
+): SyncSnapshotPreparationService {
   return createSyncSnapshotPreparationService({
     snapshotRepository: createSyncSnapshotRepository(harness.connection),
     batchRepository: createSyncTransportBatchRepository(harness.connection),
     transactionExecutor: harness.transactionExecutor,
     desktopApplicationVersion: '1.0.0',
-    desktopSchemaVersion: 21
+    desktopSchemaVersion: 21,
+    onFailure: (diagnostic) => workerMonitor?.record('UNAVAILABLE', 'SNAPSHOT', diagnostic)
   })
 }
 
@@ -938,6 +1265,56 @@ function seedLifestyle(connection: Database.Database): void {
        ) VALUES (?, ?, 'NO_WORK', ?, ?, ?, ?)`
     )
     .run('87000000-0000-4000-8000-000000000001', lifestyleId, actorId, at, actorId, at)
+}
+
+function insertLegacyPatientMismatch(
+  connection: Database.Database,
+  originalRequest: string,
+  changedPayload = false
+): { batchId: string; recordId: string; responseJson: string } {
+  const request = JSON.parse(originalRequest)
+  request.batchId = randomUUID()
+  request.records = request.records.filter(
+    (record: { resourceType: string }) => record.resourceType === 'PATIENT'
+  )
+  const record = request.records[0]
+  record.recordId = randomUUID()
+  record.payload.knownChsMedicalId = 'CHS-ABCD-EFGH-JKMN'
+  if (changedPayload) record.payload.displayName = 'Different patient content'
+  const requestJson = JSON.stringify(request)
+  const body = JSON.parse(acceptedResponse(requestJson))
+  body.batchStatus = 'REJECTED'
+  body.outcomes[0].status = 'REJECTED'
+  body.outcomes[0].canonicalResourceId = null
+  body.outcomes[0].errors = [{ code: 'RECORD_PAYLOAD_MISMATCH', path: '', retryable: false }]
+  const responseJson = JSON.stringify(body)
+  insertOutbox(connection, record.recordId, 'PATIENT', patientId, 'PATIENT_CREATED', at)
+  connection
+    .prepare(
+      "UPDATE sync_outbox SET status = 'SENT', sent_at = ?, last_error_code = 'RECORD_PAYLOAD_MISMATCH' WHERE id = ?"
+    )
+    .run(at, record.recordId)
+  connection
+    .prepare(
+      `INSERT INTO sync_transport_batches
+    (id, request_json, request_sha256, status, created_at, completed_at, response_json, response_sha256)
+    VALUES (?, ?, ?, 'COMPLETED', ?, ?, ?, ?)`
+    )
+    .run(
+      request.batchId,
+      requestJson,
+      createHash('sha256').update(requestJson).digest('hex'),
+      at,
+      at,
+      responseJson,
+      createHash('sha256').update(responseJson).digest('hex')
+    )
+  connection
+    .prepare(
+      'INSERT INTO sync_transport_batch_items (batch_id, outbox_id, sequence_number) VALUES (?, ?, 1)'
+    )
+    .run(request.batchId, record.recordId)
+  return { batchId: request.batchId, recordId: record.recordId, responseJson }
 }
 
 function insertOutbox(

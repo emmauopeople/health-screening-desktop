@@ -22,7 +22,9 @@ import syncTransportFoundationSql from './sql/0019-sync-transport-foundation.sql
 import syncWorkerResponseSql from './sql/0020-sync-worker-response.sql?raw'
 import syncIdentityResolutionDeliverySql from './sql/0021-sync-identity-resolution-delivery.sql?raw'
 
-export const targetSchemaVersion = 21
+import foodOtcSyncSql from './sql/0022-food-otc-sync.sql?raw'
+
+export const targetSchemaVersion = 22
 
 const initialSchemaMigration = Object.freeze({
   version: 1,
@@ -173,7 +175,8 @@ export const databaseMigrations = Object.freeze([
   referralTreatmentActionsMigration,
   syncTransportFoundationMigration,
   syncWorkerResponseMigration,
-  syncIdentityResolutionDeliveryMigration
+  syncIdentityResolutionDeliveryMigration,
+  { version: 22, name: 'food-otc-sync', sql: foodOtcSyncSql } satisfies DatabaseMigration
 ] as const)
 
 export function resolveDatabaseMigrations(

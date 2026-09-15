@@ -6,6 +6,54 @@ import { createIpcSuccess, createSyncAdministrationFailure, ipcChannels } from '
 const token = `chs_inst_v1_${'A'.repeat(43)}`
 
 describe('synchronization administration preload API', () => {
+  it('allows only controlled diagnostic codes through preload', async () => {
+    const safe = { stage: 'PATIENT', rule: 'INVALID_VALUE', field: 'phone' }
+    const invoke = vi.fn(async () =>
+      createIpcSuccess({
+        status: 'READY',
+        configuration: { status: 'NOT_CONFIGURED' },
+        activity: {
+          state: 'BLOCKED',
+          pendingChangeCount: 1,
+          pendingAcknowledgmentCount: 0,
+          lastCompletedBatchAt: null,
+          nextRetryAt: null,
+          workerCheck: {
+            checkedAt: '2026-09-04T12:00:00.000Z',
+            status: 'UNAVAILABLE',
+            phase: 'SNAPSHOT',
+            diagnostic: safe
+          }
+        }
+      })
+    )
+    const api = createHealthScreeningApi(invoke)
+    expect(await api.syncAdministration.getState()).toMatchObject({
+      ok: true,
+      data: { activity: { workerCheck: { diagnostic: safe } } }
+    })
+    for (const diagnostic of [
+      { ...safe, field: token },
+      { ...safe, message: token },
+      { ...safe, stage: token }
+    ]) {
+      const result = await invoke()
+      invoke.mockResolvedValueOnce({
+        ...result,
+        data: {
+          ...result.data,
+          activity: {
+            ...result.data.activity,
+            workerCheck: { ...result.data.activity.workerCheck, diagnostic }
+          }
+        }
+      })
+      expect(await api.syncAdministration.getState()).toEqual(
+        createSyncAdministrationFailure('IPC_UNAVAILABLE')
+      )
+    }
+  })
+
   it('uses fixed channels and validates both request and response', async () => {
     const invoke = vi.fn(async (channel: string) =>
       channel === ipcChannels.syncAdministration.getState

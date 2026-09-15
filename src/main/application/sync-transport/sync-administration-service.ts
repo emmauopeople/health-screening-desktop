@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer'
+import type { SyncWorkerCheck } from '@shared/ipc/sync-administration-contracts'
 
 import {
   parseAuditActionCode,
@@ -49,7 +50,11 @@ export function createSyncAdministrationService(
                   tokenPrefix: configuration.tokenPrefix,
                   updatedAt: configuration.updatedAt
                 }),
-          activity: toActivity(configuration !== null, storedStatus)
+          activity: toActivity(
+            configuration !== null,
+            storedStatus,
+            dependencies.workerMonitor?.getLatest()
+          )
         })
       } catch {
         return stateFailure('UNAVAILABLE')
@@ -74,7 +79,7 @@ export function createSyncAdministrationService(
         const protectedToken = Buffer.from(
           dependencies.credentialProtector.protect(parsed.installationToken)
         ).toString('base64')
-        return dependencies.transactionExecutor.run((context) => {
+        const result = dependencies.transactionExecutor.run((context) => {
           const installation = dependencies.installationRepository.get()
           if (installation === null) throw new RepositoryDataIntegrityError()
           const existing = dependencies.repository.getConfiguration()
@@ -109,6 +114,8 @@ export function createSyncAdministrationService(
             })
           })
         })
+        dependencies.workerMonitor?.clear()
+        return result
       } catch {
         return configureFailure('UNAVAILABLE')
       }
@@ -118,25 +125,29 @@ export function createSyncAdministrationService(
 
 function toActivity(
   configured: boolean,
-  stored: ReturnType<SyncAdministrationServiceDependencies['repository']['getOperationalStatus']>
+  stored: ReturnType<SyncAdministrationServiceDependencies['repository']['getOperationalStatus']>,
+  workerCheck?: SyncWorkerCheck
 ): SyncAdministrationActivity {
   const state = !configured
     ? 'NOT_CONFIGURED'
-    : stored.inFlightBatchCount > 0
-      ? 'SYNCHRONIZING'
-      : stored.nextRetryAt !== null
-        ? 'RETRY_SCHEDULED'
-        : stored.pendingChangeCount > 0 ||
-            stored.queuedBatchCount > 0 ||
-            stored.pendingAcknowledgmentCount > 0
-          ? 'PENDING'
-          : 'UP_TO_DATE'
+    : workerCheck?.status === 'UNAVAILABLE' || workerCheck?.status === 'NOT_CONFIGURED'
+      ? 'BLOCKED'
+      : workerCheck?.status === 'RUNNING' || stored.inFlightBatchCount > 0
+        ? 'SYNCHRONIZING'
+        : stored.nextRetryAt !== null
+          ? 'RETRY_SCHEDULED'
+          : stored.pendingChangeCount > 0 ||
+              stored.queuedBatchCount > 0 ||
+              stored.pendingAcknowledgmentCount > 0
+            ? 'PENDING'
+            : 'UP_TO_DATE'
   return Object.freeze({
     state,
     pendingChangeCount: stored.pendingChangeCount,
     pendingAcknowledgmentCount: stored.pendingAcknowledgmentCount,
     lastCompletedBatchAt: stored.lastCompletedBatchAt,
-    nextRetryAt: stored.nextRetryAt
+    nextRetryAt: stored.nextRetryAt,
+    ...(workerCheck === undefined ? {} : { workerCheck })
   })
 }
 

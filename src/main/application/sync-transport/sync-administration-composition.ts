@@ -13,11 +13,13 @@ import type { LocalAuthenticationSessionService } from '../authentication/sessio
 import { createSyncAdministrationService } from './sync-administration-service'
 import type { SyncAdministrationService } from './sync-administration-types'
 import type { SyncCredentialProtector } from './sync-transport-types'
+import type { SyncWorkerMonitor } from './sync-worker-monitor'
 
 export interface ProductionSyncAdministrationServiceOptions {
   readonly connection: Database.Database
   readonly authenticationSessionService: LocalAuthenticationSessionService
   readonly credentialProtector: SyncCredentialProtector
+  readonly workerMonitor?: SyncWorkerMonitor
   readonly logger?: DatabaseTransactionLogger
 }
 
@@ -25,7 +27,8 @@ export function createProductionSyncAdministrationService({
   connection,
   authenticationSessionService,
   credentialProtector,
-  logger
+  logger,
+  workerMonitor
 }: ProductionSyncAdministrationServiceOptions): SyncAdministrationService {
   return createSyncAdministrationService({
     authenticationSessionService,
@@ -38,6 +41,7 @@ export function createProductionSyncAdministrationService({
       clock: createSystemUtcClock(),
       logger
     }),
-    credentialProtector
+    credentialProtector,
+    workerMonitor
   })
 }
