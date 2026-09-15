@@ -49,6 +49,314 @@ const lifestyleOutbox = '90000000-0000-4000-8000-000000000007'
 const excludedOutbox = '90000000-0000-4000-8000-000000000008'
 
 describe('HSW-013B desktop synchronization worker', () => {
+  it.each(['ACCEPTED', 'REJECTED', 'RETRY'])(
+    'reconciles orphaned signals using the saved %s outcome without replaying a completed batch',
+    async (status) => {
+      const harness = createHarness(Array.from({ length: 12 }, () => randomUUID()))
+      try {
+        seedCompleteGraph(harness.connection)
+        configure(harness.foundation)
+        const draftSignal = randomUUID()
+        insertOutbox(
+          harness.connection,
+          draftSignal,
+          'SCREENING_ENCOUNTER',
+          encounterId,
+          'SCREENING_VITALS_DRAFT_SAVED',
+          at
+        )
+        const submitBatch = vi.fn(async (_credential: unknown, requestJson: string) => {
+          const body = JSON.parse(acceptedResponse(requestJson))
+          const vital = body.outcomes.find(
+            (outcome: { resourceType: string }) => outcome.resourceType === 'VITALS'
+          )
+          vital.status = status
+          if (status !== 'ACCEPTED') {
+            vital.canonicalResourceId = null
+            vital.errors = [
+              {
+                code:
+                  status === 'RETRY' ? 'DEPENDENCY_NOT_AVAILABLE' : 'MEASUREMENT_PERIOD_INVALID',
+                path: '',
+                retryable: status === 'RETRY'
+              }
+            ]
+            body.batchStatus = 'PARTIAL'
+          }
+          return response(200, JSON.stringify(body))
+        })
+        const worker = createWorker(harness, httpClient({ submitBatch }))
+        expect(await worker.runOnce()).toMatchObject({ status: 'SYNCED' })
+        const history = harness.connection.prepare('SELECT * FROM sync_transport_batches').all()
+        const clinical = harness.connection.prepare('SELECT * FROM screening_vitals_drafts').all()
+        // Reproduce the old worker: it applied the step outcome but left its
+        // coalesced draft signal in flight even though the batch completed.
+        harness.connection
+          .prepare(
+            "UPDATE sync_outbox SET status = 'IN_FLIGHT', sent_at = NULL, next_attempt_at = NULL, last_error_code = NULL, attempt_count = 0 WHERE id = ?"
+          )
+          .run(draftSignal)
+        expect(await createWorker(harness, httpClient({ submitBatch })).runOnce()).toMatchObject({
+          status: 'IDLE'
+        })
+        expect(
+          harness.connection
+            .prepare('SELECT status, attempt_count, last_error_code FROM sync_outbox WHERE id = ?')
+            .get(draftSignal)
+        ).toEqual({
+          status: status === 'RETRY' ? 'FAILED' : 'SENT',
+          attempt_count: 1,
+          last_error_code:
+            status === 'RETRY'
+              ? 'DEPENDENCY_NOT_AVAILABLE'
+              : status === 'REJECTED'
+                ? 'MEASUREMENT_PERIOD_INVALID'
+                : null
+        })
+        expect(await worker.runOnce()).toMatchObject({ status: 'IDLE' })
+        expect(
+          harness.connection
+            .prepare('SELECT attempt_count FROM sync_outbox WHERE id = ?')
+            .get(draftSignal)
+        ).toEqual({ attempt_count: 1 })
+        expect(submitBatch).toHaveBeenCalledOnce()
+        expect(harness.connection.prepare('SELECT * FROM sync_transport_batches').all()).toEqual(
+          history
+        )
+        expect(harness.connection.prepare('SELECT * FROM screening_vitals_drafts').all()).toEqual(
+          clinical
+        )
+        expect(
+          harness.connection
+            .prepare('SELECT status FROM sync_outbox WHERE id = ?')
+            .get(excludedOutbox)
+        ).toEqual({ status: 'PENDING' })
+      } finally {
+        harness.connection.close()
+      }
+    }
+  )
+
+  it('does not reconcile a signal reserved by another unfinished batch', async () => {
+    const harness = createHarness(Array.from({ length: 8 }, () => randomUUID()))
+    try {
+      seedCompleteGraph(harness.connection)
+      configure(harness.foundation)
+      const draftSignal = randomUUID()
+      insertOutbox(
+        harness.connection,
+        draftSignal,
+        'SCREENING_ENCOUNTER',
+        encounterId,
+        'SCREENING_VITALS_DRAFT_SAVED',
+        at
+      )
+      expect(
+        await createWorker(
+          harness,
+          httpClient({
+            submitBatch: async (_credential, requestJson) =>
+              response(200, acceptedResponse(requestJson))
+          })
+        ).runOnce()
+      ).toMatchObject({ status: 'SYNCED' })
+      const original = harness.connection
+        .prepare('SELECT request_json FROM sync_transport_batches')
+        .get() as { request_json: string }
+      const request = JSON.parse(original.request_json)
+      request.batchId = randomUUID()
+      request.records = request.records.filter(
+        (record: { resourceType: string }) => record.resourceType === 'VITALS'
+      )
+      const requestJson = JSON.stringify(request)
+      harness.connection
+        .prepare("UPDATE sync_outbox SET status = 'IN_FLIGHT', sent_at = NULL WHERE id = ?")
+        .run(draftSignal)
+      harness.connection
+        .prepare(
+          "INSERT INTO sync_transport_batches (id, request_json, request_sha256, status, created_at) VALUES (?, ?, ?, 'PREPARED', ?)"
+        )
+        .run(
+          request.batchId,
+          requestJson,
+          createHash('sha256').update(requestJson).digest('hex'),
+          at
+        )
+      harness.connection
+        .prepare(
+          'INSERT INTO sync_transport_batch_items (batch_id, outbox_id, sequence_number) VALUES (?, ?, 1)'
+        )
+        .run(request.batchId, draftSignal)
+      harness.transactionExecutor.run((context) =>
+        createSyncWorkerRepository(harness.connection).reconcileCompletedSignals(
+          context.connection,
+          at
+        )
+      )
+      expect(
+        harness.connection.prepare('SELECT status FROM sync_outbox WHERE id = ?').get(draftSignal)
+      ).toEqual({ status: 'IN_FLIGHT' })
+    } finally {
+      harness.connection.close()
+    }
+  })
+
+  it.each([
+    [vitalsOutbox, 'SCREENING_VITALS_DRAFT_SAVED'],
+    [lifestyleOutbox, 'SCREENING_LIFESTYLE_DRAFT_SAVED'],
+    [lifestyleOutbox, 'SCREENING_LIFESTYLE_ALCOHOL_BASELINE_CREATED'],
+    [lifestyleOutbox, 'SCREENING_LIFESTYLE_TOBACCO_BASELINE_CREATED'],
+    [lifestyleOutbox, 'SCREENING_LIFESTYLE_WORK_BASELINE_CREATED'],
+    [lifestyleOutbox, 'SCREENING_LIFESTYLE_REOPENED']
+  ])('commits a response for a batch prepared from %s / %s', async (signalId, operation) => {
+    const harness = createHarness(Array.from({ length: 8 }, () => randomUUID()))
+    try {
+      seedCompleteGraph(harness.connection)
+      configure(harness.foundation)
+      harness.connection
+        .prepare('UPDATE sync_outbox SET operation = ? WHERE id = ?')
+        .run(operation, signalId)
+      const submitBatch = vi.fn(async (_credential: unknown, requestJson: string) =>
+        response(200, acceptedResponse(requestJson))
+      )
+      expect(await createWorker(harness, httpClient({ submitBatch })).runOnce()).toMatchObject({
+        status: 'SYNCED'
+      })
+      expect(submitBatch).toHaveBeenCalledOnce()
+      expect(readStatuses(harness.connection)).toEqual([...Array(7).fill('SENT'), 'PENDING'])
+      expect(harness.connection.prepare('SELECT status FROM sync_transport_batches').get()).toEqual(
+        { status: 'COMPLETED' }
+      )
+    } finally {
+      harness.connection.close()
+    }
+  })
+
+  it('applies each outcome to all its reserved signals while retaining retrying and unbatched work', async () => {
+    const harness = createHarness(Array.from({ length: 8 }, () => randomUUID()))
+    try {
+      seedCompleteGraph(harness.connection)
+      configure(harness.foundation)
+      const vitalsDraft = randomUUID()
+      const lifestyleDraft = randomUUID()
+      const lateSignal = randomUUID()
+      insertOutbox(
+        harness.connection,
+        vitalsDraft,
+        'SCREENING_ENCOUNTER',
+        encounterId,
+        'SCREENING_VITALS_DRAFT_SAVED',
+        at
+      )
+      insertOutbox(
+        harness.connection,
+        lifestyleDraft,
+        'SCREENING_ENCOUNTER',
+        encounterId,
+        'SCREENING_LIFESTYLE_DRAFT_SAVED',
+        at
+      )
+      const worker = createWorker(
+        harness,
+        httpClient({
+          submitBatch: async (_credential, requestJson) => {
+            // A newer event created while HTTP is in progress is outside this batch.
+            insertOutbox(
+              harness.connection,
+              lateSignal,
+              'SCREENING_ENCOUNTER',
+              encounterId,
+              'SCREENING_LIFESTYLE_DRAFT_SAVED',
+              at
+            )
+            const body = JSON.parse(acceptedResponse(requestJson))
+            const vital = body.outcomes.find(
+              (outcome: { resourceType: string }) => outcome.resourceType === 'VITALS'
+            )
+            vital.status = 'RETRY'
+            vital.canonicalResourceId = null
+            vital.errors = [
+              {
+                code: 'DEPENDENCY_NOT_AVAILABLE',
+                path: '/payload/localEncounterId',
+                retryable: true
+              }
+            ]
+            body.batchStatus = 'PARTIAL'
+            return response(200, JSON.stringify(body))
+          }
+        })
+      )
+      expect(await worker.runOnce()).toMatchObject({ status: 'SYNCED' })
+      for (const id of [vitalsOutbox, vitalsDraft]) {
+        expect(
+          harness.connection
+            .prepare('SELECT status, last_error_code FROM sync_outbox WHERE id = ?')
+            .get(id)
+        ).toEqual({ status: 'FAILED', last_error_code: 'DEPENDENCY_NOT_AVAILABLE' })
+      }
+      for (const id of [lifestyleOutbox, lifestyleDraft]) {
+        expect(
+          harness.connection.prepare('SELECT status FROM sync_outbox WHERE id = ?').get(id)
+        ).toEqual({ status: 'SENT' })
+      }
+      for (const id of [lateSignal, excludedOutbox]) {
+        expect(
+          harness.connection.prepare('SELECT status FROM sync_outbox WHERE id = ?').get(id)
+        ).toEqual({ status: 'PENDING' })
+      }
+      expect(
+        harness.connection
+          .prepare("SELECT COUNT(*) AS count FROM sync_outbox WHERE status = 'IN_FLIGHT'")
+          .get()
+      ).toEqual({ count: 0 })
+    } finally {
+      harness.connection.close()
+    }
+  })
+
+  it('recovers an existing in-flight draft-signal batch by GET without a new upload', async () => {
+    const harness = createHarness(Array.from({ length: 8 }, () => randomUUID()))
+    try {
+      seedCompleteGraph(harness.connection)
+      configure(harness.foundation)
+      harness.connection
+        .prepare("UPDATE sync_outbox SET operation = 'SCREENING_VITALS_DRAFT_SAVED' WHERE id = ?")
+        .run(vitalsOutbox)
+      harness.connection
+        .prepare(
+          "UPDATE sync_outbox SET operation = 'SCREENING_LIFESTYLE_DRAFT_SAVED' WHERE id = ?"
+        )
+        .run(lifestyleOutbox)
+      expect(createPreparation(harness).prepareNextBatch()).toMatchObject({ status: 'PREPARED' })
+      const claimed = harness.foundation.claimNextBatch(1000)
+      expect(claimed.status).toBe('CLAIMED')
+      if (claimed.status !== 'CLAIMED') throw new Error('Expected a claimed batch')
+      const savedRequest = claimed.requestJson
+      const centralResponse = acceptedResponse(savedRequest)
+      harness.now.value = parseUtcTimestamp('2026-09-03T12:05:00.000Z')
+      const recoverBatch = vi.fn(async () => response(200, centralResponse))
+      const submitBatch = vi.fn(async () => response(503, problem(503, 'UNAVAILABLE')))
+      const restarted = createWorker(harness, httpClient({ recoverBatch, submitBatch }))
+      // Expired leases first become eligible after the normal recovery delay.
+      expect(await restarted.runOnce()).toMatchObject({ status: 'IDLE' })
+      harness.now.value = parseUtcTimestamp('2026-09-03T12:10:00.000Z')
+      expect(await restarted.runOnce()).toMatchObject({ status: 'SYNCED' })
+      expect(recoverBatch).toHaveBeenCalledOnce()
+      expect(submitBatch).not.toHaveBeenCalled()
+      expect(
+        harness.connection
+          .prepare('SELECT request_json, response_json, status FROM sync_transport_batches')
+          .all()
+      ).toEqual([
+        { request_json: savedRequest, response_json: centralResponse, status: 'COMPLETED' }
+      ])
+      expect(readStatuses(harness.connection)).toEqual([...Array(7).fill('SENT'), 'PENDING'])
+    } finally {
+      harness.connection.close()
+    }
+  })
+
   it('reports a preparation failure before any HTTP attempt and recovers on the next run', async () => {
     const harness = createHarness([])
     try {

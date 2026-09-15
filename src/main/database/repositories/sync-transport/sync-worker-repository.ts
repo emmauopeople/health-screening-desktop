@@ -6,11 +6,15 @@ import type {
   SyncBatchResponse,
   SyncRecordOutcome
 } from '@main/application/sync-transport/sync-contract'
-import { parseContractUuid } from '@main/application/sync-transport/sync-contract'
+import {
+  parseContractUuid,
+  parseSyncBatchResponse
+} from '@main/application/sync-transport/sync-contract'
 import type { DatabaseTransactionConnection } from '@main/database/transaction'
 import { assertActiveDatabaseTransactionConnection } from '@main/database/transaction/transaction-capability'
 import { parseEntityId, type EntityId } from '@main/foundation/entity-id'
 import { parseUtcTimestamp, type UtcTimestamp } from '@main/foundation/utc-clock'
+import { syncSignalResources } from './sync-signal-resources'
 
 import {
   RepositoryReadError,
@@ -42,6 +46,7 @@ export interface ApplyIdentityResolutionInput {
 }
 
 export interface SyncWorkerRepository {
+  reconcileCompletedSignals(connection: DatabaseTransactionConnection, retryAt: UtcTimestamp): void
   completeBatch(connection: DatabaseTransactionConnection, input: CompleteSyncBatchInput): void
   applyIdentityResolution(
     connection: DatabaseTransactionConnection,
@@ -58,6 +63,77 @@ export interface SyncWorkerRepository {
 
 export function createSyncWorkerRepository(connection: Database.Database): SyncWorkerRepository {
   return Object.freeze({
+    reconcileCompletedSignals(
+      scopedConnection: DatabaseTransactionConnection,
+      retryAt: UtcTimestamp
+    ): void {
+      assertActiveDatabaseTransactionConnection(scopedConnection)
+      parseUtcTimestamp(retryAt)
+      // Older workers completed some batches but never applied the outcome to
+      // their coalesced Vitals/Lifestyle draft and baseline signals.
+      const operations = [...syncSignalResources]
+        .filter(([, resource]) => resource === 'VITALS' || resource === 'LIFESTYLE')
+        .map(([operation]) => operation)
+      const batches = scopedConnection
+        .prepare(
+          `SELECT batch.id, batch.request_json,
+        batch.request_sha256, batch.response_json, batch.response_sha256, batch.completed_at
+        FROM sync_transport_batches batch
+        WHERE batch.status = 'COMPLETED' AND batch.response_json IS NOT NULL
+          AND EXISTS (SELECT 1 FROM sync_transport_batch_items item
+            JOIN sync_outbox outbox ON outbox.id = item.outbox_id
+            WHERE item.batch_id = batch.id AND outbox.status = 'IN_FLIGHT'
+              AND outbox.operation IN (${operations.map(() => '?').join(', ')})
+              AND NOT EXISTS (SELECT 1 FROM sync_transport_batch_items active_item
+                JOIN sync_transport_batches active_batch ON active_batch.id = active_item.batch_id
+                WHERE active_item.outbox_id = outbox.id AND active_batch.status <> 'COMPLETED'))
+        ORDER BY batch.created_at, batch.id LIMIT 25`
+        )
+        .all(...operations) as {
+        id: string
+        request_json: string
+        request_sha256: string
+        response_json: string
+        response_sha256: string
+        completed_at: string
+      }[]
+      const orphan = scopedConnection.prepare(`SELECT 1 FROM sync_outbox outbox
+        WHERE outbox.id = ? AND outbox.status = 'IN_FLIGHT'
+          AND NOT EXISTS (SELECT 1 FROM sync_transport_batch_items item
+            JOIN sync_transport_batches batch ON batch.id = item.batch_id
+            WHERE item.outbox_id = outbox.id AND batch.status <> 'COMPLETED')`)
+      for (const batch of batches) {
+        if (
+          createHash('sha256').update(batch.request_json).digest('hex') !== batch.request_sha256 ||
+          createHash('sha256').update(batch.response_json).digest('hex') !== batch.response_sha256
+        ) {
+          throw new RepositoryWriteError()
+        }
+        const response = parseSyncBatchResponse(batch.response_json, batch.request_json)
+        if (response.batchId !== batch.id) throw new RepositoryWriteError()
+        for (const outcome of response.outcomes) {
+          if (outcome.resourceType !== 'VITALS' && outcome.resourceType !== 'LIFESTYLE') continue
+          const ids = matchingOutboxIds(scopedConnection, response.batchId, outcome).filter(
+            (id) => orphan.get(id) !== undefined
+          )
+          if (ids.length === 0) continue
+          applyOutcomeToOutbox(
+            scopedConnection,
+            response.batchId,
+            outcome,
+            {
+              response,
+              responseJson: batch.response_json,
+              completedAt: parseUtcTimestamp(batch.completed_at),
+              retryAt,
+              identifierIds: new Map()
+            },
+            ids
+          )
+        }
+      }
+    },
+
     completeBatch(
       scopedConnection: DatabaseTransactionConnection,
       input: CompleteSyncBatchInput
@@ -272,9 +348,9 @@ function applyOutcomeToOutbox(
   connection: DatabaseTransactionConnection,
   batchId: EntityId,
   outcome: SyncRecordOutcome,
-  input: CompleteSyncBatchInput
+  input: CompleteSyncBatchInput,
+  outboxIds: readonly EntityId[] = matchingOutboxIds(connection, batchId, outcome)
 ): void {
-  const outboxIds = matchingOutboxIds(connection, batchId, outcome)
   if (outboxIds.length === 0) throw new RepositoryWriteError()
   const retryable =
     outcome.status === 'RETRY' ||
@@ -328,18 +404,11 @@ function matchingOutboxIds(
   batchId: EntityId,
   outcome: SyncRecordOutcome
 ): readonly EntityId[] {
-  const operationCondition =
-    outcome.resourceType === 'FOOD'
-      ? "outbox.operation = 'SCREENING_FOOD_FINALIZED'"
-      : outcome.resourceType === 'OTC'
-        ? "outbox.operation = 'SCREENING_OTC_FINALIZED'"
-        : outcome.resourceType === 'VITALS'
-          ? "outbox.operation = 'SCREENING_VITALS_STEP_COMPLETED'"
-          : outcome.resourceType === 'LIFESTYLE'
-            ? "outbox.operation = 'SCREENING_LIFESTYLE_STEP_COMPLETED'"
-            : outcome.resourceType === 'SCREENING_ENCOUNTER'
-              ? "outbox.operation IN ('SCREENING_ENCOUNTER_STARTED', 'SCREENING_ENCOUNTER_COMPLETED', 'SCREENING_ENCOUNTER_VOIDED')"
-              : '1 = 1'
+  const operations = [...syncSignalResources]
+    .filter(([, resource]) => resource === outcome.resourceType)
+    .map(([operation]) => operation)
+  if (operations.length === 0) throw new RepositoryWriteError()
+  const operationCondition = `outbox.operation IN (${operations.map(() => '?').join(', ')})`
   const aggregateType =
     outcome.resourceType === 'PATIENT'
       ? 'PATIENT'
@@ -362,7 +431,7 @@ function matchingOutboxIds(
            AND outbox.aggregate_id = ? AND ${operationCondition}
          ORDER BY item.sequence_number`
       )
-      .all(batchId, aggregateType, aggregateId) as readonly { outbox_id: unknown }[]
+      .all(batchId, aggregateType, aggregateId, ...operations) as readonly { outbox_id: unknown }[]
   ).map((row) => parseEntityId(row.outbox_id))
 }
 

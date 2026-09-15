@@ -93,6 +93,14 @@ async function runWorker(
   const credential = dependencies.foundation.loadCredentialForTransport()
   if (credential === null) return Object.freeze({ status: 'NOT_CONFIGURED' as const })
 
+  advance('RESPONSE')
+  dependencies.transactionExecutor.run((context) => {
+    dependencies.repository.reconcileCompletedSignals(
+      context.connection,
+      parseUtcTimestamp(addMilliseconds(context.nowUtc(), retryDelay(1, random)))
+    )
+  })
+
   advance('BATCH_CLAIM')
   let claimed = dependencies.foundation.claimNextBatch()
   if (claimed.status === 'IDLE') {
