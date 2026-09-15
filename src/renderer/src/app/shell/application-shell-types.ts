@@ -90,7 +90,7 @@ export type ApplicationWorkspaceRoute =
     }
   | {
       readonly status: 'AUDIT_REPORTS'
-      readonly commandId: 'REPORTS_AUDIT_REPORTS'
+      readonly commandId: 'REPORTS_AUDIT_REPORTS' | 'ADMINISTRATION_AUDIT'
     }
   | {
       readonly status: 'EXPORT_PRINT'
