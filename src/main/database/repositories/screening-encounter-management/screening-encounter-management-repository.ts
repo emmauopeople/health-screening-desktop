@@ -1,3 +1,4 @@
+import { parseClinicalTime } from '@shared/clinical-time'
 import type Database from 'better-sqlite3'
 
 import { DatabaseTransactionStateError } from '@main/database/transaction'
@@ -91,6 +92,7 @@ const encounterSummaryColumns = `
   patient.date_of_birth,
   location.name AS location_name,
   encounter.status,
+  encounter.clinical_time, encounter.created_at,
   encounter.started_at,
   encounter.completed_at,
   encounter.record_version,
@@ -668,6 +670,12 @@ function readSummary(row: Record<string, unknown>): ManagedEncounterSummaryRecor
     locationName: parseStoredText(row['location_name']),
     status,
     startedAt: parseUtcTimestamp(row['started_at']),
+    ...(row['clinical_time'] == null
+      ? {}
+      : {
+          clinicalTime: parseClinicalTime(JSON.parse(String(row['clinical_time']))),
+          documentationStartedAt: parseUtcTimestamp(row['created_at'])
+        }),
     completedAt: row['completed_at'] === null ? null : parseUtcTimestamp(row['completed_at']),
     noteCount: parseCount(row['note_count']),
     openFlagCount: parseCount(row['open_flag_count']),

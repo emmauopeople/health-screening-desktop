@@ -22,6 +22,7 @@ interface ParsedReplaceReading {
   readonly pulse: number | null
   readonly measurementSite: VitalsMeasurementSite | null
   readonly patientPosition: VitalsPatientPosition | null
+  readonly measurementDate?: string
   readonly measurementTime: VitalsMeasurementTime | null
 }
 
@@ -202,7 +203,12 @@ function parseReadings(value: unknown): readonly ParsedReplaceReading[] {
 }
 
 function parseReading(value: unknown): ParsedReplaceReading {
-  const data = readDataProperties(value, readingInputKeys)
+  const data = readDataProperties(
+    value,
+    Object.hasOwn(value as object, 'measurementDate')
+      ? [...readingInputKeys, 'measurementDate']
+      : readingInputKeys
+  )
 
   return Object.freeze({
     id: parseEntityId(data.id),
@@ -212,7 +218,10 @@ function parseReading(value: unknown): ParsedReplaceReading {
     pulse: parseOptionalBoundedInteger(data.pulse, VITALS_PULSE_MAX),
     measurementSite: parseNullableMeasurementSite(data.measurementSite),
     patientPosition: parseNullablePatientPosition(data.patientPosition),
-    measurementTime: parseNullableMeasurementTime(data.measurementTime)
+    measurementTime: parseNullableMeasurementTime(data.measurementTime),
+    ...(data.measurementDate === undefined
+      ? {}
+      : { measurementDate: parseMeasurementDate(data.measurementDate) })
   })
 }
 
@@ -297,3 +306,14 @@ function toValidationError(error: unknown): RepositoryValidationError {
 }
 
 export type ParsedScreeningVitalsDraftReadingInput = ParsedReplaceReading
+
+export function parseMeasurementDate(value: unknown): string {
+  if (
+    typeof value !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}$/u.test(value) ||
+    !Number.isFinite(Date.parse(`${value}T00:00:00Z`)) ||
+    new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value
+  )
+    throw new RepositoryValidationError()
+  return value
+}

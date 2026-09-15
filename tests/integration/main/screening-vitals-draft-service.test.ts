@@ -58,6 +58,74 @@ const changedReadingAt = '2026-08-06T15:00:00.000Z'
 const nextDeploymentDate = '2026-08-07T12:00:00.000Z'
 
 describe('screening vitals draft service integration', () => {
+  it('persists late-entry reading dates across midnight and retains device save timestamps', async () => {
+    await withVitalsService(({ connection, service }) => {
+      seedCoreGraph(connection)
+      connection
+        .prepare('UPDATE screening_encounters SET started_at = ?, clinical_time = ? WHERE id = ?')
+        .run(
+          '2026-08-05T23:50:00.000Z',
+          JSON.stringify({ localDate: '2026-08-05', localTime: '23:50', timezone: 'UTC' }),
+          encounterId
+        )
+      const saved = service.completeVitalsStep(
+        createVitalsRequest({
+          readings: [
+            { ...completeReading(1), measurementDate: '2026-08-05', measurementTime: '23:55' },
+            { ...completeReading(2), measurementDate: '2026-08-06', measurementTime: '00:05' }
+          ]
+        })
+      )
+      expect(saved.status).toBe('COMPLETED')
+      expect(
+        connection
+          .prepare(
+            'SELECT measurement_date, measurement_time, created_at, updated_at FROM screening_vitals_draft_readings ORDER BY sequence_number'
+          )
+          .all()
+      ).toEqual([
+        {
+          measurement_date: '2026-08-05',
+          measurement_time: '23:55',
+          created_at: now,
+          updated_at: now
+        },
+        {
+          measurement_date: '2026-08-06',
+          measurement_time: '00:05',
+          created_at: now,
+          updated_at: now
+        }
+      ])
+      const loaded = service.getVitalsDraft({ encounterId: parseEntityId(encounterId) })
+      expect(loaded).toMatchObject({
+        status: 'LOADED',
+        draft: { readings: [{ measurementDate: '2026-08-05' }, { measurementDate: '2026-08-06' }] }
+      })
+    })
+  })
+
+  it('rejects future or pre-screening measurements on new clinical-time encounters', async () => {
+    await withVitalsService(({ connection, service }) => {
+      seedCoreGraph(connection)
+      connection
+        .prepare('UPDATE screening_encounters SET started_at = ?, clinical_time = ? WHERE id = ?')
+        .run(
+          '2026-08-05T10:00:00.000Z',
+          JSON.stringify({ localDate: '2026-08-05', localTime: '10:00', timezone: 'UTC' }),
+          encounterId
+        )
+      for (const date of ['2026-08-04', '2026-08-07']) {
+        expect(
+          service.completeVitalsStep(
+            createVitalsRequest({ readings: [{ ...completeReading(1), measurementDate: date }] })
+          )
+        ).toEqual({ status: 'VALIDATION_FAILED' })
+      }
+      expect(readTableCount(connection, 'screening_vitals_draft_readings')).toBe(0)
+    })
+  })
+
   it('rejects out-of-range, zero, negative, and decimal readings before persistence', async () => {
     await withVitalsService(({ connection, service }) => {
       seedCoreGraph(connection)

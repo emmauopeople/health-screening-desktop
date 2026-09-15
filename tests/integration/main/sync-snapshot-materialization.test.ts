@@ -54,6 +54,49 @@ afterEach(async () => {
 })
 
 describe('sync snapshot materialization', () => {
+  it('transports entered clinical time and reading dates without rewriting recorded timestamps', async () => {
+    const h = await createHarness()
+    const c = h.connection
+    insertClinicalFoundation(c)
+    const clinicalTime = { localDate: '2026-09-02', localTime: '23:50', timezone: 'Africa/Douala' }
+    c.prepare('UPDATE screening_encounters SET clinical_time = ?, started_at = ? WHERE id = ?').run(
+      JSON.stringify(clinicalTime),
+      '2026-09-02T22:50:00.000Z',
+      encounterId
+    )
+    c.prepare(
+      'UPDATE screening_vitals_draft_readings SET measurement_date = ?, measurement_time = ?'
+    ).run('2026-09-03', '00:05')
+    insertSignal(
+      c,
+      encounterSignal,
+      'SCREENING_ENCOUNTER',
+      encounterId,
+      'SCREENING_ENCOUNTER_STARTED',
+      1
+    )
+    insertSignal(
+      c,
+      vitalsSignalOne,
+      'SCREENING_ENCOUNTER',
+      encounterId,
+      'SCREENING_VITALS_STEP_COMPLETED',
+      2
+    )
+    expect(h.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED' })
+    const records = readStoredRequest(c).records
+    expect(records.find((r) => r.resourceType === 'SCREENING_ENCOUNTER')).toMatchObject({
+      payload: { clinicalTime, startedAt: '2026-09-02T22:50:00.000Z', createdAt: now }
+    })
+    expect(records.find((r) => r.resourceType === 'VITALS')).toMatchObject({
+      payload: {
+        readings: [
+          { measurementLocalDate: '2026-09-03', measurementLocalTime: '00:05', createdAt: now }
+        ]
+      }
+    })
+  })
+
   it('reuses identical patient records when audit signals span the 500-signal window', async () => {
     const harness = await createHarness()
     const c = harness.connection
@@ -209,7 +252,7 @@ describe('sync snapshot materialization', () => {
       logger: { info: vi.fn(), error: vi.fn() },
       clock: { now: () => now }
     })
-    expect(migrate(c).appliedVersions).toEqual([22])
+    expect(migrate(c).appliedVersions).toEqual([22, 23])
     expect(migrate(c).appliedVersions).toEqual([])
     expect(c.prepare('SELECT * FROM food_logs').all()).toEqual(before)
     expect(readTableCount(c, 'sync_outbox')).toBe(2)
@@ -564,7 +607,7 @@ describe('sync snapshot materialization', () => {
   })
 })
 
-async function createHarness(version = 22): Promise<{
+async function createHarness(version = 23): Promise<{
   readonly connection: Database.Database
   readonly diagnostics: SyncSnapshotDiagnostic[]
   readonly service: ReturnType<typeof createSyncSnapshotPreparationService>

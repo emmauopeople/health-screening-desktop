@@ -859,7 +859,8 @@ function createDraft(
   occurredAt: UtcTimestamp,
   id: EntityId
 ): LifestyleDraftRecord {
-  const periodEnd = context.session.sessionDate as unknown as LifestyleDraftRecord['periodEnd']
+  const periodEnd = (context.encounter.clinicalTime?.localDate ??
+    context.session.sessionDate) as unknown as LifestyleDraftRecord['periodEnd']
   const periodStart = shiftLifestyleDate(periodEnd, -6)
   return repository.insertDraft(connection, {
     id,

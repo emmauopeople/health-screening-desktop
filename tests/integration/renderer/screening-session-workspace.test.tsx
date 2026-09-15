@@ -151,6 +151,47 @@ describe('screening patient entry workspace', () => {
     document.body.innerHTML = ''
   })
 
+  it('captures a late screening date in the site timezone and defaults the first reading to it', async () => {
+    const api = createApi()
+    const clinicalTime = { localDate: '2026-08-05', localTime: '09:15', timezone: 'Africa/Douala' }
+    api.screeningEncounters.start.mockImplementation(async (request) =>
+      createIpcSuccess({
+        status: 'STARTED',
+        encounter: {
+          id: encounterId,
+          patientId: request.patientId,
+          screeningSessionId: sessionId,
+          status: 'DRAFT',
+          startedAt: '2026-08-05T08:15:00.000Z',
+          documentationStartedAt: baseTimestamp,
+          clinicalTime: request.clinicalTime,
+          recordVersion: 1
+        }
+      })
+    )
+    const mounted = await mountWorkspace({ api, timeZone: 'Africa/Douala' })
+    await clickRow(mounted, 'Ada Lovelace')
+    expect(api.screeningEncounters.start).not.toHaveBeenCalled()
+    expect(text(mounted)).toContain('Africa/Douala')
+    const form = mounted.container.querySelector('form[aria-label="Screening date and time"]')!
+    await changeInput(form.querySelector<HTMLInputElement>('input[type="date"]')!, '2026-08-05')
+    await changeInput(form.querySelector<HTMLInputElement>('input[type="time"]')!, '09:15')
+    await clickButton(mounted, 'Start screening')
+    expect(api.screeningEncounters.start).toHaveBeenCalledWith({
+      patientId,
+      screeningSessionId: sessionId,
+      repeatConfirmed: false,
+      clinicalTime
+    })
+    expect(
+      mounted.container.querySelector<HTMLInputElement>('[aria-label="Reading 1 date"]')?.value
+    ).toBe('2026-08-05')
+    expect(
+      mounted.container.querySelector<HTMLInputElement>('[aria-label="Reading 1 time"]')?.value
+    ).toBe('09:15')
+    await mounted.unmount()
+  })
+
   it('gates the Patients workspace on the trusted current screening session', async () => {
     const ensureResult =
       createDeferred<
@@ -3640,10 +3681,12 @@ describe('screening patient entry workspace', () => {
 
 async function mountWorkspace({
   api = createApi(),
+  timeZone,
   userRole = 'LOCAL_ADMIN',
   commandId = 'SCREENING_TODAYS_SESSION'
 }: {
   readonly api?: MockedHealthScreeningApi
+  readonly timeZone?: string
   readonly userRole?: LocalUserRole
   readonly commandId?:
     'HOME_TODAYS_SESSION' | 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING'
@@ -3686,6 +3729,7 @@ async function mountWorkspace({
     root.render(
       createElement(ScreeningSessionWorkspace, {
         api,
+        timeZone,
         activePatientId,
         commandId: currentCommandId,
         headingId: 'screening-workspace-heading',

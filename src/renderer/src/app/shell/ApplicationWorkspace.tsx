@@ -132,6 +132,7 @@ export function ApplicationWorkspace({
       ) : route.status === 'SCREENING_SESSIONS' ? (
         <ScreeningSessionWorkspace
           api={api}
+          timeZone={context.timeZone}
           activePatientId={activeScreeningPatientId}
           commandId={route.commandId}
           headingId={workspaceHeadingId}

@@ -1,3 +1,5 @@
+import { localMeasurementTimeToInstant } from '@shared/clinical-time'
+import { parseMeasurementDate } from '../../database/repositories/screening-vitals-draft/screening-vitals-draft-validation'
 import {
   RepositoryDataIntegrityError,
   RepositoryValidationError,
@@ -91,6 +93,7 @@ interface ParsedSaveVitalsDraftReadingInput {
   readonly pulse: number | null
   readonly measurementSite: ReplaceScreeningVitalsDraftReadingInput['measurementSite']
   readonly patientPosition: ReplaceScreeningVitalsDraftReadingInput['patientPosition']
+  readonly measurementDate?: string
   readonly measurementTime: ReplaceScreeningVitalsDraftReadingInput['measurementTime']
 }
 
@@ -294,6 +297,28 @@ function saveOrCompleteVitalsDraft({
 
       if (encounterContext.status !== 'VALID') {
         return statusResult(encounterContext.statusCode)
+      }
+
+      const clinical = encounterContext.context.encounter.clinicalTime
+      if (clinical !== undefined) {
+        let prior = -Infinity
+        for (const reading of commandResult.command.readings) {
+          if (reading.measurementTime === null) continue
+          const converted = localMeasurementTimeToInstant(
+            reading.measurementDate ?? clinical.localDate,
+            reading.measurementTime,
+            clinical.timezone
+          )
+          if (converted.kind !== 'EXACT') return statusResult('VALIDATION_FAILED')
+          const instant = Date.parse(converted.instant)
+          if (
+            instant < Date.parse(encounterContext.context.encounter.startedAt) ||
+            instant > Date.parse(occurredAt) ||
+            instant < prior
+          )
+            return statusResult('VALIDATION_FAILED')
+          prior = instant
+        }
       }
 
       const existing = screeningVitalsDraftRepository.getByEncounterIdForWrite(
@@ -632,7 +657,12 @@ function parseRequestReadings(value: unknown): readonly ParsedSaveVitalsDraftRea
 }
 
 function parseRequestReading(value: unknown): ParsedSaveVitalsDraftReadingInput {
-  const data = readDataProperties(value, readingRequestKeys)
+  const data = readDataProperties(
+    value,
+    Object.hasOwn(value as object, 'measurementDate')
+      ? [...readingRequestKeys, 'measurementDate']
+      : readingRequestKeys
+  )
 
   return Object.freeze({
     id: data.id === null ? null : parseEntityId(data.id),
@@ -644,6 +674,9 @@ function parseRequestReading(value: unknown): ParsedSaveVitalsDraftReadingInput 
       data.measurementSite === null ? null : parseVitalsMeasurementSite(data.measurementSite),
     patientPosition:
       data.patientPosition === null ? null : parseVitalsPatientPosition(data.patientPosition),
+    ...(data.measurementDate === undefined
+      ? {}
+      : { measurementDate: parseMeasurementDate(data.measurementDate) }),
     measurementTime:
       data.measurementTime === null ? null : parseVitalsMeasurementTime(data.measurementTime)
   })
@@ -761,6 +794,7 @@ function toReplacementReading(
     pulse: reading.pulse,
     measurementSite: reading.measurementSite,
     patientPosition: reading.patientPosition,
+    ...(reading.measurementDate === undefined ? {} : { measurementDate: reading.measurementDate }),
     measurementTime: reading.measurementTime
   })
 }
@@ -792,6 +826,7 @@ function isExistingDraftEquivalent(
       requested.pulse === existingReading.pulse &&
       requested.measurementSite === existingReading.measurementSite &&
       requested.patientPosition === existingReading.patientPosition &&
+      requested.measurementDate === existingReading.measurementDate &&
       requested.measurementTime === existingReading.measurementTime
     )
   })
@@ -911,6 +946,7 @@ function toReadingSummary(
     pulse: reading.pulse,
     measurementSite: reading.measurementSite,
     patientPosition: reading.patientPosition,
+    ...(reading.measurementDate === undefined ? {} : { measurementDate: reading.measurementDate }),
     measurementTime: reading.measurementTime
   })
 }

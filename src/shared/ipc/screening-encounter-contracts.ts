@@ -54,10 +54,19 @@ export const screeningVitalsPulseSchema = z
   .safe()
 export const publicScreeningVitalsReadingValueSchema = z.number().int().min(1).safe()
 
+export const clinicalTimeSchema = z
+  .object({
+    localDate: patientLocalDateSchema,
+    localTime: screeningVitalsMeasurementTimeSchema,
+    timezone: z.string().min(1).max(128)
+  })
+  .strict()
+
 export const screeningEncounterStartRequestSchema = exactObject({
   patientId: screeningEncounterUuidSchema,
   screeningSessionId: screeningEncounterUuidSchema,
-  repeatConfirmed: z.boolean().optional()
+  repeatConfirmed: z.boolean().optional(),
+  clinicalTime: clinicalTimeSchema.optional()
 })
 export const screeningCompletionSectionSchema = z.enum(['VITALS', 'LIFESTYLE', 'FOOD', 'OTC'])
 export const screeningEncounterCompleteRequestSchema = exactObject({
@@ -154,6 +163,7 @@ export const screeningVitalsDraftReadingRequestSchema = exactObject({
   pulse: screeningVitalsPulseSchema.nullable(),
   measurementSite: screeningVitalsMeasurementSiteSchema.nullable(),
   patientPosition: screeningVitalsPatientPositionSchema.nullable(),
+  measurementDate: patientLocalDateSchema.optional(),
   measurementTime: screeningVitalsMeasurementTimeSchema.nullable()
 })
 export const screeningVitalsSaveDraftRequestSchema = exactObject({
@@ -172,6 +182,8 @@ export const publicScreeningEncounterStartSummarySchema = z
     screeningSessionId: screeningEncounterUuidSchema,
     status: screeningEncounterStatusSchema,
     startedAt: screeningEncounterUtcTimestampSchema,
+    clinicalTime: clinicalTimeSchema.optional(),
+    documentationStartedAt: screeningEncounterUtcTimestampSchema.optional(),
     recordVersion: z.number().int().min(1).safe()
   })
   .strict()
@@ -182,6 +194,8 @@ export const publicCompletedScreeningEncounterSummarySchema = z
     screeningSessionId: screeningEncounterUuidSchema,
     status: z.literal('COMPLETED'),
     startedAt: screeningEncounterUtcTimestampSchema,
+    clinicalTime: clinicalTimeSchema.optional(),
+    documentationStartedAt: screeningEncounterUtcTimestampSchema.optional(),
     completedAt: screeningEncounterUtcTimestampSchema,
     recordVersion: z.number().int().min(1).safe()
   })
@@ -198,6 +212,8 @@ export const publicManagedEncounterSummarySchema = z
     locationName: z.string().min(1).max(240),
     status: screeningEncounterStatusSchema,
     startedAt: screeningEncounterUtcTimestampSchema,
+    clinicalTime: clinicalTimeSchema.optional(),
+    documentationStartedAt: screeningEncounterUtcTimestampSchema.optional(),
     completedAt: screeningEncounterUtcTimestampSchema.nullable(),
     noteCount: z.number().int().min(0).safe(),
     openFlagCount: z.number().int().min(0).safe(),
@@ -462,6 +478,7 @@ export const screeningVitalsDraftReadingSchema = z
     pulse: publicScreeningVitalsReadingValueSchema.nullable(),
     measurementSite: screeningVitalsMeasurementSiteSchema.nullable(),
     patientPosition: screeningVitalsPatientPositionSchema.nullable(),
+    measurementDate: patientLocalDateSchema.optional(),
     measurementTime: screeningVitalsMeasurementTimeSchema.nullable()
   })
   .strict()

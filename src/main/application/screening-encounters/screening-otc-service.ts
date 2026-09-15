@@ -321,7 +321,8 @@ function createDraft(
   occurredAt: UtcTimestamp,
   id: EntityId
 ): OtcDraftRecord {
-  const periodEnd = context.session.sessionDate as unknown as OtcDraftRecord['periodEnd']
+  const periodEnd = (context.encounter.clinicalTime?.localDate ??
+    context.session.sessionDate) as unknown as OtcDraftRecord['periodEnd']
   const periodStart = shiftOtcDate(periodEnd, -6)
   return repository.insertDraft(connection, {
     id,

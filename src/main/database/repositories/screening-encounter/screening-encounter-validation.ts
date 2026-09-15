@@ -1,3 +1,4 @@
+import { parseClinicalTime, type ClinicalTime } from '@shared/clinical-time'
 import { DatabaseTransactionStateError } from '@main/database/transaction'
 import {
   getRepositoryErrorType,
@@ -20,6 +21,8 @@ export interface ParsedInsertCanonicalRootScreeningEncounterInput {
   readonly locationId: string
   readonly protocolVersionId: string
   readonly startedAt: string
+  readonly createdAt: string
+  readonly clinicalTime?: ClinicalTime
   readonly recordedBy: string
 }
 
@@ -39,7 +42,10 @@ export function parseInsertCanonicalRootScreeningEncounterInput(
   input: InsertCanonicalRootScreeningEncounterInput
 ): ParsedInsertCanonicalRootScreeningEncounterInput {
   try {
-    const data = readDataProperties(input, insertCanonicalRootInputKeys)
+    const keys = Object.hasOwn(input, 'clinicalTime')
+      ? [...insertCanonicalRootInputKeys, 'clinicalTime', 'createdAt']
+      : insertCanonicalRootInputKeys
+    const data = readDataProperties(input, keys)
 
     return Object.freeze({
       id: parseEntityId(data.id),
@@ -48,6 +54,10 @@ export function parseInsertCanonicalRootScreeningEncounterInput(
       locationId: parseEntityId(data.locationId),
       protocolVersionId: parseEntityId(data.protocolVersionId),
       startedAt: parseUtcTimestamp(data.startedAt),
+      createdAt: parseUtcTimestamp(data.createdAt ?? data.startedAt),
+      ...(data.clinicalTime === undefined
+        ? {}
+        : { clinicalTime: parseClinicalTime(data.clinicalTime) }),
       recordedBy: parseEntityId(data.recordedBy)
     })
   } catch (error) {

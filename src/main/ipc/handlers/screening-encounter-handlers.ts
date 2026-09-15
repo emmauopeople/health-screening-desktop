@@ -570,7 +570,8 @@ function toInternalStartRequest(
   return Object.freeze({
     patientId: request.patientId as EntityId,
     screeningSessionId: request.screeningSessionId as EntityId,
-    repeatConfirmed: request.repeatConfirmed ?? false
+    repeatConfirmed: request.repeatConfirmed ?? false,
+    ...(request.clinicalTime === undefined ? {} : { clinicalTime: request.clinicalTime })
   })
 }
 
@@ -616,6 +617,9 @@ function toInternalSaveVitalsRequest(
           pulse: reading.pulse,
           measurementSite: reading.measurementSite,
           patientPosition: reading.patientPosition,
+          ...(reading.measurementDate === undefined
+            ? {}
+            : { measurementDate: reading.measurementDate }),
           measurementTime: reading.measurementTime
         })
       )
@@ -680,6 +684,12 @@ function toPublicCompletedSummary(
     screeningSessionId: encounter.screeningSessionId,
     status: 'COMPLETED',
     startedAt: encounter.startedAt,
+    ...(encounter.clinicalTime === undefined
+      ? {}
+      : {
+          clinicalTime: encounter.clinicalTime,
+          documentationStartedAt: encounter.documentationStartedAt
+        }),
     completedAt: encounter.completedAt,
     recordVersion: encounter.recordVersion
   })
@@ -694,6 +704,12 @@ function toPublicStartSummary(
     screeningSessionId: encounter.screeningSessionId,
     status: encounter.status,
     startedAt: encounter.startedAt,
+    ...(encounter.clinicalTime === undefined
+      ? {}
+      : {
+          clinicalTime: encounter.clinicalTime,
+          documentationStartedAt: encounter.documentationStartedAt
+        }),
     recordVersion: encounter.recordVersion
   })
 }
@@ -749,6 +765,9 @@ function toPublicVitalsDraft(draft: VitalsDraftSummary): PublicScreeningVitalsDr
       pulse: reading.pulse,
       measurementSite: reading.measurementSite,
       patientPosition: reading.patientPosition,
+      ...(reading.measurementDate === undefined
+        ? {}
+        : { measurementDate: reading.measurementDate }),
       measurementTime: reading.measurementTime
     })),
     weightKg: draft.weightKg,
