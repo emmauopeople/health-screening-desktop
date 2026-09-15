@@ -13,6 +13,105 @@ const resources = new Set([
   'OTC'
 ])
 const statuses = new Set(['ACCEPTED', 'UNCHANGED', 'REVIEW_REQUIRED', 'REJECTED', 'RETRY'])
+const diagnosticErrors = new Set([
+  'DEPENDENCY_NOT_AVAILABLE',
+  'RECORD_PAYLOAD_MISMATCH',
+  'RECORD_IN_PROGRESS',
+  'ENCOUNTER_STATE_REGRESSION',
+  'ENCOUNTER_TERMINAL_CONFLICT',
+  'ENCOUNTER_VOID',
+  'MEASUREMENT_PERIOD_INVALID',
+  'LIFESTYLE_ENCOUNTER_STATE_INVALID'
+])
+
+function safeLabel(value, allowed) {
+  return value == null ? 'MISSING' : allowed.has(value) ? value : 'OTHER'
+}
+
+function outstandingContexts(db, latest) {
+  const states = { PENDING: 0, FAILED: 0, IN_FLIGHT: 0 }
+  const lifestyle = new Map()
+  const failed = new Map()
+  function group(groups, labels, row) {
+    const key = JSON.stringify(labels)
+    const entry = groups.get(key) ?? { ...labels, signalCount: 0, encounters: new Set() }
+    entry.signalCount++
+    if (row.encounter_id) entry.encounters.add(row.encounter_id)
+    groups.set(key, entry)
+  }
+  for (const row of db
+    .prepare(
+      `
+    SELECT o.operation, o.status, o.last_error_code,
+      e.id AS encounter_id, e.patient_id, e.status AS encounter_status,
+      d.status AS draft_status,
+      EXISTS(SELECT 1 FROM sync_patient_identity_links p WHERE p.patient_id = e.patient_id) AS linked
+    FROM sync_outbox o
+    LEFT JOIN screening_encounters e
+      ON o.aggregate_type = 'SCREENING_ENCOUNTER' AND e.id = o.aggregate_id
+    LEFT JOIN lifestyle_drafts d ON d.encounter_id = e.id
+    WHERE o.status IN ('PENDING', 'FAILED', 'IN_FLIGHT')
+    ORDER BY o.operation, o.status, o.aggregate_id
+  `
+    )
+    .iterate()) {
+    states[row.status]++
+    if (typeof row.operation === 'string' && row.operation.startsWith('SCREENING_LIFESTYLE_')) {
+      group(
+        lifestyle,
+        {
+          signalStatus: row.status,
+          draftStatus: safeLabel(row.draft_status, new Set(['DRAFT', 'IN_PROGRESS', 'COMPLETE'])),
+          encounterStatus: safeLabel(
+            row.encounter_status,
+            new Set(['DRAFT', 'COMPLETED', 'AMENDED', 'VOID'])
+          ),
+          completionSignal: row.operation === 'SCREENING_LIFESTYLE_STEP_COMPLETED'
+        },
+        row
+      )
+    }
+    if (row.status !== 'FAILED') continue
+    const resourceType = [
+      'SCREENING_ENCOUNTER_STARTED',
+      'SCREENING_ENCOUNTER_COMPLETED',
+      'SCREENING_ENCOUNTER_VOIDED'
+    ].includes(row.operation)
+      ? 'SCREENING_ENCOUNTER'
+      : ['SCREENING_VITALS_DRAFT_SAVED', 'SCREENING_VITALS_STEP_COMPLETED'].includes(row.operation)
+        ? 'VITALS'
+        : 'OTHER'
+    group(
+      failed,
+      {
+        resourceType,
+        errorCode: safeLabel(row.last_error_code, diagnosticErrors),
+        patientOutcome: safeLabel(
+          latest.get(`PATIENT:${row.patient_id}`)?.outcome.status,
+          statuses
+        ),
+        patientIdentityLink: row.linked ? 'PRESENT' : 'ABSENT',
+        encounterOutcome: safeLabel(
+          latest.get(`SCREENING_ENCOUNTER:${row.encounter_id}`)?.outcome.status,
+          statuses
+        )
+      },
+      row
+    )
+  }
+  function counts(groups) {
+    return [...groups.values()].map(({ encounters, ...entry }) => ({
+      ...entry,
+      encounterCount: encounters.size
+    }))
+  }
+  return {
+    outstandingSignalsByState: states,
+    outstandingSignalsTotal: Object.values(states).reduce((sum, count) => sum + count, 0),
+    pendingLifestyleContexts: counts(lifestyle),
+    failedSignalContexts: counts(failed)
+  }
+}
 
 function increment(counts, key) {
   counts[key] = (counts[key] ?? 0) + 1
@@ -72,8 +171,17 @@ export function summarizeSync(db) {
   const timing = {}
   const minutesBeforeStart = {}
   const lifestyleEncounterStates = {}
+  const snapshotErrors = {}
   for (const { record, outcome } of latest.values()) {
     increment(outcomes, `${record.resourceType}/${outcome.status}`)
+    if (['REJECTED', 'RETRY'].includes(outcome.status)) {
+      for (const error of outcome.errors) {
+        increment(
+          snapshotErrors,
+          `${record.resourceType}/${outcome.status}/${safeLabel(error.code, diagnosticErrors)}`
+        )
+      }
+    }
     if (
       record.resourceType === 'LIFESTYLE' &&
       outcome.errors.some((e) => e.code === 'LIFESTYLE_ENCOUNTER_STATE_INVALID')
@@ -139,6 +247,8 @@ export function summarizeSync(db) {
     computerTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     completedBatches,
     latestSnapshotOutcomes: outcomes,
+    latestSnapshotErrors: snapshotErrors,
+    ...outstandingContexts(db, latest),
     timingComparison:
       'Recorded measurement minute versus latest accepted encounter snapshot; no timestamps or clinical values are printed.',
     vitalsPeriodFailureCounts: timing,
