@@ -98,6 +98,7 @@ export const syncSnapshotDiagnosticSchema = z
         'screening_session_id',
         'sequence_number',
         'session_date',
+        'measurement_date',
         'sex',
         'source_of_medication',
         'source_type',

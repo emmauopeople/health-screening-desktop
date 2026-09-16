@@ -16,6 +16,7 @@ export interface ScreeningVitalsDraftReadingRecord {
   readonly pulse: number | null
   readonly measurementSite: VitalsMeasurementSite | null
   readonly patientPosition: VitalsPatientPosition | null
+  readonly measurementDate?: string
   readonly measurementTime: VitalsMeasurementTime | null
   readonly createdAt: UtcTimestamp
   readonly updatedAt: UtcTimestamp
@@ -44,6 +45,7 @@ export interface ReplaceScreeningVitalsDraftReadingInput {
   readonly pulse: number | null
   readonly measurementSite: VitalsMeasurementSite | null
   readonly patientPosition: VitalsPatientPosition | null
+  readonly measurementDate?: string
   readonly measurementTime: VitalsMeasurementTime | null
 }
 

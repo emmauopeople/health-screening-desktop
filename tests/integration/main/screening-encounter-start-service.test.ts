@@ -65,6 +65,66 @@ const competingAuditId = '20000000-0000-4000-8000-000000000023'
 const competingOutboxId = '20000000-0000-4000-8000-000000000024'
 
 describe('screening encounter start service integration', () => {
+  it('records earlier care independently of documentation and resumes without rewriting it', async () => {
+    await withStartService(
+      ({ connection, service }) => {
+        seedCoreGraph(connection, { timeZone: 'Africa/Douala' })
+        const clinicalTime = {
+          localDate: '2026-08-05',
+          localTime: '09:15',
+          timezone: 'Africa/Douala'
+        }
+        const result = service.start({ ...createRequest(), clinicalTime })
+        expect(result).toMatchObject({
+          status: 'STARTED',
+          encounter: {
+            startedAt: '2026-08-05T08:15:00.000Z',
+            documentationStartedAt: now,
+            clinicalTime
+          }
+        })
+        expect(
+          connection
+            .prepare(
+              'SELECT started_at, created_at, updated_at, clinical_time FROM screening_encounters WHERE id = ?'
+            )
+            .get(encounterId)
+        ).toEqual({
+          started_at: '2026-08-05T08:15:00.000Z',
+          created_at: now,
+          updated_at: now,
+          clinical_time: JSON.stringify(clinicalTime)
+        })
+        expect(
+          service.start({
+            ...createRequest(),
+            clinicalTime: { ...clinicalTime, localTime: '10:00' }
+          })
+        ).toMatchObject({ status: 'ALREADY_EXISTS', encounter: { clinicalTime } })
+      },
+      { timestamps: [now, now, now, now] }
+    )
+  })
+
+  it('rejects future, invalid, ambiguous and wrong-zone care times before writing', async () => {
+    await withStartService(
+      ({ connection, service }) => {
+        seedCoreGraph(connection)
+        for (const clinicalTime of [
+          { localDate: '2026-08-07', localTime: '10:00', timezone: 'UTC' },
+          { localDate: '2026-02-30', localTime: '10:00', timezone: 'UTC' },
+          { localDate: '2026-08-05', localTime: '10:00', timezone: 'Africa/Douala' },
+          { localDate: '2025-11-02', localTime: '01:30', timezone: 'America/Chicago' }
+        ])
+          expect(service.start({ ...createRequest(), clinicalTime })).toEqual({
+            status: 'VALIDATION_FAILED'
+          })
+        expect(readRootEncounterCount(connection)).toBe(0)
+      },
+      { timestamps: [now, now, now, now] }
+    )
+  })
+
   it('starts one canonical root encounter with audit and outbox rows', async () => {
     await withStartService(({ connection, service }) => {
       seedCoreGraph(connection)

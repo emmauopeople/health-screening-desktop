@@ -30,6 +30,7 @@ export interface SaveVitalsDraftReadingInput {
   readonly pulse: number | null
   readonly measurementSite: VitalsMeasurementSite | null
   readonly patientPosition: VitalsPatientPosition | null
+  readonly measurementDate?: string
   readonly measurementTime: string | null
 }
 
@@ -50,6 +51,7 @@ export interface VitalsDraftReadingSummary {
   readonly pulse: number | null
   readonly measurementSite: VitalsMeasurementSite | null
   readonly patientPosition: VitalsPatientPosition | null
+  readonly measurementDate?: string
   readonly measurementTime: string | null
 }
 

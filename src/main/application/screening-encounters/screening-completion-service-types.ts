@@ -1,3 +1,4 @@
+import type { ClinicalTime } from '@shared/clinical-time'
 import type {
   AuditEventRepository,
   FoodRepository,
@@ -39,6 +40,8 @@ export interface CompletedScreeningSummary {
   readonly patientId: EntityId
   readonly screeningSessionId: EntityId
   readonly status: 'COMPLETED'
+  readonly clinicalTime?: ClinicalTime
+  readonly documentationStartedAt?: UtcTimestamp
   readonly startedAt: UtcTimestamp
   readonly completedAt: UtcTimestamp
   readonly recordVersion: number

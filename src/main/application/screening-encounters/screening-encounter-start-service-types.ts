@@ -1,3 +1,4 @@
+import type { ClinicalTime } from '@shared/clinical-time'
 import type {
   AuditEventRepository,
   InstallationRepository,
@@ -18,6 +19,7 @@ export interface StartScreeningEncounterRequest {
   readonly patientId: EntityId
   readonly screeningSessionId: EntityId
   readonly repeatConfirmed?: boolean
+  readonly clinicalTime?: ClinicalTime
 }
 
 export interface ScreeningEncounterStartSummary {
@@ -26,6 +28,8 @@ export interface ScreeningEncounterStartSummary {
   readonly screeningSessionId: EntityId
   readonly status: ScreeningEncounterRecord['status']
   readonly startedAt: UtcTimestamp
+  readonly clinicalTime?: ClinicalTime
+  readonly documentationStartedAt?: UtcTimestamp
   readonly recordVersion: number
 }
 

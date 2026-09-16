@@ -1,4 +1,9 @@
 import {
+  clinicalTimeAt,
+  localMeasurementTimeToInstant,
+  type ClinicalTime
+} from '@shared/clinical-time'
+import {
   useCallback,
   useEffect,
   useRef,
@@ -108,6 +113,7 @@ import {
 } from './screening-session-workspace-model'
 
 interface ScreeningSessionWorkspaceProps {
+  readonly timeZone?: string
   readonly api: HealthScreeningApi
   readonly commandId: ScreeningSessionWorkspaceCommandId
   readonly headingId: string
@@ -208,6 +214,7 @@ interface PendingOtcSave {
 }
 
 interface VitalsReadingDraft {
+  readonly date?: string
   readonly id: string
   readonly systolic: string
   readonly diastolic: string
@@ -260,6 +267,7 @@ let nextLocalVitalsReadingId = 1
 
 export function ScreeningSessionWorkspace({
   api,
+  timeZone,
   activePatientId,
   commandId,
   headingId,
@@ -274,6 +282,11 @@ export function ScreeningSessionWorkspace({
   onRequestedPatientConsumed,
   registerNavigationGuard
 }: ScreeningSessionWorkspaceProps): React.JSX.Element {
+  const [clinicalStart, setClinicalStart] = useState<{
+    patient: PublicPatientSummary
+    repeatConfirmed: boolean
+    value: ClinicalTime
+  } | null>(null)
   const mountedRef = useMountedRef()
   const sessionRequestRef = useRef(0)
   const patientSearchRequestRef = useRef(0)
@@ -354,6 +367,7 @@ export function ScreeningSessionWorkspace({
   )
 
   const clearTransientWorkflowState = useCallback((): void => {
+    setClinicalStart(null)
     workspaceEpochRef.current += 1
     patientSearchRequestRef.current += 1
     patientContextLoadRequestRef.current.clear()
@@ -596,7 +610,11 @@ export function ScreeningSessionWorkspace({
   }, [loadPatients, patientSearchPage, patientSearchQuery, sessionState])
 
   const startPatientEncounter = useCallback(
-    async (patient: PublicPatientSummary, repeatConfirmed: boolean): Promise<void> => {
+    async (
+      patient: PublicPatientSummary,
+      repeatConfirmed: boolean,
+      clinicalTime?: ClinicalTime
+    ): Promise<void> => {
       if (sessionState.status !== 'READY') {
         return
       }
@@ -617,6 +635,15 @@ export function ScreeningSessionWorkspace({
         return
       }
 
+      if (timeZone !== undefined && clinicalTime === undefined) {
+        setClinicalStart({
+          patient,
+          repeatConfirmed,
+          value: clinicalTimeAt(new Date().toISOString(), timeZone)
+        })
+        selectWorkspaceTab('NEW_SCREENING')
+        return
+      }
       const epoch = workspaceEpochRef.current
       const sessionId = sessionState.session.id
       pendingPatientIdsRef.current.add(patient.id)
@@ -627,7 +654,8 @@ export function ScreeningSessionWorkspace({
         const result = await api.screeningEncounters.start({
           patientId: patient.id,
           screeningSessionId: sessionId,
-          repeatConfirmed
+          repeatConfirmed,
+          ...(clinicalTime === undefined ? {} : { clinicalTime })
         })
 
         if (
@@ -645,6 +673,7 @@ export function ScreeningSessionWorkspace({
         }
 
         if (result.data.status === 'STARTED' || result.data.status === 'ALREADY_EXISTS') {
+          setClinicalStart(null)
           const encounter = result.data.encounter
 
           onOpenTabsChange((currentTabs) => {
@@ -675,6 +704,7 @@ export function ScreeningSessionWorkspace({
         }
 
         if (result.data.status === 'REPEAT_CONFIRMATION_REQUIRED') {
+          setClinicalStart(null)
           setRepeatConfirmationPatient(patient)
           selectWorkspaceTab('PATIENTS')
           return
@@ -701,6 +731,7 @@ export function ScreeningSessionWorkspace({
       openTabs,
       selectWorkspaceTab,
       sessionState,
+      timeZone,
       setWorkspaceMessage
     ]
   )
@@ -712,6 +743,7 @@ export function ScreeningSessionWorkspace({
       )
 
       if (existingDraftTab !== undefined) {
+        setClinicalStart(null)
         onActivePatientIdChange(existingDraftTab.patient.id)
         setMessage(null)
         setRepeatConfirmationPatient(null)
@@ -1087,9 +1119,9 @@ export function ScreeningSessionWorkspace({
         if (isVitalsDraftLoadedData(data)) {
           const persistedDraft = data.draft
 
-          updateVitalsDraft(patientId, () =>
+          updateVitalsDraft(patientId, (current) =>
             persistedDraft === null
-              ? createReadyEmptyVitalsDraft()
+              ? { ...createReadyEmptyVitalsDraft(), readings: current.readings }
               : createVitalsDraftFromPersisted(persistedDraft)
           )
           return
@@ -1126,6 +1158,39 @@ export function ScreeningSessionWorkspace({
         return
       }
 
+      const clinical = openTabs.find((tab) => tab.encounter.id === encounterId)?.encounter
+        .clinicalTime
+      if (clinical !== undefined) {
+        let previous = -Infinity
+        const start = localMeasurementTimeToInstant(
+          clinical.localDate,
+          clinical.localTime,
+          clinical.timezone
+        )
+        for (const reading of draft.readings) {
+          if (reading.time === '') continue
+          const converted = localMeasurementTimeToInstant(
+            reading.date ?? clinical.localDate,
+            reading.time,
+            clinical.timezone
+          )
+          if (
+            converted.kind !== 'EXACT' ||
+            start.kind !== 'EXACT' ||
+            Date.parse(converted.instant) < Date.parse(start.instant) ||
+            Date.parse(converted.instant) > Date.now() ||
+            Date.parse(converted.instant) < previous
+          ) {
+            updateVitalsDraft(patientId, (current) => ({
+              ...current,
+              saveStatus: 'ERROR',
+              statusMessage: `Check measurement dates and times (${clinical.timezone}). Readings must be in order, on or after the screening time, and not in the future.`
+            }))
+            return
+          }
+          previous = Date.parse(converted.instant)
+        }
+      }
       const validation = createVitalsSaveRequest(encounterId, draft, mode)
 
       if (validation.status === 'INVALID') {
@@ -1214,7 +1279,7 @@ export function ScreeningSessionWorkspace({
         }
       }
     },
-    [api, mountedRef, updateVitalsDraft]
+    [api, mountedRef, openTabs, updateVitalsDraft]
   )
 
   const loadLifestyleWorkspace = useCallback(
@@ -2750,7 +2815,6 @@ export function ScreeningSessionWorkspace({
               patientSearchQuery={patientSearchQuery}
               pendingPatientIds={pendingPatientIds}
               searchState={patientSearchState}
-              sessionDate={sessionState.session.sessionDate}
               onActivatePatient={activatePatient}
               onNextPage={() => setPatientSearchPage((page) => page + 1)}
               onPreviousPage={() => setPatientSearchPage((page) => Math.max(1, page - 1))}
@@ -2759,6 +2823,61 @@ export function ScreeningSessionWorkspace({
                 setPatientSearchPage(1)
               }}
             />
+          ) : clinicalStart !== null ? (
+            <section
+              className="screening-new-screening-workspace screening-new-screening-workspace-bounded"
+              aria-label="New Screening workspace"
+            >
+              <div className="screening-split-workspace screening-split-workspace-bounded">
+                <section className="screening-context-panel" aria-label="Patient context">
+                  <header className="screening-card-header">
+                    <h2>Patient context</h2>
+                  </header>
+                  <div className="screening-patient-context-identity">
+                    <span className="screening-patient-initials" aria-hidden="true">
+                      {formatPatientInitials(clinicalStart.patient)}
+                    </span>
+                    <div>
+                      <h3>{formatPatientName(clinicalStart.patient)}</h3>
+                      <p>
+                        {formatPatientContextDateOfBirth(clinicalStart.patient)} •{' '}
+                        {formatPatientSex(clinicalStart.patient.sex)} •{' '}
+                        {clinicalStart.patient.patientCode}
+                      </p>
+                    </div>
+                  </div>
+                </section>
+                <section
+                  className="screening-current-encounter-panel"
+                  aria-label={`Current screening encounter for ${formatPatientName(clinicalStart.patient)}`}
+                >
+                  <header className="screening-current-encounter-header">
+                    <h2>Current screening encounter</h2>
+                    <div>
+                      <span>
+                        Session: {sessionState.session.sessionDate} • {sessionState.location.name}
+                      </span>
+                    </div>
+                  </header>
+                  <ScreeningTimeForm
+                    value={clinicalStart.value}
+                    disabled={pendingPatientIds.has(clinicalStart.patient.id)}
+                    onChange={(value) => setClinicalStart({ ...clinicalStart, value })}
+                    onStart={() =>
+                      void startPatientEncounter(
+                        clinicalStart.patient,
+                        clinicalStart.repeatConfirmed,
+                        clinicalStart.value
+                      )
+                    }
+                    onCancel={() => {
+                      setClinicalStart(null)
+                      selectWorkspaceTab('PATIENTS')
+                    }}
+                  />
+                </section>
+              </div>
+            </section>
           ) : (
             <NewScreeningWorkspace
               activeTab={activeTab}
@@ -2831,7 +2950,6 @@ function PatientsWorkspace({
   patientSearchQuery,
   pendingPatientIds,
   searchState,
-  sessionDate,
   onActivatePatient,
   onNextPage,
   onPreviousPage,
@@ -2842,7 +2960,6 @@ function PatientsWorkspace({
   readonly patientSearchQuery: string
   readonly pendingPatientIds: ReadonlySet<string>
   readonly searchState: PatientSearchState
-  readonly sessionDate: string
   onActivatePatient(patient: PublicPatientSummary): Promise<void>
   onNextPage(): void
   onPreviousPage(): void
@@ -2855,7 +2972,6 @@ function PatientsWorkspace({
           <div>
             <h2 id="screening-patients-title">Patients</h2>
           </div>
-          <span className="screening-session-date">{sessionDate}</span>
         </div>
 
         <label className="screening-patient-search" htmlFor="screening-patient-search">
@@ -3558,6 +3674,138 @@ function WeightTrend({
   )
 }
 
+function ScreeningTimeFields({
+  value,
+  currentTime,
+  disabled = false,
+  onChange
+}: {
+  readonly value: ClinicalTime
+  readonly currentTime?: ClinicalTime
+  readonly disabled?: boolean
+  onChange?(value: ClinicalTime): void
+}): React.JSX.Element {
+  const readOnly = onChange === undefined
+  return (
+    <div className="screening-time-controls">
+      <label>
+        Screening date
+        <input
+          type="date"
+          required
+          value={value.localDate}
+          readOnly={readOnly}
+          disabled={disabled}
+          max={readOnly ? undefined : currentTime?.localDate}
+          onChange={(event) => onChange?.({ ...value, localDate: event.currentTarget.value })}
+        />
+      </label>
+      <label>
+        Screening time
+        <input
+          type="time"
+          required
+          step="60"
+          value={value.localTime}
+          readOnly={readOnly}
+          disabled={disabled}
+          max={
+            readOnly
+              ? undefined
+              : value.localDate === currentTime?.localDate
+                ? currentTime.localTime
+                : '23:59'
+          }
+          onChange={(event) => onChange?.({ ...value, localTime: event.currentTarget.value })}
+        />
+      </label>
+      <span className="screening-time-zone">{value.timezone}</span>
+      {!readOnly ? (
+        <button
+          className="button button-secondary"
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange?.(clinicalTimeAt(new Date().toISOString(), value.timezone))}
+        >
+          Use current time
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
+function clinicalStartValidation(value: ClinicalTime, now: number): string | null {
+  const converted = localMeasurementTimeToInstant(value.localDate, value.localTime, value.timezone)
+  if (converted.kind !== 'EXACT') return 'Enter a valid screening date and time.'
+  if (Date.parse(converted.instant) > now) return 'Screening date and time cannot be in the future.'
+  return null
+}
+
+function ScreeningTimeForm({
+  value,
+  disabled,
+  onChange,
+  onStart,
+  onCancel
+}: {
+  readonly value: ClinicalTime
+  readonly disabled: boolean
+  onChange(value: ClinicalTime): void
+  onStart(): void
+  onCancel(): void
+}): React.JSX.Element {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const currentTime = clinicalTimeAt(new Date(now).toISOString(), value.timezone)
+  const validation = clinicalStartValidation(value, now)
+  return (
+    <form
+      aria-label="Screening date and time"
+      onSubmit={(event) => {
+        event.preventDefault()
+        const current = Date.now()
+        setNow(current)
+        if (!disabled && clinicalStartValidation(value, current) === null) onStart()
+      }}
+    >
+      <ScreeningTimeFields
+        value={value}
+        currentTime={currentTime}
+        disabled={disabled}
+        onChange={(next) => {
+          setNow(Date.now())
+          onChange(next)
+        }}
+      />
+      {validation !== null ? (
+        <p className="screening-message-alert" role="alert">
+          {validation}
+        </p>
+      ) : null}
+      <div className="screening-encounter-actions">
+        <button
+          className="button button-primary"
+          type="submit"
+          disabled={disabled || validation !== null}
+        >
+          Start screening
+        </button>
+        <button
+          className="button button-secondary"
+          type="button"
+          disabled={disabled}
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  )
+}
+
 function CurrentEncounterPanel({
   location,
   session,
@@ -3639,6 +3887,9 @@ function CurrentEncounterPanel({
         </div>
       </header>
 
+      {tab.encounter.clinicalTime !== undefined ? (
+        <ScreeningTimeFields value={tab.encounter.clinicalTime} />
+      ) : null}
       <ol className="screening-stepper" aria-label="Screening workflow steps">
         {screeningSectionLabels.map((label, index) => (
           <li key={label} data-active={index === activeStepIndex ? 'true' : 'false'}>
@@ -4249,7 +4500,17 @@ export function createPatientScreeningTab(
     patient,
     encounter,
     patientContext: { status: 'NOT_LOADED' },
-    vitalsDraft: createInitialVitalsDraft(),
+    vitalsDraft: {
+      ...createInitialVitalsDraft(),
+      readings: [
+        {
+          ...createVitalsReadingDraft(1),
+          ...(encounter.clinicalTime === undefined
+            ? {}
+            : { date: encounter.clinicalTime.localDate, time: encounter.clinicalTime.localTime })
+        }
+      ]
+    },
     lifestyleDraft: createInitialLifestyleDraftState(),
     foodDraft: createInitialFoodDraftState(),
     otcDraft: createInitialOtcDraftState(),
@@ -4319,6 +4580,7 @@ function createVitalsDraftFromPersisted(
             pulse: formatOptionalNumericInput(reading.pulse),
             site: (reading.measurementSite ?? '') as VitalsReadingDraft['site'],
             position: (reading.patientPosition ?? '') as VitalsReadingDraft['position'],
+            date: reading.measurementDate,
             time: reading.measurementTime ?? ''
           }))
 
@@ -4353,7 +4615,14 @@ function createVitalsReadingDraft(readingNumber: number): VitalsReadingDraft {
 function addVitalsReading(draft: VitalsDraft, statusMessage: string | null = null): VitalsDraft {
   return {
     ...draft,
-    readings: [...draft.readings, createVitalsReadingDraft(draft.readings.length + 1)],
+    readings: [
+      ...draft.readings,
+      {
+        ...createVitalsReadingDraft(draft.readings.length + 1),
+        date: draft.readings.at(-1)?.date,
+        time: draft.readings.at(-1)?.time ?? ''
+      }
+    ],
     saveStatus: 'IDLE',
     statusMessage,
     validationErrors: []
@@ -4565,6 +4834,7 @@ function parseVitalsReadingForRequest(
     ),
     measurementSite: reading.site === '' ? null : (reading.site as VitalsMeasurementSite),
     patientPosition: reading.position === '' ? null : (reading.position as VitalsPosition),
+    ...(reading.date ? { measurementDate: reading.date } : {}),
     measurementTime: reading.time.trim().length === 0 ? null : reading.time
   }
 

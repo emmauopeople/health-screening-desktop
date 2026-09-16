@@ -826,6 +826,7 @@ describe('application shell DOM integration', () => {
 
     await clickButton(mounted, 'Screening')
     await clickRowByText(mounted, referral.patientDisplayName)
+    await clickButtonExact(mounted, 'Start screening')
     await clickButtonExact(mounted, 'Contacted')
 
     expectWorkspaceHeading(mounted, 'Referral Worklist')
