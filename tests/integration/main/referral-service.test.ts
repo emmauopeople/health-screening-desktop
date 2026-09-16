@@ -119,7 +119,9 @@ describe('referral service', () => {
       expect(readCount(connection, 'audit_log')).toBe(1)
       expect(
         connection
-          .prepare('SELECT operation FROM sync_outbox ORDER BY created_at DESC LIMIT 1')
+          .prepare(
+            "SELECT operation FROM sync_outbox WHERE aggregate_type = 'REFERRAL' ORDER BY created_at DESC LIMIT 1"
+          )
           .get()
       ).toEqual({ operation: 'REFERRAL_STATUS_UPDATED' })
     })
@@ -190,7 +192,7 @@ describe('referral service', () => {
       expect(readCount(connection, 'audit_log')).toBe(1)
       const outbox = connection
         .prepare(
-          'SELECT operation, payload_schema_version, payload_json FROM sync_outbox ORDER BY created_at DESC LIMIT 1'
+          "SELECT operation, payload_schema_version, payload_json FROM sync_outbox WHERE aggregate_type = 'REFERRAL' ORDER BY created_at DESC LIMIT 1"
         )
         .get() as { operation: string; payload_schema_version: string; payload_json: string }
       expect(outbox).toMatchObject({

@@ -26,7 +26,9 @@ import foodOtcSyncSql from './sql/0022-food-otc-sync.sql?raw'
 
 import clinicalTimeSql from './sql/0023-clinical-screening-time.sql?raw'
 
-export const targetSchemaVersion = 23
+import referralSyncSql from './sql/0024-referral-sync.sql?raw'
+
+export const targetSchemaVersion = 24
 
 const initialSchemaMigration = Object.freeze({
   version: 1,
@@ -179,7 +181,12 @@ export const databaseMigrations = Object.freeze([
   syncWorkerResponseMigration,
   syncIdentityResolutionDeliveryMigration,
   { version: 22, name: 'food-otc-sync', sql: foodOtcSyncSql } satisfies DatabaseMigration,
-  { version: 23, name: 'clinical-screening-time', sql: clinicalTimeSql } satisfies DatabaseMigration
+  {
+    version: 23,
+    name: 'clinical-screening-time',
+    sql: clinicalTimeSql
+  } satisfies DatabaseMigration,
+  { version: 24, name: 'referral-sync', sql: referralSyncSql } satisfies DatabaseMigration
 ] as const)
 
 export function resolveDatabaseMigrations(

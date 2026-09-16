@@ -40,6 +40,7 @@ interface ReferralRow {
 interface ParsedCreateAutomaticReferralInput {
   readonly id: CreateAutomaticReferralInput['id']
   readonly statusHistoryId: CreateAutomaticReferralInput['statusHistoryId']
+  readonly statusHistoryOutboxId: CreateAutomaticReferralInput['statusHistoryOutboxId']
   readonly outboxId: CreateAutomaticReferralInput['outboxId']
   readonly patientId: CreateAutomaticReferralInput['patientId']
   readonly encounterId: CreateAutomaticReferralInput['encounterId']
@@ -128,6 +129,12 @@ export function createReferralRepository(connection: Database.Database): Referra
         scopedConnection
           .prepare<[string, string, string, string]>(insertOutboxSql)
           .run(parsed.outboxId, parsed.id, createOutboxPayload(parsed), parsed.createdAt)
+        scopedConnection
+          .prepare(
+            `INSERT INTO sync_outbox (id, aggregate_type, aggregate_id, operation, payload_json, payload_schema_version, created_at, status, attempt_count)
+          VALUES (?, 'REFERRAL_HISTORY', ?, 'REFERRAL_STATUS_HISTORY_RECORDED', '{}', 'referral-history.signal.v1', ?, 'PENDING', 0)`
+          )
+          .run(parsed.statusHistoryOutboxId, parsed.statusHistoryId, parsed.createdAt)
         return Object.freeze({ status: 'CREATED' as const, referral: toReferralRecord(parsed) })
       } catch (error) {
         if (error instanceof DatabaseTransactionStateError)
@@ -156,6 +163,7 @@ function parseCreateAutomaticReferralInput(
   return Object.freeze({
     id: parseEntityId(input.id),
     statusHistoryId: parseEntityId(input.statusHistoryId),
+    statusHistoryOutboxId: parseEntityId(input.statusHistoryOutboxId),
     outboxId: parseEntityId(input.outboxId),
     patientId: parseEntityId(input.patientId),
     encounterId: parseEntityId(input.encounterId),

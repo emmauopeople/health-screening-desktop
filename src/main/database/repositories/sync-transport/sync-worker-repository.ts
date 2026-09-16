@@ -414,7 +414,12 @@ function matchingOutboxIds(
       ? 'PATIENT'
       : outcome.resourceType === 'SCREENING_SESSION'
         ? 'SCREENING_SESSION'
-        : 'SCREENING_ENCOUNTER'
+        : outcome.resourceType === 'REFERRAL'
+          ? 'REFERRAL'
+          : outcome.resourceType === 'REFERRAL_STATUS' ||
+              outcome.resourceType === 'REFERRAL_FOLLOWUP'
+            ? 'REFERRAL_HISTORY'
+            : 'SCREENING_ENCOUNTER'
   const aggregateId =
     outcome.resourceType === 'VITALS'
       ? lookupParent(connection, 'screening_vitals_drafts', outcome.localResourceId)

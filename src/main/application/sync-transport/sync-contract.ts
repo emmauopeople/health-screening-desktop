@@ -23,7 +23,10 @@ const resourceType = z.enum([
   'VITALS',
   'LIFESTYLE',
   'FOOD',
-  'OTC'
+  'OTC',
+  'REFERRAL',
+  'REFERRAL_STATUS',
+  'REFERRAL_FOLLOWUP'
 ])
 const medicalId = z
   .string()

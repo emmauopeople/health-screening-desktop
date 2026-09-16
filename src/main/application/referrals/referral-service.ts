@@ -207,10 +207,11 @@ export function createProductionReferralService({
             occurredAt,
             nextVersion
           })
+          const historyId = context.newEntityId()
           context.connection
             .prepare(insertHistorySql)
             .run(
-              context.newEntityId(),
+              historyId,
               parsed.data.referralId,
               current.status,
               parsed.data.status,
@@ -218,6 +219,13 @@ export function createProductionReferralService({
               auth.actorId,
               occurredAt
             )
+          queueReferralChild(
+            context.connection,
+            context.newEntityId(),
+            historyId,
+            'REFERRAL_STATUS_HISTORY_RECORDED',
+            occurredAt
+          )
           writeMutationEffects({
             connection: context.connection,
             auditRepository,
@@ -309,6 +317,13 @@ export function createProductionReferralService({
                 index + 1
               )
           })
+          queueReferralChild(
+            context.connection,
+            context.newEntityId(),
+            followupId,
+            'REFERRAL_FOLLOWUP_SYNC_REQUESTED',
+            occurredAt
+          )
           const nextStatus = parsed.data.newStatus ?? current.status
           context.connection.prepare(updateStatusSql).run({
             id: parsed.data.referralId,
@@ -320,11 +335,12 @@ export function createProductionReferralService({
             occurredAt,
             nextVersion
           })
-          if (nextStatus !== current.status)
+          if (nextStatus !== current.status) {
+            const historyId = context.newEntityId()
             context.connection
               .prepare(insertHistorySql)
               .run(
-                context.newEntityId(),
+                historyId,
                 parsed.data.referralId,
                 current.status,
                 nextStatus,
@@ -332,6 +348,14 @@ export function createProductionReferralService({
                 auth.actorId,
                 occurredAt
               )
+            queueReferralChild(
+              context.connection,
+              context.newEntityId(),
+              historyId,
+              'REFERRAL_STATUS_HISTORY_RECORDED',
+              occurredAt
+            )
+          }
           writeMutationEffects({
             connection: context.connection,
             auditRepository,
@@ -570,4 +594,19 @@ function writeMutationEffects(input: MutationEffectsInput): void {
       input.schemaVersion,
       input.occurredAt
     )
+}
+
+function queueReferralChild(
+  connection: DatabaseTransactionConnection,
+  id: string,
+  childId: string,
+  operation: string,
+  now: string
+): void {
+  connection
+    .prepare(
+      `INSERT INTO sync_outbox (id, aggregate_type, aggregate_id, operation, payload_json, payload_schema_version, created_at, status, attempt_count)
+    VALUES (?, 'REFERRAL_HISTORY', ?, ?, '{}', 'referral-history.signal.v1', ?, 'PENDING', 0)`
+    )
+    .run(id, childId, operation, now)
 }
