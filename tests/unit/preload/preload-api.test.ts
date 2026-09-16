@@ -133,6 +133,7 @@ describe('preload API factory', () => {
       'auditReports',
       'userAdministration',
       'reportDocuments',
+      'backups',
       'screeningSessions',
       'screeningEncounters',
       'installationSettings',

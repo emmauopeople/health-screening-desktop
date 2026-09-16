@@ -213,6 +213,34 @@ describe('application IPC handlers', () => {
 })
 
 describe('application IPC handler registration', () => {
+  it('owns Backup channels and rolls back partial registration', () => {
+    const ipcMain = createMockIpcMain({
+      throwOnHandleChannel: ipcChannels.backups.inspect
+    })
+    const unrelated = vi.fn()
+    ipcMain.handlers.set('unrelated:channel', unrelated)
+    const dependencies: ApplicationIpcHandlerDependencies = {
+      ...createDependencies(),
+      backups: {
+        navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
+        service: {
+          create: async () => ({ status: 'UNAVAILABLE' }),
+          inspect: async () => ({ status: 'UNAVAILABLE' })
+        }
+      }
+    }
+    expect(() => registerApplicationIpcHandlers(ipcMain, dependencies)).toThrow(
+      ApplicationIpcRegistrationError
+    )
+    expect([...ipcMain.handlers.entries()]).toEqual([['unrelated:channel', unrelated]])
+    ipcMain.setThrowOnHandleChannel(undefined)
+    const dispose = registerApplicationIpcHandlers(ipcMain, dependencies)
+    expect(ipcMain.handlers.has(ipcChannels.backups.create)).toBe(true)
+    expect(ipcMain.handlers.has(ipcChannels.backups.inspect)).toBe(true)
+    dispose()
+    expect([...ipcMain.handlers.entries()]).toEqual([['unrelated:channel', unrelated]])
+  })
+
   it('owns Users channels and rolls back partial registration', () => {
     const ipcMain = createMockIpcMain({
       throwOnHandleChannel: ipcChannels.userAdministration.mutate

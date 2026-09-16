@@ -54,6 +54,10 @@ export const ipcChannels = {
     getContext: 'health-screening:audit-reports:get-context',
     search: 'health-screening:audit-reports:search'
   },
+  backups: {
+    create: 'health-screening:backups:create',
+    inspect: 'health-screening:backups:inspect'
+  },
   reportDocuments: {
     savePdf: 'health-screening:report-documents:save-pdf',
     print: 'health-screening:report-documents:print'
