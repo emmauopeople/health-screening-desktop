@@ -287,7 +287,6 @@ export function ScreeningSessionWorkspace({
     repeatConfirmed: boolean
     value: ClinicalTime
   } | null>(null)
-  const [clinicalStartError, setClinicalStartError] = useState<string | null>(null)
   const mountedRef = useMountedRef()
   const sessionRequestRef = useRef(0)
   const patientSearchRequestRef = useRef(0)
@@ -368,6 +367,7 @@ export function ScreeningSessionWorkspace({
   )
 
   const clearTransientWorkflowState = useCallback((): void => {
+    setClinicalStart(null)
     workspaceEpochRef.current += 1
     patientSearchRequestRef.current += 1
     patientContextLoadRequestRef.current.clear()
@@ -641,7 +641,7 @@ export function ScreeningSessionWorkspace({
           repeatConfirmed,
           value: clinicalTimeAt(new Date().toISOString(), timeZone)
         })
-        setClinicalStartError(null)
+        selectWorkspaceTab('NEW_SCREENING')
         return
       }
       const epoch = workspaceEpochRef.current
@@ -743,6 +743,7 @@ export function ScreeningSessionWorkspace({
       )
 
       if (existingDraftTab !== undefined) {
+        setClinicalStart(null)
         onActivePatientIdChange(existingDraftTab.patient.id)
         setMessage(null)
         setRepeatConfirmationPatient(null)
@@ -2671,86 +2672,6 @@ export function ScreeningSessionWorkspace({
         </div>
       ) : null}
 
-      {clinicalStart !== null ? (
-        <form
-          className="screening-message"
-          role="dialog"
-          aria-label="Screening date and time"
-          onSubmit={(event) => {
-            event.preventDefault()
-            const value = clinicalStart.value
-            const converted = localMeasurementTimeToInstant(
-              value.localDate,
-              value.localTime,
-              value.timezone
-            )
-            if (converted.kind !== 'EXACT' || Date.parse(converted.instant) > Date.now()) {
-              setClinicalStartError(
-                'Enter a valid screening date and time that is not in the future. Times repeated or skipped by daylight saving cannot be used.'
-              )
-              return
-            }
-            void startPatientEncounter(clinicalStart.patient, clinicalStart.repeatConfirmed, value)
-          }}
-        >
-          <h2>Screening date and time</h2>
-          <p>
-            {formatPatientName(clinicalStart.patient)} — enter when care took place. Earlier dates
-            are allowed for late entry. An existing draft keeps its original time.
-          </p>
-          <p>
-            Time zone: <strong>{clinicalStart.value.timezone}</strong>. Save times are recorded
-            automatically.
-          </p>
-          <div className="screening-encounter-actions">
-            <label>
-              Screening date{' '}
-              <input
-                type="date"
-                required
-                value={clinicalStart.value.localDate}
-                onChange={(event) =>
-                  setClinicalStart({
-                    ...clinicalStart,
-                    value: { ...clinicalStart.value, localDate: event.currentTarget.value }
-                  })
-                }
-              />
-            </label>
-            <label>
-              Screening time{' '}
-              <input
-                type="time"
-                required
-                value={clinicalStart.value.localTime}
-                onChange={(event) =>
-                  setClinicalStart({
-                    ...clinicalStart,
-                    value: { ...clinicalStart.value, localTime: event.currentTarget.value }
-                  })
-                }
-              />
-            </label>
-            <button
-              className="button button-primary"
-              type="submit"
-              disabled={pendingPatientIds.has(clinicalStart.patient.id)}
-            >
-              Start screening
-            </button>
-            <button
-              className="button button-secondary"
-              type="button"
-              disabled={pendingPatientIds.has(clinicalStart.patient.id)}
-              onClick={() => setClinicalStart(null)}
-            >
-              Cancel
-            </button>
-          </div>
-          {clinicalStartError !== null ? <p role="alert">{clinicalStartError}</p> : null}
-        </form>
-      ) : null}
-
       {repeatConfirmationPatient !== null ? (
         <div className="screening-message" role="dialog" aria-label="Start another screening">
           <p>
@@ -2894,7 +2815,6 @@ export function ScreeningSessionWorkspace({
               patientSearchQuery={patientSearchQuery}
               pendingPatientIds={pendingPatientIds}
               searchState={patientSearchState}
-              sessionDate={sessionState.session.sessionDate}
               onActivatePatient={activatePatient}
               onNextPage={() => setPatientSearchPage((page) => page + 1)}
               onPreviousPage={() => setPatientSearchPage((page) => Math.max(1, page - 1))}
@@ -2903,6 +2823,61 @@ export function ScreeningSessionWorkspace({
                 setPatientSearchPage(1)
               }}
             />
+          ) : clinicalStart !== null ? (
+            <section
+              className="screening-new-screening-workspace screening-new-screening-workspace-bounded"
+              aria-label="New Screening workspace"
+            >
+              <div className="screening-split-workspace screening-split-workspace-bounded">
+                <section className="screening-context-panel" aria-label="Patient context">
+                  <header className="screening-card-header">
+                    <h2>Patient context</h2>
+                  </header>
+                  <div className="screening-patient-context-identity">
+                    <span className="screening-patient-initials" aria-hidden="true">
+                      {formatPatientInitials(clinicalStart.patient)}
+                    </span>
+                    <div>
+                      <h3>{formatPatientName(clinicalStart.patient)}</h3>
+                      <p>
+                        {formatPatientContextDateOfBirth(clinicalStart.patient)} •{' '}
+                        {formatPatientSex(clinicalStart.patient.sex)} •{' '}
+                        {clinicalStart.patient.patientCode}
+                      </p>
+                    </div>
+                  </div>
+                </section>
+                <section
+                  className="screening-current-encounter-panel"
+                  aria-label={`Current screening encounter for ${formatPatientName(clinicalStart.patient)}`}
+                >
+                  <header className="screening-current-encounter-header">
+                    <h2>Current screening encounter</h2>
+                    <div>
+                      <span>
+                        Session: {sessionState.session.sessionDate} • {sessionState.location.name}
+                      </span>
+                    </div>
+                  </header>
+                  <ScreeningTimeForm
+                    value={clinicalStart.value}
+                    disabled={pendingPatientIds.has(clinicalStart.patient.id)}
+                    onChange={(value) => setClinicalStart({ ...clinicalStart, value })}
+                    onStart={() =>
+                      void startPatientEncounter(
+                        clinicalStart.patient,
+                        clinicalStart.repeatConfirmed,
+                        clinicalStart.value
+                      )
+                    }
+                    onCancel={() => {
+                      setClinicalStart(null)
+                      selectWorkspaceTab('PATIENTS')
+                    }}
+                  />
+                </section>
+              </div>
+            </section>
           ) : (
             <NewScreeningWorkspace
               activeTab={activeTab}
@@ -2975,7 +2950,6 @@ function PatientsWorkspace({
   patientSearchQuery,
   pendingPatientIds,
   searchState,
-  sessionDate,
   onActivatePatient,
   onNextPage,
   onPreviousPage,
@@ -2986,7 +2960,6 @@ function PatientsWorkspace({
   readonly patientSearchQuery: string
   readonly pendingPatientIds: ReadonlySet<string>
   readonly searchState: PatientSearchState
-  readonly sessionDate: string
   onActivatePatient(patient: PublicPatientSummary): Promise<void>
   onNextPage(): void
   onPreviousPage(): void
@@ -2999,7 +2972,6 @@ function PatientsWorkspace({
           <div>
             <h2 id="screening-patients-title">Patients</h2>
           </div>
-          <span className="screening-session-date">{sessionDate}</span>
         </div>
 
         <label className="screening-patient-search" htmlFor="screening-patient-search">
@@ -3702,6 +3674,138 @@ function WeightTrend({
   )
 }
 
+function ScreeningTimeFields({
+  value,
+  currentTime,
+  disabled = false,
+  onChange
+}: {
+  readonly value: ClinicalTime
+  readonly currentTime?: ClinicalTime
+  readonly disabled?: boolean
+  onChange?(value: ClinicalTime): void
+}): React.JSX.Element {
+  const readOnly = onChange === undefined
+  return (
+    <div className="screening-time-controls">
+      <label>
+        Screening date
+        <input
+          type="date"
+          required
+          value={value.localDate}
+          readOnly={readOnly}
+          disabled={disabled}
+          max={readOnly ? undefined : currentTime?.localDate}
+          onChange={(event) => onChange?.({ ...value, localDate: event.currentTarget.value })}
+        />
+      </label>
+      <label>
+        Screening time
+        <input
+          type="time"
+          required
+          step="60"
+          value={value.localTime}
+          readOnly={readOnly}
+          disabled={disabled}
+          max={
+            readOnly
+              ? undefined
+              : value.localDate === currentTime?.localDate
+                ? currentTime.localTime
+                : '23:59'
+          }
+          onChange={(event) => onChange?.({ ...value, localTime: event.currentTarget.value })}
+        />
+      </label>
+      <span className="screening-time-zone">{value.timezone}</span>
+      {!readOnly ? (
+        <button
+          className="button button-secondary"
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange?.(clinicalTimeAt(new Date().toISOString(), value.timezone))}
+        >
+          Use current time
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
+function clinicalStartValidation(value: ClinicalTime, now: number): string | null {
+  const converted = localMeasurementTimeToInstant(value.localDate, value.localTime, value.timezone)
+  if (converted.kind !== 'EXACT') return 'Enter a valid screening date and time.'
+  if (Date.parse(converted.instant) > now) return 'Screening date and time cannot be in the future.'
+  return null
+}
+
+function ScreeningTimeForm({
+  value,
+  disabled,
+  onChange,
+  onStart,
+  onCancel
+}: {
+  readonly value: ClinicalTime
+  readonly disabled: boolean
+  onChange(value: ClinicalTime): void
+  onStart(): void
+  onCancel(): void
+}): React.JSX.Element {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const currentTime = clinicalTimeAt(new Date(now).toISOString(), value.timezone)
+  const validation = clinicalStartValidation(value, now)
+  return (
+    <form
+      aria-label="Screening date and time"
+      onSubmit={(event) => {
+        event.preventDefault()
+        const current = Date.now()
+        setNow(current)
+        if (!disabled && clinicalStartValidation(value, current) === null) onStart()
+      }}
+    >
+      <ScreeningTimeFields
+        value={value}
+        currentTime={currentTime}
+        disabled={disabled}
+        onChange={(next) => {
+          setNow(Date.now())
+          onChange(next)
+        }}
+      />
+      {validation !== null ? (
+        <p className="screening-message-alert" role="alert">
+          {validation}
+        </p>
+      ) : null}
+      <div className="screening-encounter-actions">
+        <button
+          className="button button-primary"
+          type="submit"
+          disabled={disabled || validation !== null}
+        >
+          Start screening
+        </button>
+        <button
+          className="button button-secondary"
+          type="button"
+          disabled={disabled}
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  )
+}
+
 function CurrentEncounterPanel({
   location,
   session,
@@ -3784,14 +3888,7 @@ function CurrentEncounterPanel({
       </header>
 
       {tab.encounter.clinicalTime !== undefined ? (
-        <p className="screening-message">
-          Screening:{' '}
-          <strong>
-            {tab.encounter.clinicalTime.localDate} {tab.encounter.clinicalTime.localTime} (
-            {tab.encounter.clinicalTime.timezone})
-          </strong>
-          . Shared by Vitals, Lifestyle, Food and OTC. Each save retains its actual recording time.
-        </p>
+        <ScreeningTimeFields value={tab.encounter.clinicalTime} />
       ) : null}
       <ol className="screening-stepper" aria-label="Screening workflow steps">
         {screeningSectionLabels.map((label, index) => (
@@ -4160,21 +4257,6 @@ function VitalsStep({
                     </select>
                   </td>
                   <td>
-                    {reading.date !== undefined ? (
-                      <input
-                        type="date"
-                        required
-                        aria-label={`Reading ${index + 1} date`}
-                        value={reading.date}
-                        disabled={controlsDisabled}
-                        onChange={(event) => {
-                          const value = event.currentTarget.value
-                          onUpdateDraft((current) =>
-                            updateVitalsReading(current, reading.id, { date: value })
-                          )
-                        }}
-                      />
-                    ) : null}
                     <input
                       id={getVitalsControlId(reading.id, 'time')}
                       aria-label={`Reading ${index + 1} time`}
