@@ -55,3 +55,5 @@ Use `pnpm test:watch` for interactive Vitest watch mode during development.
 
 See `docs/repository-structure.md` for the process boundaries and directory responsibilities.
 See `docs/engineering-standards.md` for strict TypeScript settings, aliases, renderer import boundaries, formatting, linting, and test standards.
+
+See [Windows installation and data preservation](docs/operations/windows-reinstallation.md) for reinstall choices, the transition from older installers, and Windows acceptance tests.

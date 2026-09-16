@@ -1,5 +1,6 @@
 import { createUserAdministrationService } from '@main/application/user-administration/user-administration-service'
-import { app, ipcMain, session } from 'electron'
+import { app, dialog, ipcMain, session } from 'electron'
+import { prepareElectronInstallationSetup } from './electron-installation-setup'
 import { join } from 'node:path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 
@@ -81,6 +82,19 @@ export function startApplicationLifecycle(): void {
         isDevelopment: configuration.isDevelopment,
         rendererUrl: configuration.rendererUrl
       })
+
+      // Installer configuration must finish before SQLite or any background worker opens.
+      const installationSetup =
+        app.isPackaged && process.platform === 'win32'
+          ? await prepareElectronInstallationSetup(
+              app.getPath('userData'),
+              join(process.resourcesPath, 'installation-receipt.txt')
+            )
+          : undefined
+      if (installationSetup === null) {
+        app.quit()
+        return
+      }
 
       databaseRuntime = createDatabaseRuntime({
         databasePath: getDatabasePath(app.getPath('userData')),
@@ -317,8 +331,6 @@ export function startApplicationLifecycle(): void {
         () => databaseRuntime?.close()
       )
 
-      syncWorkerScheduler.start()
-
       app.on('second-instance', () => {
         void createOrFocusMainWindow(configuration).catch((error: unknown) => {
           logLifecycleError('Unable to restore or focus the primary window.', error)
@@ -326,6 +338,8 @@ export function startApplicationLifecycle(): void {
       })
 
       await createOrFocusMainWindow(configuration)
+      installationSetup?.complete()
+      syncWorkerScheduler.start()
 
       app.on('activate', () => {
         if (!hasMainWindow()) {
@@ -337,6 +351,10 @@ export function startApplicationLifecycle(): void {
     } catch (error) {
       databaseRuntime?.close()
       logDatabaseStartupFailure(error)
+      dialog.showErrorBox(
+        'CHS could not start',
+        'Installation configuration or application startup could not complete. Existing data has not been deleted. If you chose Start fresh, the previous data remains in the recovery folder inside the application data directory. Contact your administrator before retrying.'
+      )
       app.quit()
     }
   })
