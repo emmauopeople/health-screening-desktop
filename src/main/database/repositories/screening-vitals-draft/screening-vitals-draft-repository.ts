@@ -1,3 +1,4 @@
+import { parseMeasurementDate } from './screening-vitals-draft-validation'
 import type Database from 'better-sqlite3'
 
 import { assertActiveDatabaseTransactionConnection } from '@main/database/transaction/transaction-capability'
@@ -62,6 +63,7 @@ const readingRowKeys = Object.freeze([
   'pulse',
   'measurement_site',
   'patient_position',
+  'measurement_date',
   'measurement_time',
   'created_at',
   'updated_at'
@@ -89,6 +91,7 @@ const readingColumns = `
   pulse,
   measurement_site,
   patient_position,
+  measurement_date,
   measurement_time,
   created_at,
   updated_at
@@ -166,6 +169,7 @@ SET
   pulse = ?,
   measurement_site = ?,
   patient_position = ?,
+  measurement_date = ?,
   measurement_time = ?,
   updated_at = ?
 WHERE id = ?
@@ -181,10 +185,11 @@ INSERT INTO screening_vitals_draft_readings (
   pulse,
   measurement_site,
   patient_position,
+  measurement_date,
   measurement_time,
   created_at,
   updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 `
 
 export function createScreeningVitalsDraftRepository(
@@ -455,6 +460,7 @@ function isPersistedReadingChanged(
     existing.pulse !== submitted.pulse ||
     existing.measurementSite !== submitted.measurementSite ||
     existing.patientPosition !== submitted.patientPosition ||
+    (existing.measurementDate ?? null) !== (submitted.measurementDate ?? null) ||
     existing.measurementTime !== submitted.measurementTime
   )
 }
@@ -493,6 +499,7 @@ function insertReading(
         string | null,
         string | null,
         string | null,
+        string | null,
         string,
         string
       ]
@@ -506,6 +513,7 @@ function insertReading(
       reading.pulse,
       reading.measurementSite,
       reading.patientPosition,
+      reading.measurementDate ?? null,
       reading.measurementTime,
       occurredAt,
       occurredAt
@@ -529,6 +537,7 @@ function updateReading(
         string | null,
         string | null,
         string | null,
+        string | null,
         string,
         string,
         string
@@ -541,6 +550,7 @@ function updateReading(
       reading.pulse,
       reading.measurementSite,
       reading.patientPosition,
+      reading.measurementDate ?? null,
       reading.measurementTime,
       occurredAt,
       reading.id,
@@ -629,6 +639,9 @@ function decodeReadingRow(row: unknown): ScreeningVitalsDraftReadingRecord {
       pulse: readNullablePositiveInteger(data.pulse),
       measurementSite: readNullableMeasurementSite(data.measurement_site),
       patientPosition: readNullablePatientPosition(data.patient_position),
+      ...(data.measurement_date === null
+        ? {}
+        : { measurementDate: parseMeasurementDate(data.measurement_date) }),
       measurementTime: readNullableMeasurementTime(data.measurement_time),
       createdAt: parseUtcTimestamp(data.created_at),
       updatedAt: parseUtcTimestamp(data.updated_at)

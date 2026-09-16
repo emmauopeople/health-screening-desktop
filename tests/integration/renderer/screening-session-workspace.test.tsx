@@ -151,6 +151,154 @@ describe('screening patient entry workspace', () => {
     document.body.innerHTML = ''
   })
 
+  it('captures a late screening date in the site timezone and defaults the first reading to it', async () => {
+    const api = createApi()
+    const clinicalTime = { localDate: '2026-08-05', localTime: '09:15', timezone: 'Africa/Douala' }
+    api.screeningEncounters.start.mockImplementation(async (request) =>
+      createIpcSuccess({
+        status: 'STARTED',
+        encounter: {
+          id: encounterId,
+          patientId: request.patientId,
+          screeningSessionId: sessionId,
+          status: 'DRAFT',
+          startedAt: '2026-08-05T08:15:00.000Z',
+          documentationStartedAt: baseTimestamp,
+          clinicalTime: request.clinicalTime,
+          recordVersion: 1
+        }
+      })
+    )
+    const mounted = await mountWorkspace({ api, timeZone: 'Africa/Douala' })
+    await clickRow(mounted, 'Ada Lovelace')
+    expect(api.screeningEncounters.start).not.toHaveBeenCalled()
+    expect(text(mounted)).toContain('Africa/Douala')
+    const form = mounted.container.querySelector('form[aria-label="Screening date and time"]')!
+    expect(form.closest('.screening-current-encounter-panel')).not.toBeNull()
+    await changeInput(form.querySelector<HTMLInputElement>('input[type="date"]')!, '2026-08-05')
+    await changeInput(form.querySelector<HTMLInputElement>('input[type="time"]')!, '09:15')
+    await clickButton(mounted, 'Start screening')
+    expect(api.screeningEncounters.start).toHaveBeenCalledWith({
+      patientId,
+      screeningSessionId: sessionId,
+      repeatConfirmed: false,
+      clinicalTime
+    })
+    expect(mounted.container.querySelector('[aria-label="Reading 1 date"]')).toBeNull()
+    expect(mounted.container.querySelectorAll('input[type="date"]')).toHaveLength(1)
+    expect(mounted.container.querySelector<HTMLInputElement>('input[type="date"]')?.value).toBe(
+      '2026-08-05'
+    )
+    expect(text(mounted)).not.toContain('Shared by Vitals')
+    expect(
+      mounted.container.querySelector<HTMLInputElement>('[aria-label="Reading 1 time"]')?.value
+    ).toBe('09:15')
+    await changeInput(inputByLabel(mounted, 'Reading 1 time'), '09:20')
+    await clickButton(mounted, 'Add reading')
+    await changeInput(inputByLabel(mounted, 'Reading 2 time'), '09:30')
+    await clickButton(mounted, 'Save draft')
+    expect(api.screeningEncounters.vitals.saveDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        readings: [
+          expect.objectContaining({ measurementDate: '2026-08-05', measurementTime: '09:20' }),
+          expect.objectContaining({ measurementDate: '2026-08-05', measurementTime: '09:30' })
+        ]
+      })
+    )
+    await mounted.unmount()
+  })
+
+  it('blocks the next service minute but accepts the current minute and earlier care', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-15T19:43:30.000Z'))
+    const api = createApi()
+    const mounted = await mountWorkspace({ api, timeZone: 'Africa/Douala' })
+    await clickRow(mounted, 'Ada Lovelace')
+    const form = mounted.container.querySelector('form[aria-label="Screening date and time"]')!
+    const date = form.querySelector<HTMLInputElement>('input[type="date"]')!
+    const time = form.querySelector<HTMLInputElement>('input[type="time"]')!
+    await changeInput(date, '2026-09-15')
+    await changeInput(time, '20:44')
+    expect(date.max).toBe('2026-09-15')
+    expect(time.max).toBe('20:43')
+    expect(buttonByText(mounted, 'Start screening').disabled).toBe(true)
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    expect(api.screeningEncounters.start).not.toHaveBeenCalled()
+    expect(text(mounted)).toContain('cannot be in the future')
+    await changeInput(time, '20:42')
+    expect(buttonByText(mounted, 'Start screening').disabled).toBe(false)
+    await changeInput(date, '2026-09-14')
+    await changeInput(time, '23:59')
+    expect(buttonByText(mounted, 'Start screening').disabled).toBe(false)
+    await changeInput(date, '2026-09-16')
+    expect(buttonByText(mounted, 'Start screening').disabled).toBe(true)
+    await changeInput(date, '2026-09-15')
+    await changeInput(time, '20:43')
+    expect(buttonByText(mounted, 'Start screening').disabled).toBe(false)
+    await clickButton(mounted, 'Start screening')
+    expect(api.screeningEncounters.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clinicalTime: { localDate: '2026-09-15', localTime: '20:43', timezone: 'Africa/Douala' }
+      })
+    )
+    await mounted.unmount()
+  })
+
+  it('preserves existing midnight reading dates when editing times without date inputs', async () => {
+    const clinicalTime = { localDate: '2026-08-05', localTime: '23:50', timezone: 'UTC' }
+    const persisted = publicVitalsDraftFromRequest(
+      {
+        encounterId,
+        expectedVersion: null,
+        weightKg: null,
+        waistCm: null,
+        notes: null,
+        readings: ['2026-08-05', '2026-08-06'].map((measurementDate, index) => ({
+          id: null,
+          sequenceNumber: index + 1,
+          systolic: 130,
+          diastolic: 80,
+          pulse: 75,
+          measurementSite: 'LEFT_ARM',
+          patientPosition: 'SITTING',
+          measurementDate,
+          measurementTime: index === 0 ? '23:55' : '00:05'
+        }))
+      },
+      { status: 'DRAFT', rowVersion: 2 }
+    )
+    const api = createApi({ vitalsDraft: persisted })
+    api.screeningEncounters.start.mockResolvedValue(
+      createIpcSuccess({
+        status: 'ALREADY_EXISTS',
+        encounter: {
+          ...encounterSummary(),
+          clinicalTime,
+          startedAt: '2026-08-05T23:50:00.000Z',
+          documentationStartedAt: baseTimestamp
+        }
+      })
+    )
+    const mounted = await mountWorkspace({ api })
+    await clickRow(mounted, 'Ada Lovelace')
+    expect(
+      mounted.container.querySelectorAll('.screening-vitals-entry input[type="date"]')
+    ).toHaveLength(0)
+    expect(inputByLabel(mounted, 'Reading 2 time').value).toBe('00:05')
+    await changeInput(inputByLabel(mounted, 'Reading 2 time'), '00:10')
+    await clickButton(mounted, 'Save draft')
+    expect(api.screeningEncounters.vitals.saveDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        readings: [
+          expect.objectContaining({ measurementDate: '2026-08-05', measurementTime: '23:55' }),
+          expect.objectContaining({ measurementDate: '2026-08-06', measurementTime: '00:10' })
+        ]
+      })
+    )
+    await mounted.unmount()
+  })
+
   it('gates the Patients workspace on the trusted current screening session', async () => {
     const ensureResult =
       createDeferred<
@@ -190,7 +338,7 @@ describe('screening patient entry workspace', () => {
 
     expect(tableHeaders(mounted)).toEqual(['Name', 'Date of birth', 'Patient ID', 'Sex'])
     expect(text(mounted)).toContain('Search patients')
-    expect(text(mounted)).toContain(operationalDate)
+    expect(text(mounted)).not.toContain(operationalDate)
     expect(text(mounted)).toContain('Female')
     expect(patientRowCells(mounted, 'Ada Lovelace')).toEqual([
       'Ada Lovelace',
@@ -3640,10 +3788,12 @@ describe('screening patient entry workspace', () => {
 
 async function mountWorkspace({
   api = createApi(),
+  timeZone,
   userRole = 'LOCAL_ADMIN',
   commandId = 'SCREENING_TODAYS_SESSION'
 }: {
   readonly api?: MockedHealthScreeningApi
+  readonly timeZone?: string
   readonly userRole?: LocalUserRole
   readonly commandId?:
     'HOME_TODAYS_SESSION' | 'SCREENING_TODAYS_SESSION' | 'SCREENING_NEW_SCREENING'
@@ -3686,6 +3836,7 @@ async function mountWorkspace({
     root.render(
       createElement(ScreeningSessionWorkspace, {
         api,
+        timeZone,
         activePatientId,
         commandId: currentCommandId,
         headingId: 'screening-workspace-heading',
@@ -4068,6 +4219,9 @@ function publicVitalsDraftFromRequest(
       pulse: reading.pulse,
       measurementSite: reading.measurementSite,
       patientPosition: reading.patientPosition,
+      ...(reading.measurementDate === undefined
+        ? {}
+        : { measurementDate: reading.measurementDate }),
       measurementTime: reading.measurementTime
     })),
     weightKg: request.weightKg,

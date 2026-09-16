@@ -1,4 +1,9 @@
 import {
+  parseClinicalTime,
+  localMeasurementTimeToInstant,
+  type ClinicalTime
+} from '@shared/clinical-time'
+import {
   AuditEventAlreadyExistsError,
   DatabaseTransactionAsyncWorkError,
   DatabaseTransactionExecutionError,
@@ -53,6 +58,7 @@ interface ParsedStartCommand {
   readonly patientId: EntityId
   readonly screeningSessionId: EntityId
   readonly repeatConfirmed: boolean
+  readonly clinicalTime?: ClinicalTime
 }
 
 export function createScreeningEncounterStartService({
@@ -149,6 +155,22 @@ export function createScreeningEncounterStartService({
             return result('REPEAT_CONFIRMATION_REQUIRED')
           }
 
+          const clinicalTime = commandResult.command.clinicalTime
+          let startedAt = occurredAt
+          if (clinicalTime !== undefined) {
+            const converted = localMeasurementTimeToInstant(
+              clinicalTime.localDate,
+              clinicalTime.localTime,
+              clinicalTime.timezone
+            )
+            if (
+              clinicalTime.timezone !== installation.timeZone ||
+              converted.kind !== 'EXACT' ||
+              converted.instant > occurredAt
+            )
+              return result('VALIDATION_FAILED')
+            startedAt = parseUtcTimestamp(converted.instant)
+          }
           const insertResult = screeningEncounterRepository.insertCanonicalRoot(
             context.connection,
             {
@@ -157,7 +179,8 @@ export function createScreeningEncounterStartService({
               screeningSessionId: session.id,
               locationId: session.locationId,
               protocolVersionId: session.protocolVersionId,
-              startedAt: occurredAt,
+              startedAt,
+              ...(clinicalTime === undefined ? {} : { clinicalTime, createdAt: occurredAt }),
               recordedBy: actorResult.actor.userId
             }
           )
@@ -231,7 +254,16 @@ function parseStartCommand(
     try {
       data = readDataProperties(request, startRequestKeys)
     } catch {
-      data = readDataProperties(request, repeatStartRequestKeys)
+      try {
+        data = readDataProperties(request, repeatStartRequestKeys)
+      } catch {
+        data = readDataProperties(
+          request,
+          Object.hasOwn(request, 'repeatConfirmed')
+            ? [...repeatStartRequestKeys, 'clinicalTime']
+            : [...startRequestKeys, 'clinicalTime']
+        )
+      }
     }
 
     const repeatConfirmed = data.repeatConfirmed ?? false
@@ -245,7 +277,10 @@ function parseStartCommand(
       command: Object.freeze({
         patientId: parseEntityId(data.patientId),
         screeningSessionId: parseEntityId(data.screeningSessionId),
-        repeatConfirmed
+        repeatConfirmed,
+        ...(data.clinicalTime === undefined
+          ? {}
+          : { clinicalTime: parseClinicalTime(data.clinicalTime) })
       })
     }
   } catch {
@@ -405,6 +440,9 @@ function toStartSummary(encounter: ScreeningEncounterRecord): ScreeningEncounter
     screeningSessionId: encounter.screeningSessionId,
     status: encounter.status,
     startedAt: encounter.startedAt,
+    ...(encounter.clinicalTime === undefined
+      ? {}
+      : { clinicalTime: encounter.clinicalTime, documentationStartedAt: encounter.createdAt }),
     recordVersion: encounter.recordVersion
   })
 }

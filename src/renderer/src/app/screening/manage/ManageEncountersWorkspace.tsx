@@ -205,6 +205,12 @@ export function ManageEncountersWorkspace({
       screeningSessionId: detail.encounter.screeningSessionId,
       status: 'DRAFT',
       startedAt: detail.encounter.startedAt,
+      ...(detail.encounter.clinicalTime === undefined
+        ? {}
+        : {
+            clinicalTime: detail.encounter.clinicalTime,
+            documentationStartedAt: detail.encounter.documentationStartedAt
+          }),
       recordVersion: detail.encounter.recordVersion
     })
     if (!opened) setMessage('Close one patient screening to resume this draft.')

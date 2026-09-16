@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import { parseClinicalTime } from '@shared/clinical-time'
 
 import { assertActiveDatabaseTransactionConnection } from '@main/database/transaction/transaction-capability'
 import { DatabaseTransactionStateError } from '@main/database/transaction'
@@ -42,6 +43,7 @@ const screeningEncounterRowKeys = Object.freeze([
   'location_id',
   'protocol_version_id',
   'status',
+  'clinical_time',
   'started_at',
   'completed_at',
   'source_type',
@@ -68,6 +70,7 @@ const screeningEncounterColumns = `
   location_id,
   protocol_version_id,
   status,
+  clinical_time,
   started_at,
   completed_at,
   source_type,
@@ -154,6 +157,7 @@ INSERT INTO screening_encounters (
   location_id,
   protocol_version_id,
   status,
+  clinical_time,
   started_at,
   completed_at,
   source_type,
@@ -169,7 +173,7 @@ INSERT INTO screening_encounters (
   record_version,
   created_at,
   updated_at
-) VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, NULL, 'LOCAL', ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, ?, ?);
+) VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, ?, NULL, 'LOCAL', ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, ?, ?);
 `
 
 export function createScreeningEncounterRepository(
@@ -434,19 +438,20 @@ export function createScreeningEncounterRepository(
         const parsed = parseInsertCanonicalRootScreeningEncounterInput(input)
 
         scopedConnection
-          .prepare<[string, string, string, string, string, string, string, string, string]>(
-            insertCanonicalRootSql
-          )
+          .prepare<
+            [string, string, string, string, string, string | null, string, string, string, string]
+          >(insertCanonicalRootSql)
           .run(
             parsed.id,
             parsed.patientId,
             parsed.screeningSessionId,
             parsed.locationId,
             parsed.protocolVersionId,
+            parsed.clinicalTime ? JSON.stringify(parsed.clinicalTime) : null,
             parsed.startedAt,
             parsed.recordedBy,
-            parsed.startedAt,
-            parsed.startedAt
+            parsed.createdAt,
+            parsed.createdAt
           )
 
         const created = readScreeningEncounterAfterWrite(scopedConnection, parsed.id)
@@ -543,6 +548,9 @@ function decodeScreeningEncounterRow(row: unknown): ScreeningEncounterRecord {
       protocolVersionId,
       status,
       startedAt,
+      ...(data.clinical_time === null
+        ? {}
+        : { clinicalTime: parseClinicalTime(JSON.parse(String(data.clinical_time))) }),
       completedAt,
       sourceType,
       recordedBy,

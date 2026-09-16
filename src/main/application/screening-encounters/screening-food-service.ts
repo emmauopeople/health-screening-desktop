@@ -312,7 +312,8 @@ function createDraft(
   occurredAt: UtcTimestamp,
   id: EntityId
 ): FoodDraftRecord {
-  const periodEnd = context.session.sessionDate as unknown as FoodDraftRecord['periodEnd']
+  const periodEnd = (context.encounter.clinicalTime?.localDate ??
+    context.session.sessionDate) as unknown as FoodDraftRecord['periodEnd']
   const periodStart = shiftFoodDate(periodEnd, -6)
   return repository.insertDraft(connection, {
     id,

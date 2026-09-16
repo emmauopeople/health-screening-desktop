@@ -43,8 +43,8 @@ describe('installation repository', () => {
       expect(getState()).toEqual({ status: 'UNINITIALIZED' })
       expect(Object.isFrozen(state)).toBe(true)
       expect(readTableCount(connection, 'installation')).toBe(0)
-      expect(readUserVersion(connection)).toBe(22)
-      expect(readLedgerCount(connection)).toBe(22)
+      expect(readUserVersion(connection)).toBe(23)
+      expect(readLedgerCount(connection)).toBe(23)
 
       insertRawInstallation(connection)
       expect(getState()).toEqual({

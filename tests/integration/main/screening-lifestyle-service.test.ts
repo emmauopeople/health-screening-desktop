@@ -47,6 +47,23 @@ const sessionId = '95000000-0000-4000-8000-000000000006'
 const encounterId = '95000000-0000-4000-8000-000000000007'
 
 describe('screening Lifestyle application service integration', () => {
+  it('anchors the reporting week to the entered clinical date for late entry', async () => {
+    await withLifestyleService(({ connection, service }) => {
+      connection
+        .prepare('UPDATE screening_encounters SET clinical_time = ?, started_at = ? WHERE id = ?')
+        .run(
+          JSON.stringify({ localDate: '2026-08-02', localTime: '10:00', timezone: 'UTC' }),
+          '2026-08-02T10:00:00.000Z',
+          encounterId
+        )
+      const result = service.saveLifestyleDraft(createDraftRequest())
+      expect(result).toMatchObject({
+        status: 'SAVED',
+        workspace: { draft: { periodStart: '2026-07-27', periodEnd: '2026-08-02' } }
+      })
+    })
+  })
+
   it('requires an active approved screening session and strict requests', async () => {
     await withLifestyleService(({ service, ensureCurrentSessionCalls }) => {
       expect(

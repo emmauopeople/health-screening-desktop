@@ -1,3 +1,4 @@
+import type { ClinicalTime } from '@shared/clinical-time'
 import type { DatabaseTransactionConnection } from '@main/database/transaction'
 import type { EntityId } from '@main/foundation/entity-id'
 import type { UtcTimestamp } from '@main/foundation/utc-clock'
@@ -16,6 +17,8 @@ export interface ManagedEncounterSummaryRecord {
   readonly dateOfBirth: string | null
   readonly locationName: string
   readonly status: ScreeningEncounterStatus
+  readonly clinicalTime?: ClinicalTime
+  readonly documentationStartedAt?: UtcTimestamp
   readonly startedAt: UtcTimestamp
   readonly completedAt: UtcTimestamp | null
   readonly noteCount: number

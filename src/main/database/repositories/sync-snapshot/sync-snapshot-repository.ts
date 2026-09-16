@@ -1,3 +1,4 @@
+import { parseClinicalTime } from '@shared/clinical-time'
 import type Database from 'better-sqlite3'
 import { readPatientSnapshotHistory } from './patient-snapshot-history'
 import {
@@ -454,6 +455,9 @@ function materializeEncounter(
         status: snapshotField('status', () =>
           requiredEnum(row.status, ['DRAFT', 'COMPLETED', 'AMENDED', 'VOID'])
         ),
+        ...(row.clinical_time == null
+          ? {}
+          : { clinicalTime: parseClinicalTime(JSON.parse(String(row.clinical_time))) }),
         startedAt: snapshotField('started_at', () => parseUtcTimestamp(row.started_at)),
         completedAt:
           row.completed_at === null
@@ -486,7 +490,7 @@ function materializeVitals(
 ): Pick<MaterializedCandidate, 'record' | 'actorIds'> | null {
   const row = connection
     .prepare<[string], Record<string, unknown>>(
-      `SELECT vitals.*, encounter.recorded_by, encounter.location_id, session.session_date
+      `SELECT vitals.*, encounter.recorded_by, encounter.location_id, encounter.clinical_time, session.session_date
        FROM screening_vitals_drafts vitals
        JOIN screening_encounters encounter ON encounter.id = vitals.encounter_id
        JOIN screening_sessions session ON session.id = encounter.screening_session_id
@@ -541,7 +545,14 @@ function materializeVitals(
       patientPosition: snapshotField('patient_position', () =>
         nullableString(reading.patient_position)
       ),
-      measurementLocalDate: snapshotField('session_date', () => requiredString(row.session_date)),
+      measurementLocalDate: snapshotField('measurement_date', () =>
+        requiredString(
+          reading.measurement_date ??
+            (row.clinical_time == null
+              ? row.session_date
+              : parseClinicalTime(JSON.parse(String(row.clinical_time))).localDate)
+        )
+      ),
       measurementLocalTime: snapshotField('measurement_time', () =>
         nullableString(reading.measurement_time)
       ),

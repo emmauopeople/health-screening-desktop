@@ -1,3 +1,4 @@
+import type { ClinicalTime } from '@shared/clinical-time'
 import type { DatabaseTransactionConnection } from '@main/database/transaction'
 import type { EntityId } from '@main/foundation/entity-id'
 import type { UtcTimestamp } from '@main/foundation/utc-clock'
@@ -12,6 +13,7 @@ export interface ScreeningEncounterRecord {
   readonly locationId: EntityId
   readonly protocolVersionId: EntityId
   readonly status: ScreeningEncounterStatus
+  readonly clinicalTime?: ClinicalTime
   readonly startedAt: UtcTimestamp
   readonly completedAt: UtcTimestamp | null
   readonly sourceType: ScreeningEncounterSourceType
@@ -30,11 +32,13 @@ export interface ScreeningEncounterRecord {
 }
 
 export interface InsertCanonicalRootScreeningEncounterInput {
+  readonly createdAt?: UtcTimestamp
   readonly id: EntityId
   readonly patientId: EntityId
   readonly screeningSessionId: EntityId
   readonly locationId: EntityId
   readonly protocolVersionId: EntityId
+  readonly clinicalTime?: ClinicalTime
   readonly startedAt: UtcTimestamp
   readonly recordedBy: EntityId
 }

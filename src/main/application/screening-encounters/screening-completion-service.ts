@@ -1,3 +1,4 @@
+import { localMeasurementTimeToInstant } from '@shared/clinical-time'
 import {
   parseAuditActionCode,
   parseAuditEntityType,
@@ -136,6 +137,25 @@ export function createScreeningCompletionService(
             return incompleteOrConflict(vitals?.rowVersion, command.expectedVitalsVersion, 'VITALS')
           }
           if (!isCompleteVitals(vitals)) return incompleteResult('VITALS')
+          if (encounter.clinicalTime !== undefined) {
+            let previous = -Infinity
+            for (const reading of vitals.readings) {
+              const converted = localMeasurementTimeToInstant(
+                reading.measurementDate ?? encounter.clinicalTime.localDate,
+                reading.measurementTime!,
+                encounter.clinicalTime.timezone
+              )
+              if (converted.kind !== 'EXACT') return incompleteResult('VITALS')
+              const instant = Date.parse(converted.instant)
+              if (
+                instant < Date.parse(encounter.startedAt) ||
+                instant > Date.parse(completedAt) ||
+                instant < previous
+              )
+                return incompleteResult('VITALS')
+              previous = instant
+            }
+          }
           const bloodPressureDecision = evaluateScreeningBloodPressure(
             vitals.readings.map((reading) => ({
               sequenceNumber: reading.sequenceNumber,
@@ -224,7 +244,7 @@ export function createScreeningCompletionService(
               arm: reading.measurementSite!,
               bodyPosition: reading.patientPosition!,
               measuredAt: localMeasurementToUtc(
-                session.sessionDate,
+                reading.measurementDate ?? encounter.clinicalTime?.localDate ?? session.sessionDate,
                 reading.measurementTime!,
                 installation.timeZone
               )
@@ -806,6 +826,9 @@ function toCompletedSummary(encounter: ScreeningEncounterRecord): CompletedScree
     screeningSessionId: encounter.screeningSessionId,
     status: 'COMPLETED',
     startedAt: encounter.startedAt,
+    ...(encounter.clinicalTime === undefined
+      ? {}
+      : { clinicalTime: encounter.clinicalTime, documentationStartedAt: encounter.createdAt }),
     completedAt: encounter.completedAt,
     recordVersion: encounter.recordVersion
   })
