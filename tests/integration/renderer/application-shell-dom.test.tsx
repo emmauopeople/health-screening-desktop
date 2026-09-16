@@ -233,8 +233,7 @@ describe('application shell DOM integration', () => {
       'Dashboard',
       'Patient Screening',
       'Quick Patient Search',
-      'Open Referrals',
-      'Sync Center'
+      'Open Referrals'
     ])
     expect(commandButtonByText(mounted, 'Dashboard').getAttribute('aria-current')).toBe('page')
 
@@ -244,8 +243,7 @@ describe('application shell DOM integration', () => {
       'Dashboard',
       'Patient Screening',
       'Quick Patient Search',
-      'Open Referrals',
-      'Sync Center'
+      'Open Referrals'
     ])
     expect(commandButtonByText(mounted, 'Patient Screening').getAttribute('aria-current')).toBe(
       'page'
@@ -270,8 +268,7 @@ describe('application shell DOM integration', () => {
       'Dashboard',
       'Patient Screening',
       'Quick Patient Search',
-      'Open Referrals',
-      'Sync Center'
+      'Open Referrals'
     ])
 
     await dispatchKeyboard(commandPanel(mounted)!, 'Escape')
