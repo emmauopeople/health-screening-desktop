@@ -21,10 +21,7 @@ describe('application navigation catalog', () => {
     ])
 
     expect(labelsForRole('LOCAL_ADMIN')).toEqual([
-      [
-        'Home',
-        ['Dashboard', 'Patient Screening', 'Quick Patient Search', 'Open Referrals', 'Sync Center']
-      ],
+      ['Home', ['Dashboard', 'Patient Screening', 'Quick Patient Search', 'Open Referrals']],
       [
         'Patients',
         ['Patient Search', 'Register New Patient', 'Recent Patients', 'Possible Duplicates']

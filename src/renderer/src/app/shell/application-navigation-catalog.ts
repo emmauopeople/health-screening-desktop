@@ -50,7 +50,6 @@ const plannedOwners = Object.freeze({
   screening: 'Future screening workflow package',
   referrals: 'Future referral workflow package',
   reporting: 'Future reporting package',
-  sync: 'Future synchronization package',
   administration: 'Future administration package'
 })
 
@@ -73,7 +72,6 @@ const commandDefinitions = [
     plannedOwners.hsd025
   ),
   command('HOME_OPEN_REFERRALS', 'HOME', 'Open Referrals', nurseAndAdminRoles, 'AVAILABLE', null),
-  command('HOME_SYNC_CENTER', 'HOME', 'Sync Center', adminOnlyRoles, 'PLANNED', plannedOwners.sync),
   command(
     'PATIENTS_PATIENT_SEARCH',
     'PATIENTS',
