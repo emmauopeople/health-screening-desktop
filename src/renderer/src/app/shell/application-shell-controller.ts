@@ -216,7 +216,7 @@ function createRouteForCommand(
     })
   }
 
-  if (definition.id === 'REPORTS_AUDIT_REPORTS') {
+  if (definition.id === 'REPORTS_AUDIT_REPORTS' || definition.id === 'ADMINISTRATION_AUDIT') {
     return Object.freeze({
       status: 'AUDIT_REPORTS',
       commandId: definition.id

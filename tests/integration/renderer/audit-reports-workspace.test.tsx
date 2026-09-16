@@ -146,6 +146,93 @@ describe('AuditReportsWorkspace', () => {
     await mounted.unmount()
   })
 
+  it('refreshes event options and the applied page while keeping unapplied filter edits', async () => {
+    const harness = createHarness()
+    const mounted = await mount(harness)
+    await changeInput(mounted.container, 'Search', 'user')
+    await clickButton(mounted.container, 'Apply filters')
+    await clickButton(mounted.container, 'Next')
+    await changeInput(mounted.container, 'Search', 'unapplied draft')
+    harness.getContext.mockResolvedValue(
+      createIpcSuccess({
+        status: 'LOADED',
+        deployment,
+        actors: [admin],
+        actions: ['USER_ADMIN_UPDATE'],
+        entityTypes: ['USER'],
+        hasSystemEvents: true
+      })
+    )
+    harness.search.mockResolvedValue(
+      createIpcSuccess({
+        status: 'LOADED',
+        items: [
+          {
+            ...events[0]!,
+            action: 'USER_ADMIN_UPDATE',
+            entityType: 'USER',
+            metadata: { reason: 'Staff moved', is_active: false }
+          }
+        ],
+        page: 2,
+        pageSize: 25,
+        total: 60
+      })
+    )
+    await clickButton(mounted.container, 'Refresh')
+    expect(harness.getContext).toHaveBeenCalledTimes(2)
+    expect(harness.search).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: 'user', page: 2 })
+    )
+    expect(labeledControl<HTMLInputElement>(mounted.container, 'Search', 'input').value).toBe(
+      'unapplied draft'
+    )
+    expect(
+      labeledControl<HTMLSelectElement>(mounted.container, 'Action', 'select').textContent
+    ).toContain('User admin update')
+    expect(mounted.container.querySelector('.audit-report-event-detail')?.textContent).toContain(
+      'Staff moved'
+    )
+    expect(mounted.container.querySelector('.audit-report-event-detail')?.textContent).toContain(
+      'false'
+    )
+    await mounted.unmount()
+  })
+
+  it('recovers an initial context failure through Retry without leaving the workspace', async () => {
+    const harness = createHarness()
+    harness.getContext.mockResolvedValueOnce(createIpcSuccess({ status: 'UNAVAILABLE' }))
+    const mounted = await mount(harness)
+    expect(harness.search).not.toHaveBeenCalled()
+    expect(mounted.container.textContent).toContain('Audit report filters could not be loaded')
+    await clickButton(mounted.container, 'Retry loading audit')
+    expect(harness.getContext).toHaveBeenCalledTimes(2)
+    expect(harness.search).toHaveBeenCalledOnce()
+    expect(mounted.container.textContent).toContain('60 audit events')
+    await mounted.unmount()
+  })
+
+  it('removes stale results and print preview when a new query fails, then supports retry', async () => {
+    const harness = createHarness()
+    const mounted = await mount(harness)
+    await clickButton(mounted.container, 'Print preview')
+    expect(mounted.container.querySelector('[role="dialog"]')).not.toBeNull()
+    await clickButton(mounted.container, 'Close')
+    harness.search.mockResolvedValueOnce(createIpcSuccess({ status: 'UNAVAILABLE' }))
+    await changeInput(mounted.container, 'Search', 'different results')
+    await clickButton(mounted.container, 'Apply filters')
+    expect(mounted.container.querySelector('.audit-report-event-detail')).toBeNull()
+    expect(mounted.container.querySelector('[role="dialog"]')).toBeNull()
+    expect(mounted.container.querySelectorAll('tbody tr')).toHaveLength(0)
+    expect(mounted.container.textContent).not.toContain('Print preview')
+    await clickButton(mounted.container, 'Retry')
+    expect(harness.search).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: 'different results', page: 1 })
+    )
+    expect(mounted.container.querySelector('.audit-report-event-detail')).not.toBeNull()
+    await mounted.unmount()
+  })
+
   it('routes controlled authorization failures without reading audit events', async () => {
     const onAuthenticationFailure = vi.fn()
     const api: AuditReportApi = {
