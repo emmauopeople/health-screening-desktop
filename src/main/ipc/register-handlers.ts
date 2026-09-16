@@ -1,3 +1,4 @@
+import { createBackupHandlers, type BackupIpcDependencies } from './handlers/backup-handlers'
 import {
   createUserAdministrationHandlers,
   type UserAdministrationIpcDependencies
@@ -186,6 +187,7 @@ export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependen
   readonly auth: AuthenticationIpcHandlerDependencies
   readonly patient: PatientIpcHandlerDependencies
   readonly referrals?: ReferralIpcHandlerDependencies
+  readonly backups?: BackupIpcDependencies
   readonly userAdministration?: UserAdministrationIpcDependencies
   readonly auditReports?: AuditReportIpcHandlerDependencies
   readonly reportDocuments: ReportDocumentIpcHandlerDependencies
@@ -273,6 +275,16 @@ export function registerApplicationIpcHandlers(
       [ipcChannels.reportDocuments.print, reportDocumentHandlers.print]
     ]
 
+    if (dependencies.backups !== undefined) {
+      const handlers = createBackupHandlers(dependencies.backups)
+      for (const [channel, listener] of [
+        [ipcChannels.backups.create, handlers.create],
+        [ipcChannels.backups.inspect, handlers.inspect]
+      ] as const) {
+        applicationIpcMain.handle(channel, listener)
+        installedChannels.push(channel)
+      }
+    }
     if (dependencies.userAdministration !== undefined) {
       const handlers = createUserAdministrationHandlers(dependencies.userAdministration)
       for (const [channel, listener] of [
@@ -645,6 +657,8 @@ function disposeApplicationIpcRegistration(
 }
 
 function disposeApplicationOwnedIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
+  applicationIpcMain.removeHandler(ipcChannels.backups.create)
+  applicationIpcMain.removeHandler(ipcChannels.backups.inspect)
   applicationIpcMain.removeHandler(ipcChannels.userAdministration.search)
   applicationIpcMain.removeHandler(ipcChannels.userAdministration.mutate)
   applicationIpcMain.removeHandler(ipcChannels.app.getInfo)

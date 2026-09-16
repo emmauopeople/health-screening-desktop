@@ -1,3 +1,4 @@
+import { createElectronBackupService } from '@main/application/backups/electron-backup-service'
 import { createUserAdministrationService } from '@main/application/user-administration/user-administration-service'
 import { app, dialog, ipcMain, session } from 'electron'
 import { prepareElectronInstallationSetup } from './electron-installation-setup'
@@ -219,6 +220,12 @@ export function startApplicationLifecycle(): void {
         connection: databaseRuntime.getConnection(),
         authenticationSessionService
       })
+      const backupService = createElectronBackupService({
+        connection: databaseRuntime.getConnection(),
+        authenticationSessionService,
+        applicationVersion: app.getVersion(),
+        userDataDirectory: app.getPath('userData')
+      })
       const reportDocumentService = createElectronReportDocumentService()
       const syncWorkerScheduler = createSyncWorkerScheduler(
         createProductionSyncWorkerService({
@@ -263,6 +270,7 @@ export function startApplicationLifecycle(): void {
           referralService,
           logger: console
         },
+        backups: { navigationPolicy, service: backupService },
         userAdministration: { navigationPolicy, service: userAdministrationService },
         auditReports: {
           navigationPolicy,
