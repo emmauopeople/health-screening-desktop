@@ -22,7 +22,8 @@ const ids = Object.freeze({
   encounter: '61000000-0000-4000-8000-000000000006',
   referral: '61000000-0000-4000-8000-000000000007',
   history: '61000000-0000-4000-8000-000000000008',
-  outbox: '61000000-0000-4000-8000-000000000009'
+  outbox: '61000000-0000-4000-8000-000000000009',
+  historyOutbox: '61000000-0000-4000-8000-000000000010'
 })
 
 describe('referral repository', () => {
@@ -37,6 +38,7 @@ describe('referral repository', () => {
       const input = {
         id: parseEntityId(ids.referral),
         statusHistoryId: parseEntityId(ids.history),
+        statusHistoryOutboxId: parseEntityId(ids.historyOutbox),
         outboxId: parseEntityId(ids.outbox),
         patientId: parseEntityId(ids.patient),
         encounterId: parseEntityId(ids.encounter),
@@ -62,7 +64,7 @@ describe('referral repository', () => {
       expect(second).toMatchObject({ status: 'EXISTING', referral: { id: ids.referral } })
       expect(readCount(connection, 'referrals')).toBe(1)
       expect(readCount(connection, 'referral_status_history')).toBe(1)
-      expect(readCount(connection, 'sync_outbox')).toBe(1)
+      expect(readCount(connection, 'sync_outbox')).toBe(2)
       expect(
         connection
           .prepare(

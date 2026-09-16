@@ -54,6 +54,124 @@ afterEach(async () => {
 })
 
 describe('sync snapshot materialization', () => {
+  it('backfills referral history without changing source records and reuses exact snapshot identities', async () => {
+    const h = await createHarness(23)
+    const c = h.connection
+    insertClinicalFoundation(c)
+    const referralId = randomUUID()
+    const historyId = randomUUID()
+    const followupId = randomUUID()
+    seedReferral(c, referralId, historyId, followupId)
+    const tables = [
+      'referrals',
+      'referral_status_history',
+      'followups',
+      'referral_followup_actions',
+      'referral_followup_medication_changes'
+    ]
+    const before = tables.map((table) => c.prepare(`SELECT * FROM ${table}`).all())
+    const migrate = createProductionDatabaseMigrationRunner({
+      applicationVersion: '1.0.0',
+      logger: { info: vi.fn(), error: vi.fn() },
+      clock: { now: () => now }
+    })
+
+    expect(migrate(c).appliedVersions).toEqual([24])
+    expect(migrate(c).appliedVersions).toEqual([])
+    expect(tables.map((table) => c.prepare(`SELECT * FROM ${table}`).all())).toEqual(before)
+    expect(h.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED', recordCount: 3 })
+
+    const first = readStoredRequest(c)
+    expect(first.records.map((record) => record.resourceType)).toEqual([
+      'REFERRAL',
+      'REFERRAL_STATUS',
+      'REFERRAL_FOLLOWUP'
+    ])
+    expect(first.records[0]).toMatchObject({
+      sourceActorLocalId: adminId,
+      payload: {
+        createdByLocalActorId: nurseId,
+        updatedByLocalActorId: adminId,
+        status: 'OPEN'
+      }
+    })
+    expect(first.records[1]).toMatchObject({
+      sourceActorLocalId: nurseId,
+      payload: { sequenceNumber: 1, fromStatus: null, toStatus: 'OPEN' }
+    })
+    expect(first.records[2]).toMatchObject({
+      sourceActorLocalId: adminId,
+      payload: {
+        contactDate: '2026-09-02',
+        recordedAt: now,
+        providerSeen: null,
+        treatmentActions: [{ actionCode: 'NEW_MEDICATION' }],
+        medicationChanges: [
+          { medicationName: 'Synthetic reported medication', dosage: null, frequency: null }
+        ]
+      }
+    })
+    expect(first.actors.map((actor) => actor.localActorId).sort()).toEqual(
+      [adminId, nurseId].sort()
+    )
+
+    insertSignal(c, randomUUID(), 'REFERRAL', referralId, 'REFERRAL_SYNC_REQUESTED', 0)
+    expect(h.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED', recordCount: 1 })
+    const batches = c
+      .prepare('SELECT request_json FROM sync_transport_batches ORDER BY rowid')
+      .all() as { request_json: string }[]
+    expect(JSON.parse(batches[1]!.request_json).records[0]).toEqual(first.records[0])
+  })
+
+  it('fails closed when the author of a later referral revision cannot be recovered', async () => {
+    const h = await createHarness()
+    insertClinicalFoundation(h.connection)
+    const referralId = randomUUID()
+    seedReferral(h.connection, referralId, randomUUID(), randomUUID())
+    h.connection.prepare('DELETE FROM audit_log').run()
+    insertSignal(h.connection, randomUUID(), 'REFERRAL', referralId, 'REFERRAL_SYNC_REQUESTED', 0)
+
+    expect(h.service.prepareNextBatch()).toEqual({ status: 'UNAVAILABLE' })
+    expect(h.diagnostics[0]?.stage).toBe('REFERRAL')
+    expect(readTableCount(h.connection, 'sync_transport_batches')).toBe(0)
+  })
+
+  it('spans long referral histories across bounded batches without dropping follow-ups', async () => {
+    const h = await createHarness()
+    const c = h.connection
+    insertClinicalFoundation(c)
+    const referralId = randomUUID()
+    seedReferral(c, referralId, randomUUID(), randomUUID())
+    c.transaction(() => {
+      for (let index = 0; index < 105; index += 1) {
+        const childId = randomUUID()
+        c.prepare(
+          `INSERT INTO followups (
+             id, referral_id, contact_date, contact_method, information_source,
+             source_type, recorded_by, recorded_at
+           ) VALUES (?, ?, '2026-09-02', 'PHONE', 'PATIENT', 'PATIENT_REPORTED', ?, ?)`
+        ).run(childId, referralId, adminId, now)
+        insertSignal(
+          c,
+          randomUUID(),
+          'REFERRAL_HISTORY',
+          childId,
+          'REFERRAL_FOLLOWUP_SYNC_REQUESTED',
+          0
+        )
+      }
+    })()
+
+    expect(h.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED', recordCount: 100 })
+    expect(h.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED', recordCount: 5 })
+    expect(h.service.prepareNextBatch()).toEqual({ status: 'IDLE' })
+    const batches = c.prepare('SELECT request_json FROM sync_transport_batches').all() as {
+      request_json: string
+    }[]
+    const records = batches.flatMap((batch) => JSON.parse(batch.request_json).records)
+    expect(new Set(records.map((record) => record.localResourceId)).size).toBe(105)
+  })
+
   it('transports entered clinical time and reading dates without rewriting recorded timestamps', async () => {
     const h = await createHarness()
     const c = h.connection
@@ -255,7 +373,7 @@ describe('sync snapshot materialization', () => {
       logger: { info: vi.fn(), error: vi.fn() },
       clock: { now: () => now }
     })
-    expect(migrate(c).appliedVersions).toEqual([22, 23])
+    expect(migrate(c).appliedVersions).toEqual([22, 23, 24])
     expect(migrate(c).appliedVersions).toEqual([])
     expect(c.prepare('SELECT * FROM food_logs').all()).toEqual(before)
     expect(readTableCount(c, 'sync_outbox')).toBe(2)
@@ -613,7 +731,7 @@ describe('sync snapshot materialization', () => {
   })
 })
 
-async function createHarness(version = 23): Promise<{
+async function createHarness(version = 24): Promise<{
   readonly connection: Database.Database
   readonly diagnostics: SyncSnapshotDiagnostic[]
   readonly service: ReturnType<typeof createSyncSnapshotPreparationService>
@@ -886,4 +1004,65 @@ function readTableCount(connection: Database.Database, tableName: string): numbe
     (connection.prepare(`SELECT COUNT(*) AS count FROM ${tableName}`).get() as { count: number })
       .count
   )
+}
+
+function seedReferral(
+  connection: Database.Database,
+  referralId: string,
+  historyId: string,
+  followupId: string
+): void {
+  const createdAt = '2026-09-01T12:00:00.000Z'
+  connection
+    .prepare(
+      `INSERT INTO referrals (
+         id, patient_id, encounter_id, protocol_version_id, reason_codes_json,
+         urgency, due_date, status, created_by, created_at, record_version, updated_at
+       ) VALUES (?, ?, ?, ?, '["BP_SCREENING_REFERRAL"]', 'STANDARD', '2026-09-08',
+         'OPEN', ?, ?, 2, ?)`
+    )
+    .run(referralId, patientId, encounterId, protocolId, nurseId, createdAt, now)
+  connection
+    .prepare(
+      `INSERT INTO referral_status_history (
+         id, referral_id, from_status, to_status, change_reason, changed_by, changed_at
+       ) VALUES (?, ?, NULL, 'OPEN', 'AUTOMATIC_SCREENING_REFERRAL', ?, ?)`
+    )
+    .run(historyId, referralId, nurseId, createdAt)
+  connection
+    .prepare(
+      `INSERT INTO followups (
+         id, referral_id, contact_date, contact_method, information_source,
+         source_type, recorded_by, recorded_at
+       ) VALUES (?, ?, '2026-09-02', 'PHONE', 'PATIENT', 'PATIENT_REPORTED', ?, ?)`
+    )
+    .run(followupId, referralId, adminId, now)
+  connection
+    .prepare(
+      `INSERT INTO referral_followup_actions (
+         id, followup_id, action_code, sequence_number
+       ) VALUES (?, ?, 'NEW_MEDICATION', 1)`
+    )
+    .run(randomUUID(), followupId)
+  connection
+    .prepare(
+      `INSERT INTO referral_followup_medication_changes (
+         id, followup_id, change_type, medication_name, sequence_number
+       ) VALUES (?, ?, 'NEW_MEDICATION', 'Synthetic reported medication', 1)`
+    )
+    .run(randomUUID(), followupId)
+  connection
+    .prepare(
+      `INSERT INTO audit_log (
+         id, installation_id, user_id, action, entity_type, entity_id, occurred_at, metadata_json
+       ) VALUES (?, ?, ?, 'REFERRAL_FOLLOWUP_RECORDED', 'REFERRAL', ?, ?, ?)`
+    )
+    .run(
+      randomUUID(),
+      installationId,
+      adminId,
+      referralId,
+      now,
+      JSON.stringify({ record_version: 2, followup_id: followupId })
+    )
 }

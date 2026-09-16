@@ -23,6 +23,7 @@ export interface ReferralRecord {
 export interface CreateAutomaticReferralInput {
   readonly id: EntityId
   readonly statusHistoryId: EntityId
+  readonly statusHistoryOutboxId: EntityId
   readonly outboxId: EntityId
   readonly patientId: EntityId
   readonly encounterId: EntityId

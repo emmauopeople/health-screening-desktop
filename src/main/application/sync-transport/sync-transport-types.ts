@@ -4,7 +4,16 @@ import type { EntityId } from '@main/foundation/entity-id'
 import type { UtcTimestamp } from '@main/foundation/utc-clock'
 
 export type SyncResourceType =
-  'PATIENT' | 'SCREENING_SESSION' | 'SCREENING_ENCOUNTER' | 'VITALS' | 'LIFESTYLE' | 'FOOD' | 'OTC'
+  | 'PATIENT'
+  | 'SCREENING_SESSION'
+  | 'SCREENING_ENCOUNTER'
+  | 'VITALS'
+  | 'LIFESTYLE'
+  | 'FOOD'
+  | 'OTC'
+  | 'REFERRAL'
+  | 'REFERRAL_STATUS'
+  | 'REFERRAL_FOLLOWUP'
 
 export type SyncJsonValue =
   | null
@@ -35,6 +44,9 @@ export interface SyncRecordSnapshot {
     | 'lifestyle.v1'
     | 'food.v1'
     | 'otc.v1'
+    | 'referral.v1'
+    | 'referral-status.v1'
+    | 'referral-followup.v1'
   readonly operation: 'UPSERT'
   readonly capturedAt: UtcTimestamp
   readonly sourceActorLocalId: EntityId

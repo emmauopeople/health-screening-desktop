@@ -423,6 +423,7 @@ function createReferralWhenRequired(
   return dependencies.referralRepository.createAutomaticReferral(connection, {
     id: newEntityId(),
     statusHistoryId: newEntityId(),
+    statusHistoryOutboxId: newEntityId(),
     outboxId: newEntityId(),
     patientId: encounter.patientId,
     encounterId: encounter.id,

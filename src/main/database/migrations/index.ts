@@ -21,6 +21,7 @@ import { validateSchemaVersion18 } from './schema-v18-contract'
 import { validateSchemaVersion19 } from './schema-v19-contract'
 import { validateSchemaVersion20 } from './schema-v20-contract'
 import { validateSchemaVersion21 } from './schema-v21-contract'
+import { validateSchemaVersion24 } from './schema-v24-contract'
 import { validateSchemaVersion23 } from './schema-v23-contract'
 import { validateSchemaVersion22 } from './schema-v22-contract'
 import type { DatabaseMigrationContext, DatabaseMigrationRunner } from './migration-types'
@@ -48,7 +49,8 @@ const productionSchemaValidators = new Map([
   [20, validateSchemaVersion20],
   [21, validateSchemaVersion21],
   [22, validateSchemaVersion22],
-  [23, validateSchemaVersion23]
+  [23, validateSchemaVersion23],
+  [24, validateSchemaVersion24]
 ])
 
 export {

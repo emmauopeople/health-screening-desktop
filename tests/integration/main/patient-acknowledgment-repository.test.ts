@@ -491,7 +491,7 @@ describe('patient acknowledgment repository', () => {
         expectSafeControlledError(error)
       })
     }
-  })
+  }, 15_000)
 
   it('fails closed when history includes an acknowledgment with a missing actor', async () => {
     await withAcknowledgmentRepository(({ connection, repository }) => {

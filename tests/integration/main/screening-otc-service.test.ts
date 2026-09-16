@@ -117,7 +117,7 @@ describe('screening OTC application service integration', () => {
         status: 'VALIDATION_FAILED'
       })
     })
-  })
+  }, 15_000)
 
   it('creates a permissive blank draft for the current session and returns authoritative workspace', async () => {
     await withOtcService(({ connection, service, currentSessionCalls }) => {

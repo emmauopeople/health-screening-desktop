@@ -49,6 +49,87 @@ const lifestyleOutbox = '90000000-0000-4000-8000-000000000007'
 const excludedOutbox = '90000000-0000-4000-8000-000000000008'
 
 describe('HSW-013B desktop synchronization worker', () => {
+  it('maps separate referral outcomes without retiring a follow-up queued during delivery', async () => {
+    const harness = createHarness(Array.from({ length: 30 }, () => randomUUID()))
+    try {
+      seedCompleteGraph(harness.connection)
+      configure(harness.foundation)
+      const referralId = randomUUID()
+      const historyId = randomUUID()
+      const followupId = randomUUID()
+      const referralSignal = randomUUID()
+      const historySignal = randomUUID()
+      const followupSignal = randomUUID()
+      const laterSignal = randomUUID()
+      seedReferralSyncGraph(harness.connection, referralId, historyId, followupId)
+      insertOutbox(
+        harness.connection,
+        referralSignal,
+        'REFERRAL',
+        referralId,
+        'REFERRAL_CREATED',
+        at
+      )
+      insertOutbox(
+        harness.connection,
+        historySignal,
+        'REFERRAL_HISTORY',
+        historyId,
+        'REFERRAL_STATUS_HISTORY_RECORDED',
+        at
+      )
+      insertOutbox(
+        harness.connection,
+        followupSignal,
+        'REFERRAL_HISTORY',
+        followupId,
+        'REFERRAL_FOLLOWUP_SYNC_REQUESTED',
+        at
+      )
+      const submitBatch = vi.fn(async (_credential: unknown, requestJson: string) => {
+        insertOutbox(
+          harness.connection,
+          laterSignal,
+          'REFERRAL_HISTORY',
+          randomUUID(),
+          'REFERRAL_FOLLOWUP_SYNC_REQUESTED',
+          at
+        )
+        return response(200, acceptedResponse(requestJson))
+      })
+      const worker = createWorker(harness, httpClient({ submitBatch }))
+
+      expect(await worker.runOnce()).toMatchObject({ status: 'SYNCED' })
+      expect(
+        harness.connection
+          .prepare(
+            `SELECT resource_type FROM sync_transport_resource_mappings
+             WHERE resource_type LIKE 'REFERRAL%' ORDER BY resource_type`
+          )
+          .all()
+      ).toEqual([
+        { resource_type: 'REFERRAL' },
+        { resource_type: 'REFERRAL_FOLLOWUP' },
+        { resource_type: 'REFERRAL_STATUS' }
+      ])
+      expect(
+        harness.connection.prepare('SELECT status FROM sync_outbox WHERE id = ?').get(laterSignal)
+      ).toEqual({ status: 'PENDING' })
+      expect(
+        harness.connection
+          .prepare(
+            `SELECT id, status FROM sync_outbox
+             WHERE id IN (?, ?, ?) ORDER BY id`
+          )
+          .all(referralSignal, historySignal, followupSignal)
+      ).toEqual(
+        [referralSignal, historySignal, followupSignal].sort().map((id) => ({ id, status: 'SENT' }))
+      )
+    } finally {
+      harness.connection.close()
+    }
+  })
+
   it.each(['ACCEPTED', 'REJECTED', 'RETRY'])(
     'reconciles orphaned signals using the saved %s outcome without replaying a completed batch',
     async (status) => {
@@ -1642,4 +1723,44 @@ function insertOutbox(
        ) VALUES (?, ?, ?, ?, '{}', 'synthetic.v1', ?, 'PENDING', 0, NULL, NULL, NULL, NULL)`
     )
     .run(id, aggregateType, aggregateId, operation, createdAt)
+}
+
+function seedReferralSyncGraph(
+  connection: Database.Database,
+  referralId: string,
+  historyId: string,
+  followupId: string
+): void {
+  connection
+    .prepare(
+      `INSERT INTO referrals (
+         id, patient_id, encounter_id, protocol_version_id, reason_codes_json,
+         urgency, due_date, status, created_by, created_at, record_version, updated_at
+       ) VALUES (?, ?, ?, ?, '["BP_SCREENING_REFERRAL"]', 'STANDARD', '2026-09-08',
+         'OPEN', ?, ?, 1, ?)`
+    )
+    .run(
+      referralId,
+      patientId,
+      encounterId,
+      '00000000-0000-4000-8000-000000000007',
+      actorId,
+      at,
+      at
+    )
+  connection
+    .prepare(
+      `INSERT INTO referral_status_history (
+         id, referral_id, from_status, to_status, change_reason, changed_by, changed_at
+       ) VALUES (?, ?, NULL, 'OPEN', 'AUTOMATIC_SCREENING_REFERRAL', ?, ?)`
+    )
+    .run(historyId, referralId, actorId, at)
+  connection
+    .prepare(
+      `INSERT INTO followups (
+         id, referral_id, contact_date, contact_method, information_source,
+         source_type, recorded_by, recorded_at
+       ) VALUES (?, ?, '2026-09-03', 'PHONE', 'PATIENT', 'PATIENT_REPORTED', ?, ?)`
+    )
+    .run(followupId, referralId, actorId, at)
 }

@@ -20,7 +20,10 @@ const resourceOrder: Readonly<Record<SyncResourceType, number>> = Object.freeze(
   VITALS: 3,
   LIFESTYLE: 4,
   FOOD: 5,
-  OTC: 6
+  OTC: 6,
+  REFERRAL: 7,
+  REFERRAL_STATUS: 8,
+  REFERRAL_FOLLOWUP: 9
 })
 const schemaByResource: Readonly<Record<SyncResourceType, SyncRecordSnapshot['schemaVersion']>> =
   Object.freeze({
@@ -30,7 +33,10 @@ const schemaByResource: Readonly<Record<SyncResourceType, SyncRecordSnapshot['sc
     VITALS: 'vitals.v1',
     LIFESTYLE: 'lifestyle.v1',
     FOOD: 'food.v1',
-    OTC: 'otc.v1'
+    OTC: 'otc.v1',
+    REFERRAL: 'referral.v1',
+    REFERRAL_STATUS: 'referral-status.v1',
+    REFERRAL_FOLLOWUP: 'referral-followup.v1'
   })
 
 export interface ParsedSyncConfiguration {
