@@ -101,9 +101,12 @@ describe('sync snapshot materialization', () => {
     const harness = await createHarness()
     const c = harness.connection
     insertClinicalFoundation(c)
-    for (let index = 0; index < 501; index++) {
-      insertSignal(c, randomUUID(), 'PATIENT', patientId, 'PATIENT_CREATED', 1)
-    }
+    // Commit bulk fixture data once; exercise real sync transactions below.
+    c.transaction(() => {
+      for (let index = 0; index < 501; index++) {
+        insertSignal(c, randomUUID(), 'PATIENT', patientId, 'PATIENT_CREATED', 1)
+      }
+    })()
     expect(harness.service.prepareNextBatch()).toMatchObject({
       status: 'PREPARED',
       signalCount: 500
@@ -294,50 +297,53 @@ describe('sync snapshot materialization', () => {
     const harness = await createHarness()
     const c = harness.connection
     insertClinicalFoundation(c)
-    for (let index = 0; index < 3; index++) {
-      const patient = randomUUID()
-      const encounter = randomUUID()
-      c.prepare(
-        `INSERT INTO patients (id, patient_code, display_name, name_normalized,
-        status, created_by, created_at, updated_by, updated_at, row_version)
-        VALUES (?, ?, 'Synthetic Patient', 'synthetic patient', 'ACTIVE', ?, ?, ?, ?, 1)`
-      ).run(patient, `PT-LARGE-${index}`, adminId, now, adminId, now)
-      c.prepare(
-        `INSERT INTO screening_encounters (id, patient_id, screening_session_id,
-        location_id, protocol_version_id, status, started_at, completed_at, source_type,
-        recorded_by, record_version, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'COMPLETED', ?, ?, 'LOCAL', ?, 1, ?, ?)`
-      ).run(encounter, patient, sessionId, locationId, protocolId, now, now, nurseId, now, now)
-      const insert = c.prepare(`INSERT INTO otc_medication_logs (id, encounter_id,
-        product_name, product_name_normalized, reason_for_use, dose_text, frequency_text,
-        duration_text, source_of_medication, currently_taking, source_type, recorded_by, recorded_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'PATIENT_REPORTED', ?, ?)`)
-      for (let row = 0; row < 100; row++) {
-        const name = '藥'.repeat(150) + row
-        const text = '例'.repeat(160)
-        insert.run(
+    // Avoid a separate disk commit for every synthetic OTC row.
+    c.transaction(() => {
+      for (let index = 0; index < 3; index++) {
+        const patient = randomUUID()
+        const encounter = randomUUID()
+        c.prepare(
+          `INSERT INTO patients (id, patient_code, display_name, name_normalized,
+          status, created_by, created_at, updated_by, updated_at, row_version)
+          VALUES (?, ?, 'Synthetic Patient', 'synthetic patient', 'ACTIVE', ?, ?, ?, ?, 1)`
+        ).run(patient, `PT-LARGE-${index}`, adminId, now, adminId, now)
+        c.prepare(
+          `INSERT INTO screening_encounters (id, patient_id, screening_session_id,
+          location_id, protocol_version_id, status, started_at, completed_at, source_type,
+          recorded_by, record_version, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 'COMPLETED', ?, ?, 'LOCAL', ?, 1, ?, ?)`
+        ).run(encounter, patient, sessionId, locationId, protocolId, now, now, nurseId, now, now)
+        const insert = c.prepare(`INSERT INTO otc_medication_logs (id, encounter_id,
+          product_name, product_name_normalized, reason_for_use, dose_text, frequency_text,
+          duration_text, source_of_medication, currently_taking, source_type, recorded_by, recorded_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'PATIENT_REPORTED', ?, ?)`)
+        for (let row = 0; row < 100; row++) {
+          const name = '藥'.repeat(150) + row
+          const text = '例'.repeat(160)
+          insert.run(
+            randomUUID(),
+            encounter,
+            name,
+            name,
+            '例'.repeat(500),
+            text,
+            text,
+            text,
+            text,
+            nurseId,
+            now
+          )
+        }
+        insertSignal(
+          c,
           randomUUID(),
+          'SCREENING_ENCOUNTER',
           encounter,
-          name,
-          name,
-          '例'.repeat(500),
-          text,
-          text,
-          text,
-          text,
-          nurseId,
-          now
+          'SCREENING_OTC_FINALIZED',
+          index
         )
       }
-      insertSignal(
-        c,
-        randomUUID(),
-        'SCREENING_ENCOUNTER',
-        encounter,
-        'SCREENING_OTC_FINALIZED',
-        index
-      )
-    }
+    })()
     expect(harness.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED' })
     const stored = c.prepare('SELECT request_json FROM sync_transport_batches').get() as {
       request_json: string
