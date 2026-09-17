@@ -215,7 +215,7 @@ describe('application IPC handlers', () => {
 describe('application IPC handler registration', () => {
   it('owns Backup channels and rolls back partial registration', () => {
     const ipcMain = createMockIpcMain({
-      throwOnHandleChannel: ipcChannels.backups.inspect
+      throwOnHandleChannel: ipcChannels.backups.restore
     })
     const unrelated = vi.fn()
     ipcMain.handlers.set('unrelated:channel', unrelated)
@@ -225,7 +225,10 @@ describe('application IPC handler registration', () => {
         navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
         service: {
           create: async () => ({ status: 'UNAVAILABLE' }),
-          inspect: async () => ({ status: 'UNAVAILABLE' })
+          inspect: async () => ({ status: 'UNAVAILABLE' }),
+          prepareRestore: async () => ({ status: 'UNAVAILABLE' as const }),
+          restore: async () => ({ status: 'UNAVAILABLE' as const }),
+          discardRestore: async () => ({ status: 'UNAVAILABLE' as const })
         }
       }
     }

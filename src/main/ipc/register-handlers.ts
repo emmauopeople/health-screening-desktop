@@ -279,7 +279,10 @@ export function registerApplicationIpcHandlers(
       const handlers = createBackupHandlers(dependencies.backups)
       for (const [channel, listener] of [
         [ipcChannels.backups.create, handlers.create],
-        [ipcChannels.backups.inspect, handlers.inspect]
+        [ipcChannels.backups.inspect, handlers.inspect],
+        [ipcChannels.backups.prepareRestore, handlers.prepareRestore],
+        [ipcChannels.backups.restore, handlers.restore],
+        [ipcChannels.backups.discardRestore, handlers.discardRestore]
       ] as const) {
         applicationIpcMain.handle(channel, listener)
         installedChannels.push(channel)
@@ -659,6 +662,9 @@ function disposeApplicationIpcRegistration(
 function disposeApplicationOwnedIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
   applicationIpcMain.removeHandler(ipcChannels.backups.create)
   applicationIpcMain.removeHandler(ipcChannels.backups.inspect)
+  applicationIpcMain.removeHandler(ipcChannels.backups.prepareRestore)
+  applicationIpcMain.removeHandler(ipcChannels.backups.restore)
+  applicationIpcMain.removeHandler(ipcChannels.backups.discardRestore)
   applicationIpcMain.removeHandler(ipcChannels.userAdministration.search)
   applicationIpcMain.removeHandler(ipcChannels.userAdministration.mutate)
   applicationIpcMain.removeHandler(ipcChannels.app.getInfo)

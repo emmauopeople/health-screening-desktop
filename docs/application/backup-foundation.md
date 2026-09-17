@@ -1,17 +1,19 @@
 # Desktop backup foundation
 
-This increment implements main-process backup creation and read-only validation.
-The Administration → Backup / Restore tab remains planned until the UI increment.
-There is no restore endpoint, active database replacement, automatic backup
-schedule, or cross-device installation cloning in this change.
+The foundation implements main-process backup creation and read-only validation.
+Administration → Backup / Restore now provides a UI and a guarded local restore
+workflow. See [Backup and restore](backup-restore.md) for restore limits, restart
+recovery and Windows acceptance steps. Automatic scheduling and cross-device
+installation cloning remain outside this increment.
 
 ## API and access
 
 The frozen preload API exposes `backups.create({ password })` and
-`backups.inspect({ password })` through two fixed IPC channels. Passwords must
-contain 12–128 characters; they are not trimmed or persisted. UI work must add
-password confirmation, explain that lost backup passwords cannot be recovered,
-and clear password fields after the operation.
+`backups.inspect({ password })` through fixed IPC channels. Restore adds prepareRestore, restore and discardRestore
+operations documented in the restore guide. Passwords must
+contain 12–128 characters; they are not trimmed or persisted. The UI confirms new
+passwords, explains that lost backup passwords cannot be recovered, and clears
+password fields when starting an operation.
 
 Only an active, unlocked LOCAL_ADMIN whose password change is complete may use
 these operations. The main service re-reads the administrator's persisted state,
@@ -21,7 +23,7 @@ roles, user IDs, or installation IDs. File selection happens in native dialogs.
 Sender validation allows only the application's trusted main frame. IPC and
 preload validate both request and response shapes; paths, passwords, database
 contents, stack traces, and underlying exceptions are never returned or logged.
-Only one create/inspect operation may run at a time.
+Only one backup or restore operation may run at a time.
 
 Success returns SAVED or VERIFIED with authenticated metadata: backup time,
 application/schema versions, installation ID, deployment name/time zone, counts
@@ -98,10 +100,10 @@ notification is emitted only after the complete output is flushed and audited;
 inspection rejects incomplete files. Cleanup is not secure erasure. Choose a
 protected backup location and keep an off-device copy for machine-loss recovery.
 
-## Restore boundary for the next increment
+## Restore boundary
 
 A verified backup is not permission to replace the active database. Restore
-requires its own authorization, deployment/installation preview, explicit
+uses separate authorization, deployment/installation preview, explicit
 confirmation, a recovery copy of current data, and a restart with database
 handles/workers closed. Do not activate the same installation identity on two
 operating desktops. OS-protected sync credentials may only decrypt in the
@@ -118,7 +120,7 @@ cancellation, audit failure cleanup, exclusive destinations, session changes,
 and temporary-file cleanup. Contract/IPC/preload tests cover bounded requests,
 sender isolation, exception containment, result validation, channel registration
 rollback, and API freezing. Native Windows save/open dialogs and removable-drive
-behavior will need manual acceptance with the upcoming UI.
+behavior require the manual acceptance steps in the restore guide.
 
 References: [SQLite online backup API](https://sqlite.org/backup.html) and
 [Node cryptography API](https://nodejs.org/api/crypto.html).

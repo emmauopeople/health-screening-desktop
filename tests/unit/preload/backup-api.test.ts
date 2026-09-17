@@ -3,10 +3,16 @@ import { createBackupApi } from '@preload/backup-api'
 import { ipcChannels } from '@shared/ipc/channels'
 const request = { password: 'a-long-backup-passphrase' }
 describe('backup preload API', () => {
-  it('exposes only fixed create and inspect methods', async () => {
+  it('exposes only fixed backup and restore methods', async () => {
     const invoke = vi.fn().mockResolvedValue({ ok: true, data: { status: 'CANCELLED' } })
     const api = createBackupApi(invoke)
-    expect(Object.keys(api)).toEqual(['create', 'inspect'])
+    expect(Object.keys(api)).toEqual([
+      'create',
+      'inspect',
+      'prepareRestore',
+      'restore',
+      'discardRestore'
+    ])
     expect(Object.isFrozen(api)).toBe(true)
     await api.create(request)
     await api.inspect(request)
@@ -39,4 +45,30 @@ describe('backup preload API', () => {
         error: { code: 'IPC_UNAVAILABLE' }
       })
   })
+})
+
+it('validates restore confirmation and token requests before IPC', async () => {
+  const invoke = vi.fn().mockResolvedValue({ ok: true, data: { status: 'CANCELLED' } })
+  const api = createBackupApi(invoke)
+  const token = '11111111-1111-4111-8111-111111111111'
+  for (const value of [
+    { token },
+    { token, confirmation: 'YES' },
+    { token, confirmation: 'RESTORE', path: '/injected' },
+    { token: '../escape', confirmation: 'RESTORE' }
+  ]) {
+    expect(await api.restore(value as never)).toMatchObject({
+      ok: false,
+      error: { code: 'VALIDATION_FAILED' }
+    })
+  }
+  expect(invoke).not.toHaveBeenCalled()
+  await api.prepareRestore(request)
+  await api.restore({ token, confirmation: 'RESTORE' })
+  await api.discardRestore({ token })
+  expect(invoke.mock.calls).toEqual([
+    [ipcChannels.backups.prepareRestore, request],
+    [ipcChannels.backups.restore, { token, confirmation: 'RESTORE' }],
+    [ipcChannels.backups.discardRestore, { token }]
+  ])
 })

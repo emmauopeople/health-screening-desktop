@@ -5,8 +5,11 @@ import {
   readdirSync,
   rmSync,
   writeFileSync,
-  existsSync
+  existsSync,
+  renameSync
 } from 'node:fs'
+import * as fsPromises from 'node:fs/promises'
+import { applyPendingRestore } from '@main/application/backups/pending-restore'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
@@ -31,6 +34,11 @@ import { decryptBackup, encryptBackup } from '@main/application/backups/backup-a
 import { readBackupMetadata } from '@main/application/backups/backup-validation'
 import type { BackupMetadata } from '@shared/ipc/backup-contracts'
 
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof fsPromises>()
+  return { ...actual, open: vi.fn(actual.open) }
+})
+
 const request = { password: 'a-long-backup-passphrase' }
 const logger = { info: vi.fn(), error: vi.fn() }
 const now = parseUtcTimestamp('2026-09-16T12:00:00.000Z')
@@ -41,6 +49,7 @@ let destination: string
 let runtime: DatabaseRuntime
 let service: BackupService
 let actor: ActiveLocalSessionContext
+const requestRestart = vi.fn<() => void>()
 const requireAnyRole = vi.fn()
 const chooseDestination = vi.fn<() => Promise<string | null>>()
 const chooseSource = vi.fn<() => Promise<string | null>>()
@@ -85,6 +94,7 @@ beforeEach(async () => {
     idleExpiresAt: now,
     absoluteExpiresAt: now
   }
+  requestRestart.mockReset()
   requireAnyRole.mockReset().mockImplementation(() => actor)
   chooseDestination.mockReset().mockResolvedValue(destination)
   chooseSource.mockReset().mockResolvedValue(destination)
@@ -97,7 +107,8 @@ beforeEach(async () => {
     workDirectory: work,
     applicationVersion: '1.0.0',
     chooseDestination,
-    chooseSource
+    chooseSource,
+    requestRestart
   })
 })
 afterEach(() => {
@@ -358,3 +369,327 @@ describe('encrypted desktop backup foundation', () => {
     expect(await service.inspect(request)).toEqual({ status: 'INVALID_BACKUP' })
   })
 })
+
+async function reviewRestore(): Promise<
+  Extract<Awaited<ReturnType<BackupService['prepareRestore']>>, { status: 'RESTORE_READY' }>
+> {
+  const result = await service.prepareRestore(request)
+  expect(result.status).toBe('RESTORE_READY')
+  if (result.status !== 'RESTORE_READY') throw new Error('Restore preparation failed')
+  return result
+}
+
+describe('safe local backup restore', () => {
+  it('restores only after restart, preserves the full previous directory and records both audits', async () => {
+    const connection = runtime.getConnection()
+    connection
+      .prepare('INSERT INTO app_settings VALUES (?, ?, ?, ?)')
+      .run('restore-test', '"old"', now, 'PRIVATE')
+    await createValidBackup()
+    connection
+      .prepare('UPDATE app_settings SET value_json = ? WHERE key = ?')
+      .run('"new"', 'restore-test')
+    writeFileSync(join(userData, 'data', 'retained-extra-file'), 'recovery data')
+    const ready = await reviewRestore()
+    // The reviewed snapshot is owned by CHS; unplugging the source drive now is harmless.
+    rmSync(destination)
+    expect(await service.restore({ token: ready.token, confirmation: 'RESTORE' })).toEqual({
+      status: 'RESTARTING'
+    })
+    expect(requestRestart).toHaveBeenCalledOnce()
+    expect(
+      connection.prepare('SELECT value_json FROM app_settings WHERE key = ?').get('restore-test')
+    ).toEqual({ value_json: '"new"' })
+    expect(await service.create(request)).toEqual({ status: 'BUSY' })
+    runtime.close()
+    const applied = await applyPendingRestore(userData)
+    expect(applied).toBeDefined()
+    const restored = new Database(getDatabasePath(userData), { readonly: true })
+    const previous = new Database(join(applied!.recoveryPath, 'health-screening.sqlite3'), {
+      readonly: true
+    })
+    try {
+      expect(
+        restored.prepare('SELECT value_json FROM app_settings WHERE key = ?').get('restore-test')
+      ).toEqual({ value_json: '"old"' })
+      expect(
+        previous.prepare('SELECT value_json FROM app_settings WHERE key = ?').get('restore-test')
+      ).toEqual({ value_json: '"new"' })
+      expect(
+        restored
+          .prepare("SELECT count(*) AS n FROM audit_log WHERE action = 'BACKUP_RESTORED'")
+          .get()
+      ).toEqual({ n: 1 })
+      expect(
+        previous
+          .prepare("SELECT count(*) AS n FROM audit_log WHERE action = 'BACKUP_RESTORE_REQUESTED'")
+          .get()
+      ).toEqual({ n: 1 })
+      expect(readFileSync(join(applied!.recoveryPath, 'retained-extra-file'), 'utf8')).toBe(
+        'recovery data'
+      )
+    } finally {
+      restored.close()
+      previous.close()
+    }
+    applied!.complete()
+    expect(await applyPendingRestore(userData)).toBeUndefined()
+  })
+  it.each(['BEFORE_MOVE', 'AFTER_ORIGINAL_MOVE', 'AFTER_REPLACEMENT_MOVE'] as const)(
+    'recovers an interrupted restore at %s',
+    async (phase) => {
+      await createValidBackup()
+      const ready = await reviewRestore()
+      await service.restore({ token: ready.token, confirmation: 'RESTORE' })
+      runtime.close()
+      const pending = join(userData, 'restore-pending')
+      const manifest = JSON.parse(readFileSync(join(pending, 'manifest.json'), 'utf8')) as {
+        id: string
+      }
+      const recovery = join(userData, 'recovery', `before-restore-${manifest.id}`)
+      if (phase !== 'BEFORE_MOVE') {
+        mkdirSync(join(userData, 'recovery'), { recursive: true })
+        renameSync(join(userData, 'data'), recovery)
+      }
+      if (phase === 'AFTER_REPLACEMENT_MOVE')
+        renameSync(join(pending, 'data'), join(userData, 'data'))
+      const applied = await applyPendingRestore(userData)
+      expect(applied?.recoveryPath).toBe(recovery)
+      expect(existsSync(getDatabasePath(userData))).toBe(true)
+      applied!.complete()
+    }
+  )
+  it('rolls back to the preserved database if startup cannot complete', async () => {
+    await createValidBackup()
+    runtime
+      .getConnection()
+      .prepare('INSERT INTO app_settings VALUES (?, ?, ?, ?)')
+      .run('after-backup', 'true', now, 'PRIVATE')
+    const ready = await reviewRestore()
+    await service.restore({ token: ready.token, confirmation: 'RESTORE' })
+    runtime.close()
+    const applied = await applyPendingRestore(userData)
+    applied!.rollback()
+    const original = new Database(getDatabasePath(userData), { readonly: true })
+    try {
+      expect(
+        original.prepare('SELECT value_json FROM app_settings WHERE key = ?').get('after-backup')
+      ).toEqual({ value_json: 'true' })
+    } finally {
+      original.close()
+    }
+    expect(await applyPendingRestore(userData)).toBeUndefined()
+  })
+  it('rejects changed staged bytes before moving current data', async () => {
+    await createValidBackup()
+    const ready = await reviewRestore()
+    await service.restore({ token: ready.token, confirmation: 'RESTORE' })
+    runtime.close()
+    const original = readFileSync(getDatabasePath(userData))
+    writeFileSync(join(userData, 'restore-pending', 'data', 'health-screening.sqlite3'), 'damaged')
+    await expect(applyPendingRestore(userData)).rejects.toThrow('Restore snapshot changed')
+    expect(readFileSync(getDatabasePath(userData))).toEqual(original)
+  })
+  it('clears cancelled or expired reviews and rejects reused tokens', async () => {
+    await createValidBackup()
+    const ready = await reviewRestore()
+    expect(await service.discardRestore({ token: ready.token })).toEqual({ status: 'CANCELLED' })
+    expect(readdirSync(work)).toEqual([])
+    expect(await service.restore({ token: ready.token, confirmation: 'RESTORE' })).toEqual({
+      status: 'RESTORE_EXPIRED'
+    })
+    const another = await reviewRestore()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 600_001)
+    try {
+      expect(await service.restore({ token: another.token, confirmation: 'RESTORE' })).toEqual({
+        status: 'RESTORE_EXPIRED'
+      })
+    } finally {
+      clock.mockRestore()
+    }
+    expect(readdirSync(work)).toEqual([])
+    expect(requestRestart).not.toHaveBeenCalled()
+  })
+  it('requires explicit confirmation and the same authenticated session', async () => {
+    await createValidBackup()
+    const ready = await reviewRestore()
+    expect(await service.restore({ token: ready.token, confirmation: 'YES' } as never)).toEqual({
+      status: 'VALIDATION_FAILED'
+    })
+    actor = { ...actor, authenticatedAt: parseUtcTimestamp('2026-09-17T12:00:00.000Z') }
+    expect(await service.restore({ token: ready.token, confirmation: 'RESTORE' })).toEqual({
+      status: 'RESTORE_EXPIRED'
+    })
+    expect(requestRestart).not.toHaveBeenCalled()
+  })
+  it('cleans staging if restart scheduling fails and keeps the live database usable', async () => {
+    await createValidBackup()
+    const ready = await reviewRestore()
+    requestRestart.mockImplementation(() => {
+      throw new Error('cannot restart')
+    })
+    expect(await service.restore({ token: ready.token, confirmation: 'RESTORE' })).toEqual({
+      status: 'UNAVAILABLE'
+    })
+    expect(existsSync(join(userData, 'restore-pending'))).toBe(false)
+    expect(runtime.getConnection().prepare('SELECT count(*) AS n FROM users').get()).toEqual({
+      n: 1
+    })
+    expect(readdirSync(work)).toEqual([])
+  })
+  it.each(['LIVE', 'BACKUP'] as const)(
+    'blocks %s sync state while still allowing backup verification',
+    async (side) => {
+      const connection = runtime.getConnection()
+      const configure = (): Database.RunResult =>
+        connection
+          .prepare('INSERT INTO app_settings VALUES (?, ?, ?, ?)')
+          .run('sync.transport.configuration.v1', '{}', now, 'SECRET')
+      if (side === 'BACKUP') configure()
+      await createValidBackup()
+      if (side === 'BACKUP')
+        connection.prepare("DELETE FROM app_settings WHERE key LIKE 'sync.%'").run()
+      else configure()
+      expect((await service.inspect(request)).status).toBe('VERIFIED')
+      expect(await service.prepareRestore(request)).toEqual({ status: 'SYNC_RECOVERY_REQUIRED' })
+      expect(readdirSync(work)).toEqual([])
+    }
+  )
+  it('rechecks sync state between review and confirmation', async () => {
+    await createValidBackup()
+    const ready = await reviewRestore()
+    runtime
+      .getConnection()
+      .prepare('INSERT INTO app_settings VALUES (?, ?, ?, ?)')
+      .run('sync.transport.configuration.v1', '{}', now, 'SECRET')
+    expect(await service.restore({ token: ready.token, confirmation: 'RESTORE' })).toEqual({
+      status: 'SYNC_RECOVERY_REQUIRED'
+    })
+    expect(requestRestart).not.toHaveBeenCalled()
+  })
+  it('fails cleanly when a removable destination disappears after selection', async () => {
+    const drive = join(root, 'external drive')
+    mkdirSync(drive)
+    chooseDestination.mockImplementation(async () => {
+      rmSync(drive, { recursive: true })
+      return join(drive, 'backup.chsbackup')
+    })
+    expect(await service.create(request)).toEqual({ status: 'UNAVAILABLE' })
+    expect(readdirSync(work)).toEqual([])
+  })
+  it('removes partial output after a simulated disk-full write failure', async () => {
+    const originalOpen = vi.mocked(fsPromises.open).getMockImplementation()!
+    const mocked = vi
+      .mocked(fsPromises.open)
+      .mockImplementation(async (...args: Parameters<typeof fsPromises.open>) => {
+        const file = await originalOpen(...args)
+        if (args[0] === destination)
+          vi.spyOn(file, 'writeFile').mockRejectedValueOnce(
+            Object.assign(new Error('disk full'), { code: 'ENOSPC' })
+          )
+        return file
+      })
+    try {
+      expect(await service.create(request)).toEqual({ status: 'UNAVAILABLE' })
+    } finally {
+      mocked.mockImplementation(originalOpen)
+    }
+    expect(existsSync(destination)).toBe(false)
+    expect(readdirSync(work)).toEqual([])
+  })
+})
+
+describe('restore installation identity and startup guards', () => {
+  it('verifies but refuses a valid backup from a different installation', async () => {
+    const other = createDatabaseRuntime({
+      databasePath: join(root, 'other', 'db.sqlite3'),
+      migrationRunner: createProductionDatabaseMigrationRunner({
+        applicationVersion: '1.0.0',
+        logger
+      }),
+      logger
+    })
+    other.initialize()
+    try {
+      await createProductionFirstRunBootstrapService({
+        connection: other.getConnection(),
+        logger
+      }).initialize({
+        deploymentName: 'Other clinic',
+        timeZone: 'Africa/Douala',
+        administrator: {
+          username: 'otheradmin',
+          displayName: 'Other Admin',
+          temporaryPassword: 'ValidPassw0rd!'
+        },
+        initialLocation: {
+          name: 'Other clinic',
+          locationType: 'CHURCH',
+          village: null,
+          subdivision: null,
+          region: null,
+          directions: null
+        }
+      })
+      const path = join(root, 'other-snapshot.sqlite3')
+      await other.getConnection().backup(path)
+      await encryptBackup(
+        path,
+        destination,
+        request.password,
+        readBackupMetadata(path, new Date().toISOString(), '1.0.0')
+      )
+      expect((await service.inspect(request)).status).toBe('VERIFIED')
+      expect(await service.prepareRestore(request)).toEqual({ status: 'DIFFERENT_INSTALLATION' })
+      expect(requestRestart).not.toHaveBeenCalled()
+    } finally {
+      other.close()
+    }
+  })
+  it('checks newly introduced sync configuration again on startup before moving data', async () => {
+    await createValidBackup()
+    const ready = await reviewRestore()
+    await service.restore({ token: ready.token, confirmation: 'RESTORE' })
+    runtime
+      .getConnection()
+      .prepare('INSERT INTO app_settings VALUES (?, ?, ?, ?)')
+      .run('sync.transport.configuration.v1', '{}', now, 'SECRET')
+    runtime.close()
+    await expect(applyPendingRestore(userData)).rejects.toThrow('SYNC_RECOVERY_REQUIRED')
+    expect(existsSync(getDatabasePath(userData))).toBe(true)
+    expect(existsSync(join(userData, 'restore-pending', 'data'))).toBe(true)
+  })
+})
+
+it.each(['BEFORE_ROLLBACK_MOVE', 'AFTER_FAILED_DATA_MOVE', 'AFTER_RECOVERY_MOVE'] as const)(
+  'resumes interrupted rollback at %s without initializing an empty database',
+  async (phase) => {
+    await createValidBackup()
+    runtime
+      .getConnection()
+      .prepare('INSERT INTO app_settings VALUES (?, ?, ?, ?)')
+      .run('rollback-marker', 'true', now, 'PRIVATE')
+    const ready = await reviewRestore()
+    await service.restore({ token: ready.token, confirmation: 'RESTORE' })
+    runtime.close()
+    const applied = await applyPendingRestore(userData)
+    const id = applied!.recoveryPath.split('before-restore-')[1]!
+    const receipt = join(userData, 'recovery', `restore-receipt-${id}`)
+    const pending = join(userData, 'restore-pending')
+    writeFileSync(join(receipt, 'rollback'), 'ROLLBACK')
+    renameSync(receipt, pending)
+    if (phase !== 'BEFORE_ROLLBACK_MOVE')
+      renameSync(join(userData, 'data'), join(pending, 'failed-data'))
+    if (phase === 'AFTER_RECOVERY_MOVE') renameSync(applied!.recoveryPath, join(userData, 'data'))
+    expect(await applyPendingRestore(userData)).toBeUndefined()
+    const original = new Database(getDatabasePath(userData), { readonly: true })
+    try {
+      expect(
+        original.prepare('SELECT value_json FROM app_settings WHERE key = ?').get('rollback-marker')
+      ).toEqual({ value_json: 'true' })
+    } finally {
+      original.close()
+    }
+    expect(existsSync(join(userData, 'restore-pending'))).toBe(false)
+  }
+)
