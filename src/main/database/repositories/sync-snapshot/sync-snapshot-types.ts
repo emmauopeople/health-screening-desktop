@@ -13,6 +13,9 @@ export type MaterializedSyncResourceType =
   | 'REFERRAL'
   | 'REFERRAL_STATUS'
   | 'REFERRAL_FOLLOWUP'
+  | 'ENCOUNTER_ADDENDUM'
+  | 'ENCOUNTER_REVIEW_FLAG'
+  | 'ENCOUNTER_REVIEW_STATUS'
 
 export type MaterializedSyncJsonValue =
   | null
@@ -46,6 +49,9 @@ export interface MaterializedSyncRecord {
     | 'referral.v1'
     | 'referral-status.v1'
     | 'referral-followup.v1'
+    | 'encounter-addendum.v1'
+    | 'encounter-review-flag.v1'
+    | 'encounter-review-status.v1'
   readonly operation: 'UPSERT'
   readonly capturedAt: UtcTimestamp
   readonly sourceActorLocalId: EntityId

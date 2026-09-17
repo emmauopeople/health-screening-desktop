@@ -409,8 +409,9 @@ function matchingOutboxIds(
     .map(([operation]) => operation)
   if (operations.length === 0) throw new RepositoryWriteError()
   const operationCondition = `outbox.operation IN (${operations.map(() => '?').join(', ')})`
-  const aggregateType =
-    outcome.resourceType === 'PATIENT'
+  const aggregateType = outcome.resourceType.startsWith('ENCOUNTER_')
+    ? 'ENCOUNTER_HISTORY'
+    : outcome.resourceType === 'PATIENT'
       ? 'PATIENT'
       : outcome.resourceType === 'SCREENING_SESSION'
         ? 'SCREENING_SESSION'

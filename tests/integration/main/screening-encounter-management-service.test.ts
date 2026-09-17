@@ -42,12 +42,9 @@ const ids = Object.freeze({
   otc: '52000000-0000-4000-8000-000000000011',
   addendum: '52000000-0000-4000-8000-000000000012',
   addAudit: '52000000-0000-4000-8000-000000000013',
-  addOutbox: '52000000-0000-4000-8000-000000000014',
   flag: '52000000-0000-4000-8000-000000000015',
   flagAudit: '52000000-0000-4000-8000-000000000016',
-  flagOutbox: '52000000-0000-4000-8000-000000000017',
   resolveAudit: '52000000-0000-4000-8000-000000000018',
-  resolveOutbox: '52000000-0000-4000-8000-000000000019',
   draftVitals: '52000000-0000-4000-8000-000000000021',
   voidAudit: '52000000-0000-4000-8000-000000000022',
   voidOutbox: '52000000-0000-4000-8000-000000000023',
@@ -218,7 +215,7 @@ describe('screening encounter management service integration', () => {
       expect(after.detail.addenda).toHaveLength(1)
       expect(after.detail.flags).toMatchObject([{ status: 'RESOLVED' }])
       expect(readCount(connection, 'audit_log')).toBe(3)
-      expect(readCount(connection, 'sync_outbox')).toBe(3)
+      expect(readCount(connection, 'sync_outbox')).toBe(4)
 
       const operationalMetadata = JSON.stringify({
         audit: connection
@@ -285,7 +282,7 @@ describe('screening encounter management service integration', () => {
         service.voidEmptyDraft(parseEntityId(ids.draftEncounter), 1, 'Created in error.')
       ).toEqual({ status: 'ENCOUNTER_NOT_EMPTY' })
       expect(readCount(connection, 'audit_log')).toBe(3)
-      expect(readCount(connection, 'sync_outbox')).toBe(3)
+      expect(readCount(connection, 'sync_outbox')).toBe(4)
 
       connection.prepare('DELETE FROM screening_vitals_drafts WHERE id = ?').run(ids.draftVitals)
       expect(
@@ -299,7 +296,7 @@ describe('screening encounter management service integration', () => {
           .get(ids.draftEncounter)
       ).toEqual({ status: 'VOID', void_reason: 'Created in error.', record_version: 2 })
       expect(readCount(connection, 'audit_log')).toBe(4)
-      expect(readCount(connection, 'sync_outbox')).toBe(4)
+      expect(readCount(connection, 'sync_outbox')).toBe(5)
       const voidMetadata = JSON.stringify({
         audit: connection
           .prepare('SELECT metadata_json FROM audit_log WHERE action = ?')
@@ -384,12 +381,9 @@ async function withService(
         createQueuedIdGenerator([
           ids.addendum,
           ids.addAudit,
-          ids.addOutbox,
           ids.flag,
           ids.flagAudit,
-          ids.flagOutbox,
           ids.resolveAudit,
-          ids.resolveOutbox,
           ids.voidAudit,
           ids.voidOutbox,
           ids.cancelAudit,

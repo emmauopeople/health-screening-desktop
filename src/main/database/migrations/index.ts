@@ -22,9 +22,15 @@ import { validateSchemaVersion19 } from './schema-v19-contract'
 import { validateSchemaVersion20 } from './schema-v20-contract'
 import { validateSchemaVersion21 } from './schema-v21-contract'
 import { validateSchemaVersion24 } from './schema-v24-contract'
+import { validateSchemaVersion25 } from './schema-v25-contract'
 import { validateSchemaVersion23 } from './schema-v23-contract'
 import { validateSchemaVersion22 } from './schema-v22-contract'
-import type { DatabaseMigrationContext, DatabaseMigrationRunner } from './migration-types'
+import type {
+  DatabaseMigrationContext,
+  DatabaseMigrationRunner,
+  DatabaseSchemaValidationMode,
+  MigrationConnection
+} from './migration-types'
 
 const productionSchemaValidators = new Map([
   [1, validateSchemaVersion1],
@@ -50,7 +56,8 @@ const productionSchemaValidators = new Map([
   [21, validateSchemaVersion21],
   [22, validateSchemaVersion22],
   [23, validateSchemaVersion23],
-  [24, validateSchemaVersion24]
+  [24, validateSchemaVersion24],
+  [25, validateSchemaVersion25]
 ])
 
 export {
@@ -204,6 +211,13 @@ export {
   schemaVersion19TriggerNames,
   validateSchemaVersion19
 } from './schema-v19-contract'
+
+export function validateCurrentDatabaseSchema(
+  connection: MigrationConnection,
+  mode: DatabaseSchemaValidationMode
+): void {
+  productionSchemaValidators.get(targetSchemaVersion)!(connection, mode)
+}
 
 export function createProductionDatabaseMigrationRunner({
   applicationVersion,

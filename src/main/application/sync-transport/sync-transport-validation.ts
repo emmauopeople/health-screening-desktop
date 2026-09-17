@@ -23,7 +23,10 @@ const resourceOrder: Readonly<Record<SyncResourceType, number>> = Object.freeze(
   OTC: 6,
   REFERRAL: 7,
   REFERRAL_STATUS: 8,
-  REFERRAL_FOLLOWUP: 9
+  REFERRAL_FOLLOWUP: 9,
+  ENCOUNTER_ADDENDUM: 10,
+  ENCOUNTER_REVIEW_FLAG: 11,
+  ENCOUNTER_REVIEW_STATUS: 12
 })
 const schemaByResource: Readonly<Record<SyncResourceType, SyncRecordSnapshot['schemaVersion']>> =
   Object.freeze({
@@ -36,7 +39,10 @@ const schemaByResource: Readonly<Record<SyncResourceType, SyncRecordSnapshot['sc
     OTC: 'otc.v1',
     REFERRAL: 'referral.v1',
     REFERRAL_STATUS: 'referral-status.v1',
-    REFERRAL_FOLLOWUP: 'referral-followup.v1'
+    REFERRAL_FOLLOWUP: 'referral-followup.v1',
+    ENCOUNTER_ADDENDUM: 'encounter-addendum.v1',
+    ENCOUNTER_REVIEW_FLAG: 'encounter-review-flag.v1',
+    ENCOUNTER_REVIEW_STATUS: 'encounter-review-status.v1'
   })
 
 export interface ParsedSyncConfiguration {

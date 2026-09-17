@@ -31,21 +31,36 @@ export const schemaVersion21TriggerNames = Object.freeze(
 
 export function validateSchemaVersion21(
   connection: MigrationConnection,
-  mode: DatabaseSchemaValidationMode
+  mode: DatabaseSchemaValidationMode,
+  additions: { readonly tables: readonly string[]; readonly triggers: readonly string[] } = {
+    tables: [],
+    triggers: []
+  }
 ): void {
-  if (!isValid(connection)) {
+  if (!isValid(connection, additions)) {
     if (mode === 'execution') throw new MigrationExecutionError()
     throw new MigrationCompatibilityError()
   }
 }
 
-function isValid(connection: MigrationConnection): boolean {
+function isValid(
+  connection: MigrationConnection,
+  additions: { readonly tables: readonly string[]; readonly triggers: readonly string[] }
+): boolean {
   try {
     return (
-      arraysEqual(readNames(connection, 'table'), schemaVersion21TableNames) &&
+      arraysEqual(
+        readNames(connection, 'table'),
+        [...schemaVersion21TableNames, ...additions.tables].sort()
+      ) &&
       arraysEqual(readNames(connection, 'index'), schemaVersion21NamedIndexes) &&
-      arraysEqual(readNames(connection, 'trigger'), schemaVersion21TriggerNames) &&
-      schemaVersion21TableNames.every((name) => strictTables(connection).get(name) === 1) &&
+      arraysEqual(
+        readNames(connection, 'trigger'),
+        [...schemaVersion21TriggerNames, ...additions.triggers].sort()
+      ) &&
+      [...schemaVersion21TableNames, ...additions.tables].every(
+        (name) => strictTables(connection).get(name) === 1
+      ) &&
       hasRequiredForeignKeys(connection) &&
       hasRequiredSql(connection)
     )

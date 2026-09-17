@@ -5,7 +5,7 @@ import {
   resolveDatabaseMigrations,
   targetSchemaVersion
 } from '@main/database/migrations/migration-manifest'
-import { validateSchemaVersion24 } from '@main/database/migrations/schema-v24-contract'
+import { validateCurrentDatabaseSchema } from '@main/database/migrations'
 import { InvalidBackupError, UnsupportedBackupError } from './backup-archive'
 
 export function readBackupMetadata(
@@ -25,7 +25,7 @@ export function readBackupMetadata(
       foreignKeyViolation !== undefined
     )
       throw new InvalidBackupError()
-    validateSchemaVersion24(database, 'compatibility')
+    validateCurrentDatabaseSchema(database, 'compatibility')
     const history = database
       .prepare('SELECT version, name, checksum FROM schema_migrations ORDER BY version LIMIT ?')
       .all(databaseMigrations.length + 1)
