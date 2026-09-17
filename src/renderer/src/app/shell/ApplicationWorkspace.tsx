@@ -1,3 +1,4 @@
+import { ProtocolsWorkspace } from '../administration/ProtocolsWorkspace'
 import { BackupRestoreWorkspace } from '../administration/BackupRestoreWorkspace'
 import { UsersAdministrationWorkspace } from '../administration/UsersAdministrationWorkspace'
 import type { RefObject } from 'react'
@@ -192,7 +193,15 @@ export function ApplicationWorkspace({
           registerNavigationGuard={registerNavigationGuard}
         />
       ) : route.status === 'ADMINISTRATION' ? (
-        route.commandId === 'ADMINISTRATION_BACKUP_RESTORE' ? (
+        route.commandId === 'ADMINISTRATION_PROTOCOLS' ? (
+          <ProtocolsWorkspace
+            api={api.protocols}
+            userRole={user.role}
+            headingId={workspaceHeadingId}
+            headingRef={headingRef}
+            onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
+          />
+        ) : route.commandId === 'ADMINISTRATION_BACKUP_RESTORE' ? (
           <BackupRestoreWorkspace
             api={api.backups}
             userRole={user.role}

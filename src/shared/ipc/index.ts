@@ -691,3 +691,5 @@ export {
 } from './app-contracts'
 
 export * from './backup-contracts'
+
+export * from './protocol-contracts'

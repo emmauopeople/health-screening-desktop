@@ -215,6 +215,21 @@ describe('application shell controller', () => {
     })
   })
 
+  it('opens the Protocols workspace only for local administrators', () => {
+    const admin = createApplicationShellController({ role: 'LOCAL_ADMIN' })
+    admin.selectCommand('ADMINISTRATION_PROTOCOLS')
+    expect(admin.getSnapshot().route).toEqual({
+      status: 'ADMINISTRATION',
+      commandId: 'ADMINISTRATION_PROTOCOLS'
+    })
+    for (const role of ['NURSE', 'TRAINED_SCREENER'] as const) {
+      const controller = createApplicationShellController({ role })
+      const before = controller.getSnapshot()
+      controller.selectCommand('ADMINISTRATION_PROTOCOLS')
+      expect(controller.getSnapshot()).toBe(before)
+    }
+  })
+
   it('opens Users only for local administrators', () => {
     const admin = createApplicationShellController({ role: 'LOCAL_ADMIN' })
     admin.selectCommand('ADMINISTRATION_USERS')

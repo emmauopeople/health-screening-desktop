@@ -213,6 +213,22 @@ describe('application IPC handlers', () => {
 })
 
 describe('application IPC handler registration', () => {
+  it('registers and disposes the read-only Protocols channel', () => {
+    const ipcMain = createMockIpcMain()
+    const unrelated = vi.fn()
+    ipcMain.handlers.set('unrelated:channel', unrelated)
+    const dispose = registerApplicationIpcHandlers(ipcMain, {
+      ...createDependencies(),
+      protocols: {
+        navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
+        service: { get: () => ({ status: 'NO_ACTIVE_PROTOCOL' }) }
+      }
+    })
+    expect(ipcMain.handlers.has(ipcChannels.protocols.get)).toBe(true)
+    dispose()
+    expect([...ipcMain.handlers.entries()]).toEqual([['unrelated:channel', unrelated]])
+  })
+
   it('owns Backup channels and rolls back partial registration', () => {
     const ipcMain = createMockIpcMain({
       throwOnHandleChannel: ipcChannels.backups.restore

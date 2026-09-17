@@ -1,3 +1,4 @@
+import { createProtocolApi } from './protocol-api'
 import { createBackupApi } from './backup-api'
 import { createUserAdministrationApi } from './user-administration-api'
 import {
@@ -88,6 +89,7 @@ export function createHealthScreeningApi(
     auditReports: createAuditReportApi(invoke),
     userAdministration: createUserAdministrationApi(invoke),
     reportDocuments: createReportDocumentApi(invoke),
+    protocols: createProtocolApi(invoke),
     backups: createBackupApi(invoke),
     screeningSessions: createScreeningSessionApi(invoke),
     screeningEncounters: createScreeningEncounterApi(invoke),
