@@ -121,14 +121,6 @@ const commandDefinitions = [
     plannedOwners.screening
   ),
   command(
-    'SCREENING_DRAFT_ENCOUNTERS',
-    'SCREENING',
-    'Draft Encounters',
-    allRoles,
-    'PLANNED',
-    plannedOwners.screening
-  ),
-  command(
     'SCREENING_MANAGE_ENCOUNTERS',
     'SCREENING',
     'Manage Encounters',

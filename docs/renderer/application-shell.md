@@ -34,10 +34,11 @@ authorization remains authoritative for future protected operations.
 `HOME_DASHBOARD`, patient registry commands, `HOME_TODAYS_SESSION`,
 `SCREENING_TODAYS_SESSION`, and `SCREENING_NEW_SCREENING` are available. The
 Home patient-screening shortcut routes to the same Patients-based Screening
-workspace as the Screening menu. Draft Encounters, Session Summary, and other
-unimplemented modules continue routing to the transparent planned-module
-workspace with the command label, "Not available in this build.", and the
-owning future work package.
+workspace as the Screening menu. Draft encounters are accessed through
+**Screening → Manage Encounters → Status: Draft**; there is no separate Draft
+Encounters tab. Manage Encounters retains draft search, resuming saved screening
+work, and voiding empty drafts with a reason. Session Summary is available to
+nurses and local administrators.
 
 `ADMINISTRATION_LOCATIONS` routes authorized local administrators to the
 Screening Location workspace. The renderer catalog controls visibility only;

@@ -26,10 +26,7 @@ describe('application navigation catalog', () => {
         'Patients',
         ['Patient Search', 'Register New Patient', 'Recent Patients', 'Possible Duplicates']
       ],
-      [
-        'Screening',
-        ['Patients', 'New Screening', 'Draft Encounters', 'Manage Encounters', 'Session Summary']
-      ],
+      ['Screening', ['Patients', 'New Screening', 'Manage Encounters', 'Session Summary']],
       ['Referrals', ['Referral Worklist', 'Follow-up Due', 'Close Referral', 'Print Queue']],
       [
         'Reports',
@@ -55,10 +52,7 @@ describe('application navigation catalog', () => {
         'Patients',
         ['Patient Search', 'Register New Patient', 'Recent Patients', 'Possible Duplicates']
       ],
-      [
-        'Screening',
-        ['Patients', 'New Screening', 'Draft Encounters', 'Manage Encounters', 'Session Summary']
-      ],
+      ['Screening', ['Patients', 'New Screening', 'Manage Encounters', 'Session Summary']],
       ['Referrals', ['Referral Worklist', 'Follow-up Due', 'Close Referral', 'Print Queue']],
       ['Reports', ['Patient Reports', 'Session Reports', 'Referral Reports', 'Export / Print']]
     ])
@@ -68,7 +62,7 @@ describe('application navigation catalog', () => {
         'Patients',
         ['Patient Search', 'Register New Patient', 'Recent Patients', 'Possible Duplicates']
       ],
-      ['Screening', ['Patients', 'New Screening', 'Draft Encounters', 'Manage Encounters']],
+      ['Screening', ['Patients', 'New Screening', 'Manage Encounters']],
       ['Referrals', ['Referral Worklist']]
     ])
     expect(getVisibleApplicationMenus('UNKNOWN')).toEqual([])
