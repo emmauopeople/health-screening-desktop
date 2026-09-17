@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import type {
   AuditReportApi,
+  ReportDocumentApi,
   InstallationSettingsErrorCode,
   PatientErrorCode,
   PublicAuditReportActor,
@@ -12,7 +13,6 @@ import type {
 import {
   applyAuditReportFilters,
   auditActorValue,
-  auditFilterSummary,
   auditRangeLabel,
   createAuditReportPresetRange,
   createInitialAuditReportFilters,
@@ -22,8 +22,12 @@ import {
   type AuditReportRangePreset
 } from './audit-report-model'
 
+import { AuditReportPreview } from './AuditReportPreview'
+import type { AuditReportDocumentProps } from './AuditReportDocument'
+
 interface AuditReportsWorkspaceProps {
   readonly workspaceMode?: 'REPORTS' | 'ADMINISTRATION'
+  readonly documentApi?: ReportDocumentApi
   readonly api: AuditReportApi | undefined
   readonly timeZone: string
   readonly reportedBy: string
@@ -79,6 +83,7 @@ const rangePresets: readonly {
 export function AuditReportsWorkspace({
   workspaceMode = 'REPORTS',
   api,
+  documentApi,
   timeZone,
   reportedBy,
   headingId,
@@ -93,15 +98,14 @@ export function AuditReportsWorkspace({
   const requestRef = useRef(0)
   const refreshTargetRef = useRef<{ page: number; filters: AppliedAuditReportFilters } | null>(null)
   const [refreshVersion, setRefreshVersion] = useState(0)
-  const printButtonRef = useRef<HTMLButtonElement | null>(null)
   const [contextState, setContextState] = useState<ContextState>({ status: 'LOADING' })
   const [pageState, setPageState] = useState<PageState>({ status: 'LOADING', previous: null })
   const [draft, setDraft] = useState<AuditReportFilterDraft>(initialDraft)
   const [applied, setApplied] = useState<AppliedAuditReportFilters | null>(initialApplied)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [filterMessage, setFilterMessage] = useState<string | null>(null)
-  const [previewOpen, setPreviewOpen] = useState(false)
-  const [previewGeneratedAt, setPreviewGeneratedAt] = useState<string | null>(null)
+  const [preview, setPreview] = useState<AuditReportDocumentProps | null>(null)
+  const previewTriggerRef = useRef<HTMLElement | null>(null)
 
   const handleControlledStatus = useCallback(
     (status: ControlledAuditStatus): boolean => {
@@ -132,7 +136,7 @@ export function AuditReportsWorkspace({
       requestRef.current = requestId
       // An older result page must not be shown or printed under newly applied filters.
       setPageState({ status: 'LOADING', previous: null })
-      setPreviewOpen(false)
+      setPreview(null)
       try {
         const result = await api.search({ ...filters.request, page })
         if (requestRef.current !== requestId) return
@@ -245,16 +249,6 @@ export function AuditReportsWorkspace({
     refreshVersion
   ])
 
-  useEffect(() => {
-    if (!previewOpen) return
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setPreviewOpen(false)
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    printButtonRef.current?.focus()
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [previewOpen])
-
   const context = contextState.status === 'READY' ? contextState.context : null
   const page = pageState.status === 'READY' ? pageState.page : pageState.previous
   const selected = page?.items.find((item) => item.id === selectedId) ?? null
@@ -281,7 +275,7 @@ export function AuditReportsWorkspace({
     }
     setFilterMessage(null)
     setApplied(next)
-    setPreviewOpen(false)
+    setPreview(null)
     void loadPage(1, next)
   }
   const clearFilters = (): void => {
@@ -290,7 +284,7 @@ export function AuditReportsWorkspace({
     setDraft(nextDraft)
     setFilterMessage(null)
     setApplied(nextApplied)
-    setPreviewOpen(false)
+    setPreview(null)
     if (nextApplied !== null) void loadPage(1, nextApplied)
   }
   const refresh = (): void => {
@@ -298,12 +292,20 @@ export function AuditReportsWorkspace({
     refreshTargetRef.current = { page: page?.page ?? 1, filters: applied }
     setContextState({ status: 'LOADING' })
     setPageState({ status: 'LOADING', previous: null })
-    setPreviewOpen(false)
+    setPreview(null)
     setRefreshVersion((current) => current + 1)
   }
   const openPreview = (): void => {
-    setPreviewGeneratedAt(new Date().toISOString())
-    setPreviewOpen(true)
+    if (pageState.status !== 'READY' || context === null || applied === null) return
+    previewTriggerRef.current = document.activeElement as HTMLElement | null
+    setPreview({
+      page: pageState.page,
+      context,
+      filters: applied,
+      generatedAt: new Date().toISOString(),
+      timeZone,
+      reportedBy
+    })
   }
 
   return (
@@ -426,20 +428,15 @@ export function AuditReportsWorkspace({
         </div>
       )}
 
-      {previewOpen &&
-      previewGeneratedAt !== null &&
-      page !== null &&
-      context !== null &&
-      applied !== null ? (
-        <AuditReportPrintPreview
-          page={page}
-          context={context}
-          filters={applied}
-          generatedAt={previewGeneratedAt}
-          timeZone={timeZone}
-          reportedBy={reportedBy}
-          printButtonRef={printButtonRef}
-          onClose={() => setPreviewOpen(false)}
+      {preview !== null ? (
+        <AuditReportPreview
+          {...preview}
+          api={documentApi}
+          onAuthenticationFailure={onAuthenticationFailure}
+          onClose={() => {
+            setPreview(null)
+            previewTriggerRef.current?.focus()
+          }}
         />
       ) : null}
     </section>
@@ -762,168 +759,11 @@ function AuditPagination({
   )
 }
 
-function AuditReportPrintPreview({
-  page,
-  context,
-  filters,
-  generatedAt,
-  timeZone,
-  reportedBy,
-  printButtonRef,
-  onClose
-}: {
-  readonly page: AuditReportPage
-  readonly context: AuditReportContext
-  readonly filters: AppliedAuditReportFilters
-  readonly generatedAt: string
-  readonly timeZone: string
-  readonly reportedBy: string
-  readonly printButtonRef: RefObject<HTMLButtonElement | null>
-  onClose(): void
-}): React.JSX.Element {
-  return (
-    <div className="patient-report-preview-backdrop">
-      <section
-        className="patient-report-preview-window"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Audit report print preview"
-      >
-        <header className="patient-report-preview-toolbar">
-          <div>
-            <strong>Audit report print preview</strong>
-            <span>{`Current filtered page - ${page.items.length} events`}</span>
-          </div>
-          <div>
-            <button
-              ref={printButtonRef}
-              className="button button-primary"
-              type="button"
-              onClick={() => printReport(`CHS-audit-report-${generatedAt.slice(0, 10)}`)}
-            >
-              <PrintIcon />
-              Print
-            </button>
-            <button className="button button-secondary" type="button" onClick={onClose}>
-              Close
-            </button>
-          </div>
-        </header>
-        <div className="patient-report-preview-scroll">
-          <div className="patient-report-preview-page">
-            <AuditReportDocument
-              page={page}
-              context={context}
-              filters={filters}
-              generatedAt={generatedAt}
-              timeZone={timeZone}
-              reportedBy={reportedBy}
-            />
-          </div>
-        </div>
-      </section>
-    </div>
-  )
-}
-
-function AuditReportDocument({
-  page,
-  context,
-  filters,
-  generatedAt,
-  timeZone,
-  reportedBy
-}: {
-  readonly page: AuditReportPage
-  readonly context: AuditReportContext
-  readonly filters: AppliedAuditReportFilters
-  readonly generatedAt: string
-  readonly timeZone: string
-  readonly reportedBy: string
-}): React.JSX.Element {
-  const from = page.total === 0 ? 0 : (page.page - 1) * page.pageSize + 1
-  const to = Math.min(page.page * page.pageSize, page.total)
-  return (
-    <article className="audit-report-document is-print-preview">
-      <header className="clinical-report-masthead patient-report-print-masthead">
-        <span className="clinical-report-logo" aria-hidden="true" />
-        <div>
-          <strong>Community Health Screening</strong>
-          <span>Audit report</span>
-        </div>
-        <span className="patient-report-print-disclaimer">
-          Screening guidance is not a diagnosis
-        </span>
-      </header>
-      <header className="audit-report-document-heading">
-        <div>
-          <p>Read-only administrator report</p>
-          <h2>{context.deployment.name}</h2>
-        </div>
-        <dl>
-          <DetailLine label="Generated" value={formatTimestamp(generatedAt, timeZone)} />
-          <DetailLine label="Time zone" value={context.deployment.timeZone} />
-          <DetailLine label="Reported by" value={reportedBy} />
-        </dl>
-      </header>
-      <section className="audit-report-document-filters">
-        <h3>Applied filters</h3>
-        <p>{auditFilterSummary(filters, context.actors)}</p>
-        <span>{`Showing ${from}-${to} of ${page.total} matching events; result page ${page.page}.`}</span>
-      </section>
-      <table className="audit-report-print-table">
-        <thead>
-          <tr>
-            <th scope="col">Date / time</th>
-            <th scope="col">Actor</th>
-            <th scope="col">Action</th>
-            <th scope="col">Entity</th>
-            <th scope="col">Metadata</th>
-          </tr>
-        </thead>
-        <tbody>
-          {page.items.map((event) => (
-            <tr key={event.id}>
-              <td>{formatTimestamp(event.occurredAt, timeZone)}</td>
-              <td>
-                {event.actor === null
-                  ? 'System'
-                  : `${event.actor.displayName} (${event.actor.username})`}
-              </td>
-              <td>{formatAuditCode(event.action)}</td>
-              <td>{`${formatAuditCode(event.entityType)}${event.entityId === null ? '' : ` / ${event.entityId}`}`}</td>
-              <td>
-                <pre>{formatMetadata(event.metadata)}</pre>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <footer className="patient-report-page-footer" aria-label="Printed audit report page footer">
-        <span>{context.deployment.name}</span>
-        <span className="patient-report-page-number" aria-label="Printed page number">
-          Page <span className="patient-report-current-page" /> of{' '}
-          <span className="patient-report-total-pages" />
-        </span>
-        <span>{`Reported by ${reportedBy}`}</span>
-      </footer>
-    </article>
-  )
-}
-
 function WorkspaceState({ message }: { readonly message: string }): React.JSX.Element {
   return (
     <div className="audit-reports-state" role="alert">
       {message}
     </div>
-  )
-}
-
-function PrintIcon(): React.JSX.Element {
-  return (
-    <svg className="patient-report-print-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M7 14h10v7H7z" />
-    </svg>
   )
 }
 
@@ -939,11 +779,4 @@ function formatMetadata(metadata: PublicAuditReportEvent['metadata']): string {
   return Object.keys(metadata).length === 0
     ? 'No metadata recorded'
     : JSON.stringify(metadata, null, 2)
-}
-
-function printReport(fileName: string): void {
-  const previousTitle = document.title
-  document.title = fileName
-  window.print()
-  document.title = previousTitle
 }

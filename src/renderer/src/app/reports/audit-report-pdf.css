@@ -1,0 +1,310 @@
+.audit-pdf-preview {
+  width: min(68rem, calc(100vw - 2rem));
+  max-width: none;
+  height: calc(100vh - 2rem);
+  max-height: none;
+  margin: auto;
+  padding: 0;
+  border: 1px solid #aebbc9;
+  border-radius: 0.6rem;
+  color: #1f2937;
+  background: #e9eef3;
+}
+
+.audit-pdf-preview[open] {
+  display: flex;
+  flex-direction: column;
+}
+.audit-pdf-preview::backdrop {
+  background: rgb(17 34 51 / 55%);
+}
+.audit-pdf-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1rem;
+  background: white;
+  border-bottom: 1px solid #cbd5e1;
+}
+.audit-pdf-toolbar > div:first-child {
+  margin-right: auto;
+}
+.audit-pdf-toolbar p {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+}
+.audit-pdf-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem;
+}
+.audit-pdf-document {
+  box-sizing: border-box;
+  max-width: 210mm;
+  min-height: 260mm;
+  margin: auto;
+  padding: 14mm;
+  background: white;
+  color: #182b42;
+  font:
+    10pt/1.45 Arial,
+    sans-serif;
+  overflow-wrap: anywhere;
+}
+.audit-pdf-header {
+  padding-bottom: 4mm;
+  border-bottom: 2px solid #286c79;
+}
+.audit-pdf-brand {
+  display: flex;
+  align-items: center;
+  gap: 3mm;
+}
+.audit-pdf-logo {
+  object-fit: contain;
+  display: block;
+  width: 25mm;
+  height: 10mm;
+}
+.audit-pdf-disclaimer {
+  text-align: right;
+  font-size: 8pt;
+  font-weight: 700;
+}
+.audit-pdf-header h1 {
+  margin: 5mm 0 2mm;
+  font-size: 20pt;
+  line-height: 1.2;
+}
+.audit-pdf-header p {
+  margin: 2mm 0 0;
+}
+.audit-pdf-metadata {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3mm 6mm;
+  margin: 5mm 0;
+}
+.audit-pdf-metadata dt {
+  font-size: 8pt;
+  font-weight: 700;
+  color: #52606d;
+}
+.audit-pdf-metadata dd {
+  margin: 1mm 0 0;
+}
+.audit-pdf-table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 5mm 0 0;
+  font-size: 10pt;
+}
+.audit-pdf-table th,
+.audit-pdf-table td {
+  border-bottom: 1px solid #d4dce4;
+  padding: 2mm 3mm;
+  text-align: left;
+}
+.audit-pdf-table thead th {
+  background: #eaf1f5;
+  color: #183655;
+  font-weight: 700;
+  border-top: 1px solid #aebbc9;
+}
+.audit-pdf-table tbody th {
+  font-weight: 400;
+}
+.audit-pdf-note {
+  margin: 5mm 0;
+  color: #52606d;
+  font-size: 8pt;
+}
+.audit-pdf-footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4mm;
+  margin-top: 6mm;
+  padding-top: 2mm;
+  border-top: 1px solid #aebbc9;
+  font-size: 7.5pt;
+}
+.audit-pdf-footer > :nth-child(2) {
+  text-align: center;
+}
+.audit-pdf-footer > :last-child {
+  text-align: right;
+}
+
+.audit-pdf-print-copy {
+  display: none;
+}
+
+@media print {
+  @page audit-report {
+    size: A4;
+    margin: 14mm 14mm 24mm;
+    @bottom-left {
+      width: 33%;
+      overflow-wrap: anywhere;
+      white-space: pre-line;
+      line-height: 1.1;
+      font:
+        7.5pt Arial,
+        sans-serif;
+      color: #52606d;
+    }
+    @bottom-center {
+      width: 25%;
+      content: 'Page ' counter(page) ' of ' counter(pages);
+      font:
+        7.5pt Arial,
+        sans-serif;
+      color: #52606d;
+    }
+    @bottom-right {
+      width: 42%;
+      font:
+        7.5pt Arial,
+        sans-serif;
+      color: #52606d;
+      overflow-wrap: anywhere;
+      white-space: pre-line;
+      line-height: 1.1;
+    }
+  }
+  .audit-reports-workspace:has(.audit-pdf-preview[open]) > :not(.audit-pdf-print-copy) {
+    display: none !important;
+  }
+  html:has(.audit-pdf-print-copy),
+  body:has(.audit-pdf-print-copy),
+  #root:has(.audit-pdf-print-copy),
+  .application-root:has(.audit-pdf-print-copy),
+  .application-workspace:has(.audit-pdf-print-copy) {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+    background: white !important;
+  }
+  .application-shell:has(.audit-pdf-print-copy) {
+    display: block;
+    max-height: none;
+  }
+  .audit-pdf-print-copy {
+    page: audit-report;
+    position: static;
+    display: block;
+    width: auto;
+    max-width: none;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    overflow: visible;
+    background: white;
+  }
+  .audit-pdf-preview[open],
+  .audit-pdf-preview::backdrop,
+  .audit-pdf-toolbar {
+    display: none !important;
+  }
+  .audit-pdf-document {
+    page: audit-report;
+    min-height: 0;
+    max-width: none;
+    padding: 0;
+  }
+  .audit-pdf-header,
+  .audit-pdf-metadata > div,
+  .audit-pdf-event {
+    break-inside: avoid;
+  }
+  .audit-pdf-table {
+    break-inside: auto;
+  }
+  .audit-pdf-table thead {
+    display: table-header-group;
+  }
+  .audit-pdf-table th,
+  .audit-pdf-table td {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .audit-pdf-footer {
+    display: none;
+  }
+}
+
+.audit-pdf-table {
+  font-size: 9pt;
+}
+.audit-pdf-table td {
+  vertical-align: top;
+}
+.audit-pdf-table th:nth-child(1) {
+  width: 21%;
+}
+.audit-pdf-table th:nth-child(2) {
+  width: 24%;
+}
+.audit-pdf-table th:nth-child(3) {
+  width: 23%;
+}
+.audit-pdf-table th:nth-child(4) {
+  width: 32%;
+}
+.audit-pdf-event td {
+  border-bottom: 0;
+}
+.audit-pdf-event-metadata td {
+  padding-top: 0;
+}
+.audit-pdf-event-metadata strong {
+  font-size: 8pt;
+  color: #52606d;
+}
+.audit-pdf-event-metadata pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 1mm 0 2mm;
+  font:
+    8.5pt/1.4 Arial,
+    sans-serif;
+}
+.audit-pdf-filters {
+  margin: 4mm 0;
+  padding: 3mm;
+  background: #f1f5f8;
+  font-size: 9pt;
+}
+.audit-pdf-filters h2 {
+  font-size: 11pt;
+  margin: 0;
+}
+.audit-pdf-filters p {
+  margin: 2mm 0 0;
+}
+@media print {
+  .audit-pdf-event {
+    break-after: avoid;
+  }
+  .audit-pdf-event-metadata {
+    break-inside: auto;
+  }
+  .audit-pdf-table tbody {
+    break-inside: avoid;
+  }
+  .audit-pdf-table tbody.audit-pdf-long-event {
+    break-inside: auto;
+  }
+  .audit-pdf-filters {
+    break-inside: avoid;
+    print-color-adjust: exact;
+  }
+}

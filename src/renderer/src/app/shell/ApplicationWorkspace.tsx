@@ -326,6 +326,7 @@ export function ApplicationWorkspace({
           key={route.commandId}
           workspaceMode={route.commandId === 'ADMINISTRATION_AUDIT' ? 'ADMINISTRATION' : 'REPORTS'}
           api={api.auditReports}
+          documentApi={api.reportDocuments}
           timeZone={context.timeZone}
           reportedBy={user.displayName}
           headingId={workspaceHeadingId}

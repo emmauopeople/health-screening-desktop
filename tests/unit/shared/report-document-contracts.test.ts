@@ -71,6 +71,19 @@ describe('report document contracts', () => {
       expect(reportDocumentRequestSchema.safeParse(invalid).success).toBe(false)
   })
 
+  it('accepts audit exports without fake clinical IDs and rejects mixed scopes and paths', () => {
+    const audit = { reportKind: 'AUDIT', suggestedFileName: 'CHS-audit-report-page-2.pdf' }
+    expect(reportDocumentRequestSchema.parse(audit)).toEqual(audit)
+    for (const invalid of [
+      { ...audit, patientId: request.patientId },
+      { ...audit, sessionId: request.patientId },
+      { ...audit, role: 'LOCAL_ADMIN' },
+      { ...audit, suggestedFileName: '../audit.pdf' },
+      { ...audit, suggestedFileName: 'audit.html' }
+    ])
+      expect(reportDocumentRequestSchema.safeParse(invalid).success).toBe(false)
+  })
+
   it('fails closed when parsing hostile getters', () => {
     const hostile = Object.create(null) as Record<string, unknown>
     Object.defineProperty(hostile, 'reportKind', {

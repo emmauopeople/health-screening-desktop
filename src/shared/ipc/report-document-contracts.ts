@@ -8,7 +8,8 @@ export const reportDocumentKindSchema = z.enum([
   'VITALS',
   'LIFESTYLE',
   'REFERRALS',
-  'SESSION'
+  'SESSION',
+  'AUDIT'
 ])
 export const reportDocumentFileNameSchema = z
   .string()
@@ -27,13 +28,19 @@ export const savedReportDocumentFileNameSchema = z
 const patientReportDocumentRequestSchema = z
   .object({
     patientId: reportDocumentPatientIdSchema,
-    reportKind: reportDocumentKindSchema.exclude(['SESSION']),
+    reportKind: reportDocumentKindSchema.exclude(['SESSION', 'AUDIT']),
     suggestedFileName: reportDocumentFileNameSchema
   })
   .strict()
 
 export const reportDocumentRequestSchema = z.discriminatedUnion('reportKind', [
   patientReportDocumentRequestSchema,
+  z
+    .object({
+      reportKind: z.literal('AUDIT'),
+      suggestedFileName: reportDocumentFileNameSchema
+    })
+    .strict(),
   z
     .object({
       sessionId: z.uuid(),

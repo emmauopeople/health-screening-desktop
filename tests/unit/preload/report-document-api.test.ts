@@ -54,6 +54,16 @@ describe('preload report document API', () => {
     expect(invoke).toHaveBeenNthCalledWith(2, ipcChannels.reportDocuments.print, session)
   })
 
+  it('forwards audit exports through both fixed channels without clinical scope', async () => {
+    const invoke = vi.fn().mockResolvedValue(createIpcSuccess({ status: 'CANCELLED' }))
+    const api = createHealthScreeningApi(invoke).reportDocuments
+    const audit = { reportKind: 'AUDIT' as const, suggestedFileName: 'CHS-audit.pdf' }
+    await api.savePdf(audit)
+    await api.print(audit)
+    expect(invoke).toHaveBeenNthCalledWith(1, ipcChannels.reportDocuments.savePdf, audit)
+    expect(invoke).toHaveBeenNthCalledWith(2, ipcChannels.reportDocuments.print, audit)
+  })
+
   it('blocks malformed requests and contains rejected or malformed responses', async () => {
     const invoke = vi.fn()
     const api = createHealthScreeningApi(invoke).reportDocuments
