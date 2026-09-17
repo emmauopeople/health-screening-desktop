@@ -1,3 +1,4 @@
+import { CentralPatientHistoryPanel } from '../central-history/CentralPatientHistoryPanel'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, MutableRefObject, ReactNode } from 'react'
 
@@ -17,6 +18,7 @@ import type {
 export type PatientDetailTab =
   | 'CURRENT_DETAILS'
   | 'SCREENING_HISTORY'
+  | 'CENTRAL_HISTORY'
   | 'DEMOGRAPHIC_HISTORY'
   | 'ACKNOWLEDGMENT_HISTORY'
   | 'IDENTIFIERS'
@@ -53,6 +55,12 @@ const patientDetailTabs = Object.freeze([
     label: 'Screening History',
     tabId: 'patient-detail-tab-screening-history',
     panelId: 'patient-detail-panel-screening-history'
+  },
+  {
+    id: 'CENTRAL_HISTORY',
+    label: 'Central History',
+    tabId: 'patient-detail-tab-central-history',
+    panelId: 'patient-detail-panel-central-history'
   },
   {
     id: 'DEMOGRAPHIC_HISTORY',
@@ -431,6 +439,21 @@ export function PatientDetailTabs({
               )
             }}
             onOpenEncounter={onOpenEncounter}
+          />
+        ) : null}
+        {activeTab === 'CENTRAL_HISTORY' ? (
+          <CentralPatientHistoryPanel
+            key={patient.id}
+            api={api.centralHistory}
+            patientId={patient.id}
+            securityEpochRef={securityEpochRef}
+            registerStateInvalidator={registerStateInvalidator}
+            onAuthenticationFailure={(status) => {
+              onPatientFailure(
+                status === 'FORBIDDEN' ? 'AUTHORIZATION_FAILED' : 'AUTH_UNAUTHENTICATED',
+                'Central history is unavailable.'
+              )
+            }}
           />
         ) : null}
         {activeTab === 'DEMOGRAPHIC_HISTORY' ? (
