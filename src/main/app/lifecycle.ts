@@ -1,3 +1,4 @@
+import { applyPendingRestore, type AppliedRestore } from '@main/application/backups/pending-restore'
 import { createElectronBackupService } from '@main/application/backups/electron-backup-service'
 import { createUserAdministrationService } from '@main/application/user-administration/user-administration-service'
 import { app, dialog, ipcMain, session } from 'electron'
@@ -71,6 +72,7 @@ export function startApplicationLifecycle(): void {
 
   app.whenReady().then(async () => {
     let databaseRuntime: DatabaseRuntime | undefined
+    let appliedRestore: AppliedRestore | undefined
 
     try {
       electronApp.setAppUserModelId('org.healthscreening.desktop')
@@ -84,9 +86,11 @@ export function startApplicationLifecycle(): void {
         rendererUrl: configuration.rendererUrl
       })
 
+      appliedRestore = await applyPendingRestore(app.getPath('userData'))
+
       // Installer configuration must finish before SQLite or any background worker opens.
       const installationSetup =
-        app.isPackaged && process.platform === 'win32'
+        !appliedRestore && app.isPackaged && process.platform === 'win32'
           ? await prepareElectronInstallationSetup(
               app.getPath('userData'),
               join(process.resourcesPath, 'installation-receipt.txt')
@@ -224,7 +228,12 @@ export function startApplicationLifecycle(): void {
         connection: databaseRuntime.getConnection(),
         authenticationSessionService,
         applicationVersion: app.getVersion(),
-        userDataDirectory: app.getPath('userData')
+        userDataDirectory: app.getPath('userData'),
+        requestRestart() {
+          // Replacement happens in the next process, after this process has exited.
+          app.relaunch()
+          setImmediate(() => app.quit())
+        }
       })
       const reportDocumentService = createElectronReportDocumentService()
       const syncWorkerScheduler = createSyncWorkerScheduler(
@@ -347,6 +356,16 @@ export function startApplicationLifecycle(): void {
 
       await createOrFocusMainWindow(configuration)
       installationSetup?.complete()
+      appliedRestore?.complete()
+      if (appliedRestore) {
+        await dialog.showMessageBox({
+          type: 'info',
+          title: 'Backup restored',
+          message:
+            'The backup was restored. Sign in using an account and password from that backup.',
+          detail: `The previous data is preserved at:\n${appliedRestore.recoveryPath}`
+        })
+      }
       syncWorkerScheduler.start()
 
       app.on('activate', () => {
@@ -358,6 +377,11 @@ export function startApplicationLifecycle(): void {
       })
     } catch (error) {
       databaseRuntime?.close()
+      try {
+        appliedRestore?.rollback()
+      } catch {
+        console.error('Restore rollback requires administrator recovery.')
+      }
       logDatabaseStartupFailure(error)
       dialog.showErrorBox(
         'CHS could not start',

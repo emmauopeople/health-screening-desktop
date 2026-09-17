@@ -164,7 +164,10 @@ describe('shared IPC contracts', () => {
       },
       backups: {
         create: 'health-screening:backups:create',
-        inspect: 'health-screening:backups:inspect'
+        inspect: 'health-screening:backups:inspect',
+        prepareRestore: 'health-screening:backups:prepare-restore',
+        restore: 'health-screening:backups:restore',
+        discardRestore: 'health-screening:backups:discard-restore'
       },
       reportDocuments: {
         savePdf: 'health-screening:report-documents:save-pdf',
@@ -177,7 +180,7 @@ describe('shared IPC contracts', () => {
     })
     const allChannels = flattenChannelStrings(ipcChannels)
 
-    expect(allChannels).toHaveLength(74)
+    expect(allChannels).toHaveLength(77)
     expect(new Set(allChannels).size).toBe(allChannels.length)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.lifestyle.complete)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.complete)

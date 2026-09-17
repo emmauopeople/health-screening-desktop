@@ -111,6 +111,7 @@ describe('application navigation catalog', () => {
       'ADMINISTRATION_USERS',
       'ADMINISTRATION_LOCATIONS',
       'ADMINISTRATION_SYNC_CENTER',
+      'ADMINISTRATION_BACKUP_RESTORE',
       'ADMINISTRATION_AUDIT'
     ])
   })

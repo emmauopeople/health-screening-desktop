@@ -1,3 +1,4 @@
+import { BackupRestoreWorkspace } from '../administration/BackupRestoreWorkspace'
 import { UsersAdministrationWorkspace } from '../administration/UsersAdministrationWorkspace'
 import type { RefObject } from 'react'
 import { useState } from 'react'
@@ -191,7 +192,16 @@ export function ApplicationWorkspace({
           registerNavigationGuard={registerNavigationGuard}
         />
       ) : route.status === 'ADMINISTRATION' ? (
-        route.commandId === 'ADMINISTRATION_SYNC_CENTER' ? (
+        route.commandId === 'ADMINISTRATION_BACKUP_RESTORE' ? (
+          <BackupRestoreWorkspace
+            api={api.backups}
+            userRole={user.role}
+            headingId={workspaceHeadingId}
+            headingRef={headingRef}
+            onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}
+            registerNavigationGuard={registerNavigationGuard}
+          />
+        ) : route.commandId === 'ADMINISTRATION_SYNC_CENTER' ? (
           <SynchronizationAdministrationWorkspace
             api={api}
             headingId={workspaceHeadingId}

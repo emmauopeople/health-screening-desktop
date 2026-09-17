@@ -10,7 +10,11 @@ import {
 export function createElectronBackupService(
   options: Pick<
     BackupServiceOptions,
-    'connection' | 'authenticationSessionService' | 'applicationVersion' | 'userDataDirectory'
+    | 'connection'
+    | 'authenticationSessionService'
+    | 'applicationVersion'
+    | 'userDataDirectory'
+    | 'requestRestart'
   >
 ): BackupService {
   const workDirectory = join(options.userDataDirectory, 'backup-work')

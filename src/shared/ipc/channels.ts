@@ -56,7 +56,10 @@ export const ipcChannels = {
   },
   backups: {
     create: 'health-screening:backups:create',
-    inspect: 'health-screening:backups:inspect'
+    inspect: 'health-screening:backups:inspect',
+    prepareRestore: 'health-screening:backups:prepare-restore',
+    restore: 'health-screening:backups:restore',
+    discardRestore: 'health-screening:backups:discard-restore'
   },
   reportDocuments: {
     savePdf: 'health-screening:report-documents:save-pdf',

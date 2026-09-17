@@ -239,8 +239,8 @@ const commandDefinitions = [
     'ADMINISTRATION',
     'Backup / Restore',
     adminOnlyRoles,
-    'PLANNED',
-    plannedOwners.administration
+    'AVAILABLE',
+    null
   ),
   command('ADMINISTRATION_AUDIT', 'ADMINISTRATION', 'Audit', adminOnlyRoles, 'AVAILABLE', null)
 ] as const

@@ -10,7 +10,10 @@ const request = { password: 'a-long-backup-passphrase' }
 function fixture(): { service: BackupService; handlers: ReturnType<typeof createBackupHandlers> } {
   const service: BackupService = {
     create: vi.fn(async () => ({ status: 'CANCELLED' as const })),
-    inspect: vi.fn(async () => ({ status: 'CANCELLED' as const }))
+    inspect: vi.fn(async () => ({ status: 'CANCELLED' as const })),
+    prepareRestore: async () => ({ status: 'UNAVAILABLE' as const }),
+    restore: async () => ({ status: 'UNAVAILABLE' as const }),
+    discardRestore: async () => ({ status: 'UNAVAILABLE' as const })
   }
   return {
     service,
@@ -83,4 +86,32 @@ describe('backup IPC isolation', () => {
       data: { status: 'UNAVAILABLE' }
     })
   })
+})
+
+it('contains restore endpoints, rejects injected paths and requires literal confirmation', async () => {
+  const { handlers, service } = fixture()
+  const token = '11111111-1111-4111-8111-111111111111'
+  const foreign = { url: 'https://untrusted.invalid' }
+  for (const method of ['prepareRestore', 'restore', 'discardRestore'] as const) {
+    expect(
+      await handlers[method]({ sender: { mainFrame: foreign }, senderFrame: foreign }, {})
+    ).toMatchObject({ ok: false, error: { code: 'IPC_FORBIDDEN' } })
+  }
+  expect(await handlers.restore(event, { token, confirmation: 'YES' })).toMatchObject({
+    ok: true,
+    data: { status: 'VALIDATION_FAILED' }
+  })
+  expect(
+    await handlers.restore(event, { token, confirmation: 'RESTORE', path: '/private' })
+  ).toMatchObject({ ok: true, data: { status: 'VALIDATION_FAILED' } })
+  service.restore = vi.fn<BackupService['restore']>(async () => ({ status: 'RESTARTING' }))
+  const bound = createBackupHandlers({
+    navigationPolicy: createDevelopmentNavigationPolicy(frame.url),
+    service
+  })
+  expect(await bound.restore(event, { token, confirmation: 'RESTORE' })).toEqual({
+    ok: true,
+    data: { status: 'RESTARTING' }
+  })
+  expect(service.restore).toHaveBeenCalledWith({ token, confirmation: 'RESTORE' })
 })

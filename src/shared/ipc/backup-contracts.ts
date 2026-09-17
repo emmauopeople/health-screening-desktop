@@ -22,6 +22,12 @@ export const backupMetadataSchema = z
     credentialScope: z.literal('ORIGINAL_OS_PROFILE')
   })
   .strict()
+export const restoreTokenRequestSchema = z.object({ token: z.uuid() }).strict()
+export const restoreCommitRequestSchema = z
+  .object({ token: z.uuid(), confirmation: z.literal('RESTORE') })
+  .strict()
+export type RestoreTokenRequest = z.infer<typeof restoreTokenRequestSchema>
+export type RestoreCommitRequest = z.infer<typeof restoreCommitRequestSchema>
 const failureStatus = z.enum([
   'CANCELLED',
   'BUSY',
@@ -31,9 +37,16 @@ const failureStatus = z.enum([
   'INVALID_BACKUP',
   'UNSUPPORTED_BACKUP',
   'DESTINATION_EXISTS',
-  'UNAVAILABLE'
+  'UNAVAILABLE',
+  'DIFFERENT_INSTALLATION',
+  'SYNC_RECOVERY_REQUIRED',
+  'RESTORE_EXPIRED',
+  'RESTARTING'
 ])
 export const backupActionDataSchema = z.union([
+  z
+    .object({ status: z.literal('RESTORE_READY'), token: z.uuid(), metadata: backupMetadataSchema })
+    .strict(),
   z.object({ status: z.enum(['SAVED', 'VERIFIED']), metadata: backupMetadataSchema }).strict(),
   z.object({ status: failureStatus }).strict()
 ])
@@ -45,4 +58,7 @@ export type BackupActionResult = z.infer<typeof backupActionResultSchema>
 export interface BackupApi {
   create(request: BackupRequest): Promise<BackupActionResult>
   inspect(request: BackupRequest): Promise<BackupActionResult>
+  prepareRestore(request: BackupRequest): Promise<BackupActionResult>
+  restore(request: RestoreCommitRequest): Promise<BackupActionResult>
+  discardRestore(request: RestoreTokenRequest): Promise<BackupActionResult>
 }
