@@ -58,9 +58,10 @@ describe('migration manifest', () => {
       { version: 21, name: 'sync-identity-resolution-delivery', checksumLength: 64 },
       { version: 22, name: 'food-otc-sync', checksumLength: 64 },
       { version: 23, name: 'clinical-screening-time', checksumLength: 64 },
-      { version: 24, name: 'referral-sync', checksumLength: 64 }
+      { version: 24, name: 'referral-sync', checksumLength: 64 },
+      { version: 25, name: 'encounter-history-sync', checksumLength: 64 }
     ])
-    expect(targetSchemaVersion).toBe(24)
+    expect(targetSchemaVersion).toBe(25)
     expect(resolved[0]?.checksum).toBe(
       '36bb5114185c0a691c8ba8dc1fdfc749a6f5a7069cbcb5efb88a6b55dd6e5fed'
     )

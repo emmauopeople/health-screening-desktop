@@ -6,6 +6,9 @@ import type { MaterializedSyncResourceType } from '../sync-snapshot/sync-snapsho
 export const syncSignalResources: ReadonlyMap<string, MaterializedSyncResourceType> = new Map([
   ['SCREENING_FOOD_FINALIZED', 'FOOD'],
   ['SCREENING_OTC_FINALIZED', 'OTC'],
+  ['ENCOUNTER_ADDENDUM_SYNC_REQUESTED', 'ENCOUNTER_ADDENDUM'],
+  ['ENCOUNTER_REVIEW_FLAG_SYNC_REQUESTED', 'ENCOUNTER_REVIEW_FLAG'],
+  ['ENCOUNTER_REVIEW_STATUS_SYNC_REQUESTED', 'ENCOUNTER_REVIEW_STATUS'],
   ['REFERRAL_CREATED', 'REFERRAL'],
   ['REFERRAL_STATUS_UPDATED', 'REFERRAL'],
   ['REFERRAL_FOLLOWUP_RECORDED', 'REFERRAL'],

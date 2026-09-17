@@ -452,14 +452,18 @@ function writeEvent(
     occurredAt,
     metadata
   })
-  dependencies.screeningEncounterOutboxRepository.insert(context.connection, {
-    id: context.newEntityId(),
-    aggregateId: encounterId,
-    operation,
-    payloadSchemaVersion: schema,
-    createdAt: occurredAt,
-    payload: metadata
-  })
+  // Migration 25 queues annotation identities atomically with their clinical rows.
+  // Encounter-level signals remain necessary for voiding the parent encounter.
+  if (operation === 'SCREENING_ENCOUNTER_VOIDED') {
+    dependencies.screeningEncounterOutboxRepository.insert(context.connection, {
+      id: context.newEntityId(),
+      aggregateId: encounterId,
+      operation,
+      payloadSchemaVersion: schema,
+      createdAt: occurredAt,
+      payload: metadata
+    })
+  }
 }
 
 function resolveActor(

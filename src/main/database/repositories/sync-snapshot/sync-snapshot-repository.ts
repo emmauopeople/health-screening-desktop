@@ -1,3 +1,4 @@
+import { materializeEncounterHistory } from './encounter-history-snapshot'
 import { materializeReferral } from './referral-snapshot'
 import { parseClinicalTime } from '@shared/clinical-time'
 import type Database from 'better-sqlite3'
@@ -48,7 +49,10 @@ const resourceOrder: Readonly<Record<MaterializedSyncResourceType, number>> = Ob
   OTC: 6,
   REFERRAL: 7,
   REFERRAL_STATUS: 8,
-  REFERRAL_FOLLOWUP: 9
+  REFERRAL_FOLLOWUP: 9,
+  ENCOUNTER_ADDENDUM: 10,
+  ENCOUNTER_REVIEW_FLAG: 11,
+  ENCOUNTER_REVIEW_STATUS: 12
 })
 
 interface OutboxSignal {
@@ -253,33 +257,37 @@ function materializeCandidate(
 ): MaterializedCandidate | null {
   const latestSignal = group.signals[group.signals.length - 1]!
   const materialized =
-    group.resourceType === 'REFERRAL' ||
-    group.resourceType === 'REFERRAL_STATUS' ||
-    group.resourceType === 'REFERRAL_FOLLOWUP'
-      ? materializeReferral(connection, installation, group.aggregateId, group.resourceType)
-      : group.resourceType === 'PATIENT'
-        ? materializePatient(connection, group.aggregateId, latestSignal)
-        : group.resourceType === 'SCREENING_SESSION'
-          ? materializeSession(connection, installation, group.aggregateId, latestSignal)
-          : group.resourceType === 'SCREENING_ENCOUNTER'
-            ? materializeEncounter(connection, installation, group.aggregateId, latestSignal)
-            : group.resourceType === 'VITALS'
-              ? materializeVitals(connection, installation, group.aggregateId, latestSignal)
-              : group.resourceType === 'FOOD' || group.resourceType === 'OTC'
-                ? materializeReportedIntake(
-                    connection,
-                    installation,
-                    group.aggregateId,
-                    latestSignal,
-                    group.resourceType
-                  )
-                : materializeLifestyle(
-                    connection,
-                    lifestyleRepository,
-                    installation,
-                    group.aggregateId,
-                    latestSignal
-                  )
+    group.resourceType === 'ENCOUNTER_ADDENDUM' ||
+    group.resourceType === 'ENCOUNTER_REVIEW_FLAG' ||
+    group.resourceType === 'ENCOUNTER_REVIEW_STATUS'
+      ? materializeEncounterHistory(connection, installation, group.aggregateId, group.resourceType)
+      : group.resourceType === 'REFERRAL' ||
+          group.resourceType === 'REFERRAL_STATUS' ||
+          group.resourceType === 'REFERRAL_FOLLOWUP'
+        ? materializeReferral(connection, installation, group.aggregateId, group.resourceType)
+        : group.resourceType === 'PATIENT'
+          ? materializePatient(connection, group.aggregateId, latestSignal)
+          : group.resourceType === 'SCREENING_SESSION'
+            ? materializeSession(connection, installation, group.aggregateId, latestSignal)
+            : group.resourceType === 'SCREENING_ENCOUNTER'
+              ? materializeEncounter(connection, installation, group.aggregateId, latestSignal)
+              : group.resourceType === 'VITALS'
+                ? materializeVitals(connection, installation, group.aggregateId, latestSignal)
+                : group.resourceType === 'FOOD' || group.resourceType === 'OTC'
+                  ? materializeReportedIntake(
+                      connection,
+                      installation,
+                      group.aggregateId,
+                      latestSignal,
+                      group.resourceType
+                    )
+                  : materializeLifestyle(
+                      connection,
+                      lifestyleRepository,
+                      installation,
+                      group.aggregateId,
+                      latestSignal
+                    )
 
   if (materialized === null) return null
   return Object.freeze({

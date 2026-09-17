@@ -54,6 +54,344 @@ afterEach(async () => {
 })
 
 describe('sync snapshot materialization', () => {
+  it('does not queue imported annotations during upgrade or later source writes', async () => {
+    const h = await createHarness(24),
+      c = h.connection
+    insertClinicalFoundation(c)
+    c.prepare("UPDATE screening_encounters SET source_type='CENTRAL' WHERE id=?").run(encounterId)
+    const note = randomUUID(),
+      flag = randomUUID()
+    c.prepare('INSERT INTO screening_encounter_addenda VALUES (?,?,?,?,?)').run(
+      note,
+      encounterId,
+      'Imported note',
+      nurseId,
+      now
+    )
+    c.prepare(
+      "INSERT INTO screening_encounter_review_flags VALUES (?,?,'OTHER','Imported review','OPEN',?,?,NULL,NULL,NULL)"
+    ).run(flag, encounterId, nurseId, now)
+    const legacy = randomUUID()
+    insertSignal(
+      c,
+      legacy,
+      'SCREENING_ENCOUNTER',
+      encounterId,
+      'SCREENING_ENCOUNTER_ADDENDUM_ADDED',
+      0
+    )
+    c.prepare('UPDATE sync_outbox SET payload_json=? WHERE id=?').run(
+      JSON.stringify({ encounter_id: encounterId, addendum_id: note }),
+      legacy
+    )
+    createProductionDatabaseMigrationRunner({
+      applicationVersion: '1.0.0',
+      logger: { info: vi.fn(), error: vi.fn() },
+      clock: { now: () => now }
+    })(c)
+    c.prepare('INSERT INTO screening_encounter_addenda VALUES (?,?,?,?,?)').run(
+      randomUUID(),
+      encounterId,
+      'Another imported note',
+      nurseId,
+      now
+    )
+    c.prepare(
+      "UPDATE screening_encounter_review_flags SET status='RESOLVED',resolved_by=?,resolved_at=?,resolution_note='Imported resolution' WHERE id=?"
+    ).run(adminId, now, flag)
+    expect(
+      c
+        .prepare("SELECT count(*) AS n FROM sync_outbox WHERE aggregate_type='ENCOUNTER_HISTORY'")
+        .get()
+    ).toEqual({ n: 0 })
+    expect(h.service.prepareNextBatch()).toEqual({ status: 'IDLE' })
+  })
+
+  it('backfills addenda and both review actions with original authors without rewriting clinical rows', async () => {
+    const h = await createHarness(24)
+    const c = h.connection
+    insertClinicalFoundation(c)
+    c.prepare("UPDATE screening_encounters SET status='COMPLETED',completed_at=? WHERE id=?").run(
+      now,
+      encounterId
+    )
+    const note = randomUUID(),
+      flag = randomUUID()
+    c.prepare('INSERT INTO screening_encounter_addenda VALUES (?,?,?,?,?)').run(
+      note,
+      encounterId,
+      'Original clarification',
+      nurseId,
+      now
+    )
+    c.prepare(
+      "INSERT INTO screening_encounter_review_flags VALUES (?,?,'MISSING_INFORMATION','Original review','RESOLVED',?,?,?,?,?)"
+    ).run(flag, encounterId, nurseId, now, adminId, now, 'Reviewed with the source')
+    const legacy = randomUUID()
+    insertSignal(
+      c,
+      legacy,
+      'SCREENING_ENCOUNTER',
+      encounterId,
+      'SCREENING_ENCOUNTER_ADDENDUM_ADDED',
+      0
+    )
+    c.prepare('UPDATE sync_outbox SET payload_json=? WHERE id=?').run(
+      JSON.stringify({ encounter_id: encounterId, addendum_id: note }),
+      legacy
+    )
+    const before = [
+      'screening_encounters',
+      'screening_encounter_addenda',
+      'screening_encounter_review_flags'
+    ].map((t) => c.prepare(`SELECT * FROM ${t}`).all())
+    const legacyFlagSignals = [randomUUID(), randomUUID()]
+    for (const [index, operation] of [
+      'SCREENING_ENCOUNTER_REVIEW_FLAG_OPENED',
+      'SCREENING_ENCOUNTER_REVIEW_FLAG_UPDATED'
+    ].entries()) {
+      insertSignal(c, legacyFlagSignals[index]!, 'SCREENING_ENCOUNTER', encounterId, operation, 0)
+      c.prepare('UPDATE sync_outbox SET payload_json=? WHERE id=?').run(
+        JSON.stringify({ encounter_id: encounterId, flag_id: flag }),
+        legacyFlagSignals[index]
+      )
+    }
+    const migrate = createProductionDatabaseMigrationRunner({
+      applicationVersion: '1.0.0',
+      logger: { info: vi.fn(), error: vi.fn() },
+      clock: { now: () => now }
+    })
+    expect(migrate(c).appliedVersions).toEqual([25])
+    const signals = readTableCount(c, 'sync_outbox')
+    expect(migrate(c).appliedVersions).toEqual([])
+    expect(readTableCount(c, 'sync_outbox')).toBe(signals)
+    expect(
+      [
+        'screening_encounters',
+        'screening_encounter_addenda',
+        'screening_encounter_review_flags'
+      ].map((t) => c.prepare(`SELECT * FROM ${t}`).all())
+    ).toEqual(before)
+    expect(h.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED', recordCount: 4 })
+    expect(
+      c
+        .prepare('SELECT aggregate_type,status FROM sync_outbox WHERE id IN (?,?)')
+        .all(...legacyFlagSignals)
+    ).toEqual([
+      { aggregate_type: 'ENCOUNTER_HISTORY', status: 'IN_FLIGHT' },
+      { aggregate_type: 'ENCOUNTER_HISTORY', status: 'IN_FLIGHT' }
+    ])
+    const request = readStoredRequest(c)
+    expect(request.records.find((r) => r.resourceType === 'ENCOUNTER_ADDENDUM')).toMatchObject({
+      localResourceId: note,
+      sourceActorLocalId: nurseId,
+      capturedAt: now,
+      sourceRevision: 1,
+      payload: {
+        noteText: 'Original clarification',
+        createdByLocalActorId: nurseId,
+        createdAt: now,
+        localEncounterId: encounterId
+      }
+    })
+    expect(
+      request.records
+        .filter((r) => r.resourceType === 'ENCOUNTER_REVIEW_STATUS')
+        .sort((a, b) => Number(a.payload.sequenceNumber) - Number(b.payload.sequenceNumber))
+    ).toMatchObject([
+      {
+        sourceActorLocalId: nurseId,
+        payload: {
+          sequenceNumber: 1,
+          fromStatus: null,
+          toStatus: 'OPEN',
+          changedByLocalActorId: nurseId
+        }
+      },
+      {
+        sourceActorLocalId: adminId,
+        payload: {
+          sequenceNumber: 2,
+          fromStatus: 'OPEN',
+          toStatus: 'RESOLVED',
+          changeReason: 'Reviewed with the source',
+          changedByLocalActorId: adminId
+        }
+      }
+    ])
+    expect(
+      c.prepare('SELECT aggregate_type,aggregate_id,status FROM sync_outbox WHERE id=?').get(legacy)
+    ).toEqual({ aggregate_type: 'ENCOUNTER_HISTORY', aggregate_id: note, status: 'IN_FLIGHT' })
+    expect(JSON.stringify(c.prepare('SELECT payload_json FROM sync_outbox').all())).not.toContain(
+      'Original clarification'
+    )
+  })
+
+  it('uploads late flag resolution separately and preserves the original flag snapshot after voiding', async () => {
+    const h = await createHarness(),
+      c = h.connection
+    insertClinicalFoundation(c)
+    const flag = randomUUID()
+    c.prepare(
+      "INSERT INTO screening_encounter_review_flags VALUES (?,?,'OTHER','Original concern','OPEN',?,?,NULL,NULL,NULL)"
+    ).run(flag, encounterId, nurseId, now)
+    expect(h.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED', recordCount: 2 })
+    const first = readStoredRequest(c).records.find(
+      (r) => r.resourceType === 'ENCOUNTER_REVIEW_FLAG'
+    )
+    c.prepare(
+      "UPDATE screening_encounter_review_flags SET status='DISMISSED',resolved_by=?,resolved_at=?,resolution_note='Reviewed' WHERE id=?"
+    ).run(adminId, now, flag)
+    c.prepare(
+      "UPDATE screening_encounters SET status='VOID',completed_at=?,void_reason='Synthetic correction' WHERE id=?"
+    ).run(now, encounterId)
+    insertSignal(
+      c,
+      randomUUID(),
+      'ENCOUNTER_HISTORY',
+      flag,
+      'ENCOUNTER_REVIEW_FLAG_SYNC_REQUESTED',
+      0
+    )
+    expect(h.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED', recordCount: 2 })
+    const requests = (
+      c.prepare('SELECT request_json FROM sync_transport_batches ORDER BY rowid').all() as {
+        request_json: string
+      }[]
+    ).map((r) => JSON.parse(r.request_json) as ReturnType<typeof readStoredRequest>)
+    expect(requests[1]!.records.find((r) => r.resourceType === 'ENCOUNTER_REVIEW_FLAG')).toEqual(
+      first
+    )
+    expect(
+      requests[1]!.records.find((r) => r.resourceType === 'ENCOUNTER_REVIEW_STATUS')
+    ).toMatchObject({
+      sourceActorLocalId: adminId,
+      sourceRevision: 1,
+      payload: { sequenceNumber: 2, toStatus: 'DISMISSED', changedByLocalActorId: adminId }
+    })
+    expect(
+      c.prepare('SELECT count(*) AS n FROM screening_encounter_review_status_history').get()
+    ).toEqual({ n: 2 })
+  })
+
+  it('bounds long addendum histories across batches without coalescing separate notes', async () => {
+    const h = await createHarness(),
+      c = h.connection
+    insertClinicalFoundation(c)
+    c.transaction(() => {
+      for (let i = 0; i < 105; i++)
+        c.prepare('INSERT INTO screening_encounter_addenda VALUES (?,?,?,?,?)').run(
+          randomUUID(),
+          encounterId,
+          `Synthetic note ${i}`,
+          nurseId,
+          now
+        )
+    })()
+    expect(h.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED', recordCount: 100 })
+    expect(h.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED', recordCount: 5 })
+    expect(h.service.prepareNextBatch()).toEqual({ status: 'IDLE' })
+    const requests = (
+      c.prepare('SELECT request_json FROM sync_transport_batches').all() as {
+        request_json: string
+      }[]
+    ).map((r) => JSON.parse(r.request_json) as ReturnType<typeof readStoredRequest>)
+    expect(new Set(requests.flatMap((r) => r.records.map((v) => v.recordId))).size).toBe(105)
+    expect(
+      c.prepare("SELECT count(*) AS n FROM sync_outbox WHERE status='IN_FLIGHT'").get()
+    ).toEqual({ n: 105 })
+  })
+
+  it('keeps addenda, original flag metadata and closed history immutable', async () => {
+    const h = await createHarness(),
+      c = h.connection
+    insertClinicalFoundation(c)
+    const note = randomUUID(),
+      flag = randomUUID()
+    c.prepare('INSERT INTO screening_encounter_addenda VALUES (?,?,?,?,?)').run(
+      note,
+      encounterId,
+      'Original note',
+      nurseId,
+      now
+    )
+    c.prepare(
+      "INSERT INTO screening_encounter_review_flags VALUES (?,?,'OTHER','Original concern','OPEN',?,?,NULL,NULL,NULL)"
+    ).run(flag, encounterId, nurseId, now)
+    expect(() =>
+      c.prepare("UPDATE screening_encounter_addenda SET note_text='Rewrite' WHERE id=?").run(note)
+    ).toThrow('immutable')
+    expect(() => c.prepare('DELETE FROM screening_encounter_addenda WHERE id=?').run(note)).toThrow(
+      'immutable'
+    )
+    expect(() =>
+      c
+        .prepare("UPDATE screening_encounter_review_flags SET description='Rewrite' WHERE id=?")
+        .run(flag)
+    ).toThrow('immutable')
+    c.prepare(
+      "UPDATE screening_encounter_review_flags SET status='RESOLVED',resolved_by=?,resolved_at=?,resolution_note='Reviewed' WHERE id=?"
+    ).run(adminId, now, flag)
+    expect(() =>
+      c
+        .prepare("UPDATE screening_encounter_review_flags SET resolution_note='Rewrite' WHERE id=?")
+        .run(flag)
+    ).toThrow('immutable')
+    expect(() =>
+      c.prepare('DELETE FROM screening_encounter_review_status_history WHERE flag_id=?').run(flag)
+    ).toThrow('immutable')
+  })
+
+  it('rolls clinical writes back if their durable history signal cannot be queued', async () => {
+    const h = await createHarness(),
+      c = h.connection
+    insertClinicalFoundation(c)
+    const flag = randomUUID()
+    c.prepare(
+      "INSERT INTO screening_encounter_review_flags VALUES (?,?,'OTHER','Original concern','OPEN',?,?,NULL,NULL,NULL)"
+    ).run(flag, encounterId, nurseId, now)
+    c.exec(
+      "CREATE TRIGGER fail_history_signal BEFORE INSERT ON sync_outbox WHEN NEW.aggregate_type='ENCOUNTER_HISTORY' BEGIN SELECT RAISE(ABORT,'Synthetic signal failure'); END;"
+    )
+    expect(() =>
+      c
+        .prepare('INSERT INTO screening_encounter_addenda VALUES (?,?,?,?,?)')
+        .run(randomUUID(), encounterId, 'Synthetic note', nurseId, now)
+    ).toThrow('Synthetic signal failure')
+    expect(() =>
+      c
+        .prepare(
+          "UPDATE screening_encounter_review_flags SET status='RESOLVED',resolved_by=?,resolved_at=?,resolution_note='Reviewed' WHERE id=?"
+        )
+        .run(adminId, now, flag)
+    ).toThrow('Synthetic signal failure')
+    expect(readTableCount(c, 'screening_encounter_addenda')).toBe(0)
+    expect(readTableCount(c, 'screening_encounter_review_status_history')).toBe(1)
+    expect(
+      c
+        .prepare('SELECT status,resolved_at FROM screening_encounter_review_flags WHERE id=?')
+        .get(flag)
+    ).toEqual({ status: 'OPEN', resolved_at: null })
+  })
+
+  it('fails closed on missing annotation authors without exposing note text in diagnostics', async () => {
+    const h = await createHarness(),
+      c = h.connection
+    insertClinicalFoundation(c)
+    c.pragma('foreign_keys = OFF')
+    c.prepare('INSERT INTO screening_encounter_addenda VALUES (?,?,?,?,?)').run(
+      randomUUID(),
+      encounterId,
+      'Private synthetic annotation',
+      randomUUID(),
+      now
+    )
+    c.pragma('foreign_keys = ON')
+    expect(h.service.prepareNextBatch()).toEqual({ status: 'UNAVAILABLE' })
+    expect(readTableCount(c, 'sync_transport_batches')).toBe(0)
+    expect(JSON.stringify(h.diagnostics)).not.toContain('Private synthetic annotation')
+  })
+
   it('backfills referral history without changing source records and reuses exact snapshot identities', async () => {
     const h = await createHarness(23)
     const c = h.connection
@@ -76,7 +414,7 @@ describe('sync snapshot materialization', () => {
       clock: { now: () => now }
     })
 
-    expect(migrate(c).appliedVersions).toEqual([24])
+    expect(migrate(c).appliedVersions).toEqual([24, 25])
     expect(migrate(c).appliedVersions).toEqual([])
     expect(tables.map((table) => c.prepare(`SELECT * FROM ${table}`).all())).toEqual(before)
     expect(h.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED', recordCount: 3 })
@@ -376,7 +714,7 @@ describe('sync snapshot materialization', () => {
       logger: { info: vi.fn(), error: vi.fn() },
       clock: { now: () => now }
     })
-    expect(migrate(c).appliedVersions).toEqual([22, 23, 24])
+    expect(migrate(c).appliedVersions).toEqual([22, 23, 24, 25])
     expect(migrate(c).appliedVersions).toEqual([])
     expect(c.prepare('SELECT * FROM food_logs').all()).toEqual(before)
     expect(readTableCount(c, 'sync_outbox')).toBe(2)
@@ -734,7 +1072,7 @@ describe('sync snapshot materialization', () => {
   })
 })
 
-async function createHarness(version = 24): Promise<{
+async function createHarness(version = 25): Promise<{
   readonly connection: Database.Database
   readonly diagnostics: SyncSnapshotDiagnostic[]
   readonly service: ReturnType<typeof createSyncSnapshotPreparationService>

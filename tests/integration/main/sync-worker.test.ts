@@ -49,6 +49,76 @@ const lifestyleOutbox = '90000000-0000-4000-8000-000000000007'
 const excludedOutbox = '90000000-0000-4000-8000-000000000008'
 
 describe('HSW-013B desktop synchronization worker', () => {
+  it('maps annotation outcomes independently and keeps a late closure pending until its own batch', async () => {
+    const h = createHarness(Array.from({ length: 40 }, () => randomUUID()))
+    try {
+      const c = h.connection
+      seedCompleteGraph(c)
+      configure(h.foundation)
+      const note = randomUUID(),
+        flag = randomUUID()
+      c.prepare('INSERT INTO screening_encounter_addenda VALUES (?,?,?,?,?)').run(
+        note,
+        encounterId,
+        'Synthetic late note',
+        actorId,
+        at
+      )
+      c.prepare(
+        "INSERT INTO screening_encounter_review_flags VALUES (?,?,'OTHER','Synthetic review','OPEN',?,?,NULL,NULL,NULL)"
+      ).run(flag, encounterId, actorId, at)
+      const submitBatch = vi.fn(async (_credential: unknown, requestJson: string) => {
+        if (submitBatch.mock.calls.length === 1)
+          c.prepare(
+            "UPDATE screening_encounter_review_flags SET status='RESOLVED',resolved_by=?,resolved_at=?,resolution_note='Reviewed' WHERE id=?"
+          ).run(actorId, at, flag)
+        return response(200, acceptedResponse(requestJson))
+      })
+      const worker = createWorker(h, httpClient({ submitBatch }))
+      expect(await worker.runOnce()).toMatchObject({ status: 'SYNCED' })
+      expect(
+        c
+          .prepare(
+            "SELECT resource_type FROM sync_transport_resource_mappings WHERE resource_type LIKE 'ENCOUNTER_%' ORDER BY resource_type"
+          )
+          .all()
+      ).toEqual([
+        { resource_type: 'ENCOUNTER_ADDENDUM' },
+        { resource_type: 'ENCOUNTER_REVIEW_FLAG' },
+        { resource_type: 'ENCOUNTER_REVIEW_STATUS' }
+      ])
+      expect(
+        c
+          .prepare(
+            "SELECT status,count(*) AS n FROM sync_outbox WHERE aggregate_type='ENCOUNTER_HISTORY' GROUP BY status ORDER BY status"
+          )
+          .all()
+      ).toEqual([
+        { status: 'PENDING', n: 1 },
+        { status: 'SENT', n: 3 }
+      ])
+      expect(await createWorker(h, httpClient({ submitBatch })).runOnce()).toMatchObject({
+        status: 'SYNCED'
+      })
+      expect(
+        c
+          .prepare(
+            "SELECT count(*) AS n FROM sync_transport_resource_mappings WHERE resource_type='ENCOUNTER_REVIEW_STATUS'"
+          )
+          .get()
+      ).toEqual({ n: 2 })
+      expect(
+        c
+          .prepare(
+            "SELECT status,count(*) AS n FROM sync_outbox WHERE aggregate_type='ENCOUNTER_HISTORY' GROUP BY status"
+          )
+          .all()
+      ).toEqual([{ status: 'SENT', n: 4 }])
+    } finally {
+      h.connection.close()
+    }
+  })
+
   it('maps separate referral outcomes without retiring a follow-up queued during delivery', async () => {
     const harness = createHarness(Array.from({ length: 30 }, () => randomUUID()))
     try {
