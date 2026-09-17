@@ -675,7 +675,10 @@ function FollowupForm({
   const [contactMethod, setContactMethod] = useState('PHONE')
   const [informationSource, setInformationSource] = useState('PATIENT')
   const [providerSeen, setProviderSeen] = useState('UNKNOWN')
+  const [facilityName, setFacilityName] = useState('')
+  const [dateSeen, setDateSeen] = useState('')
   const [outcome, setOutcome] = useState('')
+  const [providerAdvice, setProviderAdvice] = useState('')
   const [nextAction, setNextAction] = useState('')
   const [nextFollowupDate, setNextFollowupDate] = useState('')
   const [newStatus, setNewStatus] = useState<ReferralStatus | 'NONE'>('CONTACTED')
@@ -711,10 +714,10 @@ function FollowupForm({
           contactMethod,
           informationSource,
           providerSeen: providerSeen === 'UNKNOWN' ? null : providerSeen === 'YES',
-          facilityName: null,
-          dateSeen: null,
+          facilityName: facilityName.trim() || null,
+          dateSeen: dateSeen || null,
           reportedOutcome: outcome.trim() || null,
-          reportedMedicationsOrAdvice: null,
+          reportedMedicationsOrAdvice: providerAdvice.trim() || null,
           nextAction: nextAction.trim() || null,
           nextFollowupDate: nextFollowupDate || null,
           sourceType: 'DIRECT_FOLLOWUP',
@@ -782,6 +785,22 @@ function FollowupForm({
           <option value="YES">Yes</option>
           <option value="NO">No</option>
         </select>
+      </label>
+      <label>
+        <span>Facility visited (optional)</span>
+        <input
+          maxLength={255}
+          value={facilityName}
+          onChange={(event) => setFacilityName(event.currentTarget.value)}
+        />
+      </label>
+      <label>
+        <span>Date seen (optional)</span>
+        <input
+          type="date"
+          value={dateSeen}
+          onChange={(event) => setDateSeen(event.currentTarget.value)}
+        />
       </label>
       {providerSeen === 'YES' ? (
         <fieldset className="referral-visit-actions referral-followup-wide">
@@ -893,6 +912,14 @@ function FollowupForm({
           onChange={(event) => setOutcome(event.currentTarget.value)}
         />
       </label>
+      <label className="referral-followup-wide">
+        <span>Provider advice (optional)</span>
+        <textarea
+          maxLength={2000}
+          value={providerAdvice}
+          onChange={(event) => setProviderAdvice(event.currentTarget.value)}
+        />
+      </label>
       <label>
         <span>Next action</span>
         <input
@@ -986,7 +1013,22 @@ function History({ detail }: { readonly detail: PublicReferralDetail }): React.J
                   {formatDate(entry.contactDate)} • {formatLabel(entry.contactMethod)}
                 </strong>
                 <span>{entry.recordedByDisplayName}</span>
+                {entry.facilityName === null ? null : (
+                  <p>
+                    <strong>Facility visited:</strong> {entry.facilityName}
+                  </p>
+                )}
+                {entry.dateSeen === null ? null : (
+                  <p>
+                    <strong>Date seen:</strong> {formatDate(entry.dateSeen)}
+                  </p>
+                )}
                 {entry.reportedOutcome === null ? null : <p>{entry.reportedOutcome}</p>}
+                {entry.reportedMedicationsOrAdvice === null ? null : (
+                  <p>
+                    <strong>Provider advice:</strong> {entry.reportedMedicationsOrAdvice}
+                  </p>
+                )}
                 {entry.treatmentActions.length === 0 ? null : (
                   <p>{entry.treatmentActions.map(formatLabel).join(', ')}</p>
                 )}
