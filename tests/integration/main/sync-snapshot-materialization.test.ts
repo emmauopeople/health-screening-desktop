@@ -104,7 +104,10 @@ describe('sync snapshot materialization', () => {
       payload: {
         contactDate: '2026-09-02',
         recordedAt: now,
-        providerSeen: null,
+        providerSeen: true,
+        facilityName: 'Synthetic District Clinic',
+        dateSeen: '2026-09-01',
+        reportedMedicationsOrAdvice: 'Return with the screening report.',
         treatmentActions: [{ actionCode: 'NEW_MEDICATION' }],
         medicationChanges: [
           { medicationName: 'Synthetic reported medication', dosage: null, frequency: null }
@@ -1033,8 +1036,11 @@ function seedReferral(
     .prepare(
       `INSERT INTO followups (
          id, referral_id, contact_date, contact_method, information_source,
+         provider_seen, facility_name, date_seen, reported_medications_or_advice,
          source_type, recorded_by, recorded_at
-       ) VALUES (?, ?, '2026-09-02', 'PHONE', 'PATIENT', 'PATIENT_REPORTED', ?, ?)`
+       ) VALUES (?, ?, '2026-09-02', 'PHONE', 'PATIENT', 1,
+         'Synthetic District Clinic', '2026-09-01', 'Return with the screening report.',
+         'PATIENT_REPORTED', ?, ?)`
     )
     .run(followupId, referralId, adminId, now)
   connection

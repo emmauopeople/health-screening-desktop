@@ -186,6 +186,9 @@ describe('ReferralWorklistWorkspace', () => {
         expectedVersion: 2,
         contactMethod: 'PHONE',
         informationSource: 'PATIENT',
+        facilityName: null,
+        dateSeen: null,
+        reportedMedicationsOrAdvice: null,
         sourceType: 'DIRECT_FOLLOWUP',
         newStatus: 'CONTACTED'
       })
@@ -241,6 +244,105 @@ describe('ReferralWorklistWorkspace', () => {
       })
     )
 
+    await mounted.unmount()
+  })
+
+  it('submits optional visit details and displays the saved details in follow-up history', async () => {
+    const harness = createHarness()
+    const savedDetail: PublicReferralDetail = {
+      ...detail,
+      recordVersion: 2,
+      followups: [
+        {
+          id: '66666666-6666-4666-8666-666666666666',
+          contactDate: '2026-08-27',
+          contactMethod: 'PHONE',
+          informationSource: 'PATIENT',
+          providerSeen: true,
+          facilityName: 'Synthetic District Clinic',
+          dateSeen: '2026-08-26',
+          reportedOutcome: null,
+          reportedMedicationsOrAdvice: 'Return with the screening report.',
+          nextAction: null,
+          nextFollowupDate: null,
+          sourceType: 'DIRECT_FOLLOWUP',
+          treatmentActions: [],
+          medicationChanges: [],
+          recordedByDisplayName: 'Nurse E.',
+          recordedAt: '2026-08-27T12:00:00.000Z'
+        }
+      ]
+    }
+    harness.recordFollowup.mockResolvedValue(
+      createIpcSuccess({ status: 'UPDATED', detail: savedDetail })
+    )
+    const mounted = await mount(harness.api)
+    await click(mounted.container, 'Record follow-up')
+
+    const facility = followupControl(mounted.container, 'Facility visited')
+    const dateSeen = followupControl(mounted.container, 'Date seen')
+    const advice = followupControl(mounted.container, 'Provider advice')
+    expect([facility, dateSeen, advice].every((control) => !control.required)).toBe(true)
+    expect([facility.value, dateSeen.value, advice.value]).toEqual(['', '', ''])
+    expect(facility.maxLength).toBe(255)
+    expect(advice.maxLength).toBe(2000)
+    expect(dateSeen.type).toBe('date')
+
+    await change(
+      mounted.container.querySelectorAll<HTMLSelectElement>('.referral-followup-form select')[2]!,
+      'YES'
+    )
+    await input(facility, '  Synthetic District Clinic  ')
+    await input(dateSeen, '2026-08-26')
+    await input(advice, '  Return with the screening report.  ')
+    await click(mounted.container, 'Save follow-up')
+    expect(harness.recordFollowup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        facilityName: 'Synthetic District Clinic',
+        dateSeen: '2026-08-26',
+        reportedMedicationsOrAdvice: 'Return with the screening report.'
+      })
+    )
+    expect(mounted.container.querySelector('.referral-followup-form')).toBeNull()
+    const history = mounted.container.querySelector('.referral-history')
+    expect(history?.textContent).toContain('Facility visited: Synthetic District Clinic')
+    const displayedDate = new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeZone: 'UTC'
+    }).format(new Date('2026-08-26T00:00:00.000Z'))
+    expect(history?.textContent).toContain(`Date seen: ${displayedDate}`)
+    expect(history?.textContent).toContain('Provider advice: Return with the screening report.')
+    await mounted.unmount()
+
+    harness.getDetail.mockResolvedValue(createIpcSuccess({ status: 'LOADED', detail: savedDetail }))
+    const reopened = await mount(harness.api)
+    expect(reopened.container.querySelector('.referral-history')?.textContent).toContain(
+      'Facility visited: Synthetic District Clinic'
+    )
+    await click(reopened.container, 'Record follow-up')
+    expect(followupControl(reopened.container, 'Facility visited').value).toBe('')
+    expect(followupControl(reopened.container, 'Date seen').value).toBe('')
+    expect(followupControl(reopened.container, 'Provider advice').value).toBe('')
+    await reopened.unmount()
+  })
+
+  it('saves whitespace-only and cleared optional visit details as unknown', async () => {
+    const harness = createHarness()
+    const mounted = await mount(harness.api, vi.fn(), vi.fn(), null, 'FOLLOW_UP_DUE')
+    await click(mounted.container, 'Record follow-up')
+    await input(followupControl(mounted.container, 'Facility visited'), '   ')
+    await input(followupControl(mounted.container, 'Date seen'), '2026-08-26')
+    await input(followupControl(mounted.container, 'Date seen'), '')
+    await input(followupControl(mounted.container, 'Provider advice'), '   ')
+    await click(mounted.container, 'Save follow-up')
+    expect(harness.recordFollowup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerSeen: null,
+        facilityName: null,
+        dateSeen: null,
+        reportedMedicationsOrAdvice: null
+      })
+    )
     await mounted.unmount()
   })
 
@@ -416,6 +518,17 @@ async function mount(
       })
     }
   }
+}
+
+function followupControl(
+  container: HTMLElement,
+  label: string
+): HTMLInputElement | HTMLTextAreaElement {
+  const control = Array.from(container.querySelectorAll('.referral-followup-form label'))
+    .find((candidate) => candidate.querySelector('span')?.textContent === `${label} (optional)`)
+    ?.querySelector<HTMLInputElement | HTMLTextAreaElement>('input, textarea')
+  if (control === null || control === undefined) throw new Error(`Missing control ${label}`)
+  return control
 }
 
 function button(container: HTMLElement, label: string): HTMLButtonElement {

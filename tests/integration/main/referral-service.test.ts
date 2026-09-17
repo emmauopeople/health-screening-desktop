@@ -152,6 +152,9 @@ describe('referral service', () => {
       const result = service.recordFollowup({
         ...base,
         providerSeen: true,
+        facilityName: 'Synthetic District Clinic',
+        dateSeen: '2026-08-26',
+        reportedMedicationsOrAdvice: 'Return with the screening report.',
         treatmentActions: ['TREATMENT_INITIATED', 'TREATMENT_MODIFIED', 'NEW_MEDICATION'],
         medicationChanges: [
           {
@@ -177,6 +180,9 @@ describe('referral service', () => {
           recordVersion: 2,
           followups: [
             {
+              facilityName: 'Synthetic District Clinic',
+              dateSeen: '2026-08-26',
+              reportedMedicationsOrAdvice: 'Return with the screening report.',
               treatmentActions: ['TREATMENT_INITIATED', 'TREATMENT_MODIFIED', 'NEW_MEDICATION'],
               medicationChanges: [
                 { changeType: 'NEW_MEDICATION', medicationName: 'Amlodipine' },
@@ -187,6 +193,15 @@ describe('referral service', () => {
         }
       })
       expect(readCount(connection, 'followups')).toBe(1)
+      expect(
+        connection
+          .prepare('SELECT facility_name, date_seen, reported_medications_or_advice FROM followups')
+          .get()
+      ).toEqual({
+        facility_name: 'Synthetic District Clinic',
+        date_seen: '2026-08-26',
+        reported_medications_or_advice: 'Return with the screening report.'
+      })
       expect(readCount(connection, 'referral_followup_actions')).toBe(3)
       expect(readCount(connection, 'referral_followup_medication_changes')).toBe(2)
       expect(readCount(connection, 'audit_log')).toBe(1)
