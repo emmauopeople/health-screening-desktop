@@ -59,6 +59,27 @@ const shellUser: ApplicationShellUser = {
 describe('application shell DOM integration', () => {
   beforeEach(() => {
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    Object.defineProperty(document, 'adoptedStyleSheets', {
+      configurable: true,
+      writable: true,
+      value: []
+    })
+    Object.defineProperty(CSSStyleSheet.prototype, 'replaceSync', {
+      configurable: true,
+      value: vi.fn()
+    })
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+      configurable: true,
+      value: function (this: HTMLDialogElement) {
+        this.setAttribute('open', '')
+      }
+    })
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', {
+      configurable: true,
+      value: function (this: HTMLDialogElement) {
+        this.removeAttribute('open')
+      }
+    })
   })
 
   afterEach(() => {
@@ -338,8 +359,27 @@ describe('application shell DOM integration', () => {
       pageSize: 25
     })
 
-    await clickButton(mounted, 'Create PDF report')
-    expect(printSpy).toHaveBeenCalledOnce()
+    await clickButton(mounted, 'Print Preview')
+    const preview = mounted.container.querySelector('dialog[open]')
+    expect(preview?.textContent).toContain('Reported by: Admin User')
+    expect(preview?.textContent).toContain('Bastos Hall')
+    expect(preview?.textContent).not.toContain('99999999-9999-4999-8999-999999999999')
+    await clickButton(mounted, 'Save PDF')
+    expect(harness.api.reportDocuments.savePdf).toHaveBeenCalledWith({
+      reportKind: 'SESSION',
+      sessionId: '99999999-9999-4999-8999-999999999999',
+      suggestedFileName: 'CHS-session-report-2026-08-06.pdf'
+    })
+    await clickButtonExact(mounted, 'Print')
+    expect(harness.api.reportDocuments.print).toHaveBeenCalledWith({
+      reportKind: 'SESSION',
+      sessionId: '99999999-9999-4999-8999-999999999999',
+      suggestedFileName: 'CHS-session-report-2026-08-06.pdf'
+    })
+    expect(printSpy).not.toHaveBeenCalled()
+    await clickButtonExact(mounted, 'Close')
+    expect(mounted.container.querySelector('dialog')).toBeNull()
+    expect(document.activeElement?.textContent).toBe('Print Preview')
 
     await clickButton(mounted, 'Standard referral')
     expectWorkspaceHeading(mounted, 'Referral Worklist')

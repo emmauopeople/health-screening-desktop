@@ -6,9 +6,12 @@ import type {
   ScreeningSessionStatus
 } from '@shared/ipc'
 
+import { SessionReportPreview } from './SessionReportPreview'
+
 interface SessionReportsWorkspaceProps {
   readonly api: HealthScreeningApi
   readonly timeZone: string
+  readonly reportedBy: string
   readonly headingId: string
   readonly headingRef: RefObject<HTMLHeadingElement | null>
   onAuthenticationFailure(code: ScreeningSessionErrorCode): void
@@ -44,12 +47,18 @@ const protectedFailureCodes = new Set<ScreeningSessionErrorCode>([
 export function SessionReportsWorkspace({
   api,
   timeZone,
+  reportedBy,
   headingId,
   headingRef,
   onAuthenticationFailure,
   onOpenReferrals
 }: SessionReportsWorkspaceProps): React.JSX.Element {
   const requestRef = useRef(0)
+  const previewButtonRef = useRef<HTMLButtonElement>(null)
+  const [preview, setPreview] = useState<{
+    summary: PublicScreeningSessionSummary
+    generatedAt: string
+  } | null>(null)
   const [filters, setFilters] = useState<ReportFilters>({
     status: null,
     dateFrom: null,
@@ -148,14 +157,15 @@ export function SessionReportsWorkspace({
           <button
             className="button button-primary"
             type="button"
-            onClick={() =>
-              selected === null
-                ? undefined
-                : printReport(`CHS-session-report-${selected.sessionDate}`)
-            }
-            disabled={selected === null}
+            ref={previewButtonRef}
+            onClick={() => {
+              if (selected !== null && state.status === 'READY') {
+                setPreview({ summary: selected, generatedAt: new Date().toISOString() })
+              }
+            }}
+            disabled={selected === null || state.status !== 'READY'}
           >
-            Create PDF report
+            Print Preview
           </button>
         </div>
       </header>
@@ -307,6 +317,20 @@ export function SessionReportsWorkspace({
           </section>
         </div>
       )}
+      {preview === null ? null : (
+        <SessionReportPreview
+          summary={preview.summary}
+          generatedAt={preview.generatedAt}
+          timeZone={timeZone}
+          reportedBy={reportedBy}
+          api={api.reportDocuments}
+          onAuthenticationFailure={onAuthenticationFailure}
+          onClose={() => {
+            setPreview(null)
+            previewButtonRef.current?.focus()
+          }}
+        />
+      )}
     </section>
   )
 }
@@ -434,11 +458,4 @@ function formatTimestamp(value: string, timeZone: string): string {
     timeStyle: 'short',
     timeZone
   }).format(new Date(value))
-}
-
-function printReport(fileName: string): void {
-  const previousTitle = document.title
-  document.title = fileName
-  window.print()
-  document.title = previousTitle
 }

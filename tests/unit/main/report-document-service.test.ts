@@ -46,6 +46,20 @@ describe('report document service', () => {
     )
   })
 
+  it('saves a session report using its own title without requiring a patient ID', async () => {
+    const harness = createHarness({ canceled: false, filePath: '/media/USB/session.pdf' })
+    await expect(
+      harness.service.savePdf(harness.renderer, {
+        reportKind: 'SESSION',
+        sessionId: '11111111-1111-4111-8111-111111111111',
+        suggestedFileName: 'CHS-session.pdf'
+      })
+    ).resolves.toEqual({ status: 'SAVED', fileName: 'session.pdf' })
+    expect(harness.showSaveDialog).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Save session report PDF' })
+    )
+  })
+
   it('does not write an empty PDF and maps print completion, cancellation, and failure', async () => {
     const empty = createHarness(
       { canceled: false, filePath: '/reports/empty.pdf' },

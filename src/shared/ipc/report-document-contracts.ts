@@ -3,7 +3,13 @@ import { z } from 'zod'
 import { createIpcSuccessResultSchema } from './result'
 
 export const reportDocumentPatientIdSchema = z.uuid()
-export const reportDocumentKindSchema = z.enum(['GENERAL', 'VITALS', 'LIFESTYLE', 'REFERRALS'])
+export const reportDocumentKindSchema = z.enum([
+  'GENERAL',
+  'VITALS',
+  'LIFESTYLE',
+  'REFERRALS',
+  'SESSION'
+])
 export const reportDocumentFileNameSchema = z
   .string()
   .trim()
@@ -18,13 +24,24 @@ export const savedReportDocumentFileNameSchema = z
   .regex(/^[^/\\]+\.pdf$/iu)
   .refine(isSafeSavedFileName)
 
-export const reportDocumentRequestSchema = z
+const patientReportDocumentRequestSchema = z
   .object({
     patientId: reportDocumentPatientIdSchema,
-    reportKind: reportDocumentKindSchema,
+    reportKind: reportDocumentKindSchema.exclude(['SESSION']),
     suggestedFileName: reportDocumentFileNameSchema
   })
   .strict()
+
+export const reportDocumentRequestSchema = z.discriminatedUnion('reportKind', [
+  patientReportDocumentRequestSchema,
+  z
+    .object({
+      sessionId: z.uuid(),
+      reportKind: z.literal('SESSION'),
+      suggestedFileName: reportDocumentFileNameSchema
+    })
+    .strict()
+])
 
 export const reportDocumentActionDataSchema = z.discriminatedUnion('status', [
   z

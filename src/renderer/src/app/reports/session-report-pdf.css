@@ -1,0 +1,250 @@
+.session-pdf-preview {
+  width: min(68rem, calc(100vw - 2rem));
+  max-width: none;
+  height: calc(100vh - 2rem);
+  max-height: none;
+  margin: auto;
+  padding: 0;
+  border: 1px solid #aebbc9;
+  border-radius: 0.6rem;
+  color: #1f2937;
+  background: #e9eef3;
+}
+
+.session-pdf-preview[open] {
+  display: flex;
+  flex-direction: column;
+}
+.session-pdf-preview::backdrop {
+  background: rgb(17 34 51 / 55%);
+}
+.session-pdf-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1rem;
+  background: white;
+  border-bottom: 1px solid #cbd5e1;
+}
+.session-pdf-toolbar > div:first-child {
+  margin-right: auto;
+}
+.session-pdf-toolbar p {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+}
+.session-pdf-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem;
+}
+.session-pdf-document {
+  box-sizing: border-box;
+  max-width: 210mm;
+  min-height: 260mm;
+  margin: auto;
+  padding: 14mm;
+  background: white;
+  color: #182b42;
+  font:
+    10pt/1.45 Arial,
+    sans-serif;
+  overflow-wrap: anywhere;
+}
+.session-pdf-header {
+  padding-bottom: 4mm;
+  border-bottom: 2px solid #286c79;
+}
+.session-pdf-brand {
+  display: flex;
+  align-items: center;
+  gap: 3mm;
+}
+.session-pdf-logo {
+  object-fit: contain;
+  display: block;
+  width: 25mm;
+  height: 10mm;
+}
+.session-pdf-disclaimer {
+  text-align: right;
+  font-size: 8pt;
+  font-weight: 700;
+}
+.session-pdf-header h1 {
+  margin: 5mm 0 2mm;
+  font-size: 20pt;
+  line-height: 1.2;
+}
+.session-pdf-header p {
+  margin: 2mm 0 0;
+}
+.session-pdf-location {
+  font-size: 12pt;
+  font-weight: 700;
+}
+.session-pdf-metadata {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3mm 6mm;
+  margin: 5mm 0;
+}
+.session-pdf-metadata dt {
+  font-size: 8pt;
+  font-weight: 700;
+  color: #52606d;
+}
+.session-pdf-metadata dd {
+  margin: 1mm 0 0;
+}
+.session-pdf-table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 5mm 0 0;
+  font-size: 10pt;
+}
+.session-pdf-table th,
+.session-pdf-table td {
+  border-bottom: 1px solid #d4dce4;
+  padding: 2mm 3mm;
+  text-align: left;
+}
+.session-pdf-table thead th {
+  background: #eaf1f5;
+  color: #183655;
+  font-weight: 700;
+  border-top: 1px solid #aebbc9;
+}
+.session-pdf-table tbody th {
+  font-weight: 400;
+}
+.session-pdf-table th:last-child,
+.session-pdf-table td:last-child {
+  width: 22%;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.session-pdf-note {
+  margin: 5mm 0;
+  color: #52606d;
+  font-size: 8pt;
+}
+.session-pdf-footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4mm;
+  margin-top: 6mm;
+  padding-top: 2mm;
+  border-top: 1px solid #aebbc9;
+  font-size: 7.5pt;
+}
+.session-pdf-footer > :nth-child(2) {
+  text-align: center;
+}
+.session-pdf-footer > :last-child {
+  text-align: right;
+}
+
+.session-pdf-print-copy {
+  display: none;
+}
+
+@media print {
+  @page session-report {
+    size: A4;
+    margin: 14mm 14mm 24mm;
+    @bottom-left {
+      width: 33%;
+      font:
+        7.5pt Arial,
+        sans-serif;
+      color: #52606d;
+    }
+    @bottom-center {
+      width: 25%;
+      content: 'Page ' counter(page) ' of ' counter(pages);
+      font:
+        7.5pt Arial,
+        sans-serif;
+      color: #52606d;
+    }
+    @bottom-right {
+      width: 42%;
+      font:
+        7.5pt Arial,
+        sans-serif;
+      color: #52606d;
+      overflow-wrap: anywhere;
+    }
+  }
+  .session-reports-workspace:has(.session-pdf-preview[open]) > :not(.session-pdf-print-copy) {
+    display: none !important;
+  }
+  html:has(.session-pdf-print-copy),
+  body:has(.session-pdf-print-copy),
+  #root:has(.session-pdf-print-copy),
+  .application-root:has(.session-pdf-print-copy),
+  .application-workspace:has(.session-pdf-print-copy) {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+    background: white !important;
+  }
+  .application-shell:has(.session-pdf-print-copy) {
+    display: block;
+    max-height: none;
+  }
+  .session-pdf-print-copy {
+    page: session-report;
+    position: static;
+    display: block;
+    width: auto;
+    max-width: none;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    overflow: visible;
+    background: white;
+  }
+  .session-pdf-preview[open],
+  .session-pdf-preview::backdrop,
+  .session-pdf-toolbar {
+    display: none !important;
+  }
+  .session-pdf-document {
+    page: session-report;
+    min-height: 0;
+    max-width: none;
+    padding: 0;
+  }
+  .session-pdf-header,
+  .session-pdf-metadata > div,
+  .session-pdf-table tr {
+    break-inside: avoid;
+  }
+  .session-pdf-table {
+    break-inside: auto;
+  }
+  .session-pdf-table thead {
+    display: table-header-group;
+  }
+  .session-pdf-table th,
+  .session-pdf-table td {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .session-pdf-footer {
+    display: none;
+  }
+  .session-pdf-page-hint {
+    visibility: hidden;
+  }
+}
