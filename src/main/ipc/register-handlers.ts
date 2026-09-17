@@ -1,3 +1,4 @@
+import { createProtocolHandler, type ProtocolIpcDependencies } from './handlers/protocol-handlers'
 import { createBackupHandlers, type BackupIpcDependencies } from './handlers/backup-handlers'
 import {
   createUserAdministrationHandlers,
@@ -187,6 +188,7 @@ export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependen
   readonly auth: AuthenticationIpcHandlerDependencies
   readonly patient: PatientIpcHandlerDependencies
   readonly referrals?: ReferralIpcHandlerDependencies
+  readonly protocols?: ProtocolIpcDependencies
   readonly backups?: BackupIpcDependencies
   readonly userAdministration?: UserAdministrationIpcDependencies
   readonly auditReports?: AuditReportIpcHandlerDependencies
@@ -275,6 +277,13 @@ export function registerApplicationIpcHandlers(
       [ipcChannels.reportDocuments.print, reportDocumentHandlers.print]
     ]
 
+    if (dependencies.protocols !== undefined) {
+      applicationIpcMain.handle(
+        ipcChannels.protocols.get,
+        createProtocolHandler(dependencies.protocols)
+      )
+      installedChannels.push(ipcChannels.protocols.get)
+    }
     if (dependencies.backups !== undefined) {
       const handlers = createBackupHandlers(dependencies.backups)
       for (const [channel, listener] of [
@@ -660,6 +669,7 @@ function disposeApplicationIpcRegistration(
 }
 
 function disposeApplicationOwnedIpcHandlers(applicationIpcMain: ApplicationIpcMain): void {
+  applicationIpcMain.removeHandler(ipcChannels.protocols.get)
   applicationIpcMain.removeHandler(ipcChannels.backups.create)
   applicationIpcMain.removeHandler(ipcChannels.backups.inspect)
   applicationIpcMain.removeHandler(ipcChannels.backups.prepareRestore)

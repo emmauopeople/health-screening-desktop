@@ -223,8 +223,8 @@ const commandDefinitions = [
     'ADMINISTRATION',
     'Protocols',
     adminOnlyRoles,
-    'PLANNED',
-    plannedOwners.administration
+    'AVAILABLE',
+    null
   ),
   command(
     'ADMINISTRATION_SYNC_CENTER',

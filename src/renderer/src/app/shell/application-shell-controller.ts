@@ -170,7 +170,8 @@ function createRouteForCommand(
   if (
     definition.id === 'ADMINISTRATION_LOCATIONS' ||
     definition.id === 'ADMINISTRATION_SYNC_CENTER' ||
-    definition.id === 'ADMINISTRATION_BACKUP_RESTORE'
+    definition.id === 'ADMINISTRATION_BACKUP_RESTORE' ||
+    definition.id === 'ADMINISTRATION_PROTOCOLS'
   ) {
     return Object.freeze({
       status: 'ADMINISTRATION',

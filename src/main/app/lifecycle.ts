@@ -1,3 +1,4 @@
+import { createProtocolService } from '@main/application/protocols/protocol-service'
 import { applyPendingRestore, type AppliedRestore } from '@main/application/backups/pending-restore'
 import { createElectronBackupService } from '@main/application/backups/electron-backup-service'
 import { createUserAdministrationService } from '@main/application/user-administration/user-administration-service'
@@ -224,6 +225,10 @@ export function startApplicationLifecycle(): void {
         connection: databaseRuntime.getConnection(),
         authenticationSessionService
       })
+      const protocolService = createProtocolService({
+        connection: databaseRuntime.getConnection(),
+        authenticationSessionService
+      })
       const backupService = createElectronBackupService({
         connection: databaseRuntime.getConnection(),
         authenticationSessionService,
@@ -279,6 +284,7 @@ export function startApplicationLifecycle(): void {
           referralService,
           logger: console
         },
+        protocols: { navigationPolicy, service: protocolService },
         backups: { navigationPolicy, service: backupService },
         userAdministration: { navigationPolicy, service: userAdministrationService },
         auditReports: {

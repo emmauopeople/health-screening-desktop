@@ -1,3 +1,4 @@
+import type { ProtocolApi } from './protocol-contracts'
 import type { BackupApi } from './backup-contracts'
 import type { UserAdministrationApi } from './user-administration-contracts'
 import { z } from 'zod'
@@ -192,6 +193,7 @@ export interface HealthScreeningApi {
   referrals: ReferralApi
   userAdministration?: UserAdministrationApi
   auditReports?: AuditReportApi
+  protocols?: ProtocolApi
   backups?: BackupApi
   reportDocuments: ReportDocumentApi
   screeningSessions: {
