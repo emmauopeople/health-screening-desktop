@@ -36,6 +36,33 @@ describe('report document IPC handlers', () => {
     expect(harness.service.print).toHaveBeenCalledWith(harness.event.sender, request)
   })
 
+  it.each(['LOCAL_ADMIN', 'NURSE', 'TRAINED_SCREENER'] as const)(
+    'enforces session report access for %s',
+    async (role) => {
+      const harness = createHarness()
+      vi.mocked(harness.authentication.requireActiveSession).mockReturnValue({
+        user: { role }
+      } as ActiveLocalSessionContext)
+      const session = {
+        reportKind: 'SESSION' as const,
+        sessionId: request.patientId,
+        suggestedFileName: 'CHS-session.pdf'
+      }
+      const result = await harness.handlers.savePdf(harness.event, session)
+      const printed = await harness.handlers.print(harness.event, session)
+      if (role === 'TRAINED_SCREENER') {
+        expect(result).toEqual(createReportDocumentFailure('AUTHORIZATION_FAILED'))
+        expect(printed).toEqual(createReportDocumentFailure('AUTHORIZATION_FAILED'))
+        expect(harness.service.savePdf).not.toHaveBeenCalled()
+        expect(harness.service.print).not.toHaveBeenCalled()
+      } else {
+        expect(result.ok).toBe(true)
+        expect(printed.ok).toBe(true)
+        expect(harness.service.savePdf).toHaveBeenCalledWith(harness.event.sender, session)
+      }
+    }
+  )
+
   it('rejects untrusted senders, locked sessions, and over-posted requests before execution', async () => {
     const harness = createHarness()
     const forbidden = {
@@ -101,8 +128,7 @@ function createHarness(): {
     requireActiveSession: vi.fn(
       () =>
         ({
-          userId: '22222222-2222-4222-8222-222222222222',
-          role: 'NURSE'
+          user: { id: '22222222-2222-4222-8222-222222222222', role: 'NURSE' }
         }) as unknown as ActiveLocalSessionContext
     )
   } as unknown as LocalAuthenticationSessionService

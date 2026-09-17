@@ -14,6 +14,7 @@ interface ReportDocumentActionsProps {
   readonly api: ReportDocumentApi
   readonly request: ReportDocumentRequest
   readonly primaryButtonRef: RefObject<HTMLButtonElement | null>
+  onBusyChange?(busy: boolean): void
   onAuthenticationFailure(code: ReportDocumentAuthenticationCode): void
 }
 
@@ -21,6 +22,7 @@ export function ReportDocumentActions({
   api,
   request,
   primaryButtonRef,
+  onBusyChange,
   onAuthenticationFailure
 }: ReportDocumentActionsProps): React.JSX.Element {
   const [busyAction, setBusyAction] = useState<'SAVE' | 'PRINT' | null>(null)
@@ -28,6 +30,7 @@ export function ReportDocumentActions({
 
   const run = async (action: 'SAVE' | 'PRINT'): Promise<void> => {
     if (busyAction !== null) return
+    onBusyChange?.(true)
     setBusyAction(action)
     setMessage(action === 'SAVE' ? 'Creating PDF...' : 'Opening printer...')
     const previousTitle = document.title
@@ -58,6 +61,7 @@ export function ReportDocumentActions({
     } finally {
       document.title = previousTitle
       setBusyAction(null)
+      onBusyChange?.(false)
     }
   }
 

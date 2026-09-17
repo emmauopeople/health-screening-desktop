@@ -293,6 +293,7 @@ export function ApplicationWorkspace({
         <SessionReportsWorkspace
           api={api}
           timeZone={context.timeZone}
+          reportedBy={user.displayName}
           headingId={workspaceHeadingId}
           headingRef={headingRef}
           onAuthenticationFailure={onProtectedWorkspaceAuthenticationFailure}

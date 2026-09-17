@@ -50,7 +50,8 @@ export function createReportDocumentService({
   return Object.freeze({
     async savePdf(renderer: ReportDocumentRenderer, request: ReportDocumentRequest) {
       const destination = await showSaveDialog({
-        title: 'Save patient report PDF',
+        title:
+          request.reportKind === 'SESSION' ? 'Save session report PDF' : 'Save patient report PDF',
         defaultPath: request.suggestedFileName,
         filters: [{ name: 'PDF document', extensions: ['pdf'] }],
         properties: ['createDirectory', 'showOverwriteConfirmation']

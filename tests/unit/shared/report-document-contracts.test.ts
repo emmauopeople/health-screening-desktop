@@ -53,9 +53,27 @@ describe('report document contracts', () => {
     )
   })
 
+  it('accepts session IDs only for session reports and rejects mixed scopes', () => {
+    const session = {
+      reportKind: 'SESSION',
+      sessionId: request.patientId,
+      suggestedFileName: 'CHS-session-report-2026-09-17.pdf'
+    }
+    expect(reportDocumentRequestSchema.parse(session)).toEqual(session)
+    for (const invalid of [
+      { ...session, patientId: request.patientId },
+      { ...session, sessionId: 'not-a-uuid' },
+      { ...session, reportKind: 'GENERAL' },
+      { ...request, reportKind: 'SESSION' },
+      { ...session, suggestedFileName: '../report.pdf' },
+      { ...session, role: 'LOCAL_ADMIN' }
+    ])
+      expect(reportDocumentRequestSchema.safeParse(invalid).success).toBe(false)
+  })
+
   it('fails closed when parsing hostile getters', () => {
     const hostile = Object.create(null) as Record<string, unknown>
-    Object.defineProperty(hostile, 'patientId', {
+    Object.defineProperty(hostile, 'reportKind', {
       enumerable: true,
       get() {
         throw new Error('private report value')

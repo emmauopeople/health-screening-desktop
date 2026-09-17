@@ -40,6 +40,20 @@ describe('preload report document API', () => {
     expect(invoke).toHaveBeenNthCalledWith(2, ipcChannels.reportDocuments.print, request)
   })
 
+  it('passes session scope through both fixed document channels', async () => {
+    const invoke = vi.fn().mockResolvedValue(createIpcSuccess({ status: 'CANCELLED' }))
+    const api = createHealthScreeningApi(invoke).reportDocuments
+    const session = {
+      reportKind: 'SESSION' as const,
+      sessionId: request.patientId,
+      suggestedFileName: 'CHS-session.pdf'
+    }
+    await api.savePdf(session)
+    await api.print(session)
+    expect(invoke).toHaveBeenNthCalledWith(1, ipcChannels.reportDocuments.savePdf, session)
+    expect(invoke).toHaveBeenNthCalledWith(2, ipcChannels.reportDocuments.print, session)
+  })
+
   it('blocks malformed requests and contains rejected or malformed responses', async () => {
     const invoke = vi.fn()
     const api = createHealthScreeningApi(invoke).reportDocuments

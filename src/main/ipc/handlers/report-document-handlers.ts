@@ -70,6 +70,14 @@ export function createReportDocumentIpcHandlers({
       return failure
     }
 
+    if (
+      parsed.data.reportKind === 'SESSION' &&
+      authorized.context.user.role !== 'LOCAL_ADMIN' &&
+      authorized.context.user.role !== 'NURSE'
+    ) {
+      return createReportDocumentFailure('AUTHORIZATION_FAILED')
+    }
+
     try {
       const result = createIpcSuccess(await invoke(event.sender, parsed.data))
       const validated = safeParse(reportDocumentActionResultSchema, result)
