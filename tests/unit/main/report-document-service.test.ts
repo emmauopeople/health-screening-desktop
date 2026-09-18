@@ -60,6 +60,23 @@ describe('report document service', () => {
     )
   })
 
+  it('saves an audit report with an audit title to the chosen destination', async () => {
+    const h = createHarness({ canceled: false, filePath: '/media/USB/audit.pdf' })
+    await expect(
+      h.service.savePdf(h.renderer, {
+        reportKind: 'AUDIT',
+        suggestedFileName: 'CHS-audit.pdf'
+      })
+    ).resolves.toEqual({ status: 'SAVED', fileName: 'audit.pdf' })
+    expect(h.showSaveDialog).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Save audit report PDF' })
+    )
+    expect(h.writeFile).toHaveBeenCalledWith(
+      '/media/USB/audit.pdf',
+      new Uint8Array([37, 80, 68, 70])
+    )
+  })
+
   it('does not write an empty PDF and maps print completion, cancellation, and failure', async () => {
     const empty = createHarness(
       { canceled: false, filePath: '/reports/empty.pdf' },

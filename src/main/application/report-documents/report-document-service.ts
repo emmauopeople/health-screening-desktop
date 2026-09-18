@@ -51,7 +51,11 @@ export function createReportDocumentService({
     async savePdf(renderer: ReportDocumentRenderer, request: ReportDocumentRequest) {
       const destination = await showSaveDialog({
         title:
-          request.reportKind === 'SESSION' ? 'Save session report PDF' : 'Save patient report PDF',
+          request.reportKind === 'AUDIT'
+            ? 'Save audit report PDF'
+            : request.reportKind === 'SESSION'
+              ? 'Save session report PDF'
+              : 'Save patient report PDF',
         defaultPath: request.suggestedFileName,
         filters: [{ name: 'PDF document', extensions: ['pdf'] }],
         properties: ['createDirectory', 'showOverwriteConfirmation']

@@ -63,6 +63,30 @@ describe('report document IPC handlers', () => {
     }
   )
 
+  it.each(['LOCAL_ADMIN', 'NURSE', 'TRAINED_SCREENER'] as const)(
+    'allows audit save and print only for an active administrator: %s',
+    async (role) => {
+      const h = createHarness()
+      vi.mocked(h.authentication.requireActiveSession).mockReturnValue({
+        user: { role }
+      } as ActiveLocalSessionContext)
+      const audit = { reportKind: 'AUDIT' as const, suggestedFileName: 'CHS-audit.pdf' }
+      const saved = await h.handlers.savePdf(h.event, audit)
+      const printed = await h.handlers.print(h.event, audit)
+      if (role === 'LOCAL_ADMIN') {
+        expect(saved.ok).toBe(true)
+        expect(printed.ok).toBe(true)
+        expect(h.service.savePdf).toHaveBeenCalledWith(h.event.sender, audit)
+        expect(h.service.print).toHaveBeenCalledWith(h.event.sender, audit)
+      } else {
+        expect(saved).toEqual(createReportDocumentFailure('AUTHORIZATION_FAILED'))
+        expect(printed).toEqual(createReportDocumentFailure('AUTHORIZATION_FAILED'))
+        expect(h.service.savePdf).not.toHaveBeenCalled()
+        expect(h.service.print).not.toHaveBeenCalled()
+      }
+    }
+  )
+
   it('rejects untrusted senders, locked sessions, and over-posted requests before execution', async () => {
     const harness = createHarness()
     const forbidden = {

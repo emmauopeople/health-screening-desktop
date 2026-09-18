@@ -70,6 +70,10 @@ export function createReportDocumentIpcHandlers({
       return failure
     }
 
+    if (parsed.data.reportKind === 'AUDIT' && authorized.context.user.role !== 'LOCAL_ADMIN') {
+      return createReportDocumentFailure('AUTHORIZATION_FAILED')
+    }
+
     if (
       parsed.data.reportKind === 'SESSION' &&
       authorized.context.user.role !== 'LOCAL_ADMIN' &&

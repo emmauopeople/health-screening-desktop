@@ -437,6 +437,30 @@ describe('application shell DOM integration', () => {
     'opens $menu → $command as an administrator audit workspace',
     async ({ menu, command, heading }) => {
       const harness = createAppApi(activeSession(1))
+      harness.api.auditReports.search.mockImplementation(async (request) =>
+        createIpcSuccess({
+          status: 'LOADED',
+          page: request.page,
+          pageSize: request.pageSize,
+          total: 1,
+          items: [
+            {
+              id: '99999999-9999-4999-8999-999999999999',
+              occurredAt: '2026-09-17T09:00:00.000Z',
+              actor: null,
+              action: 'AUTH_LOGIN_FAILED',
+              entityType: 'AUTH_SESSION',
+              entityId: null,
+              deployment: {
+                id: '66666666-6666-4666-8666-666666666666',
+                name: 'Local Deployment',
+                timeZone: 'Africa/Douala'
+              },
+              metadata: { reason: 'invalid_credentials' }
+            }
+          ]
+        })
+      )
       const mounted = await mountApp(harness.api)
       await clickButton(mounted, menu)
       await clickButton(mounted, command)
@@ -449,6 +473,18 @@ describe('application shell DOM integration', () => {
       )
       expect(commandButtonByText(mounted, command).getAttribute('aria-current')).toBe('page')
       expect(menuButton(mounted, menu).getAttribute('aria-current')).toBe('page')
+      await clickButtonExact(mounted, 'Print preview')
+      await clickButtonExact(mounted, 'Save PDF')
+      await clickButtonExact(mounted, 'Print')
+      expect(harness.api.reportDocuments.savePdf).toHaveBeenCalledWith({
+        reportKind: 'AUDIT',
+        suggestedFileName: expect.stringMatching(/^CHS-audit-report-.*-page-1\.pdf$/u)
+      })
+      expect(harness.api.reportDocuments.print).toHaveBeenCalledWith({
+        reportKind: 'AUDIT',
+        suggestedFileName: expect.stringMatching(/^CHS-audit-report-.*-page-1\.pdf$/u)
+      })
+      await clickButtonExact(mounted, 'Close')
       // Changing audit entry point mounts a fresh viewer with its own heading and filters.
       await clickButton(mounted, menu === 'Reports' ? 'Administration' : 'Reports')
       await clickButton(mounted, menu === 'Reports' ? 'Audit' : 'Audit Reports')
