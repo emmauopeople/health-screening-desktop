@@ -161,7 +161,7 @@ describe('sync snapshot materialization', () => {
       logger: { info: vi.fn(), error: vi.fn() },
       clock: { now: () => now }
     })
-    expect(migrate(c).appliedVersions).toEqual([25])
+    expect(migrate(c).appliedVersions).toEqual([25, 26])
     const signals = readTableCount(c, 'sync_outbox')
     expect(migrate(c).appliedVersions).toEqual([])
     expect(readTableCount(c, 'sync_outbox')).toBe(signals)
@@ -414,7 +414,7 @@ describe('sync snapshot materialization', () => {
       clock: { now: () => now }
     })
 
-    expect(migrate(c).appliedVersions).toEqual([24, 25])
+    expect(migrate(c).appliedVersions).toEqual([24, 25, 26])
     expect(migrate(c).appliedVersions).toEqual([])
     expect(tables.map((table) => c.prepare(`SELECT * FROM ${table}`).all())).toEqual(before)
     expect(h.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED', recordCount: 3 })
@@ -714,7 +714,7 @@ describe('sync snapshot materialization', () => {
       logger: { info: vi.fn(), error: vi.fn() },
       clock: { now: () => now }
     })
-    expect(migrate(c).appliedVersions).toEqual([22, 23, 24, 25])
+    expect(migrate(c).appliedVersions).toEqual([22, 23, 24, 25, 26])
     expect(migrate(c).appliedVersions).toEqual([])
     expect(c.prepare('SELECT * FROM food_logs').all()).toEqual(before)
     expect(readTableCount(c, 'sync_outbox')).toBe(2)
@@ -1072,7 +1072,7 @@ describe('sync snapshot materialization', () => {
   })
 })
 
-async function createHarness(version = 25): Promise<{
+async function createHarness(version = 26): Promise<{
   readonly connection: Database.Database
   readonly diagnostics: SyncSnapshotDiagnostic[]
   readonly service: ReturnType<typeof createSyncSnapshotPreparationService>

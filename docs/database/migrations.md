@@ -11,7 +11,7 @@ under `src/main/database/migrations/sql/`.
 - Use positive integer versions beginning at `1` with no gaps.
 - Use stable lowercase kebab-case names.
 - Import SQL with `?raw` so the text is bundled into the Electron main output.
-- The current production target is migration version `21`.
+- The current production target is migration version `26`.
 - Version `5`, `screening-encounter-identity`, adds the root encounter identity
   constraint `ux_screening_encounters_root_session_patient`.
 - Version `6`, `installation-location-configuration`, adds the singleton
@@ -34,6 +34,10 @@ under `src/main/database/migrations/sql/`.
 - Version `21`, `sync-identity-resolution-delivery`, adds central-person links,
   exact durable acknowledgment requests, and immutable reviewer-decision
   delivery evidence.
+- Version `26`, `central-patient-history`, adds isolated read-only downloaded
+  history snapshots and ordered items. It creates no clinical records or upload
+  signals. The schema validator checks the exact cache table/index definitions
+  and preserves the previous clinical and sync schema checks.
 - Do not export raw SQL through preload, renderer, or shared contracts.
 
 ## Checksums

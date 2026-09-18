@@ -9,7 +9,8 @@ import {
 
 export function validateSchemaVersion25(
   connection: MigrationConnection,
-  mode: DatabaseSchemaValidationMode
+  mode: DatabaseSchemaValidationMode,
+  additions: { readonly tables?: readonly string[]; readonly indexes?: readonly string[] } = {}
 ): void {
   const required = [
     'screening_encounter_review_status_history',
@@ -25,7 +26,11 @@ export function validateSchemaVersion25(
     'tr_screening_encounter_review_status_history_no_update',
     'tr_screening_encounter_review_status_history_no_delete'
   ]
-  validateSchemaVersion21(connection, mode, { tables: [required[0]!], triggers: required.slice(1) })
+  validateSchemaVersion21(connection, mode, {
+    tables: [required[0]!, ...(additions.tables ?? [])],
+    triggers: required.slice(1),
+    indexes: additions.indexes
+  })
   const names = new Set(
     (
       connection

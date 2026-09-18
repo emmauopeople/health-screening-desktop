@@ -32,7 +32,11 @@ export const schemaVersion21TriggerNames = Object.freeze(
 export function validateSchemaVersion21(
   connection: MigrationConnection,
   mode: DatabaseSchemaValidationMode,
-  additions: { readonly tables: readonly string[]; readonly triggers: readonly string[] } = {
+  additions: {
+    readonly tables: readonly string[]
+    readonly triggers: readonly string[]
+    readonly indexes?: readonly string[]
+  } = {
     tables: [],
     triggers: []
   }
@@ -45,7 +49,11 @@ export function validateSchemaVersion21(
 
 function isValid(
   connection: MigrationConnection,
-  additions: { readonly tables: readonly string[]; readonly triggers: readonly string[] }
+  additions: {
+    readonly tables: readonly string[]
+    readonly triggers: readonly string[]
+    readonly indexes?: readonly string[]
+  }
 ): boolean {
   try {
     return (
@@ -53,7 +61,10 @@ function isValid(
         readNames(connection, 'table'),
         [...schemaVersion21TableNames, ...additions.tables].sort()
       ) &&
-      arraysEqual(readNames(connection, 'index'), schemaVersion21NamedIndexes) &&
+      arraysEqual(
+        readNames(connection, 'index'),
+        [...schemaVersion21NamedIndexes, ...(additions.indexes ?? [])].sort()
+      ) &&
       arraysEqual(
         readNames(connection, 'trigger'),
         [...schemaVersion21TriggerNames, ...additions.triggers].sort()

@@ -1,3 +1,4 @@
+import { createCentralHistoryApi } from './central-history-api'
 import { createProtocolApi } from './protocol-api'
 import { createBackupApi } from './backup-api'
 import { createUserAdministrationApi } from './user-administration-api'
@@ -85,6 +86,7 @@ export function createHealthScreeningApi(
     }),
     auth: createAuthenticationApi({ invoke, subscribe }),
     patient: createPatientApi(invoke),
+    centralHistory: createCentralHistoryApi(invoke),
     referrals: createReferralApi(invoke),
     auditReports: createAuditReportApi(invoke),
     userAdministration: createUserAdministrationApi(invoke),
