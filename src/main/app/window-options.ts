@@ -5,19 +5,21 @@ export interface MainWindowOptionsInput {
   isDevelopment: boolean
   platform?: NodeJS.Platform
   iconPath?: string
+  workAreaSize?: { readonly width: number; readonly height: number }
 }
 
 export function createMainWindowOptions({
   preloadPath,
   isDevelopment,
   platform = process.platform,
-  iconPath
+  iconPath,
+  workAreaSize
 }: MainWindowOptionsInput): BrowserWindowConstructorOptions {
   return {
-    width: 1100,
-    height: 720,
-    minWidth: 860,
-    minHeight: 560,
+    width: Math.min(1100, workAreaSize?.width ?? 1100),
+    height: Math.min(720, workAreaSize?.height ?? 720),
+    minWidth: Math.min(640, workAreaSize?.width ?? 640),
+    minHeight: Math.min(480, workAreaSize?.height ?? 480),
     show: false,
     title: 'Health Screening Offline Desktop',
     autoHideMenuBar: true,
