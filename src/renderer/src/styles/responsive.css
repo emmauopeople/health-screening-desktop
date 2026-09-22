@@ -1,0 +1,337 @@
+/* Window dimensions are CSS pixels (including Windows display scaling).
+   Keep print documents on their own paged styles, independent of window size. */
+@media screen {
+  .application-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .application-command-panel-slot,
+  .application-shell-alert-slot {
+    min-width: 0;
+  }
+  .application-workspace .referral-reports-print-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .application-workspace .referral-status-action {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  }
+  .application-workspace :is(.referral-actions, .referral-followup-buttons, .referral-pagination) {
+    flex-wrap: wrap;
+  }
+  .application-shell,
+  .application-top-bar,
+  .application-workspace > *,
+  .application-workspace :is(section, article, fieldset, form) {
+    min-width: 0;
+  }
+  .application-workspace :is(input, select, textarea) {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .application-workspace :is(h1, h2, h3, dd) {
+    overflow-wrap: anywhere;
+  }
+  .application-command-panel {
+    height: auto;
+  }
+  .application-command-list {
+    padding-bottom: 6px;
+  }
+  .application-command-button {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+  .application-workspace
+    :is(
+      .patient-reports-heading,
+      .session-reports-heading,
+      .audit-reports-heading,
+      .application-workspace-heading
+    ) {
+    flex-wrap: wrap;
+  }
+  .application-workspace :is(.patient-report-date-controls, .referral-reports-print-controls) {
+    min-width: 0;
+  }
+}
+
+@media screen and (max-width: 1500px) {
+  .application-top-bar {
+    grid-template-areas:
+      'brand readiness account actions'
+      'navigation navigation navigation navigation';
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, auto) auto;
+    height: auto;
+    min-height: 0;
+    padding: 8px 16px;
+    gap: 6px 12px;
+  }
+  .application-brand {
+    grid-area: brand;
+  }
+  .application-readiness {
+    grid-area: readiness;
+  }
+  .application-account {
+    grid-area: account;
+    max-width: 14rem;
+  }
+  .application-session-actions {
+    grid-area: actions;
+  }
+  .application-primary-nav {
+    grid-area: navigation;
+    width: 100%;
+  }
+  .application-primary-menu-button,
+  .application-primary-menu-button[aria-current='page'] {
+    flex: 1 0 auto;
+    min-width: 0;
+    min-height: 38px;
+    padding: 7px 10px;
+  }
+  .application-command-panel {
+    padding: 6px 16px;
+  }
+}
+
+/* Stack panels when their contents cannot comfortably share a row. The outer
+   workspace owns vertical scrolling, with bounded result lists within it. */
+@media screen and (max-width: 1180px), screen and (max-height: 650px) {
+  .application-shell {
+    grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  }
+  .application-shell-footer {
+    height: auto;
+    min-height: 28px;
+    flex-wrap: wrap;
+  }
+  .application-workspace,
+  .application-workspace:has(.manage-encounters-workspace),
+  .application-workspace:has(.screening-workspace-active-encounter),
+  .application-workspace:has(.dashboard-workspace) {
+    overflow: auto;
+    padding: 12px 16px 20px;
+  }
+  .application-workspace
+    > :is(
+      .patient-reports-workspace,
+      .session-reports-workspace,
+      .referral-reports-workspace,
+      .audit-reports-workspace,
+      .referral-workspace,
+      .manage-encounters-workspace,
+      .users-workspace,
+      .backup-workspace,
+      .protocols-workspace,
+      .dashboard-workspace,
+      .screening-workspace-active-encounter
+    ) {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+  }
+  .application-workspace
+    :is(
+      .patient-reports-layout,
+      .session-reports-layout,
+      .referral-reports-layout,
+      .audit-reports-layout,
+      .referral-split-pane,
+      .manage-encounters-layout,
+      .users-panels,
+      .backup-panels
+    ) {
+    flex: 0 0 auto;
+    grid-template-rows: auto;
+    overflow: visible;
+  }
+  .application-workspace
+    :is(
+      .patient-reports-list-panel,
+      .session-reports-list-panel,
+      .referral-reports-list-panel,
+      .audit-reports-list-panel,
+      .referral-list-pane,
+      .manage-encounters-results,
+      .users-list
+    ) {
+    max-height: 28rem;
+    min-height: 14rem;
+    overflow: auto;
+  }
+  .application-workspace
+    :is(
+      .patient-reports-detail-panel,
+      .session-reports-detail-panel,
+      .referral-reports-detail-panel,
+      .audit-reports-detail-panel,
+      .referral-detail-pane,
+      .manage-encounter-detail,
+      .users-detail,
+      .backup-card,
+      .protocols-scroll
+    ) {
+    max-height: none;
+    overflow: visible;
+  }
+  .application-workspace
+    :is(.referral-detail-content, .referral-reports-detail-scroll, .audit-reports-detail-scroll) {
+    overflow: visible;
+  }
+  .application-workspace .dashboard-lower-grid {
+    grid-template-rows: minmax(260px, auto) minmax(420px, 55vh);
+  }
+  .application-workspace .audit-reports-filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .application-workspace .patient-search-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto auto 5rem;
+    grid-template-areas:
+      'label label label label'
+      'query search register size';
+  }
+  .application-workspace .patient-search-toolbar > label {
+    grid-area: label;
+  }
+  .application-workspace .patient-search-toolbar > input {
+    grid-area: query;
+  }
+  .application-workspace .patient-search-toolbar > .button-primary {
+    grid-area: search;
+  }
+  .application-workspace .patient-search-toolbar > .button-secondary {
+    grid-area: register;
+  }
+  .application-workspace .patient-search-toolbar > select {
+    grid-area: size;
+  }
+  .application-workspace .referral-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .application-workspace .referral-filters > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media screen and (max-width: 1180px) {
+  .application-workspace
+    :is(
+      .patient-reports-layout,
+      .session-reports-layout,
+      .referral-reports-layout,
+      .audit-reports-layout,
+      .referral-split-pane,
+      .manage-encounters-layout,
+      .patient-management-layout,
+      .patient-registration-review-layout,
+      .patient-duplicates-layout,
+      .users-panels,
+      .backup-panels
+    ) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .application-workspace .manage-encounters-search {
+    grid-template-columns: minmax(0, 1fr) minmax(10rem, 0.4fr);
+  }
+  .application-workspace .referral-reports-print-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media screen and (max-width: 760px) {
+  .application-workspace .patient-search-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'label label'
+      'query search'
+      'register size';
+  }
+  .application-top-bar {
+    grid-template-areas:
+      'brand actions'
+      'readiness account'
+      'navigation navigation';
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 6px 12px;
+  }
+  .application-brand strong {
+    font-size: 14px;
+    white-space: normal;
+  }
+  .application-brand .application-brand-logo {
+    width: 64px;
+    flex-basis: 64px;
+    height: 28px;
+  }
+  .application-account {
+    text-align: right;
+  }
+  .application-readiness {
+    justify-content: start;
+    font-size: 12px;
+  }
+  .application-account span {
+    font-size: 12px;
+  }
+  .application-primary-menu-button,
+  .application-primary-menu-button[aria-current='page'] {
+    font-size: 13px;
+    padding: 7px;
+  }
+  .application-workspace {
+    padding: 10px 12px 16px;
+  }
+  .application-workspace .audit-reports-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .application-workspace .audit-reports-filter-actions {
+    flex-wrap: wrap;
+  }
+  .application-workspace
+    :is(
+      .referral-status-action,
+      .referral-followup-grid,
+      .manage-encounters-search,
+      .manage-encounter-clinical-grid,
+      .patient-detail-list,
+      .patient-field-group-grid,
+      .patient-fields-grid,
+      .screening-filter-grid,
+      .screening-vitals-fields,
+      .referral-medication-row,
+      .referral-reports-patient-identity,
+      .patient-report-date-controls
+    ) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .application-workspace .dashboard-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .application-workspace .dashboard-worklist-search-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .application-workspace .dashboard-patient-search-group {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .application-workspace .dashboard-patient-search-group button {
+    min-width: 0;
+  }
+  .application-workspace .patient-reports-search input {
+    min-width: 0;
+  }
+}
+
+@media screen and (max-height: 650px) {
+  .auth-login-page {
+    padding: 12px;
+    overflow-y: auto;
+  }
+  .auth-login-logo,
+  .auth-locked-logo {
+    aspect-ratio: auto;
+    height: clamp(80px, 18vh, 118px);
+  }
+  .auth-login-card {
+    padding: 16px;
+  }
+}

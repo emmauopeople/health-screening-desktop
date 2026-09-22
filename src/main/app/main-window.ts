@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, screen } from 'electron'
 
 import { isNavigationAllowed, type NavigationPolicy } from '@main/app/navigation-policy'
 import { createMainWindowOptions } from '@main/app/window-options'
@@ -36,7 +36,8 @@ export async function createOrFocusMainWindow(
       preloadPath: configuration.preloadPath,
       isDevelopment: configuration.isDevelopment,
       platform: configuration.platform,
-      iconPath: configuration.iconPath
+      iconPath: configuration.iconPath,
+      workAreaSize: screen.getPrimaryDisplay().workAreaSize
     })
   )
 
