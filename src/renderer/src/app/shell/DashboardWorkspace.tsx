@@ -264,6 +264,13 @@ export function DashboardWorkspace({
           )}
           <div className="dashboard-table-scroll">
             <table>
+              <colgroup>
+                <col className="dashboard-patient-code-column" />
+                <col />
+                <col className="dashboard-patient-age-column" />
+                <col className="dashboard-patient-status-column" />
+                <col className="dashboard-patient-action-column" />
+              </colgroup>
               <thead>
                 <tr>
                   <th scope="col">Patient code</th>
