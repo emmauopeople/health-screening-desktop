@@ -358,7 +358,8 @@ describe('HSW-013B desktop synchronization worker', () => {
     [lifestyleOutbox, 'SCREENING_LIFESTYLE_ALCOHOL_BASELINE_CREATED'],
     [lifestyleOutbox, 'SCREENING_LIFESTYLE_TOBACCO_BASELINE_CREATED'],
     [lifestyleOutbox, 'SCREENING_LIFESTYLE_WORK_BASELINE_CREATED'],
-    [lifestyleOutbox, 'SCREENING_LIFESTYLE_REOPENED']
+    [lifestyleOutbox, 'SCREENING_LIFESTYLE_REOPENED'],
+    [lifestyleOutbox, 'LIFESTYLE_SYNC_REPLAY_REQUESTED']
   ])('commits a response for a batch prepared from %s / %s', async (signalId, operation) => {
     const harness = createHarness(Array.from({ length: 8 }, () => randomUUID()))
     try {
