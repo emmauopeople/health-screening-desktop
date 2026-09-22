@@ -185,7 +185,25 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .application-workspace .patient-search-toolbar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr) auto auto 5rem;
+    grid-template-areas:
+      'label label label label'
+      'query search register size';
+  }
+  .application-workspace .patient-search-toolbar > label {
+    grid-area: label;
+  }
+  .application-workspace .patient-search-toolbar > input {
+    grid-area: query;
+  }
+  .application-workspace .patient-search-toolbar > .button-primary {
+    grid-area: search;
+  }
+  .application-workspace .patient-search-toolbar > .button-secondary {
+    grid-area: register;
+  }
+  .application-workspace .patient-search-toolbar > select {
+    grid-area: size;
   }
   .application-workspace .referral-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -221,6 +239,13 @@
 }
 
 @media screen and (max-width: 760px) {
+  .application-workspace .patient-search-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'label label'
+      'query search'
+      'register size';
+  }
   .application-top-bar {
     grid-template-areas:
       'brand actions'
