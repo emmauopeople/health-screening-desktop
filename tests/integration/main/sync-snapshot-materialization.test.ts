@@ -1,5 +1,5 @@
 import type { SyncSnapshotDiagnostic } from '@shared/sync-snapshot-diagnostics'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -1007,6 +1007,9 @@ describe('sync snapshot materialization', () => {
     const harness = await createHarness()
     insertClinicalFoundation(harness.connection)
     insertCompleteLifestyle(harness.connection)
+    harness.connection
+      .prepare("UPDATE screening_encounters SET status='COMPLETED', completed_at=? WHERE id=?")
+      .run(now, encounterId)
     insertSignal(
       harness.connection,
       lifestyleSignal,
@@ -1049,6 +1052,198 @@ describe('sync snapshot materialization', () => {
       }
     })
   })
+
+  it('keeps a completed Lifestyle section queued until the encounter is completed', async () => {
+    const harness = await createHarness()
+    insertClinicalFoundation(harness.connection)
+    insertCompleteLifestyle(harness.connection)
+    insertSignal(
+      harness.connection,
+      lifestyleSignal,
+      'SCREENING_ENCOUNTER',
+      encounterId,
+      'SCREENING_LIFESTYLE_STEP_COMPLETED',
+      1
+    )
+
+    expect(harness.service.prepareNextBatch()).toEqual({ status: 'IDLE' })
+    expect(readOutboxStatuses(harness.connection)).toEqual([
+      { id: lifestyleSignal, status: 'PENDING' }
+    ])
+    harness.connection
+      .prepare("UPDATE screening_encounters SET status='COMPLETED', completed_at=? WHERE id=?")
+      .run(now, encounterId)
+    insertSignal(
+      harness.connection,
+      encounterSignal,
+      'SCREENING_ENCOUNTER',
+      encounterId,
+      'SCREENING_ENCOUNTER_COMPLETED',
+      2
+    )
+    expect(harness.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED', recordCount: 2 })
+    expect(
+      readStoredRequest(harness.connection).records.map((record) => record.resourceType)
+    ).toEqual(['SCREENING_ENCOUNTER', 'LIFESTYLE'])
+  })
+
+  it.each(['VOID', 'AMENDED', 'CENTRAL'] as const)(
+    'does not upload Lifestyle from a %s encounter',
+    async (state) => {
+      const h = await createHarness()
+      insertClinicalFoundation(h.connection)
+      insertCompleteLifestyle(h.connection)
+      h.connection
+        .prepare("UPDATE screening_encounters SET status='COMPLETED',completed_at=? WHERE id=?")
+        .run(now, encounterId)
+      if (state === 'VOID')
+        h.connection
+          .prepare(
+            "UPDATE screening_encounters SET status='VOID',void_reason='Synthetic void' WHERE id=?"
+          )
+          .run(encounterId)
+      else if (state === 'CENTRAL')
+        h.connection
+          .prepare("UPDATE screening_encounters SET source_type='CENTRAL' WHERE id=?")
+          .run(encounterId)
+      else {
+        const original = randomUUID()
+        h.connection
+          .prepare(
+            `INSERT INTO screening_encounters
+        (id,patient_id,screening_session_id,location_id,protocol_version_id,status,started_at,completed_at,source_type,recorded_by,record_version,created_at,updated_at)
+        SELECT ?,patient_id,screening_session_id,location_id,protocol_version_id,status,started_at,completed_at,source_type,recorded_by,record_version,created_at,updated_at
+        FROM screening_encounters WHERE id=?`
+          )
+          .run(original, encounterId)
+        h.connection
+          .prepare(
+            "UPDATE screening_encounters SET status='AMENDED',amendment_of_encounter_id=?,amendment_reason='Synthetic amendment' WHERE id=?"
+          )
+          .run(original, encounterId)
+      }
+      insertSignal(
+        h.connection,
+        lifestyleSignal,
+        'SCREENING_ENCOUNTER',
+        encounterId,
+        'SCREENING_LIFESTYLE_STEP_COMPLETED',
+        1
+      )
+      expect(h.service.prepareNextBatch()).toEqual({ status: 'IDLE' })
+      expect(readOutboxStatuses(h.connection)).toEqual([{ id: lifestyleSignal, status: 'PENDING' }])
+    }
+  )
+
+  it('requeues a legacy state rejection once after completion with the original snapshot and immutable history', async () => {
+    const h = await createHarness()
+    insertClinicalFoundation(h.connection)
+    insertCompleteLifestyle(h.connection)
+    h.connection
+      .prepare("UPDATE screening_encounters SET status='COMPLETED',completed_at=? WHERE id=?")
+      .run(now, encounterId)
+    insertSignal(
+      h.connection,
+      lifestyleSignal,
+      'SCREENING_ENCOUNTER',
+      encounterId,
+      'SCREENING_LIFESTYLE_STEP_COMPLETED',
+      1
+    )
+    expect(h.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED' })
+    const original = readStoredRequest(h.connection)
+    const history = saveLifestyleOutcome(h.connection, original, 'REJECTED')
+    const clinical = h.connection
+      .prepare('SELECT * FROM lifestyle_drafts WHERE id=?')
+      .get(lifestyleId)
+
+    h.connection
+      .prepare("UPDATE screening_encounters SET status='DRAFT',completed_at=NULL WHERE id=?")
+      .run(encounterId)
+    expect(h.service.prepareNextBatch()).toEqual({ status: 'IDLE' })
+    h.connection
+      .prepare("UPDATE screening_encounters SET status='COMPLETED',completed_at=? WHERE id=?")
+      .run(now, encounterId)
+    const repaired = h.service.prepareNextBatch()
+    expect(repaired).toMatchObject({ status: 'PREPARED', recordCount: 1, signalCount: 1 })
+    if (repaired.status !== 'PREPARED') throw new Error('Expected repair batch')
+    const stored = h.connection
+      .prepare('SELECT request_json FROM sync_transport_batches WHERE id=?')
+      .get(repaired.batchId) as { request_json: string }
+    const replay = JSON.parse(stored.request_json)
+    expect(replay.records).toEqual(original.records)
+    expect(
+      h.connection.prepare('SELECT * FROM lifestyle_drafts WHERE id=?').get(lifestyleId)
+    ).toEqual(clinical)
+    expect(
+      h.connection
+        .prepare('SELECT response_json FROM sync_transport_batches WHERE id=?')
+        .get(original.batchId)
+    ).toEqual({ response_json: history })
+
+    // An accidentally older API may reject the repair too. Do not create a
+    // fresh repair signal every five minutes and repeat the same failure.
+    saveLifestyleOutcome(h.connection, replay, 'REJECTED')
+    expect(h.service.prepareNextBatch()).toEqual({ status: 'IDLE' })
+    expect(
+      h.connection
+        .prepare(
+          "SELECT count(*) AS n FROM sync_outbox WHERE operation='LIFESTYLE_SYNC_REPLAY_REQUESTED'"
+        )
+        .get()
+    ).toEqual({ n: 1 })
+  })
+
+  it.each(['accepted', 'other-error', 'changed-content', 'newer-revision', 'void'] as const)(
+    'does not queue legacy recovery for %s evidence',
+    async (scenario) => {
+      const h = await createHarness()
+      insertClinicalFoundation(h.connection)
+      insertCompleteLifestyle(h.connection)
+      h.connection
+        .prepare("UPDATE screening_encounters SET status='COMPLETED',completed_at=? WHERE id=?")
+        .run(now, encounterId)
+      insertSignal(
+        h.connection,
+        lifestyleSignal,
+        'SCREENING_ENCOUNTER',
+        encounterId,
+        'SCREENING_LIFESTYLE_STEP_COMPLETED',
+        1
+      )
+      expect(h.service.prepareNextBatch()).toMatchObject({ status: 'PREPARED' })
+      saveLifestyleOutcome(
+        h.connection,
+        readStoredRequest(h.connection),
+        scenario === 'accepted' ? 'ACCEPTED' : 'REJECTED',
+        scenario === 'other-error'
+          ? 'LIFESTYLE_PERIOD_INVALID'
+          : 'LIFESTYLE_ENCOUNTER_STATE_INVALID'
+      )
+      if (scenario === 'changed-content')
+        h.connection
+          .prepare("UPDATE lifestyle_drafts SET other_activity_response='UNKNOWN' WHERE id=?")
+          .run(lifestyleId)
+      if (scenario === 'newer-revision')
+        h.connection
+          .prepare('UPDATE lifestyle_drafts SET row_version=row_version+1 WHERE id=?')
+          .run(lifestyleId)
+      if (scenario === 'void')
+        h.connection
+          .prepare(
+            "UPDATE screening_encounters SET status='VOID',void_reason='Synthetic void' WHERE id=?"
+          )
+          .run(encounterId)
+      expect(h.service.prepareNextBatch()).toEqual({ status: 'IDLE' })
+      expect(
+        h.connection
+          .prepare(
+            "SELECT count(*) AS n FROM sync_outbox WHERE operation='LIFESTYLE_SYNC_REPLAY_REQUESTED'"
+          )
+          .get()
+      ).toEqual({ n: 0 })
+    }
+  )
 
   it('rolls back the canonical batch and every signal reservation on a final write failure', async () => {
     const harness = await createHarness()
@@ -1323,10 +1518,13 @@ function insertSignal(
 }
 
 function readStoredRequest(connection: Database.Database): {
+  readonly batchId: string
   readonly actors: readonly Record<string, unknown>[]
   readonly records: readonly {
     readonly recordId: string
     readonly resourceType: string
+    readonly localResourceId: string
+    readonly sourceRevision: number
     readonly payload: Record<string, unknown>
   }[]
 } {
@@ -1334,6 +1532,52 @@ function readStoredRequest(connection: Database.Database): {
     request_json: string
   }
   return JSON.parse(row.request_json) as ReturnType<typeof readStoredRequest>
+}
+
+function saveLifestyleOutcome(
+  connection: Database.Database,
+  request: ReturnType<typeof readStoredRequest>,
+  status: 'ACCEPTED' | 'REJECTED',
+  code = 'LIFESTYLE_ENCOUNTER_STATE_INVALID'
+): string {
+  const record = request.records[0]!
+  const response = JSON.stringify({
+    contractVersion: '1.0',
+    batchId: request.batchId,
+    batchStatus: status,
+    receivedAt: now,
+    completedAt: now,
+    outcomes: [
+      {
+        recordId: record.recordId,
+        resourceType: 'LIFESTYLE',
+        localResourceId: record.localResourceId,
+        sourceRevision: record.sourceRevision,
+        status,
+        canonicalResourceId: status === 'ACCEPTED' ? randomUUID() : null,
+        centralPersonId: null,
+        chsMedicalId: null,
+        medicalIdStatus: null,
+        errors:
+          status === 'ACCEPTED'
+            ? []
+            : [{ code, path: '/payload/localEncounterId', retryable: false }]
+      }
+    ]
+  })
+  connection
+    .prepare(
+      `UPDATE sync_transport_batches SET status='COMPLETED',completed_at=?,
+    response_json=?,response_sha256=? WHERE id=?`
+    )
+    .run(now, response, createHash('sha256').update(response).digest('hex'), request.batchId)
+  connection
+    .prepare(
+      `UPDATE sync_outbox SET status='SENT',sent_at=? WHERE id IN
+    (SELECT outbox_id FROM sync_transport_batch_items WHERE batch_id=?)`
+    )
+    .run(now, request.batchId)
+  return response
 }
 
 function readOutboxStatuses(connection: Database.Database): readonly unknown[] {

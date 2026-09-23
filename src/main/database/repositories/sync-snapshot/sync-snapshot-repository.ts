@@ -3,6 +3,7 @@ import { materializeReferral } from './referral-snapshot'
 import { parseClinicalTime } from '@shared/clinical-time'
 import type Database from 'better-sqlite3'
 import { readPatientSnapshotHistory } from './patient-snapshot-history'
+import { readLifestyleSnapshotHistory } from './lifestyle-snapshot-history'
 import {
   SnapshotMaterializationError,
   SnapshotValueError,
@@ -98,6 +99,19 @@ export function createSyncSnapshotRepository(
         stage = 'PATIENT'
         const patientHistory = readPatientSnapshotHistory(scopedConnection, installation)
         patientHistory.queueRepairs(now)
+        stage = 'LIFESTYLE'
+        const lifestyleHistory = readLifestyleSnapshotHistory(scopedConnection, installation)
+        lifestyleHistory.queueRepairs(
+          now,
+          (encounterId, recordId) =>
+            materializeLifestyle(scopedConnection, lifestyleRepository, installation, encounterId, {
+              id: recordId,
+              aggregateId: encounterId,
+              operation: 'LIFESTYLE_SYNC_REPLAY_REQUESTED',
+              createdAt: now,
+              resourceType: 'LIFESTYLE'
+            })?.record ?? null
+        )
         stage = 'SIGNALS'
         const signals = readEligibleSignals(scopedConnection, parseUtcTimestamp(now))
         if (signals.length === 0) return null
@@ -111,9 +125,16 @@ export function createSyncSnapshotRepository(
               installation,
               group
             )
-            return candidate !== null && group.resourceType === 'PATIENT'
-              ? { ...candidate, record: patientHistory.stabilize(candidate.record) }
-              : candidate
+            if (candidate === null) return null
+            return {
+              ...candidate,
+              record:
+                group.resourceType === 'PATIENT'
+                  ? patientHistory.stabilize(candidate.record)
+                  : group.resourceType === 'LIFESTYLE'
+                    ? lifestyleHistory.stabilize(candidate.record)
+                    : candidate.record
+            }
           })
           .filter((candidate): candidate is MaterializedCandidate => candidate !== null)
           .sort(compareCandidates)
@@ -613,9 +634,25 @@ function materializeLifestyle(
 ): Pick<MaterializedCandidate, 'record' | 'actorIds'> | null {
   const draft = lifestyleRepository.findDraftByEncounterForWrite(connection, encounterId)
   if (draft === null || draft.status !== 'COMPLETE') return null
+  const encounter = requiredRow(
+    connection,
+    'SELECT * FROM screening_encounters WHERE id = ?',
+    encounterId
+  )
+  // Completing a section does not finalize the whole screening. Keep its signals
+  // pending until the encounter meets the central Lifestyle acceptance rule.
+  if (
+    encounter.status !== 'COMPLETED' ||
+    encounter.source_type !== 'LOCAL' ||
+    encounter.amendment_of_encounter_id !== null
+  )
+    return null
   if (
     draft.locationId !== installation.locationId ||
-    draft.installationId !== installation.installationId
+    draft.installationId !== installation.installationId ||
+    draft.patientId !== encounter.patient_id ||
+    draft.screeningSessionId !== encounter.screening_session_id ||
+    draft.locationId !== encounter.location_id
   ) {
     throw new RepositoryDataIntegrityError()
   }
