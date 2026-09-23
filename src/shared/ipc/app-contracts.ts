@@ -1,3 +1,4 @@
+import type { CentralHistoryApi } from './central-history-contracts'
 import type { ProtocolApi } from './protocol-contracts'
 import type { BackupApi } from './backup-contracts'
 import type { UserAdministrationApi } from './user-administration-contracts'
@@ -148,6 +149,7 @@ export type AppGetInfoResult = z.infer<typeof appGetInfoResultSchema>
 export type AppGetHealthResult = z.infer<typeof appGetHealthResultSchema>
 
 export interface HealthScreeningApi {
+  readonly centralHistory?: CentralHistoryApi
   app: {
     getInfo(): Promise<AppGetInfoResult>
     getHealth(): Promise<AppGetHealthResult>

@@ -46,7 +46,7 @@ describe('migration runner integration', () => {
     })
   })
 
-  it('upgrades a fresh HSD-006 database to schema version 25 and is idempotent', async () => {
+  it('upgrades a fresh HSD-006 database to schema version 26 and is idempotent', async () => {
     await withDatabase((connection) => {
       const logger = createLogger()
       const migrate = createProductionDatabaseMigrationRunner({
@@ -61,12 +61,13 @@ describe('migration runner integration', () => {
 
       expect(firstSummary).toEqual({
         previousVersion: 0,
-        currentVersion: 25,
+        currentVersion: 26,
         appliedVersions: [
-          1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25
+          1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+          26
         ]
       })
-      expect(readUserVersion(connection)).toBe(25)
+      expect(readUserVersion(connection)).toBe(26)
       expect(readBaselineProtocolRows(connection)).toEqual([
         {
           id: '00000000-0000-4000-8000-000000000007',
@@ -88,18 +89,18 @@ describe('migration runner integration', () => {
       const secondSummary = migrate(connection)
 
       expect(secondSummary).toEqual({
-        previousVersion: 25,
-        currentVersion: 25,
+        previousVersion: 26,
+        currentVersion: 26,
         appliedVersions: []
       })
-      expect(readLedgerRows(connection)).toHaveLength(25)
+      expect(readLedgerRows(connection)).toHaveLength(26)
       expect(logger.info.mock.calls.flat()).toContain(
-        'Database migrations current; schemaVersion=25'
+        'Database migrations current; schemaVersion=26'
       )
     })
   })
 
-  it('upgrades an existing schema version 3 database to schema version 25', async () => {
+  it('upgrades an existing schema version 3 database to schema version 26', async () => {
     await withDatabase((connection) => {
       runDatabaseMigrations({
         connection,
@@ -121,14 +122,15 @@ describe('migration runner integration', () => {
 
       expect(summary).toEqual({
         previousVersion: 3,
-        currentVersion: 25,
+        currentVersion: 26,
         appliedVersions: [
-          4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25
+          4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26
         ]
       })
-      expect(readUserVersion(connection)).toBe(25)
+      expect(readUserVersion(connection)).toBe(26)
       expect(readLedgerRows(connection).map((row) => row.version)).toEqual([
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+        26
       ])
     })
   })
@@ -170,7 +172,7 @@ describe('migration runner integration', () => {
         clock: fixedClock
       })
       expect(migrate(connection).appliedVersions).toEqual([
-        10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25
+        10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26
       ])
       expect(
         connection
@@ -227,10 +229,12 @@ describe('migration runner integration', () => {
 
       expect(summary).toEqual({
         previousVersion: 6,
-        currentVersion: 25,
-        appliedVersions: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]
+        currentVersion: 26,
+        appliedVersions: [
+          7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26
+        ]
       })
-      expect(readUserVersion(connection)).toBe(25)
+      expect(readUserVersion(connection)).toBe(26)
       expect(readBaselineProtocolRows(connection)).toEqual([
         {
           id: '00000000-0000-4000-8000-000000000007',
@@ -287,8 +291,10 @@ describe('migration runner integration', () => {
 
       expect(summary).toEqual({
         previousVersion: 6,
-        currentVersion: 25,
-        appliedVersions: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]
+        currentVersion: 26,
+        appliedVersions: [
+          7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26
+        ]
       })
       expect(readProtocolRows(connection)).toEqual(protocolRowsBefore)
     })
@@ -314,8 +320,8 @@ describe('migration runner integration', () => {
       const secondSummary = secondRunner(connection)
 
       expect(secondSummary).toEqual({
-        previousVersion: 25,
-        currentVersion: 25,
+        previousVersion: 26,
+        currentVersion: 26,
         appliedVersions: []
       })
       expect(readLedgerRows(connection)).toEqual(originalLedger)
@@ -612,7 +618,7 @@ describe('migration runner integration', () => {
       connection.exec('DROP TABLE app_settings')
 
       expect(() => migrate(connection)).toThrow(MigrationCompatibilityError)
-      expect(readUserVersion(connection)).toBe(25)
+      expect(readUserVersion(connection)).toBe(26)
       expect(readLedgerRows(connection)).toEqual(originalLedger)
     })
   })
@@ -630,7 +636,7 @@ describe('migration runner integration', () => {
       connection.exec('DROP INDEX ix_locations_name_normalized')
 
       expect(() => migrate(connection)).toThrow(MigrationCompatibilityError)
-      expect(readUserVersion(connection)).toBe(25)
+      expect(readUserVersion(connection)).toBe(26)
       expect(readLedgerRows(connection)).toEqual(originalLedger)
     })
   })
@@ -692,7 +698,7 @@ describe('migration runner integration', () => {
             application_version
           ) VALUES (?, ?, ?, ?, ?)`
         )
-        .run(26, 'extra', 'a'.repeat(64), fixedClock.now(), '1.0.0')
+        .run(27, 'extra', 'a'.repeat(64), fixedClock.now(), '1.0.0')
 
       expectProductionMigrationCompatibilityFailure(connection)
     })
@@ -840,7 +846,7 @@ function expectProductionMigrationCompatibilityFailure(connection: Database.Data
       applicationVersion: '1.0.0',
       logger: createLogger(),
       clock: fixedClock,
-      expectedHighestVersion: 25
+      expectedHighestVersion: 26
     })
   ).toThrow(MigrationCompatibilityError)
 }

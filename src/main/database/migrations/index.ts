@@ -23,6 +23,7 @@ import { validateSchemaVersion20 } from './schema-v20-contract'
 import { validateSchemaVersion21 } from './schema-v21-contract'
 import { validateSchemaVersion24 } from './schema-v24-contract'
 import { validateSchemaVersion25 } from './schema-v25-contract'
+import { validateSchemaVersion26 } from './schema-v26-contract'
 import { validateSchemaVersion23 } from './schema-v23-contract'
 import { validateSchemaVersion22 } from './schema-v22-contract'
 import type {
@@ -57,7 +58,8 @@ const productionSchemaValidators = new Map([
   [22, validateSchemaVersion22],
   [23, validateSchemaVersion23],
   [24, validateSchemaVersion24],
-  [25, validateSchemaVersion25]
+  [25, validateSchemaVersion25],
+  [26, validateSchemaVersion26]
 ])
 
 export {

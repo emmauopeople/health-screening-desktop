@@ -30,7 +30,9 @@ import referralSyncSql from './sql/0024-referral-sync.sql?raw'
 
 import encounterHistorySyncSql from './sql/0025-encounter-history-sync.sql?raw'
 
-export const targetSchemaVersion = 25
+import centralPatientHistorySql from './sql/0026-central-patient-history.sql?raw'
+
+export const targetSchemaVersion = 26
 
 const initialSchemaMigration = Object.freeze({
   version: 1,
@@ -193,6 +195,11 @@ export const databaseMigrations = Object.freeze([
     version: 25,
     name: 'encounter-history-sync',
     sql: encounterHistorySyncSql
+  } satisfies DatabaseMigration,
+  {
+    version: 26,
+    name: 'central-patient-history',
+    sql: centralPatientHistorySql
   } satisfies DatabaseMigration
 ] as const)
 
