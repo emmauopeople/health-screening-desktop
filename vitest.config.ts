@@ -13,6 +13,7 @@ export default defineConfig({
     include: [
       'tests/unit/**/*.test.ts',
       'tests/unit/**/*.test.tsx',
+      'tests/unit/**/*.test.mjs',
       'tests/integration/**/*.test.ts',
       'tests/integration/**/*.test.tsx'
     ]

@@ -26,6 +26,13 @@ export default defineConfig(
   eslintPluginReact.configs.flat.recommended,
   eslintPluginReact.configs.flat['jsx-runtime'],
   {
+    files: ['**/*.mjs'],
+    rules: {
+      // Native Node.js scripts cannot contain TypeScript return annotations.
+      '@typescript-eslint/explicit-function-return-type': 'off'
+    }
+  },
+  {
     settings: {
       react: {
         version: 'detect'
