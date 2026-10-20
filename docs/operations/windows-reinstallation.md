@@ -60,6 +60,9 @@ by this feature. Do not pass the explicit `--delete-app-data` uninstall flag.
 Use a disposable Windows profile/VM with synthetic patient data. Build using
 `corepack pnpm build:win` and run the resulting `dist/*-setup.exe`. `pnpm start`
 uses the development lifecycle and cannot verify installer behavior.
+The command now requires a successful native rebuild and packaged SQLite check
+before creating an installer. See [Windows build and recovery](windows-build.md)
+for prerequisites, success messages, and troubleshooting.
 
 1. Install with no existing data. Verify Installation configuration appears,
    then complete the deployment/admin/location form. Create synthetic records.

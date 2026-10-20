@@ -1,0 +1,134 @@
+.central-history-panel {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.central-history-panel h3,
+.central-history-panel h4,
+.central-history-panel p {
+  margin: 0;
+}
+.central-history-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 1rem;
+}
+.central-history-panel label {
+  display: grid;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+.central-history-panel select,
+.central-history-panel input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.65rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-panel);
+  color: var(--color-ink);
+}
+.central-history-panel button {
+  border: 1px solid var(--color-accent);
+  border-radius: 6px;
+  padding: 0.65rem 0.9rem;
+  color: var(--color-accent);
+  background: var(--color-panel);
+  font: inherit;
+  cursor: pointer;
+}
+.central-history-panel button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.central-history-panel button:focus-visible,
+.central-history-panel summary:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 3px;
+}
+.central-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  grid-column: 1 / -1;
+}
+.central-history-source,
+.central-history-provenance {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+.central-history-card,
+.central-history-snapshot {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 1rem;
+  display: grid;
+  gap: 0.75rem;
+  background: var(--color-panel);
+  overflow-wrap: anywhere;
+}
+.central-history-card header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+.central-history-badge {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  border-radius: 20px;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.central-history-panel summary {
+  cursor: pointer;
+  padding: 0.5rem 0;
+  font-weight: 600;
+}
+.central-history-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin: 0.5rem 0;
+}
+.central-history-fields dt {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+.central-history-fields dd {
+  margin: 0.2rem 0 0;
+  white-space: pre-wrap;
+}
+.central-history-field-group {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.6rem;
+}
+.central-history-fields ol {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+.central-history-fields li {
+  padding-bottom: 0.3rem;
+}
+.central-history-warning,
+.central-history-message {
+  background: #fff5df;
+  border-left: 3px solid #9a6109;
+  padding: 0.8rem;
+}
+.central-history-snapshot {
+  background: var(--color-accent-soft);
+}
+.central-history-results {
+  display: grid;
+  gap: 1rem;
+}
+.central-history-filter {
+  max-width: 24rem;
+}

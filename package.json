@@ -22,7 +22,7 @@
     "build": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "electron-vite build && electron-builder --dir",
-    "build:win": "electron-vite build && electron-builder --win",
+    "build:win": "node scripts/build-windows.mjs",
     "build:mac": "electron-vite build && electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux"
   },

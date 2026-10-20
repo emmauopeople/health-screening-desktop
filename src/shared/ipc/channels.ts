@@ -17,6 +17,10 @@ export const ipcChannels = {
     recordActivity: 'health-screening:auth:record-activity',
     sessionChanged: 'health-screening:auth:session-changed'
   },
+  centralHistory: {
+    read: 'health-screening:central-history:read',
+    refresh: 'health-screening:central-history:refresh'
+  },
   patient: {
     search: 'health-screening:patient:search',
     get: 'health-screening:patient:get',
