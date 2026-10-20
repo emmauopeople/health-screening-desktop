@@ -112,6 +112,7 @@ export const ipcChannels = {
     reconfigureLocation: 'health-screening:installation-settings:reconfigure-location'
   },
   syncAdministration: {
+    copyEnrollmentDetail: 'health-screening:sync-administration:copy-enrollment-detail',
     getState: 'health-screening:sync-administration:get-state',
     configure: 'health-screening:sync-administration:configure'
   }

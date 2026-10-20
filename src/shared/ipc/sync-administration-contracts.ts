@@ -72,10 +72,25 @@ export const publicSyncAdministrationActivitySchema = z
   })
   .strict()
 
+export const syncEnrollmentDetailsSchema = z
+  .object({
+    installationId: z.string().uuid(),
+    sourceLocationId: z.string().uuid(),
+    deploymentName: z.string().min(1).max(200),
+    locationName: z.string().min(1).max(200),
+    timezone: z.string().min(1).max(100)
+  })
+  .strict()
+export type SyncEnrollmentDetails = z.infer<typeof syncEnrollmentDetailsSchema>
+export const syncEnrollmentCopyRequestSchema = exactObject({
+  field: z.enum(['installationId', 'sourceLocationId'])
+})
+
 export const syncAdministrationGetStateSuccessDataSchema = z
   .object({
     status: z.literal('READY'),
     configuration: publicSyncAdministrationConfigurationSchema,
+    enrollmentDetails: syncEnrollmentDetailsSchema.nullable().optional(),
     activity: publicSyncAdministrationActivitySchema
   })
   .strict()
@@ -129,6 +144,15 @@ export const syncAdministrationFailureSchema = z
     ])
   })
   .strict()
+
+export const syncEnrollmentCopyResultSchema = withSafeTransportPreprocess(
+  z.discriminatedUnion('ok', [
+    createIpcSuccessResultSchema(z.object({ status: z.literal('COPIED') }).strict()),
+    syncAdministrationFailureSchema
+  ])
+)
+export type SyncEnrollmentCopyRequest = z.infer<typeof syncEnrollmentCopyRequestSchema>
+export type SyncEnrollmentCopyResult = z.infer<typeof syncEnrollmentCopyResultSchema>
 
 export const syncAdministrationGetStateResultSchema = withSafeTransportPreprocess(
   z.discriminatedUnion('ok', [

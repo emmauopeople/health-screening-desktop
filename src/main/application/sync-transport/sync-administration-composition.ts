@@ -4,6 +4,8 @@ import {
   createAuditEventRepository,
   createDatabaseTransactionExecutor,
   createInstallationRepository,
+  createLocationRepository,
+  createInstallationLocationConfigurationRepository,
   createSyncTransportBatchRepository,
   type DatabaseTransactionLogger
 } from '@main/database'
@@ -34,6 +36,21 @@ export function createProductionSyncAdministrationService({
     authenticationSessionService,
     repository: createSyncTransportBatchRepository(connection),
     installationRepository: createInstallationRepository(connection),
+    getEnrollmentDetails: () => {
+      const installation = createInstallationRepository(connection).get()
+      const configuration = createInstallationLocationConfigurationRepository(connection).get()
+      if (!installation || !configuration || configuration.installationId !== installation.id)
+        return null
+      const location = createLocationRepository(connection).getById(configuration.locationId)
+      if (!location) return null
+      return Object.freeze({
+        installationId: installation.id,
+        sourceLocationId: location.id,
+        deploymentName: installation.deploymentName,
+        locationName: location.name,
+        timezone: installation.timeZone
+      })
+    },
     auditEventRepository: createAuditEventRepository(connection),
     transactionExecutor: createDatabaseTransactionExecutor({
       connection,

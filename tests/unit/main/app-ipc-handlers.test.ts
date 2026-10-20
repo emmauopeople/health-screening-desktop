@@ -294,7 +294,7 @@ describe('application IPC handler registration', () => {
 
     const dispose = registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(67)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(68)
     expect([...ipcMain.handlers.keys()].sort()).toEqual([
       'health-screening:app:get-health',
       'health-screening:app:get-info',
@@ -362,6 +362,7 @@ describe('application IPC handler registration', () => {
       'health-screening:screening-sessions:list-summaries',
       'health-screening:screening-sessions:reopen',
       'health-screening:sync-administration:configure',
+      'health-screening:sync-administration:copy-enrollment-detail',
       'health-screening:sync-administration:get-state',
       'unrelated:channel'
     ])
@@ -623,7 +624,7 @@ describe('application IPC handler registration', () => {
     registerApplicationIpcHandlers(ipcMain, createDependencies())
     registerApplicationIpcHandlers(ipcMain, createDependencies())
 
-    expect(ipcMain.handle).toHaveBeenCalledTimes(134)
+    expect(ipcMain.handle).toHaveBeenCalledTimes(136)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getInfo)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.app.getHealth)
     expect(ipcMain.removeHandler).toHaveBeenCalledWith(ipcChannels.firstRun.getState)
@@ -695,6 +696,7 @@ describe('application IPC handler registration', () => {
       'health-screening:screening-sessions:list-summaries',
       'health-screening:screening-sessions:reopen',
       'health-screening:sync-administration:configure',
+      'health-screening:sync-administration:copy-enrollment-detail',
       'health-screening:sync-administration:get-state',
       'unrelated:channel'
     ])

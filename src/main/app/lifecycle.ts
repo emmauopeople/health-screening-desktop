@@ -3,7 +3,7 @@ import { createProtocolService } from '@main/application/protocols/protocol-serv
 import { applyPendingRestore, type AppliedRestore } from '@main/application/backups/pending-restore'
 import { createElectronBackupService } from '@main/application/backups/electron-backup-service'
 import { createUserAdministrationService } from '@main/application/user-administration/user-administration-service'
-import { app, dialog, ipcMain, session } from 'electron'
+import { app, clipboard, dialog, ipcMain, session } from 'electron'
 import { prepareElectronInstallationSetup } from './electron-installation-setup'
 import { join } from 'node:path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
@@ -347,6 +347,7 @@ export function startApplicationLifecycle(): void {
           navigationPolicy,
           authenticationSessionService,
           syncAdministrationService,
+          copyEnrollmentText: (value) => clipboard.writeText(value),
           logger: console
         },
         logger: console

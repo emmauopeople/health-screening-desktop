@@ -41,6 +41,9 @@ export function createSyncAdministrationService(
         const storedStatus = dependencies.repository.getOperationalStatus()
         return Object.freeze({
           status: 'READY' as const,
+          ...(dependencies.getEnrollmentDetails
+            ? { enrollmentDetails: dependencies.getEnrollmentDetails() }
+            : {}),
           configuration:
             configuration === null
               ? Object.freeze({ status: 'NOT_CONFIGURED' as const })

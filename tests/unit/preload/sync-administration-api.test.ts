@@ -5,6 +5,27 @@ import { createIpcSuccess, createSyncAdministrationFailure, ipcChannels } from '
 
 const token = `chs_inst_v1_${'A'.repeat(43)}`
 
+describe('enrollment copy preload contract', () => {
+  it('uses a fixed channel and rejects arbitrary fields and secret-bearing replies', async () => {
+    const invoke = vi.fn(async () => createIpcSuccess({ status: 'COPIED' }))
+    const api = createHealthScreeningApi(invoke)
+    expect(
+      await api.syncAdministration.copyEnrollmentDetail({ field: 'sourceLocationId' })
+    ).toEqual(createIpcSuccess({ status: 'COPIED' }))
+    expect(invoke).toHaveBeenCalledWith(ipcChannels.syncAdministration.copyEnrollmentDetail, {
+      field: 'sourceLocationId'
+    })
+    expect(
+      await api.syncAdministration.copyEnrollmentDetail({ field: 'installationToken' } as never)
+    ).toEqual(createSyncAdministrationFailure('VALIDATION_FAILED'))
+    expect(invoke).toHaveBeenCalledTimes(1)
+    invoke.mockResolvedValueOnce(createIpcSuccess({ status: 'COPIED', token }) as never)
+    expect(await api.syncAdministration.copyEnrollmentDetail({ field: 'installationId' })).toEqual(
+      createSyncAdministrationFailure('IPC_UNAVAILABLE')
+    )
+  })
+})
+
 describe('synchronization administration preload API', () => {
   it('allows only controlled diagnostic codes through preload', async () => {
     const safe = { stage: 'PATIENT', rule: 'INVALID_VALUE', field: 'phone' }

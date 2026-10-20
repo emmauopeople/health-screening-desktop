@@ -107,6 +107,7 @@ const installationSettingsIpcChannels: readonly InstallationSettingsIpcChannel[]
   ipcChannels.installationSettings.reconfigureLocation
 ])
 const syncAdministrationIpcChannels: readonly SyncAdministrationIpcChannel[] = Object.freeze([
+  ipcChannels.syncAdministration.copyEnrollmentDetail,
   ipcChannels.syncAdministration.getState,
   ipcChannels.syncAdministration.configure
 ])
@@ -275,6 +276,10 @@ export function registerApplicationIpcHandlers(
       [
         ipcChannels.installationSettings.reconfigureLocation,
         installationSettingsHandlers.reconfigureLocation
+      ],
+      [
+        ipcChannels.syncAdministration.copyEnrollmentDetail,
+        syncAdministrationHandlers.copyEnrollmentDetail
       ],
       [ipcChannels.syncAdministration.getState, syncAdministrationHandlers.getState],
       [ipcChannels.syncAdministration.configure, syncAdministrationHandlers.configure],

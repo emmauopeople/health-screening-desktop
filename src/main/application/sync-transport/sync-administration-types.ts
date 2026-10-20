@@ -5,7 +5,10 @@ import type {
   SyncTransportBatchRepository
 } from '@main/database'
 import type { UtcTimestamp } from '@main/foundation/utc-clock'
-import type { SyncWorkerCheck } from '@shared/ipc/sync-administration-contracts'
+import type {
+  SyncEnrollmentDetails,
+  SyncWorkerCheck
+} from '@shared/ipc/sync-administration-contracts'
 
 import type { LocalAuthenticationSessionService } from '../authentication/session'
 import type { SyncCredentialProtector } from './sync-transport-types'
@@ -35,6 +38,7 @@ export type SyncAdministrationConfiguration =
 export type GetSyncAdministrationStateResult =
   | {
       readonly status: 'READY'
+      readonly enrollmentDetails?: SyncEnrollmentDetails | null
       readonly configuration: SyncAdministrationConfiguration
       readonly activity: SyncAdministrationActivity
     }
@@ -66,5 +70,6 @@ export interface SyncAdministrationServiceDependencies {
   readonly auditEventRepository: AuditEventRepository
   readonly transactionExecutor: DatabaseTransactionExecutor
   readonly credentialProtector: SyncCredentialProtector
+  readonly getEnrollmentDetails?: () => SyncEnrollmentDetails | null
   readonly workerMonitor?: SyncWorkerMonitor
 }
