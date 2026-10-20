@@ -1,3 +1,4 @@
+import type { CentralHistoryApi } from './central-history-contracts'
 import type {
   SyncEnrollmentCopyRequest,
   SyncEnrollmentCopyResult
@@ -152,6 +153,7 @@ export type AppGetInfoResult = z.infer<typeof appGetInfoResultSchema>
 export type AppGetHealthResult = z.infer<typeof appGetHealthResultSchema>
 
 export interface HealthScreeningApi {
+  readonly centralHistory?: CentralHistoryApi
   app: {
     getInfo(): Promise<AppGetInfoResult>
     getHealth(): Promise<AppGetHealthResult>

@@ -81,6 +81,10 @@ describe('shared IPC contracts', () => {
         recordActivity: 'health-screening:auth:record-activity',
         sessionChanged: 'health-screening:auth:session-changed'
       },
+      centralHistory: {
+        read: 'health-screening:central-history:read',
+        refresh: 'health-screening:central-history:refresh'
+      },
       patient: {
         search: 'health-screening:patient:search',
         get: 'health-screening:patient:get',
@@ -182,7 +186,7 @@ describe('shared IPC contracts', () => {
     })
     const allChannels = flattenChannelStrings(ipcChannels)
 
-    expect(allChannels).toHaveLength(79)
+    expect(allChannels).toHaveLength(81)
     expect(new Set(allChannels).size).toBe(allChannels.length)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.lifestyle.complete)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.complete)

@@ -1,3 +1,4 @@
+import { createCentralHistoryService } from '../application/central-history/central-history-service'
 import { createProtocolService } from '@main/application/protocols/protocol-service'
 import { applyPendingRestore, type AppliedRestore } from '@main/application/backups/pending-restore'
 import { createElectronBackupService } from '@main/application/backups/electron-backup-service'
@@ -210,6 +211,11 @@ export function startApplicationLifecycle(): void {
       })
       const workerMonitor = createSyncWorkerMonitor()
       const syncCredentialProtector = createElectronSyncCredentialProtector()
+      const centralHistoryService = createCentralHistoryService({
+        connection: databaseRuntime.getConnection(),
+        authenticationSessionService,
+        credentialProtector: syncCredentialProtector
+      })
       const syncAdministrationService = createProductionSyncAdministrationService({
         connection: databaseRuntime.getConnection(),
         authenticationSessionService,
@@ -257,6 +263,7 @@ export function startApplicationLifecycle(): void {
         getWebContents: getMainWindowWebContents
       })
       const disposeIpcHandlers = registerApplicationIpcHandlers(ipcMain, {
+        centralHistory: { navigationPolicy, service: centralHistoryService },
         navigationPolicy,
         applicationInfoProvider,
         databaseHealthProvider,

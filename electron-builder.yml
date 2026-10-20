@@ -1,4 +1,5 @@
 appId: org.healthscreening.desktop
+afterPack: build/verify-packaged-sqlite.mjs
 productName: Health Screening Offline Desktop
 directories:
   buildResources: build
