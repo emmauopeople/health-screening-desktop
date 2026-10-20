@@ -13,6 +13,54 @@ import { createSyncAdministrationFailure } from '@shared/ipc'
 const token = `chs_inst_v1_${'A'.repeat(43)}`
 const configuredAt = '2026-09-04T12:00:00.000Z'
 
+describe('enrollment UUID clipboard boundary', () => {
+  const details = {
+    installationId: '10000000-0000-4000-8000-000000000001',
+    sourceLocationId: '30000000-0000-4000-8000-000000000001',
+    deploymentName: 'Test PC',
+    locationName: 'Test site',
+    timezone: 'Africa/Douala'
+  }
+  it('copies only current stored enrollment UUIDs, never renderer-supplied text', async () => {
+    const harness = createHarness()
+    const state = harness.service.getState()
+    harness.service.getState.mockReturnValue({ ...state, enrollmentDetails: details })
+    expect(
+      await harness.handlers.copyEnrollmentDetail(allowedEvent(), { field: 'installationId' })
+    ).toEqual({ ok: true, data: { status: 'COPIED' } })
+    expect(harness.copyEnrollmentText).toHaveBeenLastCalledWith(details.installationId)
+    expect(
+      await harness.handlers.copyEnrollmentDetail(allowedEvent(), { field: 'sourceLocationId' })
+    ).toEqual({ ok: true, data: { status: 'COPIED' } })
+    expect(harness.copyEnrollmentText).toHaveBeenLastCalledWith(details.sourceLocationId)
+    for (const request of [
+      { field: 'installationToken' },
+      { field: 'installationId', text: token },
+      {}
+    ]) {
+      expect(await harness.handlers.copyEnrollmentDetail(allowedEvent(), request)).toEqual(
+        createSyncAdministrationFailure('VALIDATION_FAILED')
+      )
+    }
+    expect(harness.copyEnrollmentText).toHaveBeenCalledTimes(2)
+  })
+  it('denies untrusted windows, unauthorized users and missing details without writing the clipboard', async () => {
+    const harness = createHarness()
+    expect(
+      await harness.handlers.copyEnrollmentDetail(forbiddenEvent(), { field: 'installationId' })
+    ).toEqual(createSyncAdministrationFailure('IPC_FORBIDDEN'))
+    expect(
+      await harness.handlers.copyEnrollmentDetail(allowedEvent(), { field: 'installationId' })
+    ).toEqual(createSyncAdministrationFailure('INTERNAL_ERROR'))
+    expect(harness.copyEnrollmentText).not.toHaveBeenCalled()
+    const denied = createHarness(new LocalSessionAuthorizationError())
+    expect(
+      (await denied.handlers.copyEnrollmentDetail(allowedEvent(), { field: 'installationId' })).ok
+    ).toBe(false)
+    expect(denied.copyEnrollmentText).not.toHaveBeenCalled()
+  })
+})
+
 describe('synchronization administration IPC handlers', () => {
   it('authorizes administrators and returns only bounded public state', async () => {
     const harness = createHarness()
@@ -96,6 +144,7 @@ describe('synchronization administration IPC handlers', () => {
 })
 
 function createHarness(authError?: Error): {
+  readonly copyEnrollmentText: ReturnType<typeof vi.fn>
   readonly authError: Error | undefined
   readonly service: SyncAdministrationService & {
     getState: ReturnType<typeof vi.fn>
@@ -135,13 +184,16 @@ function createHarness(authError?: Error): {
     getState: ReturnType<typeof vi.fn>
     configure: ReturnType<typeof vi.fn>
   }
+  const copyEnrollmentText = vi.fn()
   return {
+    copyEnrollmentText,
     authError,
     service,
     handlers: createSyncAdministrationIpcHandlers({
       navigationPolicy: createDevelopmentNavigationPolicy('http://localhost:5173/'),
       authenticationSessionService,
       syncAdministrationService: service,
+      copyEnrollmentText,
       logger: { warn: vi.fn(), error: vi.fn() }
     })
   }

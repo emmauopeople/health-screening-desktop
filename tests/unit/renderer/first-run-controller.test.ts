@@ -645,6 +645,10 @@ function createApi({
       reconfigureLocation: vi.fn(async () => createInstallationSettingsFailure('IPC_UNAVAILABLE'))
     },
     syncAdministration: {
+      copyEnrollmentDetail: vi.fn(async () => ({
+        ok: true as const,
+        data: { status: 'COPIED' as const }
+      })),
       getState: vi.fn(async () => ({
         ok: false as const,
         error: {

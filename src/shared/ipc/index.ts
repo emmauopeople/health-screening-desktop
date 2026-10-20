@@ -37,6 +37,12 @@ export {
   type ReportDocumentRequest
 } from './report-document-contracts'
 export {
+  syncEnrollmentDetailsSchema,
+  syncEnrollmentCopyRequestSchema,
+  syncEnrollmentCopyResultSchema,
+  type SyncEnrollmentDetails,
+  type SyncEnrollmentCopyRequest,
+  type SyncEnrollmentCopyResult,
   createSyncAdministrationFailure,
   publicSyncAdministrationActivitySchema,
   publicSyncAdministrationConfigurationSchema,

@@ -9,6 +9,10 @@ import { getErrorType } from '@main/foundation/error-type'
 import { createAuthenticatedHandlerAuthorization } from '@main/ipc/authentication/authenticated-handler-authorization'
 import type { IpcSenderValidationEvent } from '@main/ipc/sender-policy'
 import {
+  syncEnrollmentCopyRequestSchema,
+  syncEnrollmentCopyResultSchema,
+  syncEnrollmentDetailsSchema,
+  type SyncEnrollmentCopyResult,
   createIpcSuccess,
   createSyncAdministrationFailure,
   ipcChannels,
@@ -32,10 +36,15 @@ export interface SyncAdministrationIpcHandlerDependencies {
   readonly navigationPolicy: NavigationPolicy
   readonly authenticationSessionService: LocalAuthenticationSessionService
   readonly syncAdministrationService: SyncAdministrationService
+  readonly copyEnrollmentText?: (value: string) => void
   readonly logger?: SyncAdministrationIpcOperationalLogger
 }
 
 export interface SyncAdministrationIpcHandlers {
+  copyEnrollmentDetail(
+    event: IpcSenderValidationEvent,
+    request: unknown
+  ): Promise<SyncEnrollmentCopyResult>
   getState(
     event: IpcSenderValidationEvent,
     request: unknown
@@ -53,6 +62,7 @@ export function createSyncAdministrationIpcHandlers({
   navigationPolicy,
   authenticationSessionService,
   syncAdministrationService,
+  copyEnrollmentText,
   logger = console
 }: SyncAdministrationIpcHandlerDependencies): SyncAdministrationIpcHandlers {
   const authorization = createAuthenticatedHandlerAuthorization({
@@ -62,6 +72,26 @@ export function createSyncAdministrationIpcHandlers({
   })
 
   return Object.freeze({
+    async copyEnrollmentDetail(event: IpcSenderValidationEvent, request: unknown) {
+      return handle({
+        channel: ipcChannels.syncAdministration.copyEnrollmentDetail,
+        event,
+        request,
+        requestSchema: syncEnrollmentCopyRequestSchema,
+        resultSchema: syncEnrollmentCopyResultSchema,
+        authorization,
+        logger,
+        invoke: (data) => {
+          const state = syncAdministrationService.getState()
+          if (state.status !== 'READY') return mapServiceFailure(state.status)
+          const details = syncEnrollmentDetailsSchema.safeParse(state.enrollmentDetails)
+          if (!details.success || !copyEnrollmentText)
+            return createSyncAdministrationFailure('INTERNAL_ERROR')
+          copyEnrollmentText(details.data[data.field])
+          return createIpcSuccess({ status: 'COPIED' as const })
+        }
+      })
+    },
     async getState(event: IpcSenderValidationEvent, request: unknown) {
       return handle({
         channel: ipcChannels.syncAdministration.getState,

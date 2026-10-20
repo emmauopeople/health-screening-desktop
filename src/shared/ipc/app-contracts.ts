@@ -1,3 +1,7 @@
+import type {
+  SyncEnrollmentCopyRequest,
+  SyncEnrollmentCopyResult
+} from './sync-administration-contracts'
 import type { ProtocolApi } from './protocol-contracts'
 import type { BackupApi } from './backup-contracts'
 import type { UserAdministrationApi } from './user-administration-contracts'
@@ -263,6 +267,7 @@ export interface HealthScreeningApi {
     ): Promise<InstallationSettingsReconfigureLocationResult>
   }
   syncAdministration: {
+    copyEnrollmentDetail(request: SyncEnrollmentCopyRequest): Promise<SyncEnrollmentCopyResult>
     getState(): Promise<SyncAdministrationGetStateResult>
     configure(
       request: SyncAdministrationConfigureRequest

@@ -1,4 +1,8 @@
 import {
+  syncEnrollmentCopyRequestSchema,
+  syncEnrollmentCopyResultSchema,
+  type SyncEnrollmentCopyRequest,
+  type SyncEnrollmentCopyResult,
   createSyncAdministrationFailure,
   ipcChannels,
   syncAdministrationConfigureRequestSchema,
@@ -13,12 +17,22 @@ import {
 import type { IpcInvoke } from './authentication-api'
 
 export interface SyncAdministrationApi {
+  copyEnrollmentDetail(request: SyncEnrollmentCopyRequest): Promise<SyncEnrollmentCopyResult>
   getState(): Promise<SyncAdministrationGetStateResult>
   configure(request: SyncAdministrationConfigureRequest): Promise<SyncAdministrationConfigureResult>
 }
 
 export function createSyncAdministrationApi(invoke: IpcInvoke): SyncAdministrationApi {
   return Object.freeze({
+    copyEnrollmentDetail: (request: SyncEnrollmentCopyRequest) =>
+      invokeValidated({
+        invoke,
+        channel: ipcChannels.syncAdministration.copyEnrollmentDetail,
+        request,
+        requestSchema: syncEnrollmentCopyRequestSchema,
+        resultSchema: syncEnrollmentCopyResultSchema,
+        unavailable: createSyncAdministrationFailure('IPC_UNAVAILABLE')
+      }),
     getState: () =>
       invokeValidated({
         invoke,

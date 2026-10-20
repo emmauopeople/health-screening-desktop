@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type {
   HealthScreeningApi,
   LocalUserRole,
+  SyncEnrollmentDetails,
   PublicSyncAdministrationActivity,
   PublicSyncAdministrationConfiguration,
   SyncAdministrationErrorCode
@@ -19,6 +20,7 @@ type WorkspaceState =
   | { readonly status: 'LOADING' }
   | {
       readonly status: 'READY'
+      readonly enrollmentDetails: SyncEnrollmentDetails | null
       readonly configuration: PublicSyncAdministrationConfiguration
       readonly activity: PublicSyncAdministrationActivity
     }
@@ -62,6 +64,7 @@ export function SynchronizationAdministrationWorkspace({
       setState({
         status: 'READY',
         configuration: result.data.configuration,
+        enrollmentDetails: result.data.enrollmentDetails ?? null,
         activity: result.data.activity
       })
     } catch {
@@ -121,6 +124,7 @@ export function SynchronizationAdministrationWorkspace({
       setState({
         status: 'READY',
         configuration: result.data.configuration,
+        enrollmentDetails: state.enrollmentDetails,
         activity: normalizeActivityAfterConfiguration(state.activity)
       })
       setEditing(false)
@@ -133,6 +137,29 @@ export function SynchronizationAdministrationWorkspace({
       setSaving(false)
       setInstallationToken('')
       setMessage('Synchronization settings unavailable.')
+    }
+  }
+
+  const copyEnrollmentDetail = async (
+    field: 'installationId' | 'sourceLocationId'
+  ): Promise<void> => {
+    const currentRequest = requestRef.current
+    try {
+      const result = await api.syncAdministration.copyEnrollmentDetail({ field })
+      if (!mountedRef.current || requestRef.current !== currentRequest) return
+      if (!result.ok) {
+        handleAuthenticationFailure(result.error.code, onAuthenticationFailure)
+        setMessage('The UUID could not be copied. Select and copy the displayed value manually.')
+        return
+      }
+      setMessage(
+        field === 'installationId'
+          ? 'Desktop installation UUID copied.'
+          : 'Desktop local location UUID copied.'
+      )
+    } catch {
+      if (mountedRef.current && requestRef.current === currentRequest)
+        setMessage('The UUID could not be copied. Select and copy the displayed value manually.')
     }
   }
 
@@ -193,6 +220,72 @@ export function SynchronizationAdministrationWorkspace({
         </div>
       ) : (
         <>
+          <section className="administration-location-card" aria-labelledby="sync-enrollment-title">
+            <h2 id="sync-enrollment-title">Sync enrollment details</h2>
+            <p>
+              Use these existing identifiers in CHS-web → Desktop Installations when enrolling this
+              PC. They identify this installation and its configured local screening location.
+            </p>
+            {state.enrollmentDetails ? (
+              <>
+                <dl className="administration-definition-list sync-configuration-summary">
+                  <dt>Deployment name</dt>
+                  <dd>{state.enrollmentDetails.deploymentName}</dd>
+                  <dt>Local screening location</dt>
+                  <dd>{state.enrollmentDetails.locationName}</dd>
+                  <dt>Time zone</dt>
+                  <dd>{state.enrollmentDetails.timezone}</dd>
+                </dl>
+                <div className="sync-enrollment-identifiers">
+                  <div className="sync-enrollment-identifier">
+                    <label htmlFor="sync-enrollment-installation-id">
+                      Desktop installation UUID
+                    </label>
+                    <input
+                      id="sync-enrollment-installation-id"
+                      readOnly
+                      value={state.enrollmentDetails.installationId}
+                      spellCheck={false}
+                    />
+                    <button
+                      className="button button-secondary"
+                      type="button"
+                      onClick={() => void copyEnrollmentDetail('installationId')}
+                    >
+                      Copy installation UUID
+                    </button>
+                  </div>
+                  <div className="sync-enrollment-identifier">
+                    <label htmlFor="sync-enrollment-location-id">Desktop local location UUID</label>
+                    <input
+                      id="sync-enrollment-location-id"
+                      readOnly
+                      value={state.enrollmentDetails.sourceLocationId}
+                      spellCheck={false}
+                    />
+                    <button
+                      className="button button-secondary"
+                      type="button"
+                      onClick={() => void copyEnrollmentDetail('sourceLocationId')}
+                    >
+                      Copy local location UUID
+                    </button>
+                  </div>
+                </div>
+                <p>
+                  Select the matching central organization/location in CHS-web. These UUIDs are not
+                  the central organization or location IDs, and they do not grant access. Each PC
+                  needs its own enrollment token.
+                </p>
+              </>
+            ) : (
+              <p>
+                Enrollment details are unavailable. Complete installation and location setup, then
+                refresh status.
+              </p>
+            )}
+          </section>
+
           <div className="sync-status-grid" aria-label="Synchronization status summary">
             <StatusCard label="Status" value={activityLabel(state.activity.state)} />
             <StatusCard label="Pending changes" value={String(state.activity.pendingChangeCount)} />

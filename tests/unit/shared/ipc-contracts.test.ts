@@ -175,13 +175,14 @@ describe('shared IPC contracts', () => {
         print: 'health-screening:report-documents:print'
       },
       syncAdministration: {
+        copyEnrollmentDetail: 'health-screening:sync-administration:copy-enrollment-detail',
         getState: 'health-screening:sync-administration:get-state',
         configure: 'health-screening:sync-administration:configure'
       }
     })
     const allChannels = flattenChannelStrings(ipcChannels)
 
-    expect(allChannels).toHaveLength(78)
+    expect(allChannels).toHaveLength(79)
     expect(new Set(allChannels).size).toBe(allChannels.length)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.lifestyle.complete)
     expect(allChannels).toContain(ipcChannels.screeningEncounters.complete)

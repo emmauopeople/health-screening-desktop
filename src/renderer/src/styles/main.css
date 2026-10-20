@@ -8230,3 +8230,22 @@ h1 {
     -webkit-print-color-adjust: exact;
   }
 }
+
+.sync-enrollment-identifiers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 1rem;
+}
+.sync-enrollment-identifier {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.sync-enrollment-identifier input {
+  width: 100%;
+  min-width: 0;
+  font-family: Consolas, monospace;
+}
+.sync-enrollment-identifier button {
+  justify-self: start;
+}

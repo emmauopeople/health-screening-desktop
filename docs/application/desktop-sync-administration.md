@@ -11,6 +11,9 @@ preload methods. It does not add a manual synchronization command.
 
 The Sync Center shows only:
 
+- read-only deployment name, configured location name, time zone, installation UUID,
+  and local location UUID for enrollment;
+
 - whether synchronization is configured;
 - the central API origin and a bounded credential prefix;
 - pending local-change and acknowledgment totals;
@@ -23,6 +26,28 @@ response payloads, hashes, local or central patient identifiers, reviewer
 evidence, or raw transport errors.
 
 ## Configuration boundary
+
+### Sync enrollment details
+
+Version 1.0.1 adds a **Sync enrollment details** panel under Administration →
+Sync Center. It reads the existing installation and configured local location;
+it does not generate identifiers, change the database, or require a saved sync
+credential. Copy the **Desktop installation UUID** and **Desktop local location
+UUID** into CHS-web's Desktop Installations enrollment form. Select the matching
+central screening location separately; its UUID is distinct from the desktop's
+local location UUID.
+
+The panel is available only to authenticated local administrators. Copy buttons
+use a fixed, sender-validated IPC operation accepting only an allowlisted field
+name. The main process reads and validates the current stored enrollment details
+before writing that UUID to the clipboard. No arbitrary clipboard text or
+clipboard-read capability is exposed. Deployment identifiers grant no access;
+the separate server-issued installation token remains protected. If copying is
+unavailable, select the read-only value and copy it manually. Missing location
+configuration shows an explicit unavailable state rather than inventing an ID.
+
+No SQLite migration is needed. Install over the existing app and choose **Keep
+existing data** to preserve installation identity and queued sync work.
 
 Only an active `LOCAL_ADMIN` session from the trusted application window may
 read or change synchronization settings. A configuration save requires the

@@ -17,6 +17,42 @@ import {
 const token = `chs_inst_v1_${'A'.repeat(43)}`
 const now = utcTimestampSchema.parse('2026-09-04T12:00:00.000Z')
 
+describe('sync enrollment details panel', () => {
+  it('shows read-only installation identifiers before sync is configured and copies by field name', async () => {
+    const mounted = await mountWorkspace()
+    expect(mounted.container.textContent).toContain('Sync enrollment details')
+    const installation = mounted.container.querySelector<HTMLInputElement>(
+      '#sync-enrollment-installation-id'
+    )!
+    const location = mounted.container.querySelector<HTMLInputElement>(
+      '#sync-enrollment-location-id'
+    )!
+    expect(installation.value).toBe('10000000-0000-4000-8000-000000000001')
+    expect(location.value).toBe('30000000-0000-4000-8000-000000000001')
+    expect(installation.readOnly && location.readOnly).toBe(true)
+    await click(mounted.container, 'Copy installation UUID')
+    expect(mounted.api.syncAdministration.copyEnrollmentDetail).toHaveBeenCalledWith({
+      field: 'installationId'
+    })
+    await click(mounted.container, 'Copy local location UUID')
+    expect(mounted.api.syncAdministration.copyEnrollmentDetail).toHaveBeenCalledWith({
+      field: 'sourceLocationId'
+    })
+    expect(mounted.container.textContent).toContain('Desktop local location UUID copied.')
+    expect(mounted.api.syncAdministration.configure).not.toHaveBeenCalled()
+    await mounted.unmount()
+  })
+  it('offers manual copying when the main-process clipboard is unavailable', async () => {
+    const mounted = await mountWorkspace()
+    mounted.api.syncAdministration.copyEnrollmentDetail.mockResolvedValueOnce(
+      createSyncAdministrationFailure('IPC_UNAVAILABLE')
+    )
+    await click(mounted.container, 'Copy installation UUID')
+    expect(mounted.container.textContent).toContain('Select and copy the displayed value manually.')
+    await mounted.unmount()
+  })
+})
+
 describe('synchronization administration workspace', () => {
   beforeEach(() => {
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -128,6 +164,9 @@ describe('synchronization administration workspace', () => {
 
 type MockApi = HealthScreeningApi & {
   syncAdministration: {
+    copyEnrollmentDetail: ReturnType<
+      typeof vi.fn<HealthScreeningApi['syncAdministration']['copyEnrollmentDetail']>
+    >
     getState: ReturnType<typeof vi.fn<HealthScreeningApi['syncAdministration']['getState']>>
     configure: ReturnType<typeof vi.fn<HealthScreeningApi['syncAdministration']['configure']>>
   }
@@ -171,9 +210,17 @@ async function mountWorkspace(
 function createApi(): MockApi {
   return {
     syncAdministration: {
+      copyEnrollmentDetail: vi.fn(async () => createIpcSuccess({ status: 'COPIED' as const })),
       getState: vi.fn(async () =>
         createIpcSuccess({
           status: 'READY' as const,
+          enrollmentDetails: {
+            installationId: '10000000-0000-4000-8000-000000000001',
+            sourceLocationId: '30000000-0000-4000-8000-000000000001',
+            deploymentName: 'Test PC',
+            locationName: 'Test site',
+            timezone: 'Africa/Douala'
+          },
           configuration: { status: 'NOT_CONFIGURED' as const },
           activity: {
             state: 'RETRY_SCHEDULED' as const,
