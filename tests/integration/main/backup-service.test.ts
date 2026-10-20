@@ -150,7 +150,7 @@ describe('encrypted desktop backup foundation', () => {
     const metadata = await createValidBackup()
     expect(metadata).toMatchObject({
       deploymentName: 'Private deployment',
-      schemaVersion: 25,
+      schemaVersion: 26,
       counts: { patients: 1, users: 1 },
       credentialScope: 'ORIGINAL_OS_PROFILE'
     })
@@ -183,7 +183,7 @@ describe('encrypted desktop backup foundation', () => {
     const audits = connection
       .prepare("SELECT metadata_json FROM audit_log WHERE action = 'BACKUP_CREATED'")
       .all()
-    expect(audits).toEqual([{ metadata_json: '{"format_version":1,"schema_version":25}' }])
+    expect(audits).toEqual([{ metadata_json: '{"format_version":1,"schema_version":26}' }])
     expect(readdirSync(work)).toEqual([])
     expect(connection.prepare('SELECT * FROM users').all()).toEqual(originalUsers)
   })
@@ -354,7 +354,7 @@ describe('encrypted desktop backup foundation', () => {
     changed.close()
     await encryptBackup(source, destination, request.password, { ...metadata, schemaVersion: 999 })
     expect(await service.inspect(request)).toEqual({ status: 'UNSUPPORTED_BACKUP' })
-    expect(runtime.getConnection().pragma('user_version', { simple: true })).toBe(25)
+    expect(runtime.getConnection().pragma('user_version', { simple: true })).toBe(26)
   })
   it('rejects a database with an incompatible migration history', async () => {
     const source = join(root, 'snapshot.sqlite3')

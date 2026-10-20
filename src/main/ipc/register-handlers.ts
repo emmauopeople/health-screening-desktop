@@ -1,3 +1,7 @@
+import {
+  createCentralHistoryHandlers,
+  type CentralHistoryIpcDependencies
+} from './handlers/central-history-handlers'
 import { createProtocolHandler, type ProtocolIpcDependencies } from './handlers/protocol-handlers'
 import { createBackupHandlers, type BackupIpcDependencies } from './handlers/backup-handlers'
 import {
@@ -186,6 +190,7 @@ const activeAuditReportRegistrations = new WeakMap<
 export interface ApplicationIpcHandlerDependencies extends AppIpcHandlerDependencies {
   readonly firstRun: FirstRunIpcHandlerDependencies
   readonly auth: AuthenticationIpcHandlerDependencies
+  readonly centralHistory?: CentralHistoryIpcDependencies
   readonly patient: PatientIpcHandlerDependencies
   readonly referrals?: ReferralIpcHandlerDependencies
   readonly protocols?: ProtocolIpcDependencies
@@ -277,6 +282,16 @@ export function registerApplicationIpcHandlers(
       [ipcChannels.reportDocuments.print, reportDocumentHandlers.print]
     ]
 
+    if (dependencies.centralHistory !== undefined) {
+      const handlers = createCentralHistoryHandlers(dependencies.centralHistory)
+      for (const [channel, listener] of [
+        [ipcChannels.centralHistory.read, handlers.read],
+        [ipcChannels.centralHistory.refresh, handlers.refresh]
+      ] as const) {
+        applicationIpcMain.handle(channel, listener)
+        installedChannels.push(channel)
+      }
+    }
     if (dependencies.protocols !== undefined) {
       applicationIpcMain.handle(
         ipcChannels.protocols.get,

@@ -31,13 +31,14 @@ describe('installation location configuration migration', () => {
 
       expect(summary).toEqual({
         previousVersion: 0,
-        currentVersion: 25,
+        currentVersion: 26,
         appliedVersions: [
-          1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25
+          1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+          26
         ]
       })
-      expect(readUserVersion(connection)).toBe(25)
-      expect(readTableCount(connection, 'schema_migrations')).toBe(25)
+      expect(readUserVersion(connection)).toBe(26)
+      expect(readTableCount(connection, 'schema_migrations')).toBe(26)
       expect(hasTable(connection, 'installation_location_configuration')).toBe(true)
       expect(readTableCount(connection, 'installation_location_configuration')).toBe(0)
       expect(() => validateCurrentDatabaseSchema(connection, 'compatibility')).not.toThrow()
@@ -54,12 +55,12 @@ describe('installation location configuration migration', () => {
 
       expect(summary).toEqual({
         previousVersion: 5,
-        currentVersion: 25,
+        currentVersion: 26,
         appliedVersions: [
-          6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25
+          6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26
         ]
       })
-      expect(readUserVersion(connection)).toBe(25)
+      expect(readUserVersion(connection)).toBe(26)
       expect(readOperationalCounts(connection)).toEqual({
         ...beforeCounts,
         installation_location_configuration: 0

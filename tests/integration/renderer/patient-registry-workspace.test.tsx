@@ -2062,6 +2062,7 @@ describe('patient registry workspace mounted regressions', () => {
     expect(detailTabs(mounted).map((tab) => normalizedText(tab))).toEqual([
       'Current Details',
       'Screening History',
+      'Central History',
       'Demographic History',
       'Acknowledgment History',
       'Identifiers'
@@ -2088,6 +2089,8 @@ describe('patient registry workspace mounted regressions', () => {
 
     await dispatchKeyboard(tabByText(mounted, 'Current Details'), 'ArrowRight')
     await dispatchKeyboard(tabByText(mounted, 'Screening History'), 'ArrowRight')
+    expect(document.activeElement).toBe(tabByText(mounted, 'Central History'))
+    await dispatchKeyboard(tabByText(mounted, 'Central History'), 'ArrowRight')
     await dispatchKeyboard(tabByText(mounted, 'Demographic History'), 'Enter')
 
     expect(tabByText(mounted, 'Demographic History').getAttribute('aria-selected')).toBe('true')
